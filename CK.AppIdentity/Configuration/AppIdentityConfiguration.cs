@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 
 namespace CK.AppIdentity
 {
@@ -33,22 +34,47 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="hostEnvironment">The hosting environment from which defaults local and environment names are used.</param>
-        /// <param name="locked">The configuration section (typically named "CK-AppIdentity").</param>
+        /// <param name="configuration">The configuration section (typically named "CK-AppIdentity").</param>
         /// <returns>A valid instance on success, null on configuration error.</returns>
         public static AppIdentityConfiguration? Create( IActivityMonitor monitor, IHostEnvironment hostEnvironment, IConfigurationSection configuration )
         {
-            using var gLog = monitor.OpenInfo( "Creating AppIdentityConfiguration service." );
-            var locked = new LockedConfigurationSection( configuration );
+            using var gLog = monitor.OpenInfo( "Creating root AppIdentityConfiguration service." );
+            var locked = configuration as LockedConfigurationSection ?? new LockedConfigurationSection( configuration );
             bool success = GetName( monitor, locked, "DomainName", false, "LocalDev", out var domainName );
             if( !GetName( monitor, locked, "EnvironmentName", false, hostEnvironment.EnvironmentName, out var environmentName ) ) success = false;
 
             var local = LocalPartyConfiguration.Create( monitor, locked.GetSection( "Local" ), hostEnvironment.ApplicationName );
             if( local == null ) success = false;
 
+            var c = CreateRemotes( monitor, locked, domainName, environmentName, local, allowTenantService: true );
+            if( c == null ) monitor.CloseGroup( "Failed." );
+            return c;
+        }
+
+        public static AppIdentityConfiguration? CreateTenant( IActivityMonitor monitor,
+                                                              string remoteName,
+                                                              string remoteEnvironmentName,
+                                                              LockedConfigurationSection configuration )
+        {
+            using var gLog = monitor.OpenInfo( $"Creating tenant AppIdentityConfiguration for '{remoteName}/{remoteEnvironmentName}'." );
+            var local = new LocalPartyConfiguration( configuration.GetSection( "Local" ), remoteName );
+            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowTenantService: false );
+            if( c == null ) monitor.CloseGroup( "Failed." );
+            return c;
+        }
+
+        private static AppIdentityConfiguration? CreateRemotes( IActivityMonitor monitor,
+                                                                LockedConfigurationSection locked,
+                                                                string? domainName,
+                                                                string? environmentName,
+                                                                LocalPartyConfiguration? local,
+                                                                bool allowTenantService )
+        {
+            bool success = domainName != null && environmentName!= null && local != null;
             var remotes = new List<RemotePartyConfiguration>();
             foreach( var c in locked.GetSection( "Remotes" ).GetChildren() )
             {
-                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName! );
+                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowTenantService );
                 if( r == null ) success = false;
                 else
                 {
@@ -65,9 +91,9 @@ namespace CK.AppIdentity
                     if( success ) remotes.Add( r );
                 }
             }
-            if( success ) return new AppIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray() );
-            monitor.CloseGroup( "Failed." );
-            return null;
+            return success
+                    ? new AppIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray() )
+                    : null;
         }
 
         /// <summary>

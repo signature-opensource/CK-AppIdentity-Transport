@@ -17,12 +17,12 @@ namespace CK.AppIdentity
         readonly ActivityMonitor _monitor;
         // We use null as the close signal (no need for a cancellation token source).
         readonly Channel<object?> _channel;
-        readonly AppIdentityService _service;
+        readonly RootAppIdentityService _service;
         readonly IActivityLogger _logger;
 
-        internal AppIdentityAgent( AppIdentityService service )
+        internal AppIdentityAgent( RootAppIdentityService service )
         {
-            _monitor = new ActivityMonitor( nameof(AppIdentityService), new DateTimeStampProvider() );
+            _monitor = new ActivityMonitor( nameof(RootAppIdentityService), new DateTimeStampProvider() );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _service = service;
             _logger = new Logger( this );

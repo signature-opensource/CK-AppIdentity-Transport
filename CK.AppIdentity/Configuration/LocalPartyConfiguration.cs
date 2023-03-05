@@ -11,7 +11,7 @@ namespace CK.AppIdentity
     /// </summary>
     public sealed class LocalPartyConfiguration
     {
-        LocalPartyConfiguration( LockedConfigurationSection configuration, string name )
+        internal LocalPartyConfiguration( LockedConfigurationSection configuration, string name )
         {
             Configuration = configuration;
             Name = name;

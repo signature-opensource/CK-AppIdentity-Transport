@@ -29,10 +29,10 @@ namespace CK.AppIdentity.Tests
             } );
             ServiceCollection serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );
-            serviceBuilder.AddSingleton<AppIdentityService>();
+            serviceBuilder.AddSingleton<RootAppIdentityService>();
             var services = serviceBuilder.BuildServiceProvider();
 
-            var s = services.GetRequiredService<AppIdentityService>();
+            var s = services.GetRequiredService<RootAppIdentityService>();
             // This is done by host. We wait for the FeatureBuildersInitialization task.
             _ = ((IHostedService)s).StartAsync( default );
 
@@ -66,7 +66,7 @@ namespace CK.AppIdentity.Tests
 
             public static void Reset() => _current = 0;
 
-            protected CheckOrderFeatureBuilder( AppIdentityService s )
+            protected CheckOrderFeatureBuilder( RootAppIdentityService s )
                 : base( s )
             {
             }
@@ -83,49 +83,49 @@ namespace CK.AppIdentity.Tests
 
         public class F1 : CheckOrderFeatureBuilder
         {
-            public F1( AppIdentityService s ) : base( s )
+            public F1( RootAppIdentityService s ) : base( s )
             {
             }
         }
 
         public class F2_1 : CheckOrderFeatureBuilder
         {
-            public F2_1( AppIdentityService s, F1 s1 ) : base( s )
+            public F2_1( RootAppIdentityService s, F1 s1 ) : base( s )
             {
             }
         }
 
         public class F3_2 : CheckOrderFeatureBuilder
         {
-            public F3_2( AppIdentityService s, F2_1 s2 ) : base( s )
+            public F3_2( RootAppIdentityService s, F2_1 s2 ) : base( s )
             {
             }
         }
 
         public class FA_1 : CheckOrderFeatureBuilder
         {
-            public FA_1( AppIdentityService s, F1 s1 ) : base( s )
+            public FA_1( RootAppIdentityService s, F1 s1 ) : base( s )
             {
             }
         }
 
         public class FB_A : CheckOrderFeatureBuilder
         {
-            public FB_A( AppIdentityService s, FA_1 sa ) : base( s )
+            public FB_A( RootAppIdentityService s, FA_1 sa ) : base( s )
             {
             }
         }
 
         public class FC_A_3 : CheckOrderFeatureBuilder
         {
-            public FC_A_3( AppIdentityService s, FA_1 sa, F3_2 f1 ) : base( s )
+            public FC_A_3( RootAppIdentityService s, FA_1 sa, F3_2 f1 ) : base( s )
             {
             }
         }
 
         public class FD_B_2 : CheckOrderFeatureBuilder
         {
-            public FD_B_2( AppIdentityService s, FB_A sb, F2_1 f2 ) : base( s )
+            public FD_B_2( RootAppIdentityService s, FB_A sb, F2_1 f2 ) : base( s )
             {
             }
         }
@@ -139,7 +139,7 @@ namespace CK.AppIdentity.Tests
             var c = TestHelper.CreateAppIdentityConfiguration();
             ServiceCollection serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );
-            serviceBuilder.AddSingleton<AppIdentityService>();
+            serviceBuilder.AddSingleton<RootAppIdentityService>();
             var builderTypes = new List<Type>() { typeof( F1 ),
                                                   typeof( F2_1 ),
                                                   typeof( F3_2 ),
@@ -155,7 +155,7 @@ namespace CK.AppIdentity.Tests
             }
             var services = serviceBuilder.BuildServiceProvider();
 
-            var s = services.GetRequiredService<AppIdentityService>();
+            var s = services.GetRequiredService<RootAppIdentityService>();
             _ = ((IHostedService)s).StartAsync( default );
             await s.FeatureBuildersInitialization;
 

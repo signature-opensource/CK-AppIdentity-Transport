@@ -17,10 +17,10 @@ namespace CK.AppIdentity
     public abstract class AppIdentityFeatureBuilder : ISingletonAutoService
     {
         /// <summary>
-        /// Initializes a new <see cref="AppIdentityService"/>.
+        /// Initializes a new <see cref="RootAppIdentityService"/>.
         /// </summary>
         /// <param name="s">The application identity service.</param>
-        protected AppIdentityFeatureBuilder( AppIdentityService s )
+        protected AppIdentityFeatureBuilder( RootAppIdentityService s )
         {
             // Adding the builder to the list here captures the topological
             // dependency order of the feature builders.
@@ -28,8 +28,8 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="AppIdentityService.Features"/>,
-        /// <see cref="LocalPartyConfiguration.Features"/> and/or <see cref="RemoteParty.Features"/>.
+        /// Must do whatever is required to register features into <see cref="RootAppIdentityService.Features"/>,
+        /// <see cref="LocalPartyConfiguration.Features"/> and/or <see cref="RootRemoteParty.Features"/>.
         /// </summary>
         /// <param name="monitor">The monitor to use for this method. Must not be kept.</param>
         /// <param name="appIdentityAgent">The long lived agent that can be used any time.</param>
