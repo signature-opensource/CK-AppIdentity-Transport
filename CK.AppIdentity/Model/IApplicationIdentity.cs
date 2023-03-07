@@ -41,17 +41,5 @@ namespace CK.AppIdentity
         /// </para>
         /// </summary>
         Task FeatureBuildersInitialization { get; }
-
-        /// <summary>
-        /// Gets the features associated to this <see cref="IApplicationIdentity"/>.
-        /// </summary>
-        IEnumerable<object> Features { get; }
-
-        /// <summary>
-        /// Atomically (thread safe) adds a feature if it doesn't already exist.
-        /// </summary>
-        /// <param name="feature">The feature to add.</param>
-        /// <returns>True if the feature has been added, false if the feature already exists.</returns>
-        bool AddFeature( object feature );
     }
 }

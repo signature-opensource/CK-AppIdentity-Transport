@@ -35,8 +35,8 @@
     <Position X="0.5" Y="0.5" Width="2" />
     <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty" FixedFromPoint="true">
       <Path>
-        <Point X="2.5" Y="0.673" />
-        <Point X="6.25" Y="0.673" />
+        <Point X="2.5" Y="0.625" />
+        <Point X="6.25" Y="0.625" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
         <Position X="0.022" Y="0.06" />
@@ -44,7 +44,7 @@
     </AssociationLine>
     <AssociationLine Name="ApplicationIdentityService" Type="CK.AppIdentity.ApplicationIdentityService" FixedFromPoint="true">
       <Path>
-        <Point X="2.312" Y="2.824" />
+        <Point X="2.312" Y="2.18" />
         <Point X="2.312" Y="4" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
@@ -52,7 +52,7 @@
       </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
-      <HashCode>AAAAAAAABgAAAAEAAAABAAAIAABAAAABgACAAAAAAAA=</HashCode>
+      <HashCode>AAAAAAAABgAAAAEAAAAAAAAIAABAAAAAgACAAAAAAAA=</HashCode>
       <FileName>Model\IApplicationIdentity.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>
