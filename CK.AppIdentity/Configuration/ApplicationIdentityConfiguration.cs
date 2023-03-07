@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Sockets;
 
@@ -12,9 +13,9 @@ namespace CK.AppIdentity
     /// Configuration that defines the identity of an application.
     /// This is designed to be available as a singleton service in the DI container (the package CK.AppIdentity.Configuration does that).
     /// </summary>
-    public sealed class AppIdentityConfiguration
+    public sealed class ApplicationIdentityConfiguration
     {
-        AppIdentityConfiguration( LockedConfigurationSection configuration,
+        ApplicationIdentityConfiguration( ImmutableConfigurationSection configuration,
                                   string domainName,
                                   string environmentName,
                                   LocalPartyConfiguration local,
@@ -28,7 +29,7 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Tries to create an <see cref="AppIdentityConfiguration"/> instance from a <see cref="IConfigurationSection"/>
+        /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a <see cref="IConfigurationSection"/>
         /// and the <see cref="IHostEnvironment"/> for the defaults <see cref="IHostEnvironment.ApplicationName"/>
         /// and <see cref="IHostEnvironment.EnvironmentName"/>.
         /// </summary>
@@ -36,14 +37,45 @@ namespace CK.AppIdentity
         /// <param name="hostEnvironment">The hosting environment from which defaults local and environment names are used.</param>
         /// <param name="configuration">The configuration section (typically named "CK-AppIdentity").</param>
         /// <returns>A valid instance on success, null on configuration error.</returns>
-        public static AppIdentityConfiguration? Create( IActivityMonitor monitor, IHostEnvironment hostEnvironment, IConfigurationSection configuration )
+        public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor, IHostEnvironment hostEnvironment, IConfigurationSection configuration )
+        {
+            return Create( monitor, configuration, hostEnvironment.ApplicationName, hostEnvironment.EnvironmentName );
+        }
+
+        /// <summary>
+        /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a "CK-AppIdentity" <see cref="MutableConfigurationSection"/>
+        /// that is setup by a callback. At least "Local:Name" configuration must be set ("EnvironmentName" defaults to "Development").
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="configuration">Must configure the "CK-AppIdentity" section.</param>
+        /// <returns>A valid instance on success, null on configuration error.</returns>
+        public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor,
+                                                                Action<MutableConfigurationSection> configuration )
+        {
+            var c = new MutableConfigurationSection( "CK-AppIdentity" );
+            configuration( c );
+            return Create( monitor, c );
+        }
+
+        /// <summary>
+        /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a <see cref="IConfigurationSection"/>.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="configuration">The configuration section (typically named "CK-AppIdentity").</param>
+        /// <param name="defaultLocalName">A valid local name to use if the <paramref name="configuration"/> doesn't specify the "Local:Name".</param>
+        /// <param name="defaultEnvironmentName">A valid environment name to use if the <paramref name="configuration"/> doesn't specify it.</param>
+        /// <returns>A valid instance on success, null on configuration error.</returns>
+        public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor,
+                                                                IConfigurationSection configuration,
+                                                                string? defaultLocalName = null,
+                                                                string? defaultEnvironmentName = "Development" )
         {
             using var gLog = monitor.OpenInfo( "Creating root AppIdentityConfiguration service." );
-            var locked = configuration as LockedConfigurationSection ?? new LockedConfigurationSection( configuration );
-            bool success = GetName( monitor, locked, "DomainName", false, "LocalDev", out var domainName );
-            if( !GetName( monitor, locked, "EnvironmentName", false, hostEnvironment.EnvironmentName, out var environmentName ) ) success = false;
+            var locked = configuration as ImmutableConfigurationSection ?? new ImmutableConfigurationSection( configuration );
+            bool success = GetName( monitor, locked, "DomainName", false, "Default", out var domainName );
+            if( !GetName( monitor, locked, "EnvironmentName", false, defaultEnvironmentName, out var environmentName ) ) success = false;
 
-            var local = LocalPartyConfiguration.Create( monitor, locked.GetSection( "Local" ), hostEnvironment.ApplicationName );
+            var local = LocalPartyConfiguration.Create( monitor, locked.GetSection( "Local" ), defaultLocalName );
             if( local == null ) success = false;
 
             var c = CreateRemotes( monitor, locked, domainName, environmentName, local, allowTenantService: true );
@@ -51,10 +83,10 @@ namespace CK.AppIdentity
             return c;
         }
 
-        public static AppIdentityConfiguration? CreateTenant( IActivityMonitor monitor,
-                                                              string remoteName,
-                                                              string remoteEnvironmentName,
-                                                              LockedConfigurationSection configuration )
+        internal static ApplicationIdentityConfiguration? CreateDomain( IActivityMonitor monitor,
+                                                                        string remoteName,
+                                                                        string remoteEnvironmentName,
+                                                                        ImmutableConfigurationSection configuration )
         {
             using var gLog = monitor.OpenInfo( $"Creating tenant AppIdentityConfiguration for '{remoteName}/{remoteEnvironmentName}'." );
             var local = new LocalPartyConfiguration( configuration.GetSection( "Local" ), remoteName );
@@ -63,12 +95,12 @@ namespace CK.AppIdentity
             return c;
         }
 
-        private static AppIdentityConfiguration? CreateRemotes( IActivityMonitor monitor,
-                                                                LockedConfigurationSection locked,
-                                                                string? domainName,
-                                                                string? environmentName,
-                                                                LocalPartyConfiguration? local,
-                                                                bool allowTenantService )
+        private static ApplicationIdentityConfiguration? CreateRemotes( IActivityMonitor monitor,
+                                                                        ImmutableConfigurationSection locked,
+                                                                        string? domainName,
+                                                                        string? environmentName,
+                                                                        LocalPartyConfiguration? local,
+                                                                        bool allowTenantService )
         {
             bool success = domainName != null && environmentName!= null && local != null;
             var remotes = new List<RemotePartyConfiguration>();
@@ -92,14 +124,14 @@ namespace CK.AppIdentity
                 }
             }
             return success
-                    ? new AppIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray() )
+                    ? new ApplicationIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray() )
                     : null;
         }
 
         /// <summary>
         /// Gets the "CK-AppIdentity" configuration section.
         /// </summary>
-        public LockedConfigurationSection Configuration { get; }
+        public ImmutableConfigurationSection Configuration { get; }
 
         /// <summary>
         /// Gets the name of the domain to which this application belongs.
@@ -139,12 +171,13 @@ namespace CK.AppIdentity
                                       string propertyName,
                                       bool isRequired,
                                       string? defaultValue,
-                                      out string? value )
+                                      [NotNullWhen( true )] out string? value )
         {
             value = configuration[propertyName];
             if( !ValidateName( monitor, propertyName, ref value, isRequired ) ) return false;
             if( value == null && defaultValue != null )
             {
+                if( !ValidateName( monitor, $"default value for '{propertyName}'", ref defaultValue, true ) ) return false;
                 monitor.Info( $"Undefined configuration property '{configuration.Path}:{propertyName}'. Using default value '{defaultValue}'." );
                 value = defaultValue;
             }

@@ -3,22 +3,19 @@ using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-    public sealed class TenantAppIdentityService : IAppIdentityService
+    public sealed class DomainApplicationIdentity : ApplicationIdentityBase, IApplicationIdentity
     {
-        readonly RootRemoteParty _remote;
-        readonly LocalParty _local;
-        object[] _features;
+        readonly RemoteParty _remote;
 
-        TenantAppIdentityService( RootRemoteParty remote, LocalParty local )
+        internal DomainApplicationIdentity( RemoteParty remote )
+            : base( remote.Configuration.TenantAppIdentityConfiguration! )            
         {
-            Debug.Assert( _remote.Configuration.TenantAppIdentityConfiguration != null );
-            _features = Array.Empty<object>();
             _remote = remote;
-            _local = local;
         }
 
         internal static bool CheckTenantConfigurationNames( IActivityMonitor monitor,
@@ -48,28 +45,12 @@ namespace CK.AppIdentity
             return success;
         }
 
-        public RootAppIdentityService RootAppIdentityService => _remote.AppIdentityService;
+        public ApplicationIdentityService ApplicationIdentityService => _remote.AppIdentityService;
 
         public string DomainName => _remote.Name;
 
         public string EnvironmentName => _remote.EnvironmentName;
 
-        public AppIdentityConfiguration Configuration => _remote.Configuration.TenantAppIdentityConfiguration;
-
-        public LocalParty Local => _local;
-
-        public IReadOnlyCollection<IRemoteParty> Remotes => throw new NotImplementedException();
-
         public Task FeatureBuildersInitialization => _remote.AppIdentityService.FeatureBuildersInitialization;
-
-        /// <inheritdoc />
-        public IEnumerable<object> Features => _features;
-
-        /// <inheritdoc />
-        public bool AddFeature( object feature )
-        {
-            var features = Util.InterlockedAddUnique( ref _features, feature );
-            return Array.IndexOf( features, feature ) >= 0;
-        }
     }
 }

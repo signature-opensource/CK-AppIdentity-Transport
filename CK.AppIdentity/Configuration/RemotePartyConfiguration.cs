@@ -1,5 +1,6 @@
 using CK.Core;
 using Microsoft.Extensions.Configuration;
+using Microsoft.VisualBasic;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,31 +11,38 @@ namespace CK.AppIdentity
 {
     public sealed class RemotePartyConfiguration
     {
-        RemotePartyConfiguration( LockedConfigurationSection configuration,
+        private readonly string _environmentName;
+        private readonly ImmutableConfigurationSection _configuration;
+        private readonly string _domainName;
+        private readonly string _name;
+        private readonly Uri? _uri;
+        private readonly ApplicationIdentityConfiguration? _tenantAppIdentityConfiguration;
+
+        RemotePartyConfiguration( ImmutableConfigurationSection configuration,
                                   string name,
                                   string domainName,
                                   string environmentName,
                                   Uri? uri,
-                                  AppIdentityConfiguration? tenant )
+                                  ApplicationIdentityConfiguration? tenant )
         {
-            Configuration = configuration;
-            Name = name;
-            DomainName = domainName;
-            EnvironmentName = environmentName;
-            Uri = uri;
-            TenantAppIdentityConfiguration = tenant;
+            _configuration = configuration;
+            _name = name;
+            _domainName = domainName;
+            _environmentName = environmentName;
+            _uri = uri;
+            _tenantAppIdentityConfiguration = tenant;
         }
 
         internal static RemotePartyConfiguration? Create( IActivityMonitor monitor,
-                                                          LockedConfigurationSection configuration,
+                                                          ImmutableConfigurationSection configuration,
                                                           string? appDomainName,
                                                           string? appEnvironmentName,
                                                           bool allowTenantService )
         {
             // Refrain yourself to rewrite this differently: this ensures that all properties are handled even on error.
-            bool success = AppIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
-            if( !AppIdentityConfiguration.GetName( monitor, configuration, "DomainName", false, appDomainName, out var domainName ) ) success = false;
-            if( !AppIdentityConfiguration.GetName( monitor, configuration, "EnvironmentName", false, appEnvironmentName, out var environmentName ) ) success = false;
+            bool success = ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
+            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "DomainName", false, appDomainName, out var domainName ) ) success = false;
+            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "EnvironmentName", false, appEnvironmentName, out var environmentName ) ) success = false;
             Uri? uri = null;
             var u = configuration["Uri"];
             if( !String.IsNullOrWhiteSpace( u ) && !Uri.TryCreate( configuration["Uri"], UriKind.Absolute, out uri ) )
@@ -43,7 +51,7 @@ namespace CK.AppIdentity
                 success = false;
             }
             // "CK-AppIdentity" tenant handling.
-            AppIdentityConfiguration? tenant = null;
+            ApplicationIdentityConfiguration? tenant = null;
             var tenantSection = configuration.GetSection( "CK-AppIdentity" );
             if( tenantSection.Exists() )
             {
@@ -56,7 +64,7 @@ namespace CK.AppIdentity
                 {
                     if( name != null
                         && environmentName != null
-                        && !TenantAppIdentityService.CheckTenantConfigurationNames( monitor, name, environmentName, tenantSection ) )
+                        && !DomainApplicationIdentity.CheckTenantConfigurationNames( monitor, name, environmentName, tenantSection ) )
                     {
                         success = false;
                     }
@@ -64,7 +72,7 @@ namespace CK.AppIdentity
                     if( success )
                     {
                         Debug.Assert( name != null && environmentName != null );
-                        tenant = AppIdentityConfiguration.CreateTenant( monitor, name, environmentName, tenantSection );
+                        tenant = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, tenantSection );
                         if( tenant == null ) success = false;
                     }
                 }
@@ -78,37 +86,36 @@ namespace CK.AppIdentity
         /// Gets the required name of this party that must be an identifier: it must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters
         /// and must not start with a digit nor a '_'.
         /// </summary>
-        public string Name { get; }
+        public string Name => _name;
 
         /// <summary>
         /// Gets the uri of this party.
         /// This is null if this remote is only a client of this local application.
         /// </summary>
-        public Uri? Uri { get; }
+        public Uri? Uri => _uri;
 
         /// <summary>
         /// Gets the domain name of this party.
-        /// This defaults to <see cref="AppIdentityConfiguration.DomainName"/> but can be overridden by an explicit "DomainName"
+        /// This defaults to <see cref="ApplicationIdentityConfiguration.DomainName"/> but can be overridden by an explicit "DomainName"
         /// at the remote configuration level.
         /// </summary>
-        public string DomainName { get; }
+        public string DomainName => _domainName;
 
         /// <summary>
         /// Gets the environment name of this party.
-        /// This defaults to <see cref="AppIdentityConfiguration.EnvironmentName"/> but can be overridden by an explicit "EnvironmentName"
+        /// This defaults to <see cref="ApplicationIdentityConfiguration.EnvironmentName"/> but can be overridden by an explicit "EnvironmentName"
         /// at the remote configuration level.
         /// </summary>
-        public string EnvironmentName { get; }
+        public string EnvironmentName => _environmentName;
 
         /// <summary>
         /// Gets the configuration for this remote.
         /// </summary>
-        public LockedConfigurationSection Configuration { get; }
+        public ImmutableConfigurationSection Configuration => _configuration;
 
         /// <summary>
-        /// Gets the tenant <see cref="AppIdentityConfiguration"/> it there's one.
+        /// Gets the tenant <see cref="ApplicationIdentityConfiguration"/> it there's one.
         /// </summary>
-        public AppIdentityConfiguration? TenantAppIdentityConfiguration { get; }
-
+        public ApplicationIdentityConfiguration? TenantAppIdentityConfiguration => _tenantAppIdentityConfiguration;
     }
 }

@@ -3,29 +3,29 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-    public interface IAppIdentityService
+    public interface IApplicationIdentity
     {
         /// <summary>
         /// Gets the root application identity.
         /// This is this object is this is the root identity service.
         /// </summary>
-        RootAppIdentityService RootAppIdentityService { get; }
+        ApplicationIdentityService ApplicationIdentityService { get; }
 
         /// <summary>
         /// Gets the configuration.
         /// </summary>
-        AppIdentityConfiguration Configuration { get; }
+        ApplicationIdentityConfiguration Configuration { get; }
 
-        /// <inheritdoc cref="AppIdentityConfiguration.DomainName"/>
+        /// <inheritdoc cref="ApplicationIdentityConfiguration.DomainName"/>
         string DomainName { get; }
 
-        /// <inheritdoc cref="AppIdentityConfiguration.EnvironmentName"/>
+        /// <inheritdoc cref="ApplicationIdentityConfiguration.EnvironmentName"/>
         string EnvironmentName { get; }
 
         /// <summary>
         /// Gets the this local identity.
         /// </summary>
-        LocalParty Local { get; }
+        ILocalParty Local { get; }
 
         /// <summary>
         /// Gets the remote parties.
@@ -43,7 +43,7 @@ namespace CK.AppIdentity
         Task FeatureBuildersInitialization { get; }
 
         /// <summary>
-        /// Gets the features associated to this <see cref="RootAppIdentityService"/>.
+        /// Gets the features associated to this <see cref="IApplicationIdentity"/>.
         /// </summary>
         IEnumerable<object> Features { get; }
 

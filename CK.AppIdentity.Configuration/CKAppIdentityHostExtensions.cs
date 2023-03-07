@@ -18,7 +18,7 @@ namespace Microsoft.Extensions.Hosting
     {
         /// <summary>
         /// Initializes this application identity from "CK-AppIdentity" configuration section.
-        /// This injects a configured instance of <see cref="AppIdentityConfiguration"/> as a singleton service in the
+        /// This injects a configured instance of <see cref="ApplicationIdentityConfiguration"/> as a singleton service in the
         /// DI container and initializes <see cref="CoreApplicationIdentity"/>
         /// </summary>
         /// <param name="builder">This host builder</param>
@@ -31,7 +31,7 @@ namespace Microsoft.Extensions.Hosting
             var monitor = builder.GetBuilderMonitor();
             builder.ConfigureServices( (ctx,services) =>
             {
-                var appIdentity = AppIdentityConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
+                var appIdentity = ApplicationIdentityConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
                 if( appIdentity != null )
                 {
 

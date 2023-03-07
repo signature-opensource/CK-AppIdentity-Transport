@@ -7,13 +7,13 @@ namespace CK.AppIdentity
     /// <summary>
     /// The local party (this application identity).
     /// </summary>
-    public sealed class LocalParty : ILocalParty
+    sealed class LocalParty : ILocalParty
     {
         object[] _features;
-        readonly RootAppIdentityService _appIdentity;
+        readonly IApplicationIdentity _appIdentity;
         readonly LocalPartyConfiguration _configuration;
 
-        internal LocalParty( RootAppIdentityService appIdentity, LocalPartyConfiguration configuration )
+        internal LocalParty( IApplicationIdentity appIdentity, LocalPartyConfiguration configuration )
         {
             _features = Array.Empty<object>();
             _appIdentity = appIdentity;
@@ -21,7 +21,7 @@ namespace CK.AppIdentity
         }
 
         /// <inheritdoc />
-        public IAppIdentityService AppIdentityService => _appIdentity;
+        public IApplicationIdentity ApplicationIdentity => _appIdentity;
 
         /// <inheritdoc />
         public string Name => _configuration.Name;

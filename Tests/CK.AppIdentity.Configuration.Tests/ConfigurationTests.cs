@@ -28,9 +28,9 @@ namespace CK.AppIdentity.Configuration.Tests
                 ApplicationName = "HostApp",
                 EnvironmentName = "HostEnv",
             };
-            var appIdentity = AppIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
+            var appIdentity = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
             Debug.Assert( appIdentity != null );
-            appIdentity.DomainName.Should().Be( "LocalDev" );
+            appIdentity.DomainName.Should().Be( "Default" );
             appIdentity.EnvironmentName.Should().Be( "HostEnv" );
             appIdentity.Local.Name.Should().Be( "HostApp" );
             appIdentity.Remotes.Should().BeEmpty();
@@ -51,7 +51,7 @@ namespace CK.AppIdentity.Configuration.Tests
             config["CK-AppIdentity:Local:Name"] = "MyApp";
             config["CK-AppIdentity:Remotes:0:Name"] = "Daddy";
             config["CK-AppIdentity:Remotes:0:Uri"] = "http://x.x";
-            var appIdentity = AppIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
+            var appIdentity = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
             Debug.Assert( appIdentity != null );
 
             appIdentity.DomainName.Should().Be( "OurDomain" );

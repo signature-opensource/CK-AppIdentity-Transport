@@ -9,18 +9,18 @@ namespace CK.AppIdentity
 {
     /// <summary>
     /// Base class for feature builders. Such builders are singleton auto services that can depend on
-    /// any other singleton services, including other <see cref="AppIdentityFeatureBuilder"/>. When
+    /// any other singleton services, including other <see cref="ApplicationIdentityFeatureDriver"/>. When
     /// <see cref="InitializeAsync(IActivityMonitor, AppIdentityAgent)"/> is called, dependent builders have
     /// already been initialized.
     /// </summary>
     [CKTypeDefiner]
-    public abstract class AppIdentityFeatureBuilder : ISingletonAutoService
+    public abstract class ApplicationIdentityFeatureDriver : ISingletonAutoService
     {
         /// <summary>
-        /// Initializes a new <see cref="RootAppIdentityService"/>.
+        /// Initializes a new <see cref="ApplicationIdentityService"/>.
         /// </summary>
         /// <param name="s">The application identity service.</param>
-        protected AppIdentityFeatureBuilder( RootAppIdentityService s )
+        protected ApplicationIdentityFeatureDriver( ApplicationIdentityService s )
         {
             // Adding the builder to the list here captures the topological
             // dependency order of the feature builders.
@@ -28,8 +28,8 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="RootAppIdentityService.Features"/>,
-        /// <see cref="LocalPartyConfiguration.Features"/> and/or <see cref="RootRemoteParty.Features"/>.
+        /// Must do whatever is required to register features into <see cref="ApplicationIdentityService.Features"/>
+        /// and any <see cref="ILocalParty.Features"/>, <see cref="IRemoteParty.Features"/> and <see cref="IRootRemoteParty.DomainApplicationIdentity"/>'s features.
         /// </summary>
         /// <param name="monitor">The monitor to use for this method. Must not be kept.</param>
         /// <param name="appIdentityAgent">The long lived agent that can be used any time.</param>

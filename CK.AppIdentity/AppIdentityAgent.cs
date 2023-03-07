@@ -17,12 +17,12 @@ namespace CK.AppIdentity
         readonly ActivityMonitor _monitor;
         // We use null as the close signal (no need for a cancellation token source).
         readonly Channel<object?> _channel;
-        readonly RootAppIdentityService _service;
+        readonly ApplicationIdentityService _service;
         readonly IActivityLogger _logger;
 
-        internal AppIdentityAgent( RootAppIdentityService service )
+        internal AppIdentityAgent( ApplicationIdentityService service )
         {
-            _monitor = new ActivityMonitor( nameof(RootAppIdentityService), new DateTimeStampProvider() );
+            _monitor = new ActivityMonitor( "ApplicationIdentityService micro agent.", new DateTimeStampProvider() );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _service = service;
             _logger = new Logger( this );
@@ -40,10 +40,10 @@ namespace CK.AppIdentity
             // We now use the builders that have been registered in the service: they
             // are necessarily topologically ordered by their dependencies so the calls
             // to InitializeAsync follows the ordering.
-            int count = serviceProvider.GetServices<AppIdentityFeatureBuilder>().Count();
+            int count = serviceProvider.GetServices<ApplicationIdentityFeatureDriver>().Count();
             if( count != _service._builders.Count )
             {
-                var missing = serviceProvider.GetServices<AppIdentityFeatureBuilder>().Except( _service._builders ).Select( b => b.GetType() );
+                var missing = serviceProvider.GetServices<ApplicationIdentityFeatureDriver>().Except( _service._builders ).Select( b => b.GetType() );
                 Throw.InvalidOperationException( $"Found {count} AppIdentityFeatureBuilder but only {_service._builders.Count} have registered themselves." +
                                                  $" Missing registration for: {missing.Select( t => t.ToCSharpName()).Concatenate()}." );
             }
@@ -82,7 +82,7 @@ namespace CK.AppIdentity
 
         async Task RunAsync()
         {
-            using( _monitor.OpenInfo( $"Initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
+            using( _monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
             {
                 List<Exception>? agg = null;
                 foreach( var b in _service._builders )
@@ -127,7 +127,7 @@ namespace CK.AppIdentity
             {
                 if( o is ActivityMonitorExternalLogData data ) data.Release();
             }
-            _monitor.MonitorEnd();
+            _monitor.MonitorEnd( $"Stopping ApplicationIdentityService micro agent." );
         }
     }
 }

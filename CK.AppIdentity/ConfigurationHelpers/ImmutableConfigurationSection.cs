@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -13,30 +14,31 @@ namespace CK.AppIdentity
     /// <summary>
     /// Immutable capture of a <see cref="IConfigurationSection"/>.
     /// </summary>
-    public sealed class LockedConfigurationSection : IConfigurationSection
+    public sealed class ImmutableConfigurationSection : IConfigurationSection
     {
         readonly string _key;
         readonly string _path;
         readonly string? _value;
-        readonly LockedConfigurationSection[] _children;
+        readonly ImmutableConfigurationSection[] _children;
 
         /// <summary>
-        /// Initializes a new <see cref="LockedConfigurationSection"/>.
+        /// Initializes a new <see cref="ImmutableConfigurationSection"/>.
         /// </summary>
         /// <param name="section">The section to capture.</param>
-        public LockedConfigurationSection( IConfigurationSection section )
+        public ImmutableConfigurationSection( IConfigurationSection section )
         {
+            Debug.Assert( ConfigurationPath.KeyDelimiter == ":" );
             _key = section.Key;
             _path = section.Path;
             _value = section.Value;
-            _children = section.GetChildren().Select( c => new LockedConfigurationSection( c ) ).ToArray();
+            _children = section.GetChildren().Select( c => new ImmutableConfigurationSection( c ) ).ToArray();
         }
 
-        LockedConfigurationSection( string path, string key )
+        ImmutableConfigurationSection( string path, string key )
         {
             _key = key;
             _path = path;
-            _children = Array.Empty<LockedConfigurationSection>();
+            _children = Array.Empty<ImmutableConfigurationSection>();
         }
 
         /// <summary>
@@ -51,8 +53,7 @@ namespace CK.AppIdentity
                 var sKey = key.AsSpan();
                 return Find( ref sKey, _children )?.Value;
             }
-
-            set => Throw.NotSupportedException( "This configuration is locked." );
+            set => Throw.NotSupportedException( $"This configuration '{_path}' is locked." );
         }
 
         /// <inheritdoc />
@@ -67,21 +68,21 @@ namespace CK.AppIdentity
         public string? Value
         {
             get => _value;
-            set => Throw.NotSupportedException( "This configuration is locked." );
+            set => Throw.NotSupportedException( $"This configuration '{_path}' is locked." );
         }
 
         IEnumerable<IConfigurationSection> IConfiguration.GetChildren() => _children;
 
         /// <summary>
-        /// Gets the immediate descendant configuration sub-sections: they are also <see cref="LockedConfigurationSection"/>.
+        /// Gets the immediate descendant configuration sub-sections: they are also <see cref="ImmutableConfigurationSection"/>.
         /// </summary>
         /// <returns>The configuration sub-sections.</returns>
-        public IReadOnlyList<LockedConfigurationSection> GetChildren() => _children;
+        public IReadOnlyList<ImmutableConfigurationSection> GetChildren() => _children;
 
         IConfigurationSection IConfiguration.GetSection( string key ) => GetSection( key );
 
         /// <inheritdoc cref="IConfiguration.GetSection(string)"/>
-        public LockedConfigurationSection GetSection( string key )
+        public ImmutableConfigurationSection GetSection( string key )
         {
             var sKey = key.AsSpan();
             var s = Find( ref sKey, _children );
@@ -100,10 +101,10 @@ namespace CK.AppIdentity
                     errorKey = sErrorKey.ToString();
                 }
             }
-            return new LockedConfigurationSection( ConfigurationPath.Combine( _path, key ), errorKey );
+            return new ImmutableConfigurationSection( ConfigurationPath.Combine( _path, key ), errorKey );
         }
 
-        static LockedConfigurationSection? Find( ref ReadOnlySpan<char> sKey, LockedConfigurationSection[] children )
+        static ImmutableConfigurationSection? Find( ref ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children )
         {
             for( ; ; )
             {
@@ -115,7 +116,7 @@ namespace CK.AppIdentity
                 children = sub._children;
             }
 
-            static LockedConfigurationSection? FindCore( ReadOnlySpan<char> sKey, LockedConfigurationSection[] children )
+            static ImmutableConfigurationSection? FindCore( ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children )
             {
                 foreach( var child in children )
                 {

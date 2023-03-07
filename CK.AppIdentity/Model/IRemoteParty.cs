@@ -3,12 +3,15 @@ using System.Collections.Generic;
 
 namespace CK.AppIdentity
 {
+    /// <summary>
+    /// A remote party is identified by its <see cref="Name"/> in its <see cref="ApplicationIdentity"/>.
+    /// </summary>
     public interface IRemoteParty
     {
         /// <summary>
-        /// Gets the application identity service.
+        /// Gets the application identity.
         /// </summary>
-        IAppIdentityService AppIdentityService { get; }
+        IApplicationIdentity ApplicationIdentity { get; }
 
         /// <summary>
         /// Gets the configuration.
@@ -25,16 +28,6 @@ namespace CK.AppIdentity
         /// </summary>
         string EnvironmentName { get; }
 
-        /// <summary>
-        /// Gets the features associated to this <see cref="IRemoteParty"/>.
-        /// </summary>
-        IEnumerable<object> Features { get; }
-
-        /// <summary>
-        /// Gets whether this is a dynamic remote party.
-        /// </summary>
-        bool IsDynamic { get; }
-
         /// <inheritdoc cref="RemotePartyConfiguration.Name"/>
         string Name { get; }
 
@@ -45,10 +38,21 @@ namespace CK.AppIdentity
         Uri? Uri { get; }
 
         /// <summary>
+        /// Gets the features associated to this <see cref="IRemoteParty"/>.
+        /// </summary>
+        IEnumerable<object> Features { get; }
+
+
+        /// <summary>
         /// Atomically (thread safe) adds a feature if it doesn't already exist.
         /// </summary>
         /// <param name="feature">The feature to add.</param>
         /// <returns>True if the feature has been added, false if the feature already exists.</returns>
         bool AddFeature( object feature );
+
+        /// <summary>
+        /// Gets whether this is a dynamic remote party.
+        /// </summary>
+        bool IsDynamic { get; }
     }
 }

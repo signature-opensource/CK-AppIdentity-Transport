@@ -1,14 +1,16 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using NUnit.Framework;
+using System;
+using System.Linq;
 
 namespace CK.AppIdentity.Tests
 {
     [TestFixture]
-    public class LockedConfigurationSectionTests
+    public class ConfigurationSectionTests
     {
         [Test]
-        public void LockedConfigurationSection_captures_everything()
+        public void ImmutableConfigurationSection_captures_everything()
         {
             using var config = new ConfigurationManager();
             config["X:A"] = "a";
@@ -19,7 +21,7 @@ namespace CK.AppIdentity.Tests
             config["X:Section:C:More"] = "C more";
 
             CheckConfiguration( config.GetSection( "X" ) );
-            CheckConfiguration( new LockedConfigurationSection( config.GetSection( "X" ) ) );
+            CheckConfiguration( new ImmutableConfigurationSection( config.GetSection( "X" ) ) );
 
             static void CheckConfiguration( IConfigurationSection config )
             {
@@ -69,6 +71,35 @@ namespace CK.AppIdentity.Tests
                 sSection.GetSection( "::NO:WAY::" ).Key.Should().Be( "" );
             }
 
+        }
+
+        [Test]
+        public void MutableConfigurationSection_invalid_parameters_check()
+        {
+            FluentActions.Invoking( () => new MutableConfigurationSection( (IConfigurationSection?)null! ) ).Should().Throw<ArgumentNullException>();
+            FluentActions.Invoking( () => new MutableConfigurationSection( (string)null! ) ).Should().Throw<ArgumentNullException>();
+            FluentActions.Invoking( () => new MutableConfigurationSection( "" ) ).Should().Throw<ArgumentException>();
+            FluentActions.Invoking( () => new MutableConfigurationSection( ":" ) ).Should().Throw<ArgumentException>();
+            FluentActions.Invoking( () => new MutableConfigurationSection( "A::B" ) ).Should().Throw<ArgumentException>();
+        }
+
+        [Test]
+        public void MutableConfigurationSection_tests()
+        {
+            var c = new MutableConfigurationSection( "X" );
+            c["Y"] = "Value";
+            c.GetMutableChildren().Should().HaveCount( 1 );
+            c.GetMutableChildren().Single().Path.Should().Be( "X:Y" );
+            c.GetMutableChildren().Single().Value.Should().Be( "Value" );
+            c["Y"].Should().Be( "Value" );
+
+            c["Z:A:B:C"] = "Another Value";
+            c["Z:A:B:C"].Should().Be( "Another Value" );
+            c.GetRequiredSection( "Z" ).GetRequiredSection( "A" ).GetRequiredSection( "B" ).GetRequiredSection( "C" ).Value.Should().Be( "Another Value" );
+
+            c["Z:A:B"] = "No More C";
+
+            c.GetMutableSection( "Z:A:B:C" ).Exists().Should().BeFalse();
         }
     }
 }

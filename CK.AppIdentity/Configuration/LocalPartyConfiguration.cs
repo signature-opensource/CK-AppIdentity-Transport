@@ -11,16 +11,16 @@ namespace CK.AppIdentity
     /// </summary>
     public sealed class LocalPartyConfiguration
     {
-        internal LocalPartyConfiguration( LockedConfigurationSection configuration, string name )
+        internal LocalPartyConfiguration( ImmutableConfigurationSection configuration, string name )
         {
             Configuration = configuration;
             Name = name;
         }
 
-        internal static LocalPartyConfiguration? Create( IActivityMonitor monitor, LockedConfigurationSection configuration, string applicationName )
+        internal static LocalPartyConfiguration? Create( IActivityMonitor monitor, ImmutableConfigurationSection configuration, string? applicationName )
         {
-            return AppIdentityConfiguration.GetName( monitor, configuration, "Name", false, applicationName, out var name )
-                    ? new LocalPartyConfiguration( configuration, name! )
+            return ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", false, applicationName, out var name )
+                    ? new LocalPartyConfiguration( configuration, name )
                     : null;
         }
 
@@ -34,7 +34,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the "CK-AppIdentity:Local" configuration section.
         /// </summary>
-        public LockedConfigurationSection Configuration { get; }
+        public ImmutableConfigurationSection Configuration { get; }
 
     }
 }

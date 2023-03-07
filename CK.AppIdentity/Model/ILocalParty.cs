@@ -2,15 +2,18 @@ using System.Collections.Generic;
 
 namespace CK.AppIdentity
 {
+    /// <summary>
+    /// The local party (this application identity).
+    /// </summary>
     public interface ILocalParty
     {
         /// <inheritdoc cref="LocalPartyConfiguration.Name"/>
         string Name { get; }
 
         /// <summary>
-        /// Gets the application identity service.
+        /// Gets the application identity.
         /// </summary>
-        IAppIdentityService AppIdentityService { get; }
+        IApplicationIdentity ApplicationIdentity { get; }
 
         /// <summary>
         /// Gets the configuration.
