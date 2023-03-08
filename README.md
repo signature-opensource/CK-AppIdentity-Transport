@@ -5,17 +5,19 @@ and to support extensibility thanks to simple "features" that can be associated 
 identity objects.
 
 Application identity may be the only aspect that requires an explicit configuration.
-Any other aspects can have a default behavior, but the parties with whom an application
-interact and how they interact can hardly exist without configuration.
+Any other aspects can have a default behavior, but the remote parties with whom an application
+interact and how they interact can hardly exist without configuration
+
 The initial objects are defined by a standard [.Net configuration](https://learn.microsoft.com/en-us/dotnet/core/extensions/configuration)
-that is locked and cannot be changed during the application lifetime.
+that is locked and cannot be changed during the application lifetime. Configured objects are immutable
+but one can dynamically define 
 
 
 ## CK.AppIdentity
 Contains the core objects:
 - AppIdentityService is the root type. It is a singleton service that carries the 
   application identity and the remote parties.
-- The [AppIdentityFeatureBuilder](CK.AppIdentity/AppIdentityFeatureBuilder.cs) is the base class
+- The [ApplicationIdentityFeatureDriver](CK.AppIdentity/ApplicationIdentityFeatureDriver.cs) is the base class
   to implement in order to manage features on the Application identity object objects.
 
 ## CK.AppIdentity.Configuration

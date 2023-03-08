@@ -14,8 +14,9 @@ identifiers (must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '\_' characters and
 must be considered as a "path": "DomainName/EnvironementName/PartyName":
 - Domain: is the name of an organization, a tenant (a customer name). The default DomainName (when nothing is configured) is "Default".
 - Environment: is a deployment type identifier. Typical environment names are "Development", "Staging", "Production". This defaults to the 
-               .Net [`IHostEnvironment.EnvironmentName`](https://learn.microsoft.com/fr-fr/dotnet/api/microsoft.extensions.hosting.ihostenvironment).
+  .Net [`IHostEnvironment.EnvironmentName`](https://learn.microsoft.com/fr-fr/dotnet/api/microsoft.extensions.hosting.ihostenvironment).
 - Party: The application name is the application's logical name in its Domain and Environment. It defaults to the `IHostEnvironment.ApplicationName`.
+
 
 
 
