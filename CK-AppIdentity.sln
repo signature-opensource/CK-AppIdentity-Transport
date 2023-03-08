@@ -24,11 +24,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeCakeBuilder", "CodeCake
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Configuration", "CK.AppIdentity.Configuration\CK.AppIdentity.Configuration.csproj", "{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.Configuration.Tests", "Tests\CK.AppIdentity.Configuration.Tests\CK.AppIdentity.Configuration.Tests.csproj", "{288DA460-60E8-4A44-B61C-A576A0D8512F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Configuration.Tests", "Tests\CK.AppIdentity.Configuration.Tests\CK.AppIdentity.Configuration.Tests.csproj", "{288DA460-60E8-4A44-B61C-A576A0D8512F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity", "CK.AppIdentity\CK.AppIdentity.csproj", "{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity", "CK.AppIdentity\CK.AppIdentity.csproj", "{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.Tests", "Tests\CK.AppIdentity.Tests\CK.AppIdentity.Tests.csproj", "{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Tests", "Tests\CK.AppIdentity.Tests\CK.AppIdentity.Tests.csproj", "{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
