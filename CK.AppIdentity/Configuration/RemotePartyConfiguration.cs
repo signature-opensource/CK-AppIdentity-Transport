@@ -37,7 +37,7 @@ namespace CK.AppIdentity
                                                           ImmutableConfigurationSection configuration,
                                                           string? appDomainName,
                                                           string? appEnvironmentName,
-                                                          bool allowTenantService )
+                                                          bool allowDomain )
         {
             // Refrain yourself to rewrite this differently: this ensures that all properties are handled even on error.
             bool success = ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
@@ -50,35 +50,44 @@ namespace CK.AppIdentity
                 monitor.Error( $"Unable to parse '{configuration.Path}:Uri' configuration as a valid Uri." );
                 success = false;
             }
-            // "CK-AppIdentity" tenant handling.
-            ApplicationIdentityConfiguration? tenant = null;
-            var tenantSection = configuration.GetSection( "CK-AppIdentity" );
-            if( tenantSection.Exists() )
+            // "Domain" configuration handling.
+            ApplicationIdentityConfiguration? domain = null;
+            var domainSection = configuration.GetSection( "Domain" );
+            if( domainSection.Exists() )
             {
-                if( !allowTenantService )
+                using var gLog = monitor.OpenInfo( $"Detected '{domainSection.Path}' for '{appDomainName}/{environmentName}/{name}': this remote hosts a Domain." );
+                if( !allowDomain )
                 {
-                    monitor.Error( $"Invalid tenant CK-AppIdentity configuration '{tenantSection.Path}': tenant application identity can only be defined in root Remotes." );
+                    monitor.Error( $"Invalid configuration '{domainSection.Path}': domains can only be defined in root Remotes." );
                     success = false;
                 }
                 else
                 {
+                    // A remote that is the host of a Domain MUST BE in the domain of the root application.
+                    if( domainName != appDomainName )
+                    {
+                        monitor.Error( $"Invalid '{configuration.Path}:DomainName': it can only be the root application's domain '{appDomainName}' (not '{domainName}')."
+                                       + $" A remote that hosts a Domain MUST BE in the domain of the root application." );
+                        success = false;
+                    }
                     if( name != null
                         && environmentName != null
-                        && !DomainApplicationIdentity.CheckTenantConfigurationNames( monitor, name, environmentName, tenantSection ) )
+                        && !DomainApplicationIdentity.CheckTenantConfigurationNames( monitor, name, environmentName, domainSection ) )
                     {
                         success = false;
                     }
-                    // Full analysis error may become too fragile. Process the tenant configuration only on success.
+                    // Full analysis error may become too fragile (the configuration is already invalid).
+                    // Process the domain configuration only on success.
                     if( success )
                     {
                         Debug.Assert( name != null && environmentName != null );
-                        tenant = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, tenantSection );
-                        if( tenant == null ) success = false;
+                        domain = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, domainSection );
+                        if( domain == null ) success = false;
                     }
                 }
             }
             return success
-                    ? new RemotePartyConfiguration( configuration, name!, domainName!, environmentName!, uri, tenant )
+                    ? new RemotePartyConfiguration( configuration, name!, domainName!, environmentName!, uri, domain )
                     : null;
         }
 

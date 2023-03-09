@@ -16,10 +16,10 @@ namespace CK.AppIdentity
     public sealed class ApplicationIdentityConfiguration
     {
         ApplicationIdentityConfiguration( ImmutableConfigurationSection configuration,
-                                  string domainName,
-                                  string environmentName,
-                                  LocalPartyConfiguration local,
-                                  RemotePartyConfiguration[] remotes )
+                                          string domainName,
+                                          string environmentName,
+                                          LocalPartyConfiguration local,
+                                          RemotePartyConfiguration[] remotes )
         {
             Configuration = configuration;
             DomainName = domainName;
@@ -78,7 +78,7 @@ namespace CK.AppIdentity
             var local = LocalPartyConfiguration.Create( monitor, locked.GetSection( "Local" ), defaultLocalName );
             if( local == null ) success = false;
 
-            var c = CreateRemotes( monitor, locked, domainName, environmentName, local, allowTenantService: true );
+            var c = CreateRemotes( monitor, locked, domainName, environmentName, local, allowDomains: true );
             if( c == null ) monitor.CloseGroup( "Failed." );
             return c;
         }
@@ -88,10 +88,8 @@ namespace CK.AppIdentity
                                                                         string remoteEnvironmentName,
                                                                         ImmutableConfigurationSection configuration )
         {
-            using var gLog = monitor.OpenInfo( $"Creating tenant AppIdentityConfiguration for '{remoteName}/{remoteEnvironmentName}'." );
             var local = new LocalPartyConfiguration( configuration.GetSection( "Local" ), remoteName );
-            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowTenantService: false );
-            if( c == null ) monitor.CloseGroup( "Failed." );
+            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false );
             return c;
         }
 
@@ -100,24 +98,24 @@ namespace CK.AppIdentity
                                                                         string? domainName,
                                                                         string? environmentName,
                                                                         LocalPartyConfiguration? local,
-                                                                        bool allowTenantService )
+                                                                        bool allowDomains )
         {
             bool success = domainName != null && environmentName!= null && local != null;
             var remotes = new List<RemotePartyConfiguration>();
             foreach( var c in locked.GetSection( "Remotes" ).GetChildren() )
             {
-                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowTenantService );
+                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains );
                 if( r == null ) success = false;
                 else
                 {
                     if( local != null && r.Name.Equals( local.Name, StringComparison.OrdinalIgnoreCase ) )
                     {
-                        monitor.Error( $"Invalid remote party name '{r.Name}': it is this local name." );
+                        monitor.Error( $"Invalid remote party name in '{c.Path}': '{r.Name}' is this local name." );
                         success = false;
                     }
                     else if( remotes.Any( x => x.Name.Equals( r.Name, StringComparison.OrdinalIgnoreCase ) ) )
                     {
-                        monitor.Error( $"Duplicate remote party name '{r.Name}': remote party name must be unique." );
+                        monitor.Error( $"Duplicate remote party name in '{c.Path}': '{r.Name}' remote party must be unique." );
                         success = false;
                     }
                     if( success ) remotes.Add( r );

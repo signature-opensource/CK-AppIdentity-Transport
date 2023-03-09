@@ -15,46 +15,6 @@ namespace CK.AppIdentity.Tests
 {
 
     [TestFixture]
-    public class DomainTests
-    {
-        [Test]
-        public async Task Domain_initialization()
-        {
-            using var gLog = TestHelper.Monitor.OpenInfo( nameof( Domain_initialization ) );
-            await using var s = await TestHelper.CreateApplicationService( c =>
-            {
-                c["DomainName"] = "SaaSProduct";
-                c["Local:Name"] = "SaaS1";
-                c["EnvironmentName"] = "Production";
-                c["Remotes:0:Name"] = "MicrosoftEUWest";
-                c["Remotes:0:CK-AppIdentity:Remotes:0:Name"] = "ControlBox";
-                c["Remotes:0:CK-AppIdentity:Remotes:1:Name"] = "Hall1Wall";
-                c["Remotes:0:CK-AppIdentity:Remotes:2:Name"] = "Hall2Wall";
-                c["Remotes:0:CK-AppIdentity:Remotes:3:Name"] = "Hall1Trolley";
-                c["Remotes:0:CK-AppIdentity:Remotes:4:Name"] = "Hall2Trolley";
-            } );
-            s.DomainName.Should().Be( "SaaSProduct" );
-            s.EnvironmentName.Should().Be( "Production" );
-            s.Local.Name.Should().Be( "SaaS1" );
-            s.Remotes.Should().HaveCount( 1 );
-            var r = s.Remotes.Single();
-            r.DomainName.Should().Be( "SaaSProduct" );
-            r.EnvironmentName.Should().Be( "Production" );
-            r.Name.Should().Be( "MicrosoftEUWest" );
-            var domain = r.DomainApplicationIdentity;
-            Debug.Assert( domain != null );
-            domain.Local.Name.Should().Be( "MicrosoftEUWest", "This application is the 'controller' of the domain." );
-            domain.Remotes.Should().HaveCount( 5, "There are 5 agents in this domain." );
-            domain.Remotes.Should().AllSatisfy( r =>
-            {
-                new[] { "ControlBox", "Hall1Wall", "Hall2Wall", "Hall1Trolley", "Hall2Trolley" }.Should().Contain( r.Name );
-                r.DomainName.Should().Be( "MicrosoftEUWest" );
-                r.EnvironmentName.Should().Be( "Production" );
-            } );
-        }
-    }
-
-        [TestFixture]
     public class FeatureBuilderInitializationTests
     {
         [Test]

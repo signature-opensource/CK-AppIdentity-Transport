@@ -27,19 +27,19 @@ namespace CK.AppIdentity
             var configuredDomain = configuration["DomainName"];
             if( configuredDomain != null && configuredDomain != remoteName )
             {
-                monitor.Error( $"A configured DomainName is '{configuredDomain}'. If such configuration exists, it can only be the remote's name '{remoteName}'." );
+                monitor.Error( $"Invalid '{configuration.Path}:DomainName': it can only be the remote's name '{remoteName}' (not '{configuredDomain}')." );
                 success = false;
             }
             var configuredEnvironment = configuration["EnvironmentName"];
             if( configuredEnvironment != null && configuredEnvironment != remoteEnvironmentName )
             {
-                monitor.Error( $"A configured EnvironmentName is '{configuredEnvironment}'. If such configuration exists, it can only be the remote's environment name '{remoteEnvironmentName}'." );
+                monitor.Error( $"Invalid '{configuration.Path}:EnvironmentName': it can only be remote's environment name '{remoteEnvironmentName}' (not '{configuredEnvironment}')." );
                 success = false;
             }
             var configuredLocalName = configuration["Local:Name"];
             if( configuredLocalName != null && configuredLocalName != remoteName )
             {
-                monitor.Error( $"A configured Local:Name is '{configuredLocalName}'. If such configuration exists, it can only be the remote's name '{remoteName}'." );
+                monitor.Error( $"Invalid '{configuration.Path}:Local:Name': it can only be the remote's name '{remoteName}' (not '{configuredLocalName}')." );
                 success = false;
             }
             return success;
