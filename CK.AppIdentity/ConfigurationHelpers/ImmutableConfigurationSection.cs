@@ -126,7 +126,16 @@ namespace CK.AppIdentity
             }
         }
 
+        /// <summary>
+        /// Always returns a never changing token.
+        /// </summary>
+        /// <returns>A never changing token.</returns>
         public IChangeToken GetReloadToken() => Microsoft.Extensions.FileProviders.NullChangeToken.Singleton;
 
+        /// <summary>
+        /// Overridden to display the path and the value or the count of children.
+        /// </summary>
+        /// <returns>A readable string.</returns>
+        public override string ToString() => $"{_path} = {(_value ?? (_children.Length != 0 ? $"{_children.Length} children" : "!Exists"))}";
     }
 }

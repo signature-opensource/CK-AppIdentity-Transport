@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using static System.Collections.Specialized.BitVector32;
 
 namespace CK.AppIdentity
 {
@@ -18,19 +19,26 @@ namespace CK.AppIdentity
         readonly string _path;
         string? _value;
         readonly List<MutableConfigurationSection> _children;
+        MutableConfigurationSection? _withValue;
 
         /// <summary>
         /// Initializes a new <see cref="ImmutableConfigurationSection"/>.
         /// </summary>
         /// <param name="section">The section to capture.</param>
         public MutableConfigurationSection( IConfigurationSection section )
+            : this( section, null )
+        {
+        }
+
+        MutableConfigurationSection( IConfigurationSection section, MutableConfigurationSection? withValue )
         {
             Throw.CheckNotNullArgument( section );
             Debug.Assert( ConfigurationPath.KeyDelimiter == ":" );
             _key = section.Key;
             _path = section.Path;
             _value = section.Value;
-            _children = section.GetChildren().Select( c => new MutableConfigurationSection( c ) ).ToList();
+            _withValue = withValue ?? (_value != null ? this : null);
+            _children = section.GetChildren().Select( c => new MutableConfigurationSection( c, _withValue ) ).ToList();
         }
 
         /// <summary>
@@ -46,18 +54,20 @@ namespace CK.AppIdentity
         }
 
 
-        MutableConfigurationSection( string parentPath, string key )
+        MutableConfigurationSection( MutableConfigurationSection parent, string key )
         {
+            Debug.Assert( !key.Contains( ':' ) );
             _key = key;
-            _path = parentPath + ':' + key;
+            _path = parent._path + ':' + key;
+            _withValue = parent._withValue;
             _children = new List<MutableConfigurationSection>();
         }
 
         /// <summary>
         /// Gets a configuration value.
-        /// Setting a value (even null) on a section clears any existing subordinated children. 
+        /// Setting a value is possible only if no subordinated children exists below the key. 
         /// </summary>
-        /// <param name="key">The configuration key to find.</param>
+        /// <param name="key">The configuration key to find. Can be a path to a subordinated key.</param>
         /// <returns>The value or null if not found.</returns>
         public string? this[string key]
         {
@@ -88,17 +98,57 @@ namespace CK.AppIdentity
             {
                 if( _value != value )
                 {
-                    _children.Clear();
+                    if( _value == null )
+                    {
+                        Debug.Assert( value != null );
+                        if( _withValue != null && _withValue != this )
+                        {
+                            Throw.InvalidOperationException( $"Unable to set '{_path}' value to '{value}' since '{_withValue._path}' above has value '{_withValue._value}'." );
+                        }
+                        SetWithValue( this, value );
+                    }
+                    else if( value == null )
+                    {
+                        Debug.Assert( _value != null && _withValue == this );
+                        ClearWithValue();
+                    }
                     _value = value;
                 }
             }
         }
 
-        IEnumerable<IConfigurationSection> IConfiguration.GetChildren() => _children.Where( c => c.Exists() );
+        void ClearWithValue()
+        {
+            _withValue = null;
+            foreach( var c in _children ) c.ClearWithValue();
+        }
+
+        void SetWithValue( MutableConfigurationSection section, string value )
+        {
+            _withValue = section;
+            foreach( var c in _children )
+            {
+                if( c._value != null )
+                {
+                    Throw.InvalidOperationException( $"Unable to set '{section.Path}' value to '{value}' since at least '{c._path}' (with value '{c._value}') exists below." );
+                }
+                c.SetWithValue( section, value );
+            }
+        }
+
+        bool InDepthExists()
+        {
+            if( _value != null ) return true;
+            foreach( var c in _children )
+                if( c.InDepthExists() ) return true;
+            return false;
+        }
+
+        IEnumerable<IConfigurationSection> IConfiguration.GetChildren() => _children.Where( c => c.InDepthExists() );
 
         /// <summary>
         /// Gets the immediate descendant <see cref="MutableConfigurationSection"/> sub-sections: they can
-        /// be empty and have no value (<see cref="ConfigurationExtensions.Exists(IConfigurationSection)"/> can be false).
+        /// have no value and no children (<see cref="ConfigurationExtensions.Exists(IConfigurationSection)"/> can be false).
         /// </summary>
         /// <returns>The configuration sub-sections.</returns>
         public IReadOnlyList<MutableConfigurationSection> GetMutableChildren() => _children;
@@ -124,13 +174,24 @@ namespace CK.AppIdentity
             // Here, instead of reproducing the standard .Net implementation behavior,
             // we check the key syntax and ensure the path to target.
             CheckKeyArgument( key, sKey, nameof( key ) );
+            // We don't check here that a value exists here or above: getting a mutable
+            // (empty) section is always possible.
             int idx;
-            if( (idx = sKey.IndexOf( ':' )) != -1 )
+            if( (idx = sKey.IndexOf( ':' )) < 0 )
+            {
+                Debug.Assert( (parent == this) == (sKey.Length == key.Length) );
+                // Sets the adjusted key (to the new parent) if needed.
+                if( parent != this )
+                {
+                    key = sKey.ToString();
+                }
+            }
+            else
             {
                 do
                 {
                     key = sKey.Slice( 0, idx ).ToString();
-                    s = new MutableConfigurationSection( parent._path, key );
+                    s = new MutableConfigurationSection( parent, key );
                     parent._children.Add( s );
                     sKey = sKey.Slice( idx + 1 );
                     parent = s;
@@ -138,7 +199,7 @@ namespace CK.AppIdentity
                 while( (idx = sKey.IndexOf( ':' )) != -1 );
                 key = sKey.ToString();
             }
-            s = new MutableConfigurationSection( parent._path, key );
+            s = new MutableConfigurationSection( parent, key );
             parent._children.Add( s );
             return s;
         }
@@ -194,8 +255,16 @@ namespace CK.AppIdentity
             }
         }
 
+        /// <summary>
+        /// Always returns a never changing token.
+        /// </summary>
+        /// <returns>A never changing token.</returns>
         public IChangeToken GetReloadToken() => Microsoft.Extensions.FileProviders.NullChangeToken.Singleton;
 
+        /// <summary>
+        /// Overridden to display the path and the value or the count of children.
+        /// </summary>
+        /// <returns>A readable string.</returns>
         public override string ToString() => $"{_path} = {(_value ?? (_children.Count != 0 ? $"{_children.Count} children" : "!Exists"))}";
 
     }

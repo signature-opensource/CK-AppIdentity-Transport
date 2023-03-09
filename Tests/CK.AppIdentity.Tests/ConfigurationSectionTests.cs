@@ -84,7 +84,7 @@ namespace CK.AppIdentity.Tests
         }
 
         [Test]
-        public void MutableConfigurationSection_tests()
+        public void MutableConfigurationSection_simple_tests()
         {
             var c = new MutableConfigurationSection( "X" );
             c["Y"] = "Value";
@@ -97,9 +97,53 @@ namespace CK.AppIdentity.Tests
             c["Z:A:B:C"].Should().Be( "Another Value" );
             c.GetRequiredSection( "Z" ).GetRequiredSection( "A" ).GetRequiredSection( "B" ).GetRequiredSection( "C" ).Value.Should().Be( "Another Value" );
 
-            c["Z:A:B"] = "No More C";
+        }
 
-            c.GetMutableSection( "Z:A:B:C" ).Exists().Should().BeFalse();
+        [Test]
+        public void MutableConfigurationSection_cannot_set_a_value_above_an_existing_one()
+        {
+            var c = new MutableConfigurationSection( "X" );
+            c["Z:A:B:C"] = "Another Value";
+            FluentActions.Invoking( () => c["Z:A:B"] = "No way" )
+                .Should().Throw<InvalidOperationException>()
+                         .WithMessage( "Unable to set 'X:Z:A:B' value to 'No way' since at least 'X:Z:A:B:C' (with value 'Another Value') exists below." );
+
+            FluentActions.Invoking( () => c["Z"] = "No way" )
+                         .Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void MutableConfigurationSection_cannot_set_a_value_below_an_existing_one()
+        {
+            var c = new MutableConfigurationSection( "Root" );
+            c["Z"] = "A top Value";
+            FluentActions.Invoking( () => c["Z:A"] = "No way" )
+                .Should().Throw<InvalidOperationException>()
+                         .WithMessage( "Unable to set 'Root:Z:A' value to 'No way' since 'Root:Z' above has value 'A top Value'." );
+
+            FluentActions.Invoking( () => c["Z:X:Y:Z"] = "No way 2" )
+                         .Should().Throw<InvalidOperationException>()
+                         .WithMessage( "Unable to set 'Root:Z:X:Y:Z' value to 'No way 2' since 'Root:Z' above has value 'A top Value'." );
+
+            // Free the Z!
+            c["Z"] = null;
+            c["Z:A"] = "It works now!";
+            c["Z:X:Y:Z"] = "It works also here.";
+        }
+
+        [Test]
+        public void MutableConfigurationSections_when_inexisting_dont_prevent_setting_a_value_above()
+        {
+            var c = new MutableConfigurationSection( "X" );
+            var empty1 = c.GetMutableSection( "A:A:A" );
+            var empty2 = c.GetMutableSection( "A:B:C" );
+            var empty3 = c.GetMutableSection( "A:B:C:D:E:F" );
+
+            c["A"] = "It works!";
+
+            FluentActions.Invoking( () => empty1.Value = "Pouf" )
+                .Should().Throw<InvalidOperationException>( "Sections MUST remain empty when below a value." )
+                .WithMessage( "Unable to set 'X:A:A:A' value to 'Pouf' since 'X:A' above has value 'It works!'." );
         }
     }
 }
