@@ -16,8 +16,9 @@ namespace CK.AppIdentity
     /// <summary>
     /// The application identity singleton service. This is the root of the application identity model.
     /// </summary>
-    public sealed class ApplicationIdentityService : ApplicationIdentityBase, ISingletonAutoService, IHostedService, IApplicationIdentity, IAsyncDisposable
+    public sealed class ApplicationIdentityService : ApplicationIdentityBase, ISingletonAutoService, IHostedService, IApplicationIdentity, IAppIdentityObject, IAsyncDisposable
     {
+        object[] _features;
         readonly IServiceProvider _serviceProvider;
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
@@ -29,8 +30,9 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="configuration">The configuration.</param>
         public ApplicationIdentityService( ApplicationIdentityConfiguration configuration, IServiceProvider serviceProvider )
-            : base( configuration )
+            : base( configuration, null )
         {
+            _features = Array.Empty<object>();
             _serviceProvider = serviceProvider;
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _agent = new AppIdentityAgent( this );
@@ -52,6 +54,16 @@ namespace CK.AppIdentity
 
         /// <inheritdoc />
         public Task FeatureBuildersInitialization => _featureBuilderInitialization.Task;
+
+        /// <inheritdoc />
+        public IEnumerable<object> Features => _features;
+
+        /// <inheritdoc />
+        public bool AddFeature( object feature )
+        {
+            var features = Util.InterlockedAddUnique( ref _features, feature );
+            return Array.IndexOf( features, feature ) >= 0;
+        }
 
         Task IHostedService.StartAsync( CancellationToken cancellationToken )
         {
