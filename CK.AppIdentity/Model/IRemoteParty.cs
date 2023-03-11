@@ -1,12 +1,12 @@
 using System;
-using System.Collections.Generic;
 
 namespace CK.AppIdentity
 {
+
     /// <summary>
     /// A remote party is identified by its <see cref="Name"/> in its <see cref="ApplicationIdentity"/>.
     /// </summary>
-    public interface IRemoteParty
+    public interface IRemoteParty : IParty
     {
         /// <summary>
         /// Gets the application identity.
@@ -32,23 +32,11 @@ namespace CK.AppIdentity
         string Name { get; }
 
         /// <summary>
-        /// Gets the uri of this party.
-        /// This is null if this remote is only a client of this local application.
+        /// Gets the address of this party.
+        /// This is null if this remote can only be a client of this local application
+        /// (i.e. the remote is not a server but we must be).
         /// </summary>
-        Uri? Uri { get; }
-
-        /// <summary>
-        /// Gets the features associated to this <see cref="IRemoteParty"/>.
-        /// </summary>
-        IEnumerable<object> Features { get; }
-
-
-        /// <summary>
-        /// Atomically (thread safe) adds a feature if it doesn't already exist.
-        /// </summary>
-        /// <param name="feature">The feature to add.</param>
-        /// <returns>True if the feature has been added, false if the feature already exists.</returns>
-        bool AddFeature( object feature );
+        string? Address { get; }
 
         /// <summary>
         /// Gets whether this is a dynamic remote party.

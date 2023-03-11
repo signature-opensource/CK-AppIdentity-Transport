@@ -9,24 +9,18 @@ namespace CK.AppIdentity
         object[] _features;
         readonly IApplicationIdentity _appIdentity;
         readonly RemotePartyConfiguration _configuration;
-        readonly string _name;
-        readonly Uri? _uri;
-        readonly string _domainName;
-        readonly string _environmentName;
-        private readonly DomainApplicationIdentity? _tenantAppIdentityService;
+        readonly NormalizedPath _fullName;
+        readonly DomainApplicationIdentity? _tenantAppIdentityService;
 
         internal RemoteParty( IApplicationIdentity appIdentity, RemotePartyConfiguration configuration )
         {
             _features = Array.Empty<object>();
             _appIdentity = appIdentity;
             _configuration = configuration;
-            _name = configuration.Name;
-            _uri = configuration.Uri;
-            _domainName = configuration.DomainName;
-            _environmentName = configuration.EnvironmentName;
             _tenantAppIdentityService = configuration.TenantAppIdentityConfiguration != null
                                         ? new DomainApplicationIdentity( this )
                                         : null;
+            _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.EnvironmentName, configuration.Name );
         }
 
         IApplicationIdentity IRemoteParty.ApplicationIdentity => _appIdentity;
@@ -40,16 +34,19 @@ namespace CK.AppIdentity
         public bool IsDynamic => _configuration == null;
 
         /// <inheritdoc />
-        public string Name => _name;
+        public string Name => _configuration.Name;
 
         /// <inheritdoc />
-        public Uri? Uri => _uri;
+        public NormalizedPath FullName => _fullName;
 
         /// <inheritdoc />
-        public string DomainName => _domainName;
+        public string? Address => _configuration.Address;
 
         /// <inheritdoc />
-        public string EnvironmentName => _environmentName;
+        public string DomainName => _configuration.DomainName;
+
+        /// <inheritdoc />
+        public string EnvironmentName => _configuration.EnvironmentName;
 
         /// <inheritdoc />
         public IEnumerable<object> Features => _features;

@@ -3,9 +3,9 @@ using System.Collections.Generic;
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// The local party (this application identity).
+    /// The local party of a <see cref="IApplicationIdentity"/>.
     /// </summary>
-    public interface ILocalParty
+    public interface ILocalParty : IParty
     {
         /// <inheritdoc cref="LocalPartyConfiguration.Name"/>
         string Name { get; }
@@ -20,14 +20,5 @@ namespace CK.AppIdentity
         /// </summary>
         LocalPartyConfiguration Configuration { get; }
 
-        /// <summary>
-        /// Gets the features associated to this <see cref="ILocalParty"/>.
-        /// </summary>
-        IEnumerable<object> Features { get; }
-
-        /// <summary>
-        /// Gets the features associated to this <see cref="LocalParty"/>.
-        /// </summary>
-        bool AddFeature( object feature );
     }
 }
