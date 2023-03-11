@@ -17,6 +17,142 @@ must be considered as a "path": "DomainName/EnvironementName/PartyName":
   .Net [`IHostEnvironment.EnvironmentName`](https://learn.microsoft.com/fr-fr/dotnet/api/microsoft.extensions.hosting.ihostenvironment).
 - Party: The application name is the application's logical name in its Domain and Environment. It defaults to the `IHostEnvironment.ApplicationName`.
 
+One should be able to understand the interactions of any party by looking at its Application Identity configuration:
+```json
+{
+	"DomainName": "LaToulousaine",
+	"EnvironmentName": "Production",
+	"Local": {
+		"Name": "Trolley1"
+	},
+	"Remotes": [
+  {
+		"Name": "LogTower",
+		"Address": "148.54.11.18:3712"
+	},
+  {
+		"Name": "SignatureBox",
+		"Address": "155.88.22.22"
+	}]
+}
+```
+There should be no more than that: Trolley1 sends its logs to a LogTower and can initiate communications with
+the SignatureBox.
+
+The SignatureBox also sends its logs to the same LogTower and knows the Trolley1 but also the Trolley2 and the MeasureStation.
+```json
+{
+	"DomainName": "LaToulousaine",
+	"EnvironmentName": "Production",
+	"Local": {
+		"Name": "SignatureBox"
+	},
+	"Remotes": [
+  {
+		"Name": "LogTower",
+		"Address": "148.54.11.18:3712"
+	},
+  {
+		"Name": "Trolley1"
+	},
+  {
+		"Name": "Trolley2"
+	},
+  {
+		"Name": "MeasureStation"
+	}]
+}
+```
+These 3 remotes have no Addresses: "LaToulousaine/Production/SignatureBox" is a server for these remotes and this is enough
+for the warehouse with the SignatureBox, 2 trolleys and one measure station to work together.
+
+Now we want the SignatureBox to interact with a OneCS application (the supervision and operation portal).
+The OneCS application typically lives in the cloud. If the SignatureBox can be reached from the outside,
+we just need to declare the new OneCS remote on the SignatureBox.
+
+_Notes:_
+- From now on, we don't show the LogTower configuration. This is the same for every party
+  (if we want to target the same LogTower).
+- We also don’t specify the EnvironementName anymore. This defaults to the IHostEnvironment.EnvironementName
+  (that defaults to "Development")
+
+The name of this new Party is the same as the DomainName: the "LaToulousaine" Party is the "domain controller" of
+"LaToulousaine" Domain:
+```json
+{
+	"DomainName": "LaToulousaine",
+	"Local": {
+		"Name": "SignatureBox"
+	},
+	"Remotes": [
+  {
+		"Name": "Trolley1"
+	},
+  {
+		"Name": "Trolley2"
+	},
+  {
+		"Name": "MeasureStation"
+	},
+  {
+		"Name": "LaToulousaine"
+	}]
+}
+```
+Below is the OneCS configuration:
+```json
+{
+	"DomainName": "LaToulousaine",
+	"EnvironmentName": "Production",
+	"Local": {
+		"Name": "LaToulousaine"
+	},
+	"Remotes": [
+  {
+		"Name": "SignatureBox",
+		"Address": "65.12.13.14"
+	}]
+}
+```
+If, for any reason, the SignatureBox cannot be reached from the outside (or if we prefer), then the configurations
+become:
+```json
+{
+	"DomainName": "LaToulousaine",
+	"Local": {
+		"Name": "LaToulousaine"
+	},
+	"Remotes": [
+  {
+		"Name": "SignatureBox"
+	}]
+}
+```
+And:
+```json
+{
+	"DomainName": "LaToulousaine",
+	"Local": {
+		"Name": "SignatureBox"
+	},
+	"Remotes": [
+  {
+		"Name": "Trolley1"
+	},
+  {
+		"Name": "Trolley2"
+	},
+  {
+		"Name": "MeasureStation"
+	},
+  {
+		"Name": "LaToulousaine",
+		"Address": "27.28.29.30"
+	}]
+}
+```
+
+
 
 
 

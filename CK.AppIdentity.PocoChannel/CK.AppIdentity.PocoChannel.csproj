@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <Description>Application identity core abstraction and implementation.</Description>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-      <PackageReference Include="CK.Monitoring.Hosting" Version="18.0.3--0002-develop" />
+    <PackageReference Include="CK.StObj.Model" Version="23.0.1--0004-develop" />
+    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0004-develop" />
   </ItemGroup>
 
   <ItemGroup>

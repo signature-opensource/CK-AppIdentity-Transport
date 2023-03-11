@@ -6,7 +6,7 @@
       <Field Name="_nameSuffix" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAggIAAAAAAAAEAAIAABAAkAAoACAAAAABAA=</HashCode>
+      <HashCode>AAAAAAIAAggIAAAAAQAAAAAIwABACgAAoACCAAAABAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -22,7 +22,7 @@
       <Method Name="IConfiguration.GetSection" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AFAQAAAAACCCAAYCCACAAAAAAAAIQAAAAAAgAAAAAAA=</HashCode>
+      <HashCode>AFAQAAAAACCCACYGCACAAAAAAAAIQAAAAAAgAAAAAAA=</HashCode>
       <FileName>ConfigurationHelpers\ImmutableConfigurationSection.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
@@ -37,24 +37,24 @@
       <Compartment Name="Methods" Collapsed="true" />
     </Compartments>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAAAAAAAAAAQAAAAAAEAAgAAAAAAAAAA=</HashCode>
+      <HashCode>AAAAIABCAAAAAAAAAQAAAAQAgAAAAEAAgAAAAAAgAAA=</HashCode>
       <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
     <Position X="5.5" Y="0.5" Width="2" />
     <Members>
+      <Field Name="_address" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />
       <Field Name="_domainName" Hidden="true" />
       <Field Name="_environmentName" Hidden="true" />
       <Field Name="_name" Hidden="true" />
       <Field Name="_tenantAppIdentityConfiguration" Hidden="true" />
-      <Field Name="_uri" Hidden="true" />
       <Method Name="Create" Hidden="true" />
       <Method Name="RemotePartyConfiguration" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAgIAAAAgAAAAAAAAAAAAQIACAAAEIAiAmAAAAAAAA=</HashCode>
+      <HashCode>AAAgIABCAgAAAAAAAQAAAAQIgAAAAEICgAmAAEAAAAA=</HashCode>
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>

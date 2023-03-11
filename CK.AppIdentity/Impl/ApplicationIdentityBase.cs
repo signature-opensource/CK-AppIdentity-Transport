@@ -1,6 +1,7 @@
 using CK.Core;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace CK.AppIdentity
@@ -14,10 +15,11 @@ namespace CK.AppIdentity
         readonly ApplicationIdentityConfiguration _configuration;
         internal RemoteParty[] _remotes;
 
-        private protected ApplicationIdentityBase( ApplicationIdentityConfiguration configuration )
+        private protected ApplicationIdentityBase( ApplicationIdentityConfiguration configuration, RemoteParty? domainHost )
         {
-            _local = new LocalParty( (IApplicationIdentity)this, configuration.Local );
+            Debug.Assert( configuration != null );
             _configuration = configuration;
+            _local = new LocalParty( (IApplicationIdentity)this, configuration.Local, domainHost );
             _remotes = configuration.Remotes.Select( c => new RemoteParty( (IApplicationIdentity)this, c ) ).ToArray();
         }
 
@@ -29,6 +31,7 @@ namespace CK.AppIdentity
 
         /// <inheritdoc cref="IApplicationIdentity.Configuration" />
         public ApplicationIdentityConfiguration Configuration => _configuration;
+
 
     }
 }

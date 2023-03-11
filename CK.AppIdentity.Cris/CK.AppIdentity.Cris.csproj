@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CK.Auth.Cris" Version="0.18.1--0004-develop" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.PocoChannel\CK.AppIdentity.PocoChannel.csproj" />
+  </ItemGroup>
+
+</Project>

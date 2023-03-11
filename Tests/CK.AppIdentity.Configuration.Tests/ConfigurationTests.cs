@@ -50,7 +50,7 @@ namespace CK.AppIdentity.Configuration.Tests
             config["CK-AppIdentity:EnvironmentName"] = "TestEnvironment";
             config["CK-AppIdentity:Local:Name"] = "MyApp";
             config["CK-AppIdentity:Remotes:0:Name"] = "Daddy";
-            config["CK-AppIdentity:Remotes:0:Uri"] = "http://x.x";
+            config["CK-AppIdentity:Remotes:0:Address"] = "http://x.x";
             var appIdentity = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
             Debug.Assert( appIdentity != null );
 
@@ -60,7 +60,7 @@ namespace CK.AppIdentity.Configuration.Tests
             appIdentity.Remotes.Should().HaveCount(1);
             var remote = appIdentity.Remotes.Single();
             remote.Name.Should().Be( "Daddy" );
-            remote.Uri.Should().Be( "http://x.x" );
+            remote.Address.Should().Be( "http://x.x" );
             remote.DomainName.Should().Be( "OurDomain" );
             remote.EnvironmentName.Should().Be( "TestEnvironment" );
         }
