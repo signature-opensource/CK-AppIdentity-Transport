@@ -5,31 +5,37 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace CK.AppIdentity
 {
     public sealed class RemotePartyConfiguration
     {
-        private readonly string _environmentName;
-        private readonly ImmutableConfigurationSection _configuration;
-        private readonly string _domainName;
-        private readonly string _name;
-        private readonly Uri? _uri;
-        private readonly ApplicationIdentityConfiguration? _tenantAppIdentityConfiguration;
+        readonly string _environmentName;
+        readonly ImmutableConfigurationSection _configuration;
+        readonly string _domainName;
+        readonly string _name;
+        readonly string? _address;
+        readonly IReadOnlySet<string> _disallowFeatures;
+        readonly IReadOnlySet<string> _allowFeatures;
+        readonly ApplicationIdentityConfiguration? _tenantAppIdentityConfiguration;
 
         RemotePartyConfiguration( ImmutableConfigurationSection configuration,
                                   string name,
                                   string domainName,
                                   string environmentName,
-                                  Uri? uri,
-                                  ApplicationIdentityConfiguration? tenant )
+                                  string? address,
+                                  ApplicationIdentityConfiguration? tenant,
+                                  ref InheritedConfigurationProps remoteProps )
         {
             _configuration = configuration;
             _name = name;
             _domainName = domainName;
             _environmentName = environmentName;
-            _uri = uri;
+            _address = address;
+            _allowFeatures = remoteProps.AllowFeatures;
+            _disallowFeatures = remoteProps.DisallowFeatures;
             _tenantAppIdentityConfiguration = tenant;
         }
 
@@ -37,19 +43,15 @@ namespace CK.AppIdentity
                                                           ImmutableConfigurationSection configuration,
                                                           string? appDomainName,
                                                           string? appEnvironmentName,
-                                                          bool allowDomain )
+                                                          bool allowDomain,
+                                                          ref InheritedConfigurationProps domainProps )
         {
             // Refrain yourself to rewrite this differently: this ensures that all properties are handled even on error.
             bool success = ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
-            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "DomainName", false, appDomainName, out var domainName ) ) success = false;
+            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "DomainName", false, appDomainName, out var domainName, true ) ) success = false;
             if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "EnvironmentName", false, appEnvironmentName, out var environmentName ) ) success = false;
-            Uri? uri = null;
-            var u = configuration["Uri"];
-            if( !String.IsNullOrWhiteSpace( u ) && !Uri.TryCreate( configuration["Uri"], UriKind.Absolute, out uri ) )
-            {
-                monitor.Error( $"Unable to parse '{configuration.Path}:Uri' configuration as a valid Uri." );
-                success = false;
-            }
+            if( !InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps ) ) success = false;
+
             // "Domain" configuration handling.
             ApplicationIdentityConfiguration? domain = null;
             var domainSection = configuration.GetSection( "Domain" );
@@ -81,27 +83,26 @@ namespace CK.AppIdentity
                     if( success )
                     {
                         Debug.Assert( name != null && environmentName != null );
-                        domain = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, domainSection );
+                        domain = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, domainSection, ref remoteProps );
                         if( domain == null ) success = false;
                     }
                 }
             }
             return success
-                    ? new RemotePartyConfiguration( configuration, name!, domainName!, environmentName!, uri, domain )
+                    ? new RemotePartyConfiguration( configuration, name!, domainName!, environmentName!, configuration["Address"], domain, ref remoteProps )
                     : null;
         }
 
         /// <summary>
-        /// Gets the required name of this party that must be an identifier: it must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters
-        /// and must not start with a digit nor a '_'.
+        /// Gets the required name of this party. See <see cref="CoreApplicationIdentity.IsValidIdentifier(ReadOnlySpan{char})"/>.
         /// </summary>
         public string Name => _name;
 
         /// <summary>
-        /// Gets the uri of this party.
-        /// This is null if this remote is only a client of this local application.
+        /// Gets the address of this party.
+        /// This is null if this application cannot reach the remote: this remote must be a server that accepts the remote as a client).
         /// </summary>
-        public Uri? Uri => _uri;
+        public string? Address => _address;
 
         /// <summary>
         /// Gets the domain name of this party.
@@ -116,6 +117,18 @@ namespace CK.AppIdentity
         /// at the remote configuration level.
         /// </summary>
         public string EnvironmentName => _environmentName;
+
+        /// <summary>
+        /// Gets a set of feature names that are disabled at this level.
+        /// No duplicate and no <see cref="AllowFeatures"/> must appear in this set.
+        /// </summary>
+        public IReadOnlySet<string> DisallowFeatures => _disallowFeatures;
+
+        /// <summary>
+        /// Gets a set of feature names that are enabled at this level.
+        /// No duplicate and no <see cref="DisallowFeatures"/> must appear in this set.
+        /// </summary>
+        public IReadOnlySet<string> AllowFeatures => _allowFeatures;
 
         /// <summary>
         /// Gets the configuration for this remote.

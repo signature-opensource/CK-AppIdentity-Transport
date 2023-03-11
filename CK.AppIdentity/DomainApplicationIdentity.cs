@@ -13,15 +13,26 @@ namespace CK.AppIdentity
         readonly RemoteParty _remote;
 
         internal DomainApplicationIdentity( RemoteParty remote )
-            : base( remote.Configuration.TenantAppIdentityConfiguration! )            
+            : base( remote.Configuration.TenantAppIdentityConfiguration!, remote )            
         {
             _remote = remote;
         }
 
+        const string ReasonPhraseForInheritedPropertyInDomain = "This configuration is defined at the Remote level, not in the Domain.";
+
+        /// <summary>
+        /// Checks that if they exist DomainName and Local:Name are both the remoteName, that the EnvironmentName if it exists is the same as the
+        /// remoteEnvironmentName and that no Allow/Disallow properties exist.
+        /// </summary>
+        /// <param name="monitor"></param>
+        /// <param name="remoteName"></param>
+        /// <param name="remoteEnvironmentName"></param>
+        /// <param name="configuration"></param>
+        /// <returns></returns>
         internal static bool CheckTenantConfigurationNames( IActivityMonitor monitor,
                                                             string remoteName,
                                                             string remoteEnvironmentName,
-                                                            IConfigurationSection configuration )
+                                                            ImmutableConfigurationSection configuration )
         {
             bool success = true;
             var configuredDomain = configuration["DomainName"];
@@ -42,6 +53,8 @@ namespace CK.AppIdentity
                 monitor.Error( $"Invalid '{configuration.Path}:Local:Name': it can only be the remote's name '{remoteName}' (not '{configuredLocalName}')." );
                 success = false;
             }
+            if( ApplicationIdentityConfiguration.ErrorOnProperty( monitor, configuration, "AllowFeatures", ReasonPhraseForInheritedPropertyInDomain ) ) success = false;
+            if( ApplicationIdentityConfiguration.ErrorOnProperty( monitor, configuration, "DisallowFeatures", ReasonPhraseForInheritedPropertyInDomain ) ) success = false;
             return success;
         }
 

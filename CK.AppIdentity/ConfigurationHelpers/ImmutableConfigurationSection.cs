@@ -81,6 +81,20 @@ namespace CK.AppIdentity
 
         IConfigurationSection IConfiguration.GetSection( string key ) => GetSection( key );
 
+        // <inheritdoc cref="IConfiguration.GetSection(string)"/>
+
+        /// <summary>
+        /// The standard <see cref="IConfiguration.GetSection(string)"/> creates a non existing section
+        /// instance. This one simply return null if the section cannot be found.
+        /// </summary>
+        /// <param name="key">The key of the configuration section.</param>
+        /// <returns>The section or null.</returns>
+        public ImmutableConfigurationSection? TryGetSection( string key )
+        {
+            var sKey = key.AsSpan();
+            return Find( ref sKey, _children );
+        }
+
         /// <inheritdoc cref="IConfiguration.GetSection(string)"/>
         public ImmutableConfigurationSection GetSection( string key )
         {

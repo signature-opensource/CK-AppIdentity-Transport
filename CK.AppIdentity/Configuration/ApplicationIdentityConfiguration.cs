@@ -3,12 +3,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 
 namespace CK.AppIdentity
 {
+
     /// <summary>
     /// Configuration that defines the identity of an application.
     /// This is designed to be available as a singleton service in the DI container (the package CK.AppIdentity.Configuration does that).
@@ -19,13 +22,16 @@ namespace CK.AppIdentity
                                           string domainName,
                                           string environmentName,
                                           LocalPartyConfiguration local,
-                                          RemotePartyConfiguration[] remotes )
+                                          RemotePartyConfiguration[] remotes,
+                                          ref InheritedConfigurationProps inhProps )
         {
             Configuration = configuration;
             DomainName = domainName;
             EnvironmentName = environmentName;
             Local = local;
             Remotes = remotes;
+            AllowFeatures = inhProps.AllowFeatures;
+            DisallowFeatures = inhProps.DisallowFeatures;
         }
 
         /// <summary>
@@ -71,14 +77,19 @@ namespace CK.AppIdentity
                                                                 string? defaultEnvironmentName = "Development" )
         {
             using var gLog = monitor.OpenInfo( "Creating root AppIdentityConfiguration service." );
-            var locked = configuration as ImmutableConfigurationSection ?? new ImmutableConfigurationSection( configuration );
-            bool success = GetName( monitor, locked, "DomainName", false, "Default", out var domainName );
-            if( !GetName( monitor, locked, "EnvironmentName", false, defaultEnvironmentName, out var environmentName ) ) success = false;
+            var root = configuration as ImmutableConfigurationSection ?? new ImmutableConfigurationSection( configuration );
+            bool success = GetName( monitor, root, "DomainName", false, "Default", out var domainName, true );
+            if( !GetName( monitor, root, "EnvironmentName", false, defaultEnvironmentName, out var environmentName ) ) success = false;
 
-            var local = LocalPartyConfiguration.Create( monitor, locked.GetSection( "Local" ), defaultLocalName );
+            if( !InheritedConfigurationProps.TryCreate( monitor, root, out var inheritedProps ) ) success = false;
+
+            var local = LocalPartyConfiguration.Create( monitor, root.GetSection( "Local" ), defaultLocalName, ref inheritedProps );
             if( local == null ) success = false;
 
-            var c = CreateRemotes( monitor, locked, domainName, environmentName, local, allowDomains: true );
+            // Always try to create the remotes even if success is already false: this enables
+            // configuration errors to be fixed at once.
+            var c = CreateRemotes( monitor, root, domainName, environmentName, local, allowDomains: true, ref inheritedProps );
+            if( !success ) c = null;
             if( c == null ) monitor.CloseGroup( "Failed." );
             return c;
         }
@@ -86,10 +97,11 @@ namespace CK.AppIdentity
         internal static ApplicationIdentityConfiguration? CreateDomain( IActivityMonitor monitor,
                                                                         string remoteName,
                                                                         string remoteEnvironmentName,
-                                                                        ImmutableConfigurationSection configuration )
+                                                                        ImmutableConfigurationSection configuration,
+                                                                        ref InheritedConfigurationProps inheritedProps )
         {
-            var local = new LocalPartyConfiguration( configuration.GetSection( "Local" ), remoteName );
-            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false );
+            var local = LocalPartyConfiguration.CreateDomainLocal( monitor, configuration.GetSection( "Local" ), remoteName, ref inheritedProps );
+            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false, ref inheritedProps );
             return c;
         }
 
@@ -98,13 +110,14 @@ namespace CK.AppIdentity
                                                                         string? domainName,
                                                                         string? environmentName,
                                                                         LocalPartyConfiguration? local,
-                                                                        bool allowDomains )
+                                                                        bool allowDomains,
+                                                                        ref InheritedConfigurationProps domainProps )
         {
-            bool success = domainName != null && environmentName!= null && local != null;
+            bool success = domainName != null && environmentName!= null && local != null && domainProps.IsValid;
             var remotes = new List<RemotePartyConfiguration>();
             foreach( var c in locked.GetSection( "Remotes" ).GetChildren() )
             {
-                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains );
+                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains, ref domainProps );
                 if( r == null ) success = false;
                 else
                 {
@@ -122,7 +135,7 @@ namespace CK.AppIdentity
                 }
             }
             return success
-                    ? new ApplicationIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray() )
+                    ? new ApplicationIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray(), ref domainProps )
                     : null;
         }
 
@@ -133,22 +146,15 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Gets the name of the domain to which this application belongs.
-        /// It cannot be null or empty and defaults to "LocalDev". This reserved name
-        /// must prevent any logs to be sent to any collector that is not on the machine
-        /// that runs this application (this is typically used on developer's machine).
+        /// It cannot be null or empty and defaults to "Undefined".
         /// <para>
-        /// It must be an identifier: it must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters
-        /// and must not start with a digit nor a '_'.
+        /// See <see cref="CoreApplicationIdentity.DomainName"/>.
         /// </para>
         /// </summary>
         public string DomainName { get; }
 
         /// <summary>
-        /// Gets the name of the environment. Defaults to "Development".
-        /// <para>
-        /// It must be an identifier: it must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters
-        /// and must not start with a digit nor a '_'.
-        /// </para>
+        /// Gets the name of the environment. See <see cref="CoreApplicationIdentity.EnvironmentName"/>.
         /// </summary>
         public string EnvironmentName { get; }
 
@@ -158,39 +164,131 @@ namespace CK.AppIdentity
         public LocalPartyConfiguration Local { get; }
 
         /// <summary>
+        /// Gets a set of feature names that are disabled at this level.
+        /// No duplicate and no <see cref="AllowFeatures"/> must appear in this set.
+        /// </summary>
+        public IReadOnlySet<string> DisallowFeatures { get; }
+
+        /// <summary>
+        /// Gets a set of feature names that are enabled at this level.
+        /// No duplicate and no <see cref="DisallowFeatures"/> must appear in this set.
+        /// </summary>
+        public IReadOnlySet<string> AllowFeatures { get; }
+
+        /// <summary>
         /// Gets the set of the configured remotes.
         /// </summary>
         public IReadOnlyCollection<RemotePartyConfiguration> Remotes { get; }
 
-        const string _nameSuffix = " must be an identifier: it must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters and must not start with a digit nor a '_'.";
+
+        /// <summary>
+        /// Helper that reads a string array from a string value, a comma separated string, or children
+        /// sections (with string value or comma separated string) that must have integer keys ("0", "1",...).
+        /// Returns null on error (and the error is logged).
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="s">The section.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <returns>The string array or null on error.</returns>
+        public static string[]? ReadStringArray( IActivityMonitor monitor, ImmutableConfigurationSection s, string key )
+        {
+            var section = s.TryGetSection( key );
+            if( section != null )
+            {
+                if( section.Value != null )
+                {
+                    return section.Value.Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.RemoveEmptyEntries );
+                }
+                var result = new List<string>();
+                foreach( var o in section.GetChildren() )
+                {
+                    var value = o.Value;
+                    if( value == null || !int.TryParse( o.Key, out _ ) )
+                    {
+                        monitor.Error( $"Invalid array configuration for '{section.Path}': key '{o.Path}' is invalid." );
+                        return null;
+                    }
+                    if( string.IsNullOrEmpty( value ) ) continue;
+                    if( value.Contains( ',' ) ) result.AddRangeArray( value.Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.RemoveEmptyEntries ) );
+                    else
+                    {
+                        value = value.Trim();
+                        if( value.Length > 0 ) result.Add( value );
+                    }
+                }
+                return result.ToArray();
+            }
+            return Array.Empty<string>();
+        }
+
+        /// <summary>
+        /// Calls <see cref="ReadStringArray(IActivityMonitor, ImmutableConfigurationSection, string)"/> and ensures that
+        /// strings are unique.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="s">The section.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <param name="comparer">Optional comparer.</param>
+        /// <returns>A set of unique strings or null on error.</returns>
+        public static HashSet<string>? ReadUniqueStringSet( IActivityMonitor monitor, ImmutableConfigurationSection s, string key, StringComparer? comparer = null )
+        {
+            var a = ReadStringArray( monitor, s, key );
+            if( a == null ) return null;
+            var set = new HashSet<string>( a, comparer );
+            if( set.Count != a.Length )
+            {
+                monitor.Error( $"Duplicate found in '{s.Path}:{key}': {a.Except( set ).Concatenate()}." );
+                return null;
+            }
+            return set;
+        }
+
+        /// <summary>
+        /// Emits an error if the configuration key exists and returns true.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="s">The section.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <param name="reasonPhrase">The reason why this property must not be defined here.</param>
+        /// <returns>True if there is an error.</returns>
+        public static bool ErrorOnProperty( IActivityMonitor monitor, ImmutableConfigurationSection configuration, string key, string reasonPhrase )
+        {
+            if( configuration.TryGetSection( key ) != null )
+            {
+                monitor.Error( $"Configuration '{configuration.Path}:{key}' cannot be defined here. {reasonPhrase}" );
+                return true;
+            }
+            return false;
+        }
+
+        const string _identifierSyntax = " must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters and must not start with a digit nor a '_'";
+        const string _nameSuffix = $" must be an identifier: it{_identifierSyntax}.";
+        const string _pathSuffix = $" must be an identifier or a path of identifiers: each identifier{_identifierSyntax}, no leading or trailing '/' and no double '//' are allowed.";
 
         internal static bool GetName( IActivityMonitor monitor,
                                       IConfigurationSection configuration,
                                       string propertyName,
                                       bool isRequired,
                                       string? defaultValue,
-                                      [NotNullWhen( true )] out string? value )
+                                      [NotNullWhen( true )] out string? value,
+                                      bool isDomainName = false )
         {
             value = configuration[propertyName];
-            if( !ValidateName( monitor, propertyName, ref value, isRequired ) ) return false;
+            if( !ValidateName( monitor, propertyName, ref value, isRequired, isDomainName ) )
+            {
+                return false;
+            }
             if( value == null && defaultValue != null )
             {
-                if( !ValidateName( monitor, $"default value for '{propertyName}'", ref defaultValue, true ) ) return false;
+                if( !ValidateName( monitor, $"default value for '{propertyName}'", ref defaultValue, true, isDomainName ) ) return false;
                 monitor.Info( $"Undefined configuration property '{configuration.Path}:{propertyName}'. Using default value '{defaultValue}'." );
                 value = defaultValue;
             }
+            Debug.Assert( value != null );
             return true;
         }
 
-        /// <summary>
-        /// Common validator function for names.
-        /// </summary>
-        /// <param name="monitor">The monitor.</param>
-        /// <param name="propertyName">The property name.</param>
-        /// <param name="value">The value.</param>
-        /// <param name="isRequired">Whether it is required or can be let to null.</param>
-        /// <returns>True on success, false otherwise.</returns>
-        public static bool ValidateName( IActivityMonitor monitor, string propertyName, ref string? value, bool isRequired )
+        static bool ValidateName( IActivityMonitor monitor, string propertyName, ref string? value, bool isRequired, bool isDomainName )
         {
             if( string.IsNullOrWhiteSpace( value ) )
             {
@@ -202,17 +300,15 @@ namespace CK.AppIdentity
                 value = null;
                 return true;
             }
-            if( value.Any( c => !IsValidNameChar( c ) ) || Char.IsDigit( value[0] ) || value[0] == '_' )
+            bool isValid = isDomainName
+                            ? CoreApplicationIdentity.IsValidDomainName( value )
+                            : CoreApplicationIdentity.IsValidIdentifier( value );
+            if( !isValid )
             {
-                monitor.Error( $"{propertyName}{_nameSuffix} {propertyName} = '{value}'." );
+                monitor.Error( $"{propertyName}: '{value}'{(isDomainName ? _pathSuffix : _nameSuffix)}." );
                 return false;
             }
             return true;
-        }
-
-        static bool IsValidNameChar( char c )
-        {
-            return (c is >= 'a' and <= 'z') || (c is >= 'A' and <= 'Z') || (c is >= '0' and <= '9') || c == '_';
         }
     }
 }
