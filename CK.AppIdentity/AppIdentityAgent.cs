@@ -25,13 +25,13 @@ namespace CK.AppIdentity
             _monitor = new ActivityMonitor( "ApplicationIdentityService micro agent.", new DateTimeStampProvider() );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _service = service;
-            _logger = new Logger( this );
+            _logger = new LoggerImpl( this );
         }
 
         /// <summary>
         /// Gets the application identity logger.
         /// </summary>
-        public IActivityLogger logger => _logger;
+        public IActivityLogger Logger => _logger;
 
 
         internal Task StartAsync( IServiceProvider serviceProvider )
@@ -56,11 +56,11 @@ namespace CK.AppIdentity
             return _channel.Writer.TryWrite( null ) && _channel.Writer.TryComplete();
         }
 
-        sealed class Logger : IActivityLogger
+        sealed class LoggerImpl : IActivityLogger
         {
             readonly AppIdentityAgent _agent;
 
-            public Logger( AppIdentityAgent agent )
+            public LoggerImpl( AppIdentityAgent agent )
             {
                 _agent = agent;
             }
@@ -85,6 +85,7 @@ namespace CK.AppIdentity
             using( _monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
             {
                 List<Exception>? agg = null;
+
                 foreach( var b in _service._builders )
                 {
                     try
