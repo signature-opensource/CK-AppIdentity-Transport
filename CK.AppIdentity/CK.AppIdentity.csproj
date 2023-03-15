@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -6,8 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0002-develop" />
+    <PackageReference Include="CK.Core" Version="17.0.1--0004-develop" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="6.0.0" />
+    <!-- Temporary for DefaultDomainName. -->
+    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0003-develop" />
   </ItemGroup>
 
 </Project>

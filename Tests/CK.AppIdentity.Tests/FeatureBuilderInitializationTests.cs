@@ -59,17 +59,17 @@ namespace CK.AppIdentity.Tests
             public static void Reset() => _current = 0;
 
             protected CheckOrderFeatureDriver( ApplicationIdentityService s )
-                : base( s )
+                : base( s, true )
             {
             }
 
             public int OrderInitialization { get; private set; }
 
-            protected override Task InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
+            protected override Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
             {
                 OrderInitialization = _current++;
                 monitor.Trace( $"Initialized {GetType().Name} ({OrderInitialization})." );
-                return Task.CompletedTask;
+                return Task.FromResult( true );
             }
         }
 

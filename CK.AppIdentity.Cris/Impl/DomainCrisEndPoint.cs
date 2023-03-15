@@ -27,7 +27,11 @@ namespace CK.AppIdentity.Cris
         {
             foreach( var r in _appIdentity.Remotes )
             {
-                await r.GetRequiredFeature<ICrisEndPointEvents>().SendEventAsync( monitor, commandEvent );
+                var f = r.GetFeature<ICrisEndPointEvents>();
+                if( f != null )
+                {
+                    await f.SendEventAsync( monitor, commandEvent );
+                }
             }
         }
     }

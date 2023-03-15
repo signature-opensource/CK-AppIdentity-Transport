@@ -9,6 +9,7 @@
       <HashCode>AAAAAAIAAggIAAAAAQAAAAAIwABACgAAoACCAAAABAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityConfiguration.cs</FileName>
     </TypeIdentifier>
+    <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
     <Position X="8" Y="0.75" Width="3.25" />
@@ -40,23 +41,25 @@
       <HashCode>AAAAIABCAAAAAAAAAQAAAAQAgAAAAEAAgAAAAAAgAAA=</HashCode>
       <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
     </TypeIdentifier>
+    <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
     <Position X="5.5" Y="0.5" Width="2" />
     <Members>
       <Field Name="_address" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />
+      <Field Name="_domainConfiguration" Hidden="true" />
       <Field Name="_domainName" Hidden="true" />
       <Field Name="_environmentName" Hidden="true" />
       <Field Name="_name" Hidden="true" />
-      <Field Name="_tenantAppIdentityConfiguration" Hidden="true" />
       <Method Name="Create" Hidden="true" />
       <Method Name="RemotePartyConfiguration" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAgIABCAgAAAAAAAQAAAAQIgAAAAEICgAmAAEAAAAA=</HashCode>
+      <HashCode>AAAgIABCAAABAAAAAQABAAQIgAAAAEACgAmAAEAAAAA=</HashCode>
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
     </TypeIdentifier>
+    <Lollipop Position="0.2" />
   </Class>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>

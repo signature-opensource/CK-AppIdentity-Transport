@@ -20,25 +20,52 @@ namespace CK.AppIdentity
         readonly string _path;
         readonly string? _value;
         readonly ImmutableConfigurationSection[] _children;
+        readonly ImmutableConfigurationSection? _lookupParent;
 
         /// <summary>
         /// Initializes a new <see cref="ImmutableConfigurationSection"/>.
+        /// <para>
+        /// The <paramref name="lookupParent"/> is used only for <see cref="TryLookupSection(string)"/> and <see cref="TryLookupValue(string)"/>.
+        /// It is not exposed and this is intended since it will introduce an inconsistency: this "child" cannot appear in the
+        /// parent children (<see cref="ImmutableConfigurationSection.GetChildren()"/>). The new section can even "hide" an existing section of the
+        /// parent. Think to it as a convenient fallback mechanism that makes sense from the child section only.
+        /// </para>
         /// </summary>
         /// <param name="section">The section to capture.</param>
-        public ImmutableConfigurationSection( IConfigurationSection section )
+        /// <param name="lookupParent">
+        /// Optional parent of the <paramref name="section"/>. The parent path must match the parent of the
+        /// section path otherwise an <see cref="ArgumentException"/> is raised.
+        /// </param>
+        public ImmutableConfigurationSection( IConfigurationSection section, ImmutableConfigurationSection? lookupParent = null )
         {
             Debug.Assert( ConfigurationPath.KeyDelimiter == ":" );
+            if( lookupParent != null
+                && (lookupParent.Path.Length != section.Path.Length - section.Key.Length - 1
+                    || !section.Path.AsSpan( 0, lookupParent.Path.Length ).Equals( section.Path, StringComparison.OrdinalIgnoreCase ) ) )
+            {
+                Throw.ArgumentException( nameof(lookupParent), $"Expected section path to be '{lookupParent.Path}:{section.Key}', got '{section.Path}'." );
+            }
+            _lookupParent = lookupParent;
             _key = section.Key;
             _path = section.Path;
             _value = section.Value;
-            _children = section.GetChildren().Select( c => new ImmutableConfigurationSection( c ) ).ToArray();
+            _children = section.GetChildren().Select( c => new ImmutableConfigurationSection( this, c ) ).ToArray();
         }
 
-        ImmutableConfigurationSection( string path, string key )
+        // No check for parent.
+        ImmutableConfigurationSection( ImmutableConfigurationSection? parent, IConfigurationSection section )
+            : this( section )
+        {
+            _lookupParent = parent;
+        }
+
+        // Unexisting section.
+        ImmutableConfigurationSection( ImmutableConfigurationSection parent, string path, string key )
         {
             _key = key;
             _path = path;
             _children = Array.Empty<ImmutableConfigurationSection>();
+            _lookupParent = parent;
         }
 
         /// <summary>
@@ -81,8 +108,6 @@ namespace CK.AppIdentity
 
         IConfigurationSection IConfiguration.GetSection( string key ) => GetSection( key );
 
-        // <inheritdoc cref="IConfiguration.GetSection(string)"/>
-
         /// <summary>
         /// The standard <see cref="IConfiguration.GetSection(string)"/> creates a non existing section
         /// instance. This one simply return null if the section cannot be found.
@@ -93,6 +118,32 @@ namespace CK.AppIdentity
         {
             var sKey = key.AsSpan();
             return Find( ref sKey, _children );
+        }
+
+        /// <summary>
+        /// Tries to find a value in this section or in the parent section.
+        /// If a section with the key is found above but has no value (because it has children),
+        /// this returns null. Use <see cref="TryLookupSection(string)"/> to lookup for a section.
+        /// </summary>
+        /// <param name="key">The key to locate.</param>
+        /// <returns>The non null value if found.</returns>
+        public string? TryLookupValue( string key ) => TryLookupSection( key )?.Value;
+
+        /// <summary>
+        /// Tries to find a section in this section or in the parent section.
+        /// </summary>
+        /// <param name="key">The key to locate.</param>
+        /// <returns>The non null section if found.</returns>
+        public ImmutableConfigurationSection? TryLookupSection( string key )
+        {
+            ImmutableConfigurationSection? result = null;
+            var s = this;
+            do
+            {
+                if( (result = TryGetSection( key )) != null ) break;
+            }
+            while( (s = s._lookupParent) != null );
+            return result;
         }
 
         /// <inheritdoc cref="IConfiguration.GetSection(string)"/>
@@ -115,7 +166,7 @@ namespace CK.AppIdentity
                     errorKey = sErrorKey.ToString();
                 }
             }
-            return new ImmutableConfigurationSection( ConfigurationPath.Combine( _path, key ), errorKey );
+            return new ImmutableConfigurationSection( this, ConfigurationPath.Combine( _path, key ), errorKey );
         }
 
         static ImmutableConfigurationSection? Find( ref ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children )

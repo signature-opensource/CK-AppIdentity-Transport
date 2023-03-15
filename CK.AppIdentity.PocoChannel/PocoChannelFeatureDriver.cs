@@ -1,36 +1,16 @@
 using CK.Core;
-using CK.PerfectEvent;
 using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.PocoChannel
 {
-
-    sealed class RemotePocoChannel : IPocoChannel
+    sealed class Server
     {
-        readonly IRemoteParty _remote;
-        readonly PerfectEventSender<IPocoChannel> _isConnectedChanged;
-        readonly PerfectEventSender<IPocoChannel, IPoco> _receivedPoco;
-        bool _isConnected;
+        List<IPEndPoint> _endpoints;
 
-        public RemotePocoChannel( IRemoteParty remote )
+        public void EnsureListeningAddress( IPEndPoint listeningPoint )
         {
-            _remote = remote;
-            _isConnectedChanged = new PerfectEventSender<IPocoChannel>();
-            _receivedPoco = new PerfectEventSender<IPocoChannel, IPoco>();
-        }
-
-        public bool IsConnected => _isConnected;
-
-        public IRemoteParty Party => _remote;
-
-        public PerfectEvent<IPocoChannel> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
-
-        public PerfectEvent<IPocoChannel, IPoco> ReceivedPoco => _receivedPoco.PerfectEvent;
-
-        public ValueTask SendAsync( IActivityMonitor monitor, IPoco poco )
-        {
-            throw new NotImplementedException();
         }
     }
 
@@ -38,39 +18,102 @@ namespace CK.AppIdentity.PocoChannel
     {
         [AllowNull]
         AppIdentityAgent _appIdentityAgent;
-        List<string>? _noPocoAlias;
+        [AllowNull]
+        ConnectionManager _connectionManager;
 
         public PocoChannelFeatureDriver( ApplicationIdentityService s )
-            : base( s )
+            : base( s, true )
         {
         }
 
-        /// <summary>
-        /// Adds aliases to "NoPoco" boolean configuration key.
-        /// </summary>
-        public List<string> NoPocoAlias => _noPocoAlias ??= new List<string>();
-
-        protected override Task InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
+        protected override Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
         {
             _appIdentityAgent = appIdentityAgent;
+            _connectionManager = new ConnectionManager( appIdentityAgent );
+            bool success = _connectionManager.Start();
+            if( !success )
+            {
+                monitor.Error( "Unable to start the connection manager." );
+            }
             foreach( var r in ApplicationIdentity.Remotes )
             {
+                bool isAllowed = r.Configuration.IsAllowedFeature( FeatureName, IsRootAllowed );
                 if( r.DomainApplicationIdentity != null )
                 {
                     foreach( var rSub in r.DomainApplicationIdentity.Remotes )
                     {
-                        rSub.AddFeature( new RemotePocoChannel( rSub ) );
+                        success &= PlugFeature( monitor, _connectionManager, rSub );
                     }
                 }
                 else
                 {
-                    foreach( var rSub in ApplicationIdentity.Remotes )
+                    if( r.Configuration.IsAllowedFeature( FeatureName, isAllowed ) )
                     {
-                        rSub.AddFeature( new RemotePocoChannel( rSub ) );
+                        success &= PlugFeature( monitor, _connectionManager, r );
                     }
                 }
             }
-            return Task.CompletedTask;
+            return Task.FromResult( success );
+
+        }
+
+        static bool PlugFeature( IActivityMonitor monitor, ConnectionManager remoteListeners, IRemoteParty r )
+        {
+            // Skip "Undefined" but this is not an error.
+            if( r.DomainName == CoreApplicationIdentity.DefaultDomainName )
+            {
+                if( !ResolveAdresses( monitor, r, out IPEndPoint? listenIP, out IPEndPoint? targetIP ) )
+                {
+                    return false;
+                }
+                if( listenIP != null && !remoteListeners.RegisterTcpListenerParty( monitor, listenIP, r ) )
+                {
+                    return false;
+                }
+                r.AddFeature( new RemotePocoChannel( r, listenIP, targetIP ) );
+            }
+            return true;
+
+            static bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out IPEndPoint? listenIP, out IPEndPoint? targetIP )
+            {
+                listenIP = null;
+                targetIP = null;
+                var a = r.Address;
+                if( a != null )
+                {
+                    if( IPEndPoint.TryParse( a, out targetIP ) )
+                    {
+                        if( targetIP.Port == 0 ) targetIP.Port = 3712;
+                        monitor.Info( $"Remote '{r.FullName}' targets '{targetIP}' address." );
+                    }
+                    else
+                    {
+                        monitor.Error( $"Invalid 'Address' for '{r.FullName}'. It must be an IPAddress with an optional port (defaults to 3712)." );
+                    }
+                }
+                else
+                {
+                    var lIP = r.Configuration.Configuration.TryLookupValue( "ListeningAddress" );
+                    if( lIP != null )
+                    {
+                        if( IPEndPoint.TryParse( lIP, out listenIP ) )
+                        {
+                            if( listenIP.Port == 0 ) listenIP.Port = 3712;
+                            monitor.Info( $"Remote '{r.FullName}' listens on '{listenIP}' local address." );
+                        }
+                        else
+                        {
+                            monitor.Error( $"Invalid 'ListeningAddress' for '{r.FullName}'. It must be an IPAddress with an optional port (defaults to 3712)." );
+                        }
+                    }
+                    else
+                    {
+                        monitor.Info( $"No 'ListeningAddress' found for '{r.FullName}'. Will listen on any interface on port 3712." );
+                        listenIP = new IPEndPoint( IPAddress.Any, 3712 );
+                    }
+                }
+                return listenIP != null || targetIP != null;
+            }
         }
     }
 }

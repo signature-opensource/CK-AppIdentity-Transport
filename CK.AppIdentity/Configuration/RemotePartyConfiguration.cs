@@ -10,7 +10,7 @@ using System.Text;
 
 namespace CK.AppIdentity
 {
-    public sealed class RemotePartyConfiguration
+    public sealed class RemotePartyConfiguration : IAppIdentityObjectConfiguration
     {
         readonly string _environmentName;
         readonly ImmutableConfigurationSection _configuration;
@@ -19,7 +19,7 @@ namespace CK.AppIdentity
         readonly string? _address;
         readonly IReadOnlySet<string> _disallowFeatures;
         readonly IReadOnlySet<string> _allowFeatures;
-        readonly ApplicationIdentityConfiguration? _tenantAppIdentityConfiguration;
+        readonly ApplicationIdentityConfiguration? _domainConfiguration;
 
         RemotePartyConfiguration( ImmutableConfigurationSection configuration,
                                   string name,
@@ -36,7 +36,7 @@ namespace CK.AppIdentity
             _address = address;
             _allowFeatures = remoteProps.AllowFeatures;
             _disallowFeatures = remoteProps.DisallowFeatures;
-            _tenantAppIdentityConfiguration = tenant;
+            _domainConfiguration = tenant;
         }
 
         internal static RemotePartyConfiguration? Create( IActivityMonitor monitor,
@@ -70,6 +70,12 @@ namespace CK.AppIdentity
                     {
                         monitor.Error( $"Invalid '{configuration.Path}:DomainName': it can only be the root application's domain '{appDomainName}' (not '{domainName}')."
                                        + $" A remote that hosts a Domain MUST BE in the domain of the root application." );
+                        success = false;
+                    }
+                    // The "Undefined" domain name cannot host a domain. 
+                    if( domainName == CoreApplicationIdentity.DefaultDomainName )
+                    {
+                        monitor.Error( $"Invalid configuration '{domainSection.Path}': '{CoreApplicationIdentity.DefaultDomainName}' cannot host a domain. This name denotes an external system." );
                         success = false;
                     }
                     if( name != null
@@ -136,8 +142,9 @@ namespace CK.AppIdentity
         public ImmutableConfigurationSection Configuration => _configuration;
 
         /// <summary>
-        /// Gets the tenant <see cref="ApplicationIdentityConfiguration"/> it there's one.
+        /// Gets the domain <see cref="ApplicationIdentityConfiguration"/> if this remote
+        /// hosts a domain.
         /// </summary>
-        public ApplicationIdentityConfiguration? TenantAppIdentityConfiguration => _tenantAppIdentityConfiguration;
+        public ApplicationIdentityConfiguration? DomainConfiguration => _domainConfiguration;
     }
 }

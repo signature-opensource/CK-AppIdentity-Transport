@@ -13,10 +13,33 @@ namespace CK.AppIdentity
         readonly RemoteParty _remote;
 
         internal DomainApplicationIdentity( RemoteParty remote )
-            : base( remote.Configuration.TenantAppIdentityConfiguration!, remote )            
+            : base( remote.Configuration.DomainConfiguration!, remote )            
         {
             _remote = remote;
         }
+
+        /// <summary>
+        /// Gets the root application identity service.
+        /// </summary>
+        public ApplicationIdentityService ApplicationIdentityService => _remote.AppIdentityService;
+
+        /// <summary>
+        /// Gets the domain name that is the <see cref="Host"/> domain name.
+        /// </summary>
+        public string DomainName => _remote.Name;
+
+        /// <summary>
+        /// Gets the environment name that is the <see cref="Host"/> environment name.
+        /// </summary>
+        public string EnvironmentName => _remote.EnvironmentName;
+
+        /// <summary>
+        /// Gets the remote party that hosts this domain.
+        /// </summary>
+        public IRootRemoteParty Host => _remote;
+
+        /// <inheritdoc />
+        public Task FeatureBuildersInitialization => _remote.AppIdentityService.FeatureBuildersInitialization;
 
         const string ReasonPhraseForInheritedPropertyInDomain = "This configuration is defined at the Remote level, not in the Domain.";
 
@@ -53,17 +76,7 @@ namespace CK.AppIdentity
                 monitor.Error( $"Invalid '{configuration.Path}:Local:Name': it can only be the remote's name '{remoteName}' (not '{configuredLocalName}')." );
                 success = false;
             }
-            if( ApplicationIdentityConfiguration.ErrorOnProperty( monitor, configuration, "AllowFeatures", ReasonPhraseForInheritedPropertyInDomain ) ) success = false;
-            if( ApplicationIdentityConfiguration.ErrorOnProperty( monitor, configuration, "DisallowFeatures", ReasonPhraseForInheritedPropertyInDomain ) ) success = false;
             return success;
         }
-
-        public ApplicationIdentityService ApplicationIdentityService => _remote.AppIdentityService;
-
-        public string DomainName => _remote.Name;
-
-        public string EnvironmentName => _remote.EnvironmentName;
-
-        public Task FeatureBuildersInitialization => _remote.AppIdentityService.FeatureBuildersInitialization;
     }
 }

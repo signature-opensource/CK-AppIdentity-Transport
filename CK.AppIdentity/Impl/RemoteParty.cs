@@ -17,7 +17,7 @@ namespace CK.AppIdentity
             _features = Array.Empty<object>();
             _appIdentity = appIdentity;
             _configuration = configuration;
-            _tenantAppIdentityService = configuration.TenantAppIdentityConfiguration != null
+            _tenantAppIdentityService = configuration.DomainConfiguration != null
                                         ? new DomainApplicationIdentity( this )
                                         : null;
             _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.EnvironmentName, configuration.Name );

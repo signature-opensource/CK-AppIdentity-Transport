@@ -11,12 +11,11 @@ using System.Text.RegularExpressions;
 
 namespace CK.AppIdentity
 {
-
     /// <summary>
     /// Configuration that defines the identity of an application.
     /// This is designed to be available as a singleton service in the DI container (the package CK.AppIdentity.Configuration does that).
     /// </summary>
-    public sealed class ApplicationIdentityConfiguration
+    public sealed class ApplicationIdentityConfiguration : IAppIdentityObjectConfiguration
     {
         ApplicationIdentityConfiguration( ImmutableConfigurationSection configuration,
                                           string domainName,
@@ -79,6 +78,11 @@ namespace CK.AppIdentity
             using var gLog = monitor.OpenInfo( "Creating root AppIdentityConfiguration service." );
             var root = configuration as ImmutableConfigurationSection ?? new ImmutableConfigurationSection( configuration );
             bool success = GetName( monitor, root, "DomainName", false, "Default", out var domainName, true );
+            if( domainName == CoreApplicationIdentity.DefaultDomainName )
+            {
+                monitor.Error( $"Root domain name cannot be '{CoreApplicationIdentity.DefaultDomainName}'. This name denotes an external system." );
+                success = false;
+            }
             if( !GetName( monitor, root, "EnvironmentName", false, defaultEnvironmentName, out var environmentName ) ) success = false;
 
             if( !InheritedConfigurationProps.TryCreate( monitor, root, out var inheritedProps ) ) success = false;
@@ -100,9 +104,10 @@ namespace CK.AppIdentity
                                                                         ImmutableConfigurationSection configuration,
                                                                         ref InheritedConfigurationProps inheritedProps )
         {
-            var local = LocalPartyConfiguration.CreateDomainLocal( monitor, configuration.GetSection( "Local" ), remoteName, ref inheritedProps );
-            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false, ref inheritedProps );
-            return c;
+            bool success = InheritedConfigurationProps.TryCreate( monitor, inheritedProps, configuration, out var domainProps );
+            var local = LocalPartyConfiguration.CreateDomainLocal( monitor, configuration.GetSection( "Local" ), remoteName, ref domainProps );
+            var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false, ref domainProps );
+            return success ? c : null;
         }
 
         private static ApplicationIdentityConfiguration? CreateRemotes( IActivityMonitor monitor,

@@ -19,12 +19,14 @@ namespace CK.AppIdentity
     {
         readonly ApplicationIdentityService _s;
         readonly string _featureName;
+        readonly bool _isRootAllowed;
 
         /// <summary>
         /// Initializes a new <see cref="ApplicationIdentityService"/>.
         /// </summary>
         /// <param name="s">The application identity service.</param>
-        protected ApplicationIdentityFeatureDriver( ApplicationIdentityService s )
+        /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
+        protected ApplicationIdentityFeatureDriver( ApplicationIdentityService s, bool isAllowedByDefault )
         {
             Debug.Assert( "FeatureDriver".Length == 13 );
             var name = GetType().Name;
@@ -39,7 +41,13 @@ namespace CK.AppIdentity
             // dependency order of the feature builders.
             s._builders.Add( this );
             _s = s;
+            _isRootAllowed = s.Configuration.IsAllowedFeature( name, isAllowedByDefault );
         }
+
+        /// <summary>
+        /// Gets whether this feature is allowed or disabled at the root <see cref="ApplicationIdentityService"/>.
+        /// </summary>
+        public bool IsRootAllowed => _isRootAllowed;
 
         /// <summary>
         /// Gets the application identity service.
@@ -58,7 +66,7 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="monitor">The monitor to use for this method. Must not be kept.</param>
         /// <param name="appIdentityAgent">The long lived agent that can be used any time.</param>
-        /// <returns>The awaitable.</returns>
-        internal protected abstract Task InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent );
+        /// <returns>True on success, false on non recoverable error.</returns>
+        internal protected abstract Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent );
     }
 }

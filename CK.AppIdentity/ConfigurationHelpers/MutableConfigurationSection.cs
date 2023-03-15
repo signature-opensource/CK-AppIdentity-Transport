@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using static System.Collections.Specialized.BitVector32;
 
 namespace CK.AppIdentity
 {

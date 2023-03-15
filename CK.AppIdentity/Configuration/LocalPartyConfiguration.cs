@@ -10,7 +10,7 @@ namespace CK.AppIdentity
     /// <summary>
     /// Local identity is defined at least by the <see cref="Name"/>.
     /// </summary>
-    public sealed class LocalPartyConfiguration
+    public sealed class LocalPartyConfiguration : IAppIdentityObjectConfiguration
     {
         readonly string _name;
         readonly IReadOnlySet<string> _disallowFeatures;
