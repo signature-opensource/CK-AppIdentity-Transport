@@ -185,7 +185,6 @@ namespace CK.AppIdentity
         /// </summary>
         public IReadOnlyCollection<RemotePartyConfiguration> Remotes { get; }
 
-
         /// <summary>
         /// Helper that reads a string array from a string value, a comma separated string, or children
         /// sections (with string value or comma separated string) that must have integer keys ("0", "1",...).
@@ -194,10 +193,22 @@ namespace CK.AppIdentity
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="s">The section.</param>
         /// <param name="key">The configuration key.</param>
-        /// <returns>The string array or null on error.</returns>
+        /// <returns>The string array (empty if the key doesn't exist) or null on error.</returns>
         public static string[]? ReadStringArray( IActivityMonitor monitor, ImmutableConfigurationSection s, string key )
         {
-            var section = s.TryGetSection( key );
+            return ReadStringArray( monitor, s.TryGetSection( key ) );
+        }
+
+        /// <summary>
+        /// Helper that reads a string array from a string value, a comma separated string, or children
+        /// sections (with string value or comma separated string) that must have integer keys ("0", "1",...).
+        /// Returns null on error (and the error is logged).
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="section">The section.</param>
+        /// <returns>The string array (empty if the section is null) or null on error.</returns>
+        public static string[]? ReadStringArray( IActivityMonitor monitor, ImmutableConfigurationSection? section )
+        {
             if( section != null )
             {
                 if( section.Value != null )

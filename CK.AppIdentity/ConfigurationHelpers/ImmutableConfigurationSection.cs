@@ -146,6 +146,34 @@ namespace CK.AppIdentity
             return result;
         }
 
+        /// <summary>
+        /// Enumerates all child sections from root configuration up to the child of this section.
+        /// <para>
+        /// Sections that appear in the path from the root to this one are skipped by this function.
+        /// </para>
+        /// </summary>
+        /// <param name="key">The key to locate.</param>
+        /// <param name="skipSectionsOnThisPath">
+        /// Set it to false to return sections that occur on this path.
+        /// This is generally not what you want.
+        /// </param>
+        /// <returns>All the sections above and the child section if any.</returns>
+        public IEnumerable<ImmutableConfigurationSection> LookupAllSection( string key, bool skipSectionsOnThisPath = true ) => DoLookupAllSection( key, skipSectionsOnThisPath ? this : null );
+
+        IEnumerable<ImmutableConfigurationSection> DoLookupAllSection( string key, ImmutableConfigurationSection? caller )
+        {
+            if( _lookupParent != null )
+            {
+                foreach( var s in _lookupParent.DoLookupAllSection( key, caller != null ? this : null ) )
+                {
+                    yield return s;
+                }
+            }
+            var sKey = key.AsSpan();
+            var sub = Find( ref sKey, _children, caller );
+            if( sub != null ) yield return sub;
+        }
+
         /// <inheritdoc cref="IConfiguration.GetSection(string)"/>
         public ImmutableConfigurationSection GetSection( string key )
         {
@@ -169,23 +197,23 @@ namespace CK.AppIdentity
             return new ImmutableConfigurationSection( this, ConfigurationPath.Combine( _path, key ), errorKey );
         }
 
-        static ImmutableConfigurationSection? Find( ref ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children )
+        static ImmutableConfigurationSection? Find( ref ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children, ImmutableConfigurationSection? skip = null )
         {
             for( ; ; )
             {
                 var idx = sKey.IndexOf( ':' );
-                if( idx < 0 ) return FindCore( sKey, children );
-                var sub = FindCore( sKey.Slice( 0, idx ), children );
+                if( idx < 0 ) return FindCore( sKey, children, skip );
+                var sub = FindCore( sKey.Slice( 0, idx ), children, skip );
                 sKey = sKey.Slice( idx + 1 );
                 if( sub == null ) return null;
                 children = sub._children;
             }
 
-            static ImmutableConfigurationSection? FindCore( ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children )
+            static ImmutableConfigurationSection? FindCore( ReadOnlySpan<char> sKey, ImmutableConfigurationSection[] children, ImmutableConfigurationSection? skip )
             {
                 foreach( var child in children )
                 {
-                    if( sKey.Equals( child.Key, StringComparison.OrdinalIgnoreCase ) ) return child;
+                    if( child != skip && sKey.Equals( child.Key, StringComparison.OrdinalIgnoreCase ) ) return child;
                 }
                 return null;
             }

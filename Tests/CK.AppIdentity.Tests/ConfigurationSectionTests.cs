@@ -1,3 +1,4 @@
+using CK.Core;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using NUnit.Framework;
@@ -145,5 +146,100 @@ namespace CK.AppIdentity.Tests
                 .Should().Throw<InvalidOperationException>( "Sections MUST remain empty when below a value." )
                 .WithMessage( "Unable to set 'X:A:A:A' value to 'Pouf' since 'X:A' above has value 'It works!'." );
         }
+
+        [Test]
+        public void ImmutableConfigurationSection_LookupAllSection_finds_sub_keys()
+        {
+            var c = new MutableConfigurationSection( "X" );
+            c["Key"] = "Key";
+            c["A:Key"] = "A-Key";
+            c["A:A:Key"] = "A-A-Key";
+            c["A:A:A:Key"] = "A-A-A-Key";
+            c["A:A:A:A:Key"] = "A-A-A-A-Key";
+
+            var i = new ImmutableConfigurationSection( c );
+            var deepest = i.GetSection( "A:A:A:A" );
+            deepest.LookupAllSection( "Key" ).Select( s => s.Value ).Concatenate()
+                .Should().Be( "Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+        }
+
+        [Test]
+        public void ImmutableConfigurationSection_LookupAllSection_finds_sub_paths()
+        {
+            var c = new MutableConfigurationSection( "X" );
+            c["In:Key"] = "Key";
+            c["A:In:Key"] = "A-Key";
+            c["A:A:In:Key"] = "A-A-Key";
+            c["A:A:A:In:Key"] = "A-A-A-Key";
+            c["A:A:A:A:In:Key"] = "A-A-A-A-Key";
+
+            var i = new ImmutableConfigurationSection( c );
+            var deepest = i.GetSection( "A:A:A:A" );
+            deepest.LookupAllSection( "In:Key" ).Select( s => s.Value ).Concatenate()
+                .Should().Be( "Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+        }
+
+        [Test]
+        public void ImmutableConfigurationSection_LookupAllSection_skips_sections_on_the_search_path_by_default()
+        {
+            {
+                var c = new MutableConfigurationSection( "X" );
+                c["Key"] = "Key";
+                c["A:Key:Key"] = "A-Key";
+                c["A:Key:A:Key"] = "A-A-Key";
+                c["A:Key:A:A:Key"] = "A-A-A-Key";
+                c["A:Key:A:A:A:Key"] = "A-A-A-A-Key";
+
+                var i = new ImmutableConfigurationSection( c );
+                var deepest = i.GetSection( "A:Key:A:A:A" );
+                deepest.LookupAllSection( "Key" ).Select( s => s.Value ?? s.Path ).Concatenate()
+                    .Should().Be( "Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+            }
+            {
+                var c = new MutableConfigurationSection( "X" );
+                c["In:Key"] = "Key";
+                c["A:In:Key:In:Key"] = "A-Key";
+                c["A:In:Key:A:In:Key"] = "A-A-Key";
+                c["A:In:Key:A:A:In:Key"] = "A-A-A-Key";
+                c["A:In:Key:A:A:A:In:Key"] = "A-A-A-A-Key";
+
+                var i = new ImmutableConfigurationSection( c );
+                var deepest = i.GetSection( "A:In:Key:A:A:A" );
+                deepest.LookupAllSection( "In:Key" ).Select( s => s.Value ?? s.Path ).Concatenate()
+                    .Should().Be( "Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+            }
+        }
+
+        [Test]
+        public void ImmutableConfigurationSection_LookupAllSection_can_return_sections_on_the_search_path()
+        {
+            {
+                var c = new MutableConfigurationSection( "X" );
+                c["Key"] = "Key";
+                c["A:Key:Key"] = "A-Key";
+                c["A:Key:A:Key"] = "A-A-Key";
+                c["A:Key:A:A:Key"] = "A-A-A-Key";
+                c["A:Key:A:A:A:Key"] = "A-A-A-A-Key";
+
+                var i = new ImmutableConfigurationSection( c );
+                var deepest = i.GetSection( "A:Key:A:A:A" );
+                deepest.LookupAllSection( "Key", skipSectionsOnThisPath: false ).Select( s => s.Value ?? s.Path ).Concatenate()
+                    .Should().Be( "Key, X:A:Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+            }
+            {
+                var c = new MutableConfigurationSection( "X" );
+                c["In:Key"] = "Key";
+                c["A:In:Key:In:Key"] = "A-Key";
+                c["A:In:Key:A:In:Key"] = "A-A-Key";
+                c["A:In:Key:A:A:In:Key"] = "A-A-A-Key";
+                c["A:In:Key:A:A:A:In:Key"] = "A-A-A-A-Key";
+
+                var i = new ImmutableConfigurationSection( c );
+                var deepest = i.GetSection( "A:In:Key:A:A:A" );
+                deepest.LookupAllSection( "In:Key", skipSectionsOnThisPath: false ).Select( s => s.Value ?? s.Path ).Concatenate()
+                    .Should().Be( "Key, X:A:In:Key, A-Key, A-A-Key, A-A-A-Key, A-A-A-A-Key" );
+            }
+        }
+
     }
 }

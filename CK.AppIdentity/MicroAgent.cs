@@ -13,7 +13,7 @@ namespace CK.AppIdentity
     /// starts once but may refuse to start, and always run (once started errors are logged but it continues its work) until disposed or a cancellation
     /// token provided at the <see cref="TryStart(CancellationToken)"/> is signaled.
     /// <para>
-    /// It is rather basic but enough for our needs here and may be reused by feature drivers if needed.
+    /// It is rather basic but enough for our needs here and may be reused by <see cref="ApplicationIdentityFeatureDriver"/> if needed.
     /// </para>
     /// </summary>
     public abstract class MicroAgent

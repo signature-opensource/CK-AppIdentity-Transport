@@ -34,7 +34,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the address of this party.
         /// This is null if this remote can only be a client of this local application
-        /// (i.e. the remote is not a server but we must be).
+        /// (i.e. the remote is not a server and we must be a server for it).
         /// </summary>
         string? Address { get; }
 
