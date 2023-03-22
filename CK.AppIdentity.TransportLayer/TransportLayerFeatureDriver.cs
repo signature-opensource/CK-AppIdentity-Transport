@@ -1,0 +1,198 @@
+using CK.Core;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace CK.AppIdentity.TransportLayer
+{
+
+    public class TransportLayerFeatureDriver : ApplicationIdentityFeatureDriver
+    {
+        readonly ITransportTypeService[] _transportTypes;
+        readonly TcpSocketTransportTypeService _tcp;
+        TransportManager? _transportManager;
+
+        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes )
+            : base( s, isAllowedByDefault: true )
+        {
+            _transportTypes = transportTypes.ToArray();
+            _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
+        }
+
+        protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
+        {
+            var transportManager = _transportManager = new TransportManager( context.Agent );
+            bool success = transportManager.Start();
+            if( !success )
+            {
+                context.Monitor.Error( "Unable to start the Transport Manager." );
+            }
+            // Even if initialization fails, register the features: it may be required by others.
+            ApplicationIdentityService.AddFeature( transportManager );
+            foreach( var r in ApplicationIdentityService.Remotes )
+            {
+                success &= InitializeRemote( context.Monitor, transportManager, r );
+            }
+            return Task.FromResult( true );
+        }
+
+        protected override Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context )
+        {
+            Debug.Assert( _transportManager != null );
+            return Task.FromResult( InitializeRemote( context.Monitor, _transportManager, context.RemoteParty ) );
+        }
+
+        bool InitializeRemote( IActivityMonitor monitor, TransportManager transportManager, IRemoteParty r )
+        {
+            bool success = true;
+            if( r.DomainApplicationIdentity != null )
+            {
+                foreach( var rSub in r.DomainApplicationIdentity.Remotes )
+                {
+                    if( IsAllowedFeature( rSub ) )
+                    {
+                        success &= PlugTransportFeature( monitor, transportManager, rSub );
+                    }
+                }
+            }
+            else if( IsAllowedFeature( r ) )
+            {
+                success &= PlugTransportFeature( monitor, transportManager, r );
+            }
+            return success;
+        }
+
+        bool PlugTransportFeature( IActivityMonitor monitor, TransportManager transportManager, IRemoteParty r )
+        {
+            // Skip "Undefined" but this is not an error.
+            if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
+            {
+                // If we cannot resolve the listening or target address, it's an error.
+                if( !ResolveAdresses( monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
+                {
+                    return false;
+                }
+                Debug.Assert( (listen == null) != (target == null) );
+                // If we are listening and cannot setup a listener on the local address, it's an error.
+                if( listen != null && !listen.Type.RegisterListenerParty( monitor, transportManager, listen, r ) )
+                {
+                    return false;
+                }
+                // If we are not listening then we must initiate our outgoing connection.
+                if( target != null )
+                {
+
+                }
+                r.AddFeature( new TransportFeature( transportManager, r ) );
+            }
+            return true;
+        }
+
+        TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, string configurationPath, string? configurationKey )
+        {
+            ITransportTypeService? transport = null;
+            ReadOnlySpan<char> typed = s.AsSpan();
+            int idx = s.IndexOf( ':' );
+            if( idx > 0 )
+            {
+                var p = s.AsSpan( 0, idx );
+                foreach( var t in _transportTypes )
+                {
+                    if( p.Equals(t.AddressProtocolName, StringComparison.OrdinalIgnoreCase) )
+                    {
+                        typed = s.AsSpan( idx + 1 );
+                        transport = t;
+                        break;
+                    }
+                }
+                if( transport == null )
+                {
+                    monitor.Error( $"Transport type '{p}' not found for '{string.Join( ':', configurationPath, configurationKey )}', address: '{s}'.");
+                    return null;
+                }
+            }
+            else
+            {
+                transport = _tcp;
+            }
+            return transport.ParseAddress( monitor, typed, configurationPath, configurationKey );
+        }
+
+        bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
+        {
+            listen = null;
+            target = null;
+            var a = r.Address;
+            if( a != null )
+            {
+                target = ParseTypedAddress( monitor, a, r.Configuration.Configuration.Path, "Address" );
+                return target != null;
+            }
+            if( !ReadListeningAddresses(monitor,r, out var available ) )
+            {
+                return false;
+            }
+            if( available == null )
+            {
+                listen = _tcp.DefaultListeningAddress;
+                return true;
+            }
+            available.TryAdd( _tcp, _tcp.DefaultListeningAddress );
+            Debug.Assert( available.Count >= 2 );
+            var useTransportSection = r.Configuration.Configuration.TryLookupSection( "UseTransport" );
+            var useTransport = useTransportSection?.Value;
+            if( useTransport == null )
+            {
+                monitor.Warn( $"Missing a \"UseTransport\" configuration for Remote '{r.FullName}'. Using the default 'tcp' transport type." );
+                listen = available[_tcp];
+                return true;
+            }
+            foreach( var listeningAddress in available.Values )
+            {
+                if( useTransport.Equals( listeningAddress.Type.AddressProtocolName, StringComparison.OrdinalIgnoreCase ) )
+                {
+                    listen = listeningAddress;
+                    return true;
+                }
+            }
+            Debug.Assert( useTransportSection != null );
+            monitor.Error( $"Invalid '{useTransportSection.Path}': no ListeningAddress exist for transport type '{useTransport}'." );
+            return false;
+        }
+
+        bool ReadListeningAddresses( IActivityMonitor monitor, IRemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
+        {
+            result = null;
+            List<ITransportTypeService>? locally = null;
+            foreach( var config in r.Configuration.Configuration.LookupAllSection( "ListeningAddress" ) )
+            {
+                var onLevel = ApplicationIdentityConfiguration.ReadStringArray( monitor, config );
+                if( onLevel == null ) return false;
+                if( onLevel.Length > 0 )
+                {
+                    if( locally == null ) locally = new List<ITransportTypeService>();
+                    else locally.Clear();
+                    foreach( var raw in onLevel )
+                    {
+                        var parsed = ParseTypedAddress( monitor, raw, config.Path, null );
+                        if( parsed == null ) return false;
+                        if( locally.Contains( parsed.Type ) )
+                        {
+                            monitor.Error( $"Invalid '{r.Configuration.Configuration.Path}': more than one address for '{parsed.Type.AddressProtocolName}' transport type." );
+                            return false;
+                        }
+                        result ??= new Dictionary<ITransportTypeService, TransportTypeAddress>();
+                        result[parsed.Type] = parsed;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Required for the scoped span. -->
+    <LangVersion>11</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity\CK.AppIdentity.csproj" />
+    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0004-develop" />
+  </ItemGroup>
+
+</Project>

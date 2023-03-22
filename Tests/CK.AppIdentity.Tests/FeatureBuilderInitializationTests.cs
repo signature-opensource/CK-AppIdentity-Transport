@@ -65,11 +65,16 @@ namespace CK.AppIdentity.Tests
 
             public int OrderInitialization { get; private set; }
 
-            protected override Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
+            protected override Task<bool> InitializeAsync(FeatureInitializatonContext context)
             {
                 OrderInitialization = _current++;
-                monitor.Trace( $"Initialized {GetType().Name} ({OrderInitialization})." );
+                context.Monitor.Trace( $"Initialized {GetType().Name} ({OrderInitialization})." );
                 return Task.FromResult( true );
+            }
+
+            protected override Task<bool> InitializeDynamicRemoteAsync(DynamicRemoteInitializatonContext context)
+            {
+                throw new NotImplementedException();
             }
         }
 
