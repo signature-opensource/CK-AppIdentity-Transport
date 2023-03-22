@@ -8,12 +8,15 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
+    /// <summary>
+    /// The optional <see cref="IRootRemoteParty.DomainApplicationIdentity"/>.
+    /// </summary>
     public sealed class DomainApplicationIdentity : ApplicationIdentityBase, IApplicationIdentity
     {
         readonly RemoteParty _remote;
 
-        internal DomainApplicationIdentity( RemoteParty remote )
-            : base( remote.Configuration.DomainConfiguration!, remote )            
+        internal DomainApplicationIdentity( RemoteParty remote, bool isDynamic )
+            : base( remote.Configuration.DomainConfiguration!, remote, isDynamic )            
         {
             _remote = remote;
         }
@@ -21,7 +24,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the root application identity service.
         /// </summary>
-        public ApplicationIdentityService ApplicationIdentityService => _remote.AppIdentityService;
+        public ApplicationIdentityService ApplicationIdentityService => _remote.ApplicationIdentity.ApplicationIdentityService;
 
         /// <summary>
         /// Gets the domain name that is the <see cref="Host"/> domain name.
@@ -36,12 +39,10 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the remote party that hosts this domain.
         /// </summary>
-        public IRootRemoteParty Host => _remote;
+        public IRemoteParty Host => _remote;
 
         /// <inheritdoc />
-        public Task FeatureBuildersInitialization => _remote.AppIdentityService.FeatureBuildersInitialization;
-
-        const string ReasonPhraseForInheritedPropertyInDomain = "This configuration is defined at the Remote level, not in the Domain.";
+        public Task FeatureBuildersInitialization => _remote.ApplicationIdentity.ApplicationIdentityService.FeatureBuildersInitialization;
 
         /// <summary>
         /// Checks that if they exist DomainName and Local:Name are both the remoteName, that the EnvironmentName if it exists is the same as the
@@ -52,7 +53,7 @@ namespace CK.AppIdentity
         /// <param name="remoteEnvironmentName"></param>
         /// <param name="configuration"></param>
         /// <returns></returns>
-        internal static bool CheckTenantConfigurationNames( IActivityMonitor monitor,
+        internal static bool CheckDomainConfigurationNames( IActivityMonitor monitor,
                                                             string remoteName,
                                                             string remoteEnvironmentName,
                                                             ImmutableConfigurationSection configuration )

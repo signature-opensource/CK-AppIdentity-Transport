@@ -4,15 +4,11 @@ namespace CK.AppIdentity
 {
 
     /// <summary>
-    /// A remote party is identified by its <see cref="Name"/> in its <see cref="ApplicationIdentity"/>.
+    /// A remote party is identified by its <see cref="Name"/> in its <see cref="ApplicationIdentity"/> and
+    /// may define a <see cref="DomainApplicationIdentity"/> with its subordinated remotes.
     /// </summary>
     public interface IRemoteParty : IParty
     {
-        /// <summary>
-        /// Gets the application identity.
-        /// </summary>
-        IApplicationIdentity ApplicationIdentity { get; }
-
         /// <summary>
         /// Gets the configuration.
         /// </summary>
@@ -39,8 +35,20 @@ namespace CK.AppIdentity
         string? Address { get; }
 
         /// <summary>
+        /// Gets the DomainApplicationIdentity if this remote defines a domain.
+        /// </summary>
+        DomainApplicationIdentity? DomainApplicationIdentity { get; }
+
+        /// <summary>
         /// Gets whether this is a dynamic remote party.
         /// </summary>
         bool IsDynamic { get; }
+
+        /// <summary>
+        /// Destroys this remote party. <see cref="IsDynamic"/> must be true
+        /// otherwise an <see cref="InvalidOperationException"/> is thrown.
+        /// </summary>
+        /// <returns>True if this call destroyed this party, false it is already destroyed.</returns>
+        bool Destroy();
     }
 }

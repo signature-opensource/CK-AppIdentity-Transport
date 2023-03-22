@@ -1,37 +1,40 @@
 using CK.Core;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace CK.AppIdentity
 {
-    sealed class RemoteParty : IRootRemoteParty
+    sealed class RemoteParty : IRemoteParty
     {
         object[] _features;
         readonly IApplicationIdentity _appIdentity;
         readonly RemotePartyConfiguration _configuration;
         readonly NormalizedPath _fullName;
-        readonly DomainApplicationIdentity? _tenantAppIdentityService;
+        readonly DomainApplicationIdentity? _domainAppIdentityService;
+        readonly bool _isDynamic;
+        int _isDestroyed;
 
-        internal RemoteParty( IApplicationIdentity appIdentity, RemotePartyConfiguration configuration )
+        internal RemoteParty( IApplicationIdentity appIdentity, RemotePartyConfiguration configuration, bool isDynamic )
         {
             _features = Array.Empty<object>();
             _appIdentity = appIdentity;
             _configuration = configuration;
-            _tenantAppIdentityService = configuration.DomainConfiguration != null
-                                        ? new DomainApplicationIdentity( this )
+            _domainAppIdentityService = configuration.DomainConfiguration != null
+                                        ? new DomainApplicationIdentity( this, isDynamic )
                                         : null;
             _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.EnvironmentName, configuration.Name );
+            _isDynamic = isDynamic;
         }
 
-        IApplicationIdentity IRemoteParty.ApplicationIdentity => _appIdentity;
-
-        /// <summary>
-        /// Gets the <see cref="ApplicationIdentityService"/>.
-        /// </summary>
-        public ApplicationIdentityService AppIdentityService => _appIdentity.ApplicationIdentityService;
+        /// <inheritdoc />
+        public IApplicationIdentity ApplicationIdentity => _appIdentity;
 
         /// <inheritdoc />
-        public bool IsDynamic => _configuration == null;
+        public bool IsRooted => _appIdentity is ApplicationIdentityService;
+
+        /// <inheritdoc />
+        public bool IsDynamic => _isDynamic;
 
         /// <inheritdoc />
         public string Name => _configuration.Name;
@@ -61,6 +64,35 @@ namespace CK.AppIdentity
         /// <inheritdoc />
         public RemotePartyConfiguration Configuration => _configuration;
 
-        public DomainApplicationIdentity? DomainApplicationIdentity => _tenantAppIdentityService;
+        /// <inheritdoc />
+        public DomainApplicationIdentity? DomainApplicationIdentity => _domainAppIdentityService;
+
+        /// <inheritdoc />
+        public bool IsDestroyed => _isDestroyed != 0;
+
+        /// <inheritdoc />
+        public bool Destroy()
+        {
+            Throw.CheckState( IsDynamic );
+            if( Interlocked.CompareExchange( ref _isDestroyed, 0, 1 ) == 0 )
+            {
+                if( _domainAppIdentityService != null )
+                {
+                    // Immediately condemns the child remotes and ask to handle
+                    // their destruction first.
+                    // They know that their host is destroyed (we set the flag to enter this).
+                    _domainAppIdentityService._local._isDestroyed = true;
+                    foreach( var r in _domainAppIdentityService._remotes )
+                    {
+                        // Use the CAS check on destroy to prevent any
+                        // duplicate request.
+                        r.Destroy();
+                    }
+                }
+                _appIdentity.ApplicationIdentityService.Agent.OnDestroy( this );
+                return true;
+            }
+            return false;
+        }
     }
 }

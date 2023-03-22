@@ -19,7 +19,6 @@ namespace CK.AppIdentity
     public sealed class ApplicationIdentityService : ApplicationIdentityBase, ISingletonAutoService, IHostedService, IApplicationIdentity, IAppIdentityObject, IAsyncDisposable
     {
         object[] _features;
-        readonly IServiceProvider _serviceProvider;
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _featureBuilderInitialization;
@@ -29,14 +28,15 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="configuration">The configuration.</param>
         public ApplicationIdentityService( ApplicationIdentityConfiguration configuration, IServiceProvider serviceProvider )
-            : base( configuration, null )
+            : base( configuration, null, false )
         {
             _features = Array.Empty<object>();
-            _serviceProvider = serviceProvider;
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _agent = new AppIdentityAgent( this, serviceProvider );
             _featureBuilderInitialization = new TaskCompletionSource();
         }
+
+        internal AppIdentityAgent Agent => _agent;
 
         ApplicationIdentityService IApplicationIdentity.ApplicationIdentityService => this;
 
@@ -45,9 +45,6 @@ namespace CK.AppIdentity
 
         /// <inheritdoc cref="ApplicationIdentityConfiguration.EnvironmentName"/>
         public string EnvironmentName => Configuration.EnvironmentName;
-
-        /// <inheritdoc />
-        public new IReadOnlyCollection<IRootRemoteParty> Remotes => _remotes;
 
         /// <inheritdoc />
         public Task FeatureBuildersInitialization => _featureBuilderInitialization.Task;

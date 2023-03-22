@@ -14,6 +14,7 @@ namespace CK.AppIdentity
         readonly NormalizedPath _fullName;
         readonly IApplicationIdentity _appIdentity;
         readonly LocalPartyConfiguration _configuration;
+        internal bool _isDestroyed;
 
         internal LocalParty( IApplicationIdentity appIdentity, LocalPartyConfiguration configuration, RemoteParty? domainHost )
         {
@@ -48,6 +49,9 @@ namespace CK.AppIdentity
         public NormalizedPath FullName => _fullName;
 
         /// <inheritdoc />
+        public bool IsRooted => _appIdentity is ApplicationIdentityService;
+
+        /// <inheritdoc />
         public IEnumerable<object> Features => _features;
 
         /// <inheritdoc />
@@ -60,5 +64,7 @@ namespace CK.AppIdentity
         /// <inheritdoc />
         public LocalPartyConfiguration Configuration => _configuration;
 
+        /// <inheritdoc />
+        public bool IsDestroyed => _isDestroyed;
     }
 }

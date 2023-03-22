@@ -22,7 +22,7 @@ namespace CK.AppIdentity
         readonly bool _isRootAllowed;
 
         /// <summary>
-        /// Initializes a new <see cref="ApplicationIdentityService"/>.
+        /// Initializes a new <see cref="ApplicationIdentityFeatureDriver"/>.
         /// </summary>
         /// <param name="s">The application identity service.</param>
         /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
@@ -45,14 +45,44 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
+        /// Gets the application identity service.
+        /// </summary>
+        protected ApplicationIdentityService ApplicationIdentityService => _s;
+
+        /// <summary>
         /// Gets whether this feature is allowed or disabled at the root <see cref="ApplicationIdentityService"/>.
+        /// Use <see cref="IsAllowedFeature(IRemoteParty)"/> to know whether this feature is eventually enabled for
+        /// a remote.
         /// </summary>
         public bool IsRootAllowed => _isRootAllowed;
 
         /// <summary>
-        /// Gets the application identity service.
+        /// Gets whether this feature is enabled for the given remote, accounting the potential intermediate
+        /// Allow/DisallowFeatures configuration of the parent DomainApplicationIdentity's remote.
         /// </summary>
-        protected ApplicationIdentityService ApplicationIdentity => _s;
+        /// <param name="r">The remote party to test.</param>
+        /// <returns>True if this feature is allowed, false otherwise.</returns>
+        public bool IsAllowedFeature( IRemoteParty r )
+        {
+            bool domainLevel = r.IsRooted
+                                ? _isRootAllowed
+                                : r.ApplicationIdentity.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
+            return r.Configuration.IsAllowedFeature( _featureName, domainLevel );
+        }
+
+        /// <summary>
+        /// Gets whether this feature is enabled for a local party, accounting the potential intermediate
+        /// Allow/DisallowFeatures configuration of the parent DomainApplicationIdentity's remote.
+        /// </summary>
+        /// <param name="r">The local party to test.</param>
+        /// <returns>True if this feature is allowed at the local level, false otherwise.</returns>
+        public bool IsAllowedFeature( ILocalParty r )
+        {
+            bool domainLevel = r.IsRooted
+                                ? _isRootAllowed
+                                : r.ApplicationIdentity.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
+            return r.Configuration.IsAllowedFeature( _featureName, domainLevel );
+        }
 
         /// <summary>
         /// Gets this feature name.
@@ -62,11 +92,22 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Must do whatever is required to register features into <see cref="ApplicationIdentityService.Features"/>
-        /// and any <see cref="ILocalParty.Features"/>, <see cref="IRemoteParty.Features"/> and <see cref="IRootRemoteParty.DomainApplicationIdentity"/>'s features.
+        /// and any <see cref="ILocalParty.Features"/>, <see cref="IRemoteParty.Features"/> and <see cref="IRemoteParty.DomainApplicationIdentity"/>'s features.
+        /// <para>
+        /// The <see cref="ApplicationIdentityService"/> property is available as well as helpers to know if this feature is allowed on
+        /// a party (see <see cref="IsAllowedFeature(ILocalParty)"/> and <see cref="IsAllowedFeature(IRemoteParty)"/>).
+        /// </para>
         /// </summary>
-        /// <param name="monitor">The monitor to use for this method. Must not be kept.</param>
-        /// <param name="appIdentityAgent">The long lived agent that can be used any time.</param>
-        /// <returns>True on success, false on non recoverable error.</returns>
-        internal protected abstract Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent );
+        /// <param name="context">The initialization context.</param>
+        /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
+        internal protected abstract Task<bool> InitializeAsync( FeatureInitializatonContext context );
+
+        /// <summary>
+        /// Must do whatever is required to register features into <see cref="IRemoteParty.Features"/> and <see cref="IRemoteParty.DomainApplicationIdentity"/>'s features
+        /// or subordinated remotes.
+        /// </summary>
+        /// <param name="context">The initialization context.</param>
+        /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
+        internal protected abstract Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context );
     }
 }

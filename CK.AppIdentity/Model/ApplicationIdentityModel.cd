@@ -1,54 +1,63 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ApplicationIdentityService">
-    <Position X="0.5" Y="4" Width="2.25" />
+    <Position X="0.5" Y="5" Width="2.25" />
     <Members>
       <Field Name="_agent" Hidden="true" />
-      <Field Name="_agentTask" Hidden="true" />
       <Field Name="_builders" Hidden="true" />
       <Field Name="_featureBuilderInitialization" Hidden="true" />
-      <Field Name="_serviceProvider" Hidden="true" />
+      <Field Name="_features" Hidden="true" />
+      <Property Name="Agent" Hidden="true" />
+      <Method Name="ApplicationIdentityService" Hidden="true" />
+      <Method Name="DisposeAsync" Hidden="true" />
       <Property Name="IApplicationIdentity.ApplicationIdentityService" Hidden="true" />
       <Method Name="IHostedService.StartAsync" Hidden="true" />
       <Method Name="IHostedService.StopAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AIIAQAAABggAAIAAAAABAAAIAABAAAABAACAIIABCAA=</HashCode>
+      <HashCode>AIAAQAAABAgAAIAAAAEBAAAIAABAAAABAACAIIAACAA=</HashCode>
       <FileName>ApplicationIdentityService.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.DomainApplicationIdentity">
-    <Position X="7" Y="4.25" Width="2.5" />
+    <Position X="8" Y="3.25" Width="2.5" />
     <Members>
       <Field Name="_remote" Hidden="true" />
-      <Method Name="CheckTenantConfigurationNames" Hidden="true" />
+      <Method Name="CheckDomainConfigurationNames" Hidden="true" />
       <Method Name="DomainApplicationIdentity" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAAAAAABAAgAAEAAAAAAAAMAAAAAAAAAACAgAAAAAA=</HashCode>
+      <HashCode>AAAACAAABAAAAAEAAAAAAAAMAAAACAAAAACAAAAAAAA=</HashCode>
       <FileName>DomainApplicationIdentity.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
   <Interface Name="CK.AppIdentity.IApplicationIdentity">
-    <Position X="0.5" Y="0.5" Width="2" />
+    <Position X="0.5" Y="1.5" Width="2" />
     <AssociationLine Name="ApplicationIdentityService" Type="CK.AppIdentity.ApplicationIdentityService" FixedFromPoint="true">
       <Path>
-        <Point X="2.312" Y="2.18" />
-        <Point X="2.312" Y="4" />
+        <Point X="2.312" Y="3.18" />
+        <Point X="2.312" Y="5" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
         <Position X="0.141" Y="1.582" />
       </MemberNameLabel>
     </AssociationLine>
-    <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty" FixedFromPoint="true">
+    <AssociationLine Name="Remotes" Type="CK.AppIdentity.IRemoteParty" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="2.5" Y="0.625" />
-        <Point X="6.25" Y="0.625" />
+        <Point X="2.5" Y="3" />
+        <Point X="2.74" Y="3" />
+        <Point X="2.74" Y="4.371" />
+        <Point X="5.25" Y="4.371" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
-        <Position X="3.055" Y="-0.232" />
+        <Position X="1.935" Y="1.693" />
+      </MemberNameLabel>
+    </AssociationLine>
+    <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty">
+      <MemberNameLabel ManuallyPlaced="true">
+        <Position X="0.368" Y="0.035" />
       </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
@@ -64,28 +73,25 @@
     </ShowAsCollectionAssociation>
   </Interface>
   <Interface Name="CK.AppIdentity.ILocalParty">
-    <Position X="6.25" Y="0.5" Width="1.5" />
+    <Position X="3.5" Y="2.5" Width="1.5" />
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAACAAAAAAAQAAAAAAAAAgAAAAAAAAAA=</HashCode>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAgAAAAAAAAAA=</HashCode>
       <FileName>Model\ILocalParty.cs</FileName>
     </TypeIdentifier>
   </Interface>
   <Interface Name="CK.AppIdentity.IRemoteParty">
-    <Position X="3.5" Y="1" Width="1.5" />
+    <Position X="5.25" Y="2.5" Width="2" />
     <TypeIdentifier>
-      <HashCode>ACAAAAAAAAAAAACAAAAAAAQIAAAAAAACgACAAAAAAAA=</HashCode>
+      <HashCode>ACAAAAAAAABAAAAAAAAAAAQIAABAAAACgACAAAAAAAA=</HashCode>
       <FileName>Model\IRemoteParty.cs</FileName>
     </TypeIdentifier>
   </Interface>
-  <Interface Name="CK.AppIdentity.IRootRemoteParty">
-    <Position X="3.25" Y="4.25" Width="2" />
+  <Interface Name="CK.AppIdentity.IParty">
+    <Position X="4.25" Y="0.5" Width="1.5" />
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
-      <FileName>Model\IRootRemoteParty.cs</FileName>
+      <HashCode>AAAAAAAAAAAAAICQAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Model\IParty.cs</FileName>
     </TypeIdentifier>
-    <ShowAsAssociation>
-      <Property Name="DomainApplicationIdentity" />
-    </ShowAsAssociation>
   </Interface>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>

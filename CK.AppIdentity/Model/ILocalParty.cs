@@ -11,11 +11,6 @@ namespace CK.AppIdentity
         string Name { get; }
 
         /// <summary>
-        /// Gets the application identity.
-        /// </summary>
-        IApplicationIdentity ApplicationIdentity { get; }
-
-        /// <summary>
         /// Gets the configuration.
         /// </summary>
         LocalPartyConfiguration Configuration { get; }

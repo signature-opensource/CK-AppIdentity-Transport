@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
@@ -46,28 +47,69 @@ namespace CK.AppIdentity
         {
             using( monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
             {
-                List<Exception>? agg = null;
-
-                foreach( var b in _service._builders )
-                {
-                    try
-                    {
-                        await b.InitializeAsync( monitor, this );
-                    }
-                    catch( Exception ex )
-                    {
-                        monitor.Error( $"Error while initializing AppIdentityFeatureBuilder '{b.GetType():C}'.", ex );
-                        agg ??= new List<Exception>();
-                        agg.Add( ex );
-                    }
-                }
-                if( agg == null ) _service._featureBuilderInitialization.SetResult();
+                var initContext = new FeatureInitializatonContext( monitor, this );
+                initContext.Trampoline.AddRange( _service._builders.Select( b => (object)b.InitializeAsync ) );
+                var error = await initContext.ExecuteAllAsync();
+                if( error == null ) _service._featureBuilderInitialization.SetResult();
                 else
                 {
-                    _service._featureBuilderInitialization.SetException( agg.Count == 1 ? agg[0] : new AggregateException( agg ) );
+                    _service._featureBuilderInitialization.SetException( error );
                     monitor.CloseGroup( "Failed." );
                 }
             }
         }
+
+        record class InitializeDynamicRemoteJob( RemoteParty RemoteParty, TaskCompletionSource<bool> Result );
+
+        internal void OnDestroy( RemoteParty remoteParty ) => PushTypedJob( remoteParty );
+
+        internal Task<bool> InitializeDynamicRemoteAsync( RemoteParty r )
+        {
+            var cts = new TaskCompletionSource<bool>();
+            PushTypedJob( new InitializeDynamicRemoteJob( r, cts ) );
+            return cts.Task;
+        }
+
+        protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
+        {
+            switch( job )
+            {
+                case RemoteParty destroyed: return HandleDestroyAsync( monitor, destroyed );
+                case InitializeDynamicRemoteJob init: return HandleDynamicRemoteAsync( monitor, init );
+            }
+            return base.ExecuteTypedJobAsync( monitor, job );
+        }
+
+        async ValueTask HandleDynamicRemoteAsync( IActivityMonitor monitor, InitializeDynamicRemoteJob init )
+        {
+            using( monitor.OpenInfo( $"Initializing dynamic Remote '{init.RemoteParty.FullName}' ({_service._builders.Count} feature builders)." ) )
+            {
+                var initContext = new DynamicRemoteInitializatonContext( monitor, this, init.RemoteParty );
+                initContext.Trampoline.AddRange( _service._builders.Select( b => (object)b.InitializeDynamicRemoteAsync ) );
+                bool success = await initContext.ExecuteAllAsync() == null;
+                if( !success )
+                {
+                    monitor.CloseGroup( "Failed." );
+                }
+                init.Result.SetResult( success );
+            }
+        }
+
+        ValueTask HandleDestroyAsync( IActivityMonitor monitor, RemoteParty destroyed )
+        {
+            monitor.Info( $"Destroying Remote {destroyed.FullName}." );
+            var hosted = destroyed.ApplicationIdentity as DomainApplicationIdentity;
+            if( hosted != null )
+            {
+                // It is useless to cleanup the remote list of a domain that is being destroyed. 
+                if( !hosted.Host.IsDestroyed )
+                {
+                    hosted.RemoveDestroyed( destroyed );
+                }
+            }
+            else destroyed.ApplicationIdentity.ApplicationIdentityService.RemoveDestroyed( destroyed );
+            return default;
+        }
     }
+
 }

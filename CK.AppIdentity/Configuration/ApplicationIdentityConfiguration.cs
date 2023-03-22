@@ -122,22 +122,9 @@ namespace CK.AppIdentity
             var remotes = new List<RemotePartyConfiguration>();
             foreach( var c in locked.GetSection( "Remotes" ).GetChildren() )
             {
-                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains, ref domainProps );
+                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains, ref domainProps, local, remotes );
                 if( r == null ) success = false;
-                else
-                {
-                    if( local != null && r.Name.Equals( local.Name, StringComparison.OrdinalIgnoreCase ) )
-                    {
-                        monitor.Error( $"Invalid remote party name in '{c.Path}': '{r.Name}' is this local name." );
-                        success = false;
-                    }
-                    else if( remotes.Any( x => x.Name.Equals( r.Name, StringComparison.OrdinalIgnoreCase ) ) )
-                    {
-                        monitor.Error( $"Duplicate remote party name in '{c.Path}': '{r.Name}' remote party must be unique." );
-                        success = false;
-                    }
-                    if( success ) remotes.Add( r );
-                }
+                else if( success ) remotes.Add( r );
             }
             return success
                     ? new ApplicationIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray(), ref domainProps )

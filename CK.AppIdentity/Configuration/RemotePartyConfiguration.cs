@@ -44,7 +44,9 @@ namespace CK.AppIdentity
                                                           string? appDomainName,
                                                           string? appEnvironmentName,
                                                           bool allowDomain,
-                                                          ref InheritedConfigurationProps domainProps )
+                                                          ref InheritedConfigurationProps domainProps,
+                                                          LocalPartyConfiguration? localToCheckName,
+                                                          IEnumerable<RemotePartyConfiguration> remotesToCheckHomonyms )
         {
             // Refrain yourself to rewrite this differently: this ensures that all properties are handled even on error.
             bool success = ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
@@ -52,6 +54,19 @@ namespace CK.AppIdentity
             if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "EnvironmentName", false, appEnvironmentName, out var environmentName ) ) success = false;
             if( !InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps ) ) success = false;
 
+            if( name != null )
+            {
+                if( localToCheckName != null && name.Equals( localToCheckName.Name, StringComparison.OrdinalIgnoreCase ) )
+                {
+                    monitor.Error( $"Invalid remote party name in '{configuration.Path}': '{name}' is this local name." );
+                    success = false;
+                }
+                else if( remotesToCheckHomonyms.Any( x => x.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) ) )
+                {
+                    monitor.Error( $"Duplicate remote party name in '{configuration.Path}': '{name}' remote party must be unique." );
+                    success = false;
+                }
+            }
             // "Domain" configuration handling.
             ApplicationIdentityConfiguration? domain = null;
             var domainSection = configuration.GetSection( "Domain" );
@@ -80,7 +95,7 @@ namespace CK.AppIdentity
                     }
                     if( name != null
                         && environmentName != null
-                        && !DomainApplicationIdentity.CheckTenantConfigurationNames( monitor, name, environmentName, domainSection ) )
+                        && !DomainApplicationIdentity.CheckDomainConfigurationNames( monitor, name, environmentName, domainSection ) )
                     {
                         success = false;
                     }

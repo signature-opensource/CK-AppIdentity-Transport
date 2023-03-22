@@ -18,5 +18,6 @@ namespace CK.AppIdentity
         /// <param name="feature">The feature to add.</param>
         /// <returns>True if the feature has been added, false if the feature already exists.</returns>
         bool AddFeature( object feature );
+
     }
 }
