@@ -1,3 +1,4 @@
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.PerfectEvent;
 using System.Buffers;
@@ -8,7 +9,6 @@ using System.Net.Sockets;
 
 namespace CK.AppIdentity.PocoChannel
 {
-
     sealed class RemotePocoChannel : IPocoChannel
     {
         readonly IRemoteParty _remote;
@@ -16,7 +16,11 @@ namespace CK.AppIdentity.PocoChannel
         readonly IPEndPoint? _targetIP;
         readonly PerfectEventSender<IPocoChannel> _isConnectedChanged;
         readonly PerfectEventSender<IPocoChannel, IPoco> _receivedPoco;
-        Socket? _socket;
+
+        /// <summary>
+        /// The transport is under control of the ConnectionManager agent.
+        /// </summary>
+        ITransport? _transport;
 
         public RemotePocoChannel( IRemoteParty remote, IPEndPoint? listenIP, IPEndPoint? targetIP )
         {
@@ -28,7 +32,7 @@ namespace CK.AppIdentity.PocoChannel
             _receivedPoco = new PerfectEventSender<IPocoChannel, IPoco>();
         }
 
-        public bool IsConnected => _socket != null;
+        public bool IsConnected => _transport != null;
 
         public IRemoteParty Party => _remote;
 
@@ -39,8 +43,19 @@ namespace CK.AppIdentity.PocoChannel
         public ValueTask<StoredPocoHandle> SendAsync( IActivityMonitor monitor, IPoco poco, bool store = false )
         {
             if( store ) throw new NotImplementedException();
+            CreateTransportMessage( poco );
 
             return default;
+        }
+
+       private TransportMessage CreateTransportMessage( IPoco poco )
+        {
+            return null;
+            //_connectionManager.MessageSendingFactory.Create( bytes =>
+            //{
+            //    using var w = new System.Text.Json.Utf8JsonWriter( bytes );
+            //    poco.Write( w );
+            //} );
         }
 
         public ValueTask<IPoco?> LoadAsync( in StoredPocoHandle handle )

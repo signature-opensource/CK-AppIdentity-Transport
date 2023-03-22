@@ -10,7 +10,7 @@ namespace CK.AppIdentity.Cris
     {
         readonly IApplicationIdentity _appIdentity;
 
-        public DomainCrisEndPoint( IRootRemoteParty remote, CrisEndPointBase? parent )
+        public DomainCrisEndPoint( IRemoteParty remote, CrisEndPointBase? parent )
             : base( remote, parent )
         {
             Debug.Assert( remote.DomainApplicationIdentity != null );

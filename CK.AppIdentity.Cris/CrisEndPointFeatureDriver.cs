@@ -8,24 +8,19 @@ namespace CK.AppIdentity.Cris
 {
     public sealed class CrisEndPointFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        [AllowNull]
-        AppIdentityAgent _appIdentityAgent;
-
         public CrisEndPointFeatureDriver( ApplicationIdentityService s )
             : base( s, true )
         {
         }
 
-        protected override Task<bool> InitializeAsync( IActivityMonitor monitor, AppIdentityAgent appIdentityAgent )
+        protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
         {
-            _appIdentityAgent = appIdentityAgent;
             // We always add the DomainCrisEndPoint feature (pure events) on the root domain
             // and on subordinate domains: it is the RemoteCrisEndPoint that are added or not.
-            DomainCrisEndPoint rootEvents = new DomainCrisEndPoint( ApplicationIdentity );
-            ApplicationIdentity.AddFeature( rootEvents );
-            foreach( var r in ApplicationIdentity.Remotes )
+            DomainCrisEndPoint rootEvents = new DomainCrisEndPoint( ApplicationIdentityService );
+            ApplicationIdentityService.AddFeature( rootEvents );
+            foreach( var r in ApplicationIdentityService.Remotes )
             {
-                bool isAllowed = r.Configuration.IsAllowedFeature( FeatureName, IsRootAllowed );
                 if( r.DomainApplicationIdentity != null )
                 {
                     var domainEvents = new DomainCrisEndPoint( r, rootEvents );
@@ -33,22 +28,27 @@ namespace CK.AppIdentity.Cris
                     foreach( var rSub in r.DomainApplicationIdentity.Remotes )
                     {
                         if( rSub.DomainName != CoreApplicationIdentity.DefaultDomainName
-                            && rSub.Configuration.IsAllowedFeature( FeatureName, isAllowed ) )
+                            && IsAllowedFeature(rSub) )
                         {
-                            rSub.AddFeature( new RemoteCrisEndPoint( appIdentityAgent, rSub, domainEvents ) );
+                            rSub.AddFeature( new RemoteCrisEndPoint( context.Agent, rSub, domainEvents ) );
                         }
                     }
                 }
                 else
                 {
                     if( r.DomainName != CoreApplicationIdentity.DefaultDomainName
-                        && r.Configuration.IsAllowedFeature( FeatureName, isAllowed ) )
+                        && IsAllowedFeature(r) )
                     {
-                        r.AddFeature( new RemoteCrisEndPoint( appIdentityAgent, r, rootEvents ) );
+                        r.AddFeature( new RemoteCrisEndPoint( context.Agent, r, rootEvents ) );
                     }
                 }
             }
             return Task.FromResult( true );
+        }
+
+        protected override Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context )
+        {
+            throw new System.NotImplementedException();
         }
     }
 }

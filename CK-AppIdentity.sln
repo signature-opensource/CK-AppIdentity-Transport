@@ -33,11 +33,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Tests", "Tes
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris", "CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj", "{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.Cris.Tests", "Tests\CK.AppIdentity.Cris.Tests\CK.AppIdentity.Cris.Tests.csproj", "{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris.Tests", "Tests\CK.AppIdentity.Cris.Tests\CK.AppIdentity.Cris.Tests.csproj", "{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.PocoChannel", "CK.AppIdentity.PocoChannel\CK.AppIdentity.PocoChannel.csproj", "{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.PocoChannel", "CK.AppIdentity.PocoChannel\CK.AppIdentity.PocoChannel.csproj", "{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.PocoChannelTests", "Tests\CK.AppIdentity.PocoChannelTests\CK.AppIdentity.PocoChannelTests.csproj", "{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.PocoChannelTests", "Tests\CK.AppIdentity.PocoChannelTests\CK.AppIdentity.PocoChannelTests.csproj", "{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.TransportLayer", "CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj", "{A74169D1-AE1F-42BB-B05D-27BD1FF94692}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.TransportLayer.Tests", "Tests\CK.AppIdentity.TransportLayer.Tests\CK.AppIdentity.TransportLayer.Tests.csproj", "{C94859C9-ED2F-4824-A6D2-501C78C1612A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -81,6 +85,14 @@ Global
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C94859C9-ED2F-4824-A6D2-501C78C1612A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C94859C9-ED2F-4824-A6D2-501C78C1612A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C94859C9-ED2F-4824-A6D2-501C78C1612A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C94859C9-ED2F-4824-A6D2-501C78C1612A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -90,6 +102,7 @@ Global
 		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
+		{C94859C9-ED2F-4824-A6D2-501C78C1612A} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAD33C0C-C901-4BB7-9D1C-E87979CF9029}
