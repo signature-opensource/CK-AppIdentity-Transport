@@ -15,6 +15,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the description of the endpoint that received this new remote.
         /// </summary>
-        string EndPointDescription { get; }
+        string IncomingEndPointDescription { get; }
     }
 }

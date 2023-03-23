@@ -11,6 +11,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _remote;
+        readonly TransportListener? _listener;
         readonly PerfectEventSender<TransportFeature> _isConnectedChanged;
 
         /// <summary>
@@ -18,16 +19,17 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         ITransport? _transport;
 
-        public TransportFeature( TransportManager transportManager, IRemoteParty remote )
+        public TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
         {
             _transportManager = transportManager;
             _remote = remote;
+            _listener = listener;
             _isConnectedChanged = new PerfectEventSender<TransportFeature>();
         }
 
         internal void OnNewTransport( IActivityMonitor monitor, ITransport transport )
         {
-            if( _transport != null ) _transportManager.PushTypedJob( new TransportManager.CondemnTransportJob( _transport ) );
+            if( _transport != null ) _transportManager.CondemnTransport( _transport );
             _transport = transport;
         }
 

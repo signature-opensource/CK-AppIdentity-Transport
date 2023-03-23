@@ -47,13 +47,12 @@ namespace CK.AppIdentity
         {
             using( monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
             {
-                var initContext = new FeatureInitializatonContext( monitor, this );
-                initContext.Trampoline.AddRange( _service._builders.Select( b => (object)b.InitializeAsync ) );
-                var error = await initContext.ExecuteAllAsync();
-                if( error == null ) _service._featureBuilderInitialization.SetResult();
+                var initContext = new FeatureInitializatonContext( monitor, this, _service._builders );
+                var result = await initContext.ExecuteInitializationAsync();
+                if( result == null ) _service._featureBuilderInitialization.SetResult();
                 else
                 {
-                    _service._featureBuilderInitialization.SetException( error );
+                    _service._featureBuilderInitialization.SetException( result );
                     monitor.CloseGroup( "Failed." );
                 }
             }
@@ -84,9 +83,8 @@ namespace CK.AppIdentity
         {
             using( monitor.OpenInfo( $"Initializing dynamic Remote '{init.RemoteParty.FullName}' ({_service._builders.Count} feature builders)." ) )
             {
-                var initContext = new DynamicRemoteInitializatonContext( monitor, this, init.RemoteParty );
-                initContext.Trampoline.AddRange( _service._builders.Select( b => (object)b.InitializeDynamicRemoteAsync ) );
-                bool success = await initContext.ExecuteAllAsync() == null;
+                var initContext = new FeatureInitializatonContext( monitor, this, _service._builders );
+                bool success = await initContext.ExecuteDynamicRemoteInitializationAsync( init.RemoteParty ) == TrampolineResult.TotalSuccess;
                 if( !success )
                 {
                     monitor.CloseGroup( "Failed." );

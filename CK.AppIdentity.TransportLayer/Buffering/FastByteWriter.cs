@@ -12,6 +12,7 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// Provides basic write function to a <see cref="IBufferWriter{T}"/>.
+    /// <see cref="Commit"/> MUST be called at the end of the write session.
     /// </summary>
     public ref partial struct FastByteWriter
     {
@@ -33,7 +34,6 @@ namespace CK.AppIdentity.TransportLayer
             _currentSpan = _output.GetSpan();
             _bufferPos = default;
             _utf8Encoder = null;
-            WriteByte( 0 ); // version
         }
 
         /// <summary>
@@ -52,11 +52,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="length">The number of bytes to advance write position by.</param>
         [MethodImpl( MethodImplOptions.AggressiveInlining )]
         public void AdvanceSpan( int length ) => _bufferPos += length;
-
-        /// <summary>
-        /// Allows using syntax: <see cref="Commit"/> is automatically closed.
-        /// </summary>
-        public void Dispose() => Commit();
 
         /// <summary>
         /// Commit the currently written buffers.

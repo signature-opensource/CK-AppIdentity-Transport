@@ -9,24 +9,21 @@ using System.Threading.Tasks;
 namespace CK.Core
 {
     /// <summary>
-    /// Trampoline actions on any <typeparamref name="T"/> registration.
-    /// In practice, T is a <see cref="TrampolineRunner{T}"/> that handles the execution of the actions and
-    /// acts as a context with a <see cref="TrampolineRunner{TSelf}.Monitor"/>, an optional <see cref="TrampolineRunner{TSelf}.Memory"/>
-    /// and any other captured information that a specialized runner may expose.
+    /// Basic trampoline.
     /// <para>
     /// Once a Trampoline has been provided to a runner, it cannot be provided to another one: the added actions and handlers are lost forever.
     /// This class is not thread.
     /// </para>
     /// </summary>
-    public sealed class Trampoline<T>
+    public sealed class BasicTrampoline
     {
         // Actions are object. Pattern matching is used on them at execution time.
         internal readonly List<object> _actions;
         // Internal storage of success, error and finally are based on Task
         // with adapters.
-        internal List<Func<T, Task>>? _onSuccess;
-        internal List<Func<T, Exception?, Task>>? _onError;
-        internal List<Func<T, Task>>? _onFinally;
+        internal List<Func<Task>>? _onSuccess;
+        internal List<Func<Task>>? _onError;
+        internal List<Func<Task>>? _onFinally;
         // A registrar can be owned by zero or one ExecutionContext, and only once.
         object? _owner;
 
@@ -35,22 +32,22 @@ namespace CK.Core
         static readonly string _finallyStep = "Currently handling finalization.";
         string? _handlingStep;
 
-        internal Trampoline<T> AcquireOnce( object owner )
+        internal BasicTrampoline AcquireOnce( object owner )
         {
             if( Interlocked.Exchange( ref _owner, owner ) == null ) return this;
-            return Throw.InvalidOperationException<Trampoline<T>>();
+            return Throw.InvalidOperationException<BasicTrampoline>();
         }
 
         /// <summary>
         /// Initializes a new empty trampoline.
         /// </summary>
-        public Trampoline()
+        public BasicTrampoline()
         {
             _actions = new List<object>();
         }
 
         /// <summary>
-        /// Gets the number of actions that should be executed.
+        /// Gets the number of actions that have been registered.
         /// </summary>
         public int ActionCount => _actions.Count;
 
@@ -61,21 +58,21 @@ namespace CK.Core
         /// </para>
         /// </summary>
         /// <param name="action">The action to enqueue.</param>
-        public void Add( Func<T, Task> action )
+        public void Add( Action action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
         }
 
-        /// <inheritdoc cref="Add(Func{T, Task})"/>
-        public void Add( Func<T, ValueTask> action )
+        /// <inheritdoc cref="Add(Action)"/>
+        public void Add( Func<Task> action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
         }
 
-        /// <inheritdoc cref="Add(Func{T, Task})"/>
-        public void Add( Action<T> action )
+        /// <inheritdoc cref="Add(Action)"/>
+        public void Add( Func<ValueTask> action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
@@ -88,21 +85,21 @@ namespace CK.Core
         /// </para>
         /// </summary>
         /// <param name="action">The action to enqueue.</param>
-        public void Add( Func<T, Task<bool>> action )
+        public void Add( Func<bool> action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
         }
 
-        /// <inheritdoc cref="Add(Func{T, Task{bool}})"/>
-        public void Add( Func<T, ValueTask<bool>> action )
+        /// <inheritdoc cref="Add(Func{bool})"/>
+        public void Add( Func<Task<bool>> action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
         }
 
-        /// <inheritdoc cref="Add(Func{T, Task{bool}})"/>
-        public void Add( Func<T,bool> action )
+        /// <inheritdoc cref="Add(Func{bool})"/>
+        public void Add( Func<ValueTask<bool>> action )
         {
             GuardAdd( action == null );
             _actions.Add( action! );
@@ -120,16 +117,16 @@ namespace CK.Core
             {
                 switch( a )
                 {
-                    case Func<T, bool>: 
-                    case Func<T, Task<bool>>:
-                    case Func<T, ValueTask<bool>>:
-                    case Action<T>:
-                    case Func<T, ValueTask>:
-                    case Func<T, Task>:
+                    case Action:
+                    case Func<bool>:
+                    case Func<Task<bool>>:
+                    case Func<ValueTask<bool>>:
+                    case Func<ValueTask>:
+                    case Func<Task>:
                         _actions.Add( a );
                         break;
                     default:
-                        Throw.ArgumentException( $"Expected Trampoline action function. Got a '{a}'.", nameof( actions ) );
+                        Throw.ArgumentException( $"Expected BasicTrampoline action. Got a '{a}'.", nameof( actions ) );
                         break;
                 }
             }
@@ -148,24 +145,24 @@ namespace CK.Core
         /// </para>
         /// </summary>
         /// <param name="successHandler">The success handler to register.</param>
-        public void OnSuccess( Func<T, Task> successHandler )
+        public void OnSuccess( Action successHandler )
+        {
+            GuardSuccess( successHandler == null );
+            _onSuccess.Add( () => { successHandler!(); return Task.CompletedTask; } );
+        }
+
+        /// <inheritdoc cref="OnSuccess(Action)"/>
+        public void OnSuccess( Func<Task> successHandler )
         {
             GuardSuccess( successHandler == null );
             _onSuccess.Add( successHandler! );
         }
 
-        /// <inheritdoc cref="OnSuccess(Func{T, Task})" />
-        public void OnSuccess( Func<T, ValueTask> successHandler )
+        /// <inheritdoc cref="OnSuccess(Action)"/>
+        public void OnSuccess( Func<ValueTask> successHandler )
         {
             GuardSuccess( successHandler == null );
-            _onSuccess.Add( c => successHandler!( c ).AsTask() );
-        }
-
-        /// <inheritdoc cref="OnSuccess(Func{T, Task})" />
-        public void OnSuccess( Action<T> successHandler )
-        {
-            GuardSuccess( successHandler == null );
-            _onSuccess.Add( c => { successHandler!( c ); return Task.CompletedTask; } );
+            _onSuccess.Add( () => successHandler!().AsTask() );
         }
 
         /// <summary>
@@ -180,29 +177,26 @@ namespace CK.Core
         /// </para>
         /// </summary>
         /// <param name="errorHandler">The error handler to register.</param>
-        /// <remarks>
-        /// The exception parameter is nullable since an initial action can fail by returning gentle false
-        /// instead of throwing.
-        /// </remarks>
-        public void OnError( Func<T, Exception?, Task> errorHandler )
+        public void OnError( Action errorHandler )
+        {
+            GuardError( errorHandler == null );
+            _onError.Add( () => { errorHandler!(); return Task.CompletedTask; } );
+        }
+
+        /// <inheritdoc cref="OnError(Action)"/>
+        public void OnError( Func<Task> errorHandler )
         {
             GuardError( errorHandler == null );
             _onError.Add( errorHandler! );
         }
 
-        /// <inheritdoc cref="OnError(Func{T, Exception?, Task})" />
-        public void OnError( Func<T, Exception?, ValueTask> errorHandler )
+        /// <inheritdoc cref="OnError(Action)"/>
+        public void OnError( Func<ValueTask> errorHandler )
         {
             GuardError( errorHandler == null );
-            _onError.Add( ( c, ex ) => errorHandler!( c, ex ).AsTask() );
+            _onError.Add( () => errorHandler!().AsTask() );
         }
 
-        /// <inheritdoc cref="OnError(Func{T, Exception?, Task})" />
-        public void OnError( Action<T, Exception?> errorHandler )
-        {
-            GuardError( errorHandler == null );
-            _onError.Add( ( c, ex ) => { errorHandler!( c, ex ); return Task.CompletedTask; } );
-        }
 
         /// <summary>
         /// Registers a new finally handler.
@@ -216,24 +210,24 @@ namespace CK.Core
         /// </para>
         /// </summary>
         /// <param name="finallyHandler">The finally handler to register.</param>
-        public void Finally( Func<T, Task> finallyHandler )
+        public void Finally( Action finalHandler )
+        {
+            GuardFinally( finalHandler == null );
+            _onFinally.Add( () => { finalHandler!(); return Task.CompletedTask; } );
+        }
+
+        /// <inheritdoc cref="Finally(Action)"/>
+        public void Finally( Func<Task> finallyHandler )
         {
             GuardFinally( finallyHandler == null );
             _onFinally.Add( finallyHandler! );
         }
 
-        /// <inheritdoc cref="Finally(Func{T, Task})" />
-        public void Finally( Func<T, ValueTask> finalHandler )
+        /// <inheritdoc cref="Finally(Action)"/>
+        public void Finally( Func<ValueTask> finalHandler )
         {
             GuardFinally( finalHandler == null );
-            _onFinally.Add( c => finalHandler!( c ).AsTask() );
-        }
-
-        /// <inheritdoc cref="Finally(Func{T, Task})" />
-        public void Finally( Action<T> finalHandler )
-        {
-            GuardFinally( finalHandler == null );
-            _onFinally.Add( c => { finalHandler!( c ); return Task.CompletedTask; } );
+            _onFinally.Add( () => finalHandler!().AsTask() );
         }
 
         internal void SetHandlingError() => _handlingStep = _errorStep;
@@ -258,7 +252,7 @@ namespace CK.Core
             {
                 Throw.InvalidOperationException( _handlingStep );
             }
-            _onSuccess ??= new List<Func<T, Task>>();
+            _onSuccess ??= new List<Func<Task>>();
         }
 
         [MemberNotNull( nameof( _onError ) )]
@@ -269,14 +263,14 @@ namespace CK.Core
             {
                 Throw.InvalidOperationException( _handlingStep );
             }
-            _onError ??= new List<Func<T, Exception?, Task>>();
+            _onError ??= new List<Func<Task>>();
         }
 
         [MemberNotNull( nameof( _onFinally ) )]
         void GuardFinally( bool nullArg )
         {
             if( nullArg ) Throw.ArgumentNullException( "finallyHandler" );
-            _onFinally ??= new List<Func<T, Task>>();
+            _onFinally ??= new List<Func<Task>>();
         }
     }
 }

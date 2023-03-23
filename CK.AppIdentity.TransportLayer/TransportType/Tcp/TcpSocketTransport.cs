@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly Socket _socket;
 
         public TcpSocketTransport( Socket socket, TcpSocketListener? source )
-            : base( source )
+            : base( source, socket.RemoteEndPoint?.ToString() )
         {
             _socket = socket;
         }

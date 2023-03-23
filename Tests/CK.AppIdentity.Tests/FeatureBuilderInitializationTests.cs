@@ -72,7 +72,7 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task<bool> InitializeDynamicRemoteAsync(DynamicRemoteInitializatonContext context)
+            protected override Task<bool> InitializeDynamicRemoteAsync(FeatureInitializatonContext context, IRemoteParty remoteParty)
             {
                 throw new NotImplementedException();
             }

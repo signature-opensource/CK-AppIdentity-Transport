@@ -31,19 +31,18 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="transportManager">The transport manager.</param>
         /// <param name="typedAddress">The listening end point (necessarily a compatible address that has been parsed by this service).</param>
-        /// <param name="remote">The first remote party that needs this listener.</param>
         /// <returns>The transport listener or null if it cannot be created.</returns>
-        protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress, IRemoteParty remote );
+        protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress );
 
         /// <summary>
-        /// Ensures that a listener is setup on the <paramref name="endPoint"/> and registers a remote that needs it.
+        /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
+        /// The listener should be as ready as possible to handle incoming connections.
         /// </summary>
         /// <param name="monitor">The monitor to signal errors.</param>
         /// <param name="transportManager">The transport manager.</param>
         /// <param name="endPoint">The listening address.</param>
-        /// <param name="remote">The remote that requires this listener.</param>
-        /// <returns>True on success, false otherwise.</returns>
-        internal bool RegisterListenerParty( IActivityMonitor monitor, TransportManager transportManager, TransportTypeAddress endPoint, IRemoteParty remote )
+        /// <returns>The listener on success, null otherwise.</returns>
+        internal TransportListener? TryEnsureListener( IActivityMonitor monitor, TransportManager transportManager, TransportTypeAddress endPoint )
         {
             Debug.Assert( endPoint.Type == this );
             Debug.Assert( transportManager.IsInApplicationIdentityLoop( monitor ) );
@@ -52,26 +51,35 @@ namespace CK.AppIdentity.TransportLayer
             {
                 if( exists.IsListeningAddress( endPoint.TypedAddress ) )
                 {
-                    exists.AddParty( remote );
-                    return true;
+                    return exists;
                 }
             }
-            var l = TryCreateListener( monitor, transportManager, endPoint.TypedAddress, remote );
-            if( l == null ) return false;
-            _listeners.Add( l );
-            return true;
+            var l = TryCreateListener( monitor, transportManager, endPoint.TypedAddress );
+            if( l != null ) _listeners.Add( l );
+            return l;
         }
+
+        internal async Task<Transport?> TryConnectToAsync( IActivityLogger logger, IRemoteParty remote, object typedAddress, CancellationToken cancellation )
+        {
+            var transport = await TryConnectAsync( logger, typedAddress, cancellation );
+            if( transport != null )
+            {
+
+            }
+            return transport;
+        }
+
 
         /// <summary>
         /// Attempts a connection to the provided <paramref name="typedAddress"/>.
-        /// If connection is not possible, any exception may be thrown but preferably  a null <see cref="Transport"/>
+        /// If connection is not possible, any exception may be thrown but preferably a null <see cref="Transport"/>
         /// should be returned and the <paramref name="logger"/> be used to log a detailed error.
         /// </summary>
         /// <param name="logger">The logger to use.</param>
         /// <param name="typedAddress">The target end point (necessarily a compatible address that has been parsed by this service).</param>
         /// <param name="cancellation">Cancellation token that will be signaled if the connection attempt timeout is reached.</param>
         /// <returns>A Transport or null.</returns>
-        internal protected abstract Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation );
+        protected abstract Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation );
 
     }
 }

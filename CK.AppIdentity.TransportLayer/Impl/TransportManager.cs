@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.PerfectEvent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.TransportLayer
@@ -10,8 +11,8 @@ namespace CK.AppIdentity.TransportLayer
         // Heart beats handles the BackTask list.
         readonly Timer _heartbeat;
         readonly BackTask.List _backTasks;
-        List<(ITransport Transport, Task<string?> OperationError, DateTime Expires, bool AlwaysDestroy)> _backgroundTaskList;
-
+        readonly BackTask.Head _headIncomingConnection;
+        readonly BackTask.Head _headOutgoingConnection;
 
         // Message factory for sending connection messages.
         readonly TransportMessageFactory _messageSendingFactory;
@@ -26,7 +27,8 @@ namespace CK.AppIdentity.TransportLayer
             _waitingList = new List<InitialMessage>();
             _waitingListChanged = new PerfectEventSender<InitialMessage>();
             _backTasks = new BackTask.List( this );
-            _backgroundTaskList = new List<(ITransport Transport, Task<string?> OperationError, DateTime Expires, bool AlwaysDestroy)>();
+            _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
+            _headOutgoingConnection = BackTask.Head.Create<OutgoingConnectionBackTask>();
             _heartbeat = new Timer( OnTimer, this, 1000, 1000 );
 
         }
@@ -45,8 +47,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if this is the ApplicationIdentity's agent monitor.</returns>
         public bool IsInApplicationIdentityLoop( IActivityMonitor monitor ) => _agent.IsInLoop( monitor );
 
-        public new void PushTypedJob( object job ) => base.PushTypedJob( job );
-
         /// <summary>
         /// Gets the message factory for outgoing messages.
         /// </summary>
@@ -57,25 +57,56 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public AppIdentityAgent ApplicationIdentityAgent => _agent;
 
-        // An IncomingConnection is directly the Transport object.
-        record class UnknownIncomingRemoteJob( Transport Transport, InitialMessage InitialMessage );
-        record class IncomingAcceptedTransportJob( IRemoteParty Remote, Transport Transport );
-        public record class CondemnTransportJob( ITransport Transport, TransportMessage? ByeByeMessage = null );
+        internal void TryConnectTo( IRemoteParty remote, TransportTypeAddress target )
+        {
+            PushTypedJob( new TryConnectToJob( remote, target ) );
+        }
+
+        internal void IncomingTransport( Transport t )
+        {
+            PushTypedJob( t );
+        }
+
+        internal void UnknownIncomingRemote( InitialMessage m )
+        {
+            PushTypedJob( m );
+        }
+
+        internal void IncomingAcceptedTransport( IRemoteParty remote, Transport incoming )
+        {
+            PushTypedJob( new IncomingAcceptedTransportJob( remote, incoming ) );
+        }
+
+        internal void CondemnTransport( ITransport transport, TransportMessage[]? byeByeMessages = null )
+        {
+            PushTypedJob( new CondemnTransportJob( transport, byeByeMessages ) );
+        }
+
+        // A new incoming Transport from a TransportListener is directly the Transport object.
+        // An unknown incoming connection is directly the InitialMessage.
+        sealed record class TryConnectToJob( IRemoteParty remote, TransportTypeAddress target );
+        sealed record class IncomingAcceptedTransportJob( IRemoteParty Remote, Transport Transport );
+        sealed record class CondemnTransportJob( ITransport Transport, TransportMessage[]? byeByeMessage );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
             switch( job )
             {
-                case DBNull: return HandleHeartBeat( monitor );
-                case Transport t:
-                    // New Transport:
-                    if( t.Listener != null )
+                case DBNull:
+                    using( monitor.OpenTrace( $"TransportManager heartbeat ({_backTasks.Count} background tasks to check)." ) )
                     {
-                        _backgroundTaskList.Add( (t, HandleIncomingTransportStartAsync( t ), DateTime.UtcNow.AddSeconds( 2 ), false) );
+                        _backTasks.OnHeartBeat( monitor );
                     }
                     return default;
-                case UnknownIncomingRemoteJob j:
-                    return HandleUnknownIncomingRemote( monitor, j );
+                case TryConnectToJob c:
+                    _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.remote, c.target ), 1 );
+                    return default;
+                case Transport t:
+                    Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
+                    _backTasks.Add<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
+                    return default;
+                case InitialMessage m:
+                    return HandleUnknownIncomingRemote( monitor, m );
                 case IncomingAcceptedTransportJob j:
                     return HandleIncomingAcceptedTransport( monitor, j );
                 case CondemnTransportJob j:
@@ -84,86 +115,12 @@ namespace CK.AppIdentity.TransportLayer
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
-        async ValueTask HandleHeartBeat( IActivityMonitor monitor )
-        {
-            using( monitor.OpenTrace( $"TransportManager heartbeat ({_backTasks.Count} background tasks to check)." ) )
-            {
-                _backTasks.OnHeartBeat( monitor );
-            }
-
-            using( monitor.OpenTrace( $"ConnectionManager heartbeat ({_backgroundTaskList.Count} background tasks to check)." ) )
-            {
-                List<(ITransport Transport, Task<string?> OperationError, DateTime Expires, bool AlwaysDestroy)>? newList = null;
-                var now = DateTime.UtcNow;
-                foreach( var t in _backgroundTaskList )
-                {
-                    bool mustDestroy = false;
-                    bool expired = t.Expires <= now;
-                    if( t.OperationError.IsCompleted )
-                    {
-                        if( t.OperationError.Exception != null )
-                        {
-                            monitor.Warn( $"Background task failed.", t.OperationError.Exception );
-                            mustDestroy = true;
-                        }
-                        else if( t.OperationError.Result != null )
-                        {
-                            monitor.Warn( $"Background task error: {t.OperationError.Result}." );
-                            mustDestroy = true;
-                        }
-                        else
-                        {
-                            // The operation succeed, however we may still destroy the transport.
-                            mustDestroy = t.AlwaysDestroy;
-                        }
-                    }
-                    else if( expired )
-                    {
-                        // The operation is out of time. We must destroy it.
-                        monitor.Warn( $"Background task timeout." );
-                        mustDestroy = true;
-                    }
-                    else
-                    {
-                        // Pending operation: transfer to the new list.
-                        newList ??= new();
-                        newList.Add( t );
-                    }
-                    // If we must destroy the transport, do it.
-                    if( mustDestroy )
-                    {
-                        await DestroyTransportAsync( monitor, t.Transport );
-                    }
-                }
-                if( newList != null )
-                {
-                    monitor.Trace( $"{_backgroundTaskList.Count - newList.Count} tasks removed." );
-                    _backgroundTaskList = newList;
-                }
-            }
-        }
-
         async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
         {
             using( monitor.OpenTrace( $"Condemning transport '{j.Transport}'." ) )
             {
-                if( j.ByeByeMessage != null )
-                {
-                    monitor.Trace( "Sending ByeBye message." );
-                    var byeBye = j.Transport.SendAsync( j.ByeByeMessage )
-                                    .AsTask()
-                                    .ContinueWith( send =>
-                                    {
-                                        if( send.Exception != null ) return Task.FromException<string?>( send.Exception );
-                                        return Task.FromResult<string?>( null );
-                                    } )
-                                    .Unwrap();
-                    _backgroundTaskList.Add( (j.Transport, byeBye, DateTime.UtcNow.AddSeconds( 2 ), true) );
-                }
-                else
-                {
-                    await DestroyTransportAsync( monitor, j.Transport );
-                }
+                // TODO: handle ByeBye messages (with a back task).
+                await DestroyTransportAsync( monitor, j.Transport );
             }
         }
 
@@ -186,5 +143,6 @@ namespace CK.AppIdentity.TransportLayer
                 monitor.Error( "While destroying transport.", ex );
             }
         }
+
     }
 }

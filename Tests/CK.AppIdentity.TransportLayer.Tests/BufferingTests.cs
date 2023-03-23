@@ -197,7 +197,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteInt32( DefInt32 );
                 w.WriteUInt32( DefUInt32 );
                 w.WriteInt64( DefInt64 );
@@ -220,6 +220,8 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 w.WriteBool( DefBoolean );
                 w.WriteIndex( DefIndex );
                 w.WriteRange( DefRange );
+
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -253,11 +255,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableInt32( null );
                 w.WriteNullableInt32( Int32.MinValue );
                 w.WriteNullableInt32( Int32.MaxValue );
                 w.WriteNullableInt32( 126 );
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -266,7 +269,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 r.ReadNullableInt32().Should().Be( Int32.MaxValue );
                 r.ReadNullableInt32().Should().Be( 126 );
             } ).Should()
-            .Be( 1 /*Version*/ + 1 + 3 * (1 + 4) );
+            .Be( 1 + 3 * (1 + 4) );
         }
 
         [Test]
@@ -274,7 +277,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 //// 1 byte
                 w.WriteSmallUInt64( 0 );
                 w.WriteSmallUInt64( 127 );
@@ -315,6 +318,8 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 );
                 w.WriteSmallUInt64( UInt64.MaxValue );
                 (BitOperations.Log2( UInt64.MaxValue ) / 7 + 1).Should().Be( 10 );
+
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -339,7 +344,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 );
                 r.ReadSmallUInt64().Should().Be( UInt64.MaxValue );
             } ).Should()
-            .Be( 1 /*Version*/ + 2 * 10*11/2, "n(n+1)/2 is the sum of the first integers up to n ;)." );
+            .Be( 2 * 10*11/2, "n(n+1)/2 is the sum of the first integers up to n ;)." );
         }
 
         [Test]
@@ -347,12 +352,14 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 for( uint i = 0; i < 128; ++i )
                 {
                     w.WriteSmallUInt32( i );
                     w.WriteSmallUInt64( i );
                 }
+
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -362,7 +369,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                     r.ReadByte().Should().Be( (byte)((i << 1) + 1) );
                 }
             } ).Should()
-            .Be( 1 /*Version*/ + 2 * 128 );
+            .Be( 2 * 128 );
         }
 
         [Test]
@@ -370,11 +377,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableChar( null );
                 w.WriteNullableChar( Char.MinValue );
                 w.WriteNullableChar( (char)(Char.MinValue + 1) );
                 w.WriteNullableChar( Char.MaxValue );
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -383,22 +391,23 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 r.ReadNullableChar().Should().Be( (char)(Char.MinValue + 1) );
                 r.ReadNullableChar().Should().Be( Char.MaxValue );
             } ).Should()
-                .Be( 1 /*Version*/ + 1 + 1 + 1 + 3, "Nullable char are int length encoded. MaxValue requires 3 bytes." );
+                .Be( 1 + 1 + 1 + 3, "Nullable char are int length encoded. MaxValue requires 3 bytes." );
 
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableChar( 'の' ); // 'HIRAGANA LETTER NO' (U+306E - UTF-8: 0xE3 0x81 0xAE)
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
                 r.ReadNullableChar().Should().Be( 'の' );
             } ).Should()
-                .Be( 1 /*Version*/ + 2, "Nullable char are int length encoded, not Utf8 encoding." );
+                .Be( 2, "Nullable char are int length encoded, not Utf8 encoding." );
 
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableChar( null );
                 // We write Char.MaxValue values (zero based).
                 for( int i = 0x00; i < Char.MaxValue - 1; ++i )
@@ -407,6 +416,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                     //if( char.IsSurrogate( c ) ) continue;
                     w.WriteNullableChar( (char)i );
                 }
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
@@ -429,11 +439,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
             double.IsNaN( nan2 ).Should().BeTrue();
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableDouble( nan2 );
                 w.WriteNullableDouble( nan1 );
                 w.WriteNullableDouble( null );
                 w.WriteNullableDouble( Math.PI );
+                w.Commit();
             },
             sequence =>
             {
@@ -443,7 +454,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 r.ReadNullableDouble().Should().Be( null );
                 r.ReadNullableDouble().Should().Be( Math.PI );
             } )
-            .Should().Be( 1 /*Version*/ + 1 + 3 * (1 + 8) );
+            .Should().Be( 1 + 3 * (1 + 8) );
         }
 
         [Test]
@@ -455,11 +466,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
             float.IsNaN( nan2 ).Should().BeTrue();
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteNullableSingle( nan2 );
                 w.WriteNullableSingle( nan1 );
                 w.WriteNullableSingle( null );
                 w.WriteNullableSingle( (float)Math.PI );
+                w.Commit();
             },
             sequence =>
             {
@@ -469,7 +481,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 r.ReadNullableSingle().Should().Be( null );
                 r.ReadNullableSingle().Should().Be( (float)Math.PI );
             } )
-            .Should().Be( 1 /*Version*/ + 1 + 3 * (1 + 4) );
+            .Should().Be( 1 + 3 * (1 + 4) );
         }
 
         [TestCase( 16 )]
@@ -481,24 +493,26 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 w.WriteString( "" );
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );
                 r.ReadString().Should().Be( "" );
             } ).Should()
-                .Be( 1 /*Version*/ + 1, "An empty string is only one byte." );
+                .Be( 1, "An empty string is only one byte." );
 
             ReadWrite( bytes =>
             {
-                using var w = new FastByteWriter( bytes );
+                var w = new FastByteWriter( bytes );
                 string s = "";
                 for( int i = 1; i < 75000; ++i )
                 {
                     s += 'a';
                     w.WriteString( s );
                 }
+                w.Commit();
             }, sequence =>
             {
                 var r = new FastByteReader( sequence );

@@ -46,7 +46,7 @@ namespace CK.AppIdentity.Cris
             return Task.FromResult( true );
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context )
+        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty remoteParty )
         {
             throw new System.NotImplementedException();
         }

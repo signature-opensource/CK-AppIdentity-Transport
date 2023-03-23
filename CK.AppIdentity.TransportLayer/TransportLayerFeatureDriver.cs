@@ -27,28 +27,27 @@ namespace CK.AppIdentity.TransportLayer
 
         protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
         {
-            var transportManager = _transportManager = new TransportManager( context.Agent );
-            bool success = transportManager.Start();
+            _transportManager = new TransportManager( context.Agent );
+            bool success = _transportManager.Start();
             if( !success )
             {
                 context.Monitor.Error( "Unable to start the Transport Manager." );
             }
             // Even if initialization fails, register the features: it may be required by others.
-            ApplicationIdentityService.AddFeature( transportManager );
+            ApplicationIdentityService.AddFeature( _transportManager );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                success &= InitializeRemote( context.Monitor, transportManager, r );
+                success &= InitializeRemote( context, r );
             }
             return Task.FromResult( true );
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context )
+        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty remoteParty )
         {
-            Debug.Assert( _transportManager != null );
-            return Task.FromResult( InitializeRemote( context.Monitor, _transportManager, context.RemoteParty ) );
+            return Task.FromResult( InitializeRemote( context, remoteParty ) );
         }
 
-        bool InitializeRemote( IActivityMonitor monitor, TransportManager transportManager, IRemoteParty r )
+        bool InitializeRemote( FeatureInitializatonContext context, IRemoteParty r )
         {
             bool success = true;
             if( r.DomainApplicationIdentity != null )
@@ -57,39 +56,51 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     if( IsAllowedFeature( rSub ) )
                     {
-                        success &= PlugTransportFeature( monitor, transportManager, rSub );
+                        success &= PlugTransportFeature( context, rSub );
                     }
                 }
             }
             else if( IsAllowedFeature( r ) )
             {
-                success &= PlugTransportFeature( monitor, transportManager, r );
+                success &= PlugTransportFeature( context, r );
             }
             return success;
         }
 
-        bool PlugTransportFeature( IActivityMonitor monitor, TransportManager transportManager, IRemoteParty r )
+        bool PlugTransportFeature( FeatureInitializatonContext context, IRemoteParty r )
         {
+            Debug.Assert( _transportManager != null );
             // Skip "Undefined" but this is not an error.
             if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
             {
                 // If we cannot resolve the listening or target address, it's an error.
-                if( !ResolveAdresses( monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
+                if( !ResolveAdresses( context.Monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
                 {
                     return false;
                 }
                 Debug.Assert( (listen == null) != (target == null) );
                 // If we are listening and cannot setup a listener on the local address, it's an error.
-                if( listen != null && !listen.Type.RegisterListenerParty( monitor, transportManager, listen, r ) )
+                TransportListener? listener = null;
+                if( listen != null && (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
                 {
                     return false;
                 }
-                // If we are not listening then we must initiate our outgoing connection.
-                if( target != null )
+                // No direct initialization error: add the TransportFeature to the party.
+                // The initialization is not finished: if the party is listening it must be registered in its
+                // listener and if the party is the initiator it must start to try to connect.
+                // However, to be able to start exchanging with others, we must know the message protocols
+                // that are supported.
+                var t = new TransportFeature( _transportManager, r, listener );
+                r.AddFeature( t );
+                if( listener != null )
                 {
-
+                    context.Trampoline.OnSuccess( () => listener.AddParty( r ) );
                 }
-                r.AddFeature( new TransportFeature( transportManager, r ) );
+                else
+                {
+                    Debug.Assert( target != null );
+                    context.Trampoline.OnSuccess( () => _transportManager.TryConnectTo( r, target ) );
+                }
             }
             return true;
         }

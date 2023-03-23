@@ -16,7 +16,6 @@ namespace CK.AppIdentity.TransportLayer
         int _bufferPos;
         int _bufferSize;
         readonly ReadOnlySequence<byte> _sequence;
-        int _version;
 
         public FastByteReader( ReadOnlySequence<byte> sequence )
         {
@@ -25,10 +24,7 @@ namespace CK.AppIdentity.TransportLayer
             _bufferPos = 0;
             _bufferSize = _currentSpan.Length;
             _sequence = sequence;
-            _version = 0; 
-            _version = ReadByte();
         }
-
 
         [MethodImpl( MethodImplOptions.NoInlining )]
         void MoveNext()

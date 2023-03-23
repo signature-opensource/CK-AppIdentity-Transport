@@ -155,6 +155,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Creates a static snapshot <see cref="TransportMessage"/>, its content is a single independent segment (not pooled).
         /// <see cref="TransportMessage.Dispose()"/> on a static message does nothing.
         /// </summary>
+        /// <param name="protocolNumber">The protocol number.</param>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A static transport message.</returns>

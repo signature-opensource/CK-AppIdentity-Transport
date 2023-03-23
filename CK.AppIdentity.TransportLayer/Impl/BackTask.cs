@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -29,18 +30,10 @@ namespace CK.AppIdentity.TransportLayer
 #if DEBUG
             public readonly Type Type;
             Head( Type tTask ) => Type = tTask;
-            public Head Create<T>() where T : BackTask => new Head( typeof(T) );
+            public static Head Create<T>() where T : BackTask => new Head( typeof(T) );
 #else
-            public Head Create<T>() => new Head();
+            public static Head Create<T>() => new Head();
 #endif
-        }
-
-        protected BackTask( Head head )
-        {
-#if DEBUG
-            Throw.CheckArgument( head != null && head.Type == GetType() );
-#endif
-            _head = head;    
         }
 
         /// <summary>
@@ -119,6 +112,11 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( ticks > 0 );
             _checkTick += ticks;
         }
+
+        /// <summary>
+        /// Gets the current tick.
+        /// </summary>
+        protected int CurrentTick => _checkTick;
 
         /// <summary>
         /// Checks whatever it has to check. Can call <see cref="Retry(int)"/> if needed.

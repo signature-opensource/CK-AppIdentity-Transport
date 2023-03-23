@@ -17,14 +17,19 @@ namespace CK.AppIdentity.TransportLayer
         readonly SemaphoreSlim? _sendLock;
         readonly TransportMessageFactory _receiveFactory;
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
+        readonly string _remoteEndPointDescription;
 
         /// <summary>
         /// Initializes a new Transport.
         /// </summary>
         /// <param name="source">The listener when this transport is created from an incoming connexion.</param>
+        /// <param name="remoteEndPointDescription">
+        /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
+        /// </param>
         /// <param name="multipleCommunicationStreams">True for Quic. This will enable a SendAndWaitAsync method (request/response streams).</param>
-        protected Transport( TransportListener? source, bool multipleCommunicationStreams = false )
+        protected Transport( TransportListener? source, string? remoteEndPointDescription, bool multipleCommunicationStreams = false )
         {
+            _remoteEndPointDescription = remoteEndPointDescription ?? "<No EndPoint description>";
             _listener = source;
             _sendLock = multipleCommunicationStreams ? null : new SemaphoreSlim( initialCount: 1, maxCount: 1 );
             _reader = ReadExactlyAsync;
@@ -36,6 +41,11 @@ namespace CK.AppIdentity.TransportLayer
         /// Null if this transport is initiated by the remote party.
         /// </summary>
         public TransportListener? Listener => _listener;
+
+        /// <summary>
+        /// Gets a string that describes the remote's endpoint.
+        /// </summary>
+        public string RemoteEndPointDescription => _remoteEndPointDescription;
 
         /// <inheritdoc />
         public Task<TransportMessage> ReadNextAsync( int maxMessageLength = -1, CancellationToken cancellation = default )

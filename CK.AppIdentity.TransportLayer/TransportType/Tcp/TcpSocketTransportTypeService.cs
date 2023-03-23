@@ -45,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        internal protected override async Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation )
+        protected override async Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation )
         {
             var ipEndPoint = (IPEndPoint)typedAddress;
             var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
@@ -63,7 +63,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress, IRemoteParty firstParty )
+        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress )
         {
             var ipEndPoint = (IPEndPoint)typedAddress;
             try
@@ -82,7 +82,7 @@ namespace CK.AppIdentity.TransportLayer
                 socket.Bind( ipEndPoint );
                 socket.Listen();
                 Debug.Assert( socket.LocalEndPoint is IPEndPoint );
-                return new TcpSocketListener( transportManager, this, ipEndPoint, socket, firstParty );
+                return new TcpSocketListener( transportManager, this, ipEndPoint, socket );
             }
             catch( Exception ex )
             {

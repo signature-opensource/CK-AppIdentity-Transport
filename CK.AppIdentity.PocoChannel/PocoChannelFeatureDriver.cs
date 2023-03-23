@@ -39,7 +39,7 @@ namespace CK.AppIdentity.PocoChannel
 
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context )
+        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty party )
         {
             throw new NotImplementedException();
         }

@@ -26,10 +26,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="transportManager">The TransportManager.</param>
         /// <param name="transportType">The transport type that manages this listener.</param>
-        /// <param name="first">The first remote party that needs this listener.</param>
-        protected TransportListener( TransportManager transportManager, ITransportTypeService transportType, IRemoteParty first )
+        protected TransportListener( TransportManager transportManager, ITransportTypeService transportType )
         {
-            _parties = new IRemoteParty[] { first };
+            _parties = Array.Empty<IRemoteParty>();
             _transportManager = transportManager;
             _transportType = transportType;
         }

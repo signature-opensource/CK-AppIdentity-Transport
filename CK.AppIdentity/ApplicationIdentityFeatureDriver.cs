@@ -107,7 +107,8 @@ namespace CK.AppIdentity
         /// or subordinated remotes.
         /// </summary>
         /// <param name="context">The initialization context.</param>
+        /// <param name="party">The dynamic remote party to initialize.</param>
         /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
-        internal protected abstract Task<bool> InitializeDynamicRemoteAsync( DynamicRemoteInitializatonContext context );
+        internal protected abstract Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty party );
     }
 }

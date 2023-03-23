@@ -15,8 +15,8 @@ namespace CK.AppIdentity.TransportLayer
         readonly IPEndPoint _address;
         readonly Socket _listenSocket;
 
-        public TcpSocketListener( TransportManager manager, TcpSocketTransportTypeService tcpService, IPEndPoint address, Socket listenSocket, IRemoteParty first )
-            : base( manager, tcpService, first )
+        public TcpSocketListener( TransportManager manager, TcpSocketTransportTypeService tcpService, IPEndPoint address, Socket listenSocket )
+            : base( manager, tcpService )
         {
             _address = address;
             _listenSocket = listenSocket;
@@ -62,7 +62,7 @@ namespace CK.AppIdentity.TransportLayer
                     var acceptSocket = await _listenSocket.AcceptAsync();
                     // Disable Nagle algorithm: a message is fully buffered. We don't need it.
                     acceptSocket.NoDelay = true;
-                    TransportManager.PushTypedJob( new TcpSocketTransport( acceptSocket, this ) );
+                    TransportManager.IncomingTransport( new TcpSocketTransport( acceptSocket, this ) );
                 }
                 catch( ObjectDisposedException )
                 {
