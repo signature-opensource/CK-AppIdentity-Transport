@@ -12,8 +12,8 @@ namespace CK.AppIdentity.TransportLayer
     /// Factory for <see cref="TransportMessage"/>. There is only 3 ways to create a transport message:
     /// <list type="number">
     /// <item><see cref="Create(Action{IBufferWriter{byte}}, int)"/> for outgoing messages that must be disposed</item>
-    /// <item><see cref="ReadAsync(Func{Memory{byte}, CancellationToken, ValueTask}, long, CancellationToken)"/> for incoming messages that must be disposed.</item>
-    /// <item><see cref="CreateStatic(Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
+    /// <item><see cref="ReadAsync(Func{Memory{byte}, CancellationToken, ValueTask}, int, CancellationToken)"/> for incoming messages that must be disposed.</item>
+    /// <item>The static <see cref="CreateStatic(byte,Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
     /// </list>
     /// <para>
     /// This class is thread safe.
@@ -21,9 +21,22 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class TransportMessageFactory : IDisposable
     {
-        internal const int _maxPrefixLength = 5;
+        /// <summary>
+        /// The prefix contains the message length (1 to 5 bytes) and the protocol byte number.
+        /// </summary>
+        internal const int _maxPrefixLength = 5 + 1;
 
         MutableSequence<byte>? _oneBuffer;
+        byte _protocolNumber;
+
+        /// <summary>
+        /// Initializes a new message factory with a default <see cref="TransportMessage.ProtocolNumber"/>.
+        /// </summary>
+        /// <param name="defaultProtocolNumber"></param>
+        public TransportMessageFactory( byte defaultProtocolNumber )
+        {
+            _protocolNumber = defaultProtocolNumber;
+        }
 
         /// <summary>
         /// Creates a <see cref="TransportMessage"/> from an asynchronous buffer provider.
@@ -54,6 +67,7 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( buffer.Length == 0 );
                 await exactReader( header.Slice( 0, 1 ), cancellation ).ConfigureAwait( false );
                 int byteMessageLen = header.Span[0];
+                byte protocolNumber = 0;
                 if( byteMessageLen == 0 )
                 {
                     return TransportMessage.Empty;
@@ -65,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
                     // Everything fits in the header.
                     await exactReader( header.Slice( 1, byteMessageLen ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( byteMessageLen );
-                    return new TransportMessage( this, buffer, 0, 1 );
+                    return new TransportMessage( this, protocolNumber, buffer, 0, 1 );
                 }
                 // The length is on more than one byte. There must be at least 128 bytes
                 // and we can fully handle the maximal 5 bytes prefix length.
@@ -83,7 +97,7 @@ namespace CK.AppIdentity.TransportLayer
                     header = header.Slice( 0, lefToRead );
                     await exactReader( header, cancellation ).ConfigureAwait( false );
                     buffer.Advance( header.Length );
-                    return new TransportMessage( this, buffer, 0, prefixLength );
+                    return new TransportMessage( this, protocolNumber, buffer, 0, prefixLength );
                 }
                 // There is more than the initial buffer. Fills it.
                 await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -102,7 +116,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( buffer.GetMemory( lefToRead ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( lefToRead );
                 }
-                return new TransportMessage( this, buffer, 0, prefixLength );
+                return new TransportMessage( this, protocolNumber, buffer, 0, prefixLength );
             }
             catch( OperationCanceledException ) when (cancellation.IsCancellationRequested)
             {
@@ -143,7 +157,7 @@ namespace CK.AppIdentity.TransportLayer
             buffer.MinimumBufferSize = minSequenceBufferSize;
             try
             {
-                return DoCreate( this, writer, buffer );
+                return DoCreate( this, writer, buffer, _protocolNumber );
             }
             finally
             {
@@ -159,13 +173,13 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A static transport message.</returns>
-        public static TransportMessage CreateStatic( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public static TransportMessage CreateStatic( byte protocolNumber, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
             var buffer = new MutableSequence<byte>();
             buffer.MinimumBufferSize = minSequenceBufferSize;
             try
             {
-                return DoCreate( null, writer, buffer );
+                return DoCreate( null, writer, buffer, protocolNumber );
             }
             finally
             {
@@ -173,7 +187,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        static TransportMessage DoCreate( TransportMessageFactory? factory, Action<IBufferWriter<byte>> writer, MutableSequence<byte> buffer )
+        static TransportMessage DoCreate( TransportMessageFactory? factory, Action<IBufferWriter<byte>> writer, MutableSequence<byte> buffer, byte protocolNumber )
         {
             int prefixLength;
             // Reserves 5 bytes: this is the maximal prefix length.
