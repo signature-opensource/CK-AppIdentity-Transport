@@ -18,11 +18,16 @@ namespace CK.AppIdentity
         readonly IServiceProvider _serviceProvider;
 
         internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider )
-            : base( "ApplicationIdentityService micro agent." )
+            : base( "ApplicationIdentityService Agent." )
         {
             _service = service;
             _serviceProvider = serviceProvider;
         }
+
+        /// <summary>
+        /// Gets the service provider of the running application.
+        /// </summary>
+        public IServiceProvider serviceProvider => _serviceProvider;
 
         internal void Start() => Throw.CheckState( TryStart() == RunningStatus.Running );
 
@@ -96,8 +101,7 @@ namespace CK.AppIdentity
         ValueTask HandleDestroyAsync( IActivityMonitor monitor, RemoteParty destroyed )
         {
             monitor.Info( $"Destroying Remote {destroyed.FullName}." );
-            var hosted = destroyed.ApplicationIdentity as DomainApplicationIdentity;
-            if( hosted != null )
+            if( destroyed.ApplicationIdentity is DomainApplicationIdentity hosted )
             {
                 // It is useless to cleanup the remote list of a domain that is being destroyed. 
                 if( !hosted.Host.IsDestroyed )

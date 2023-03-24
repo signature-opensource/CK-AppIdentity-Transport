@@ -15,7 +15,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly BackTask.Head _headOutgoingConnection;
 
         // Message factory for sending connection messages.
-        readonly TransportMessageFactory _messageSendingFactory;
+        readonly OutgoingMessageFactory _messageSendingFactory;
         readonly List<InitialMessage> _waitingList;
         readonly PerfectEventSender<InitialMessage> _waitingListChanged;
 
@@ -23,7 +23,7 @@ namespace CK.AppIdentity.TransportLayer
             : base( "CK.AppIdentity.PocoChannel.ConnectionManager" )
         {
             _agent = agent;
-            _messageSendingFactory = new TransportMessageFactory();
+            _messageSendingFactory = new OutgoingMessageFactory();
             _waitingList = new List<InitialMessage>();
             _waitingListChanged = new PerfectEventSender<InitialMessage>();
             _backTasks = new BackTask.List( this );
@@ -50,7 +50,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the message factory for outgoing messages.
         /// </summary>
-        public TransportMessageFactory MessageSendingFactory => _messageSendingFactory;
+        internal OutgoingMessageFactory MessageSendingFactory => _messageSendingFactory;
 
         /// <summary>
         /// Gets the <see cref="ApplicationIdentityService"/> agent.
@@ -141,6 +141,26 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 monitor.Error( "While destroying transport.", ex );
+            }
+        }
+
+        async ValueTask HandleUnknownIncomingRemote( IActivityMonitor monitor, InitialMessage initialMessage )
+        {
+            _waitingList.Add( initialMessage );
+            await _waitingListChanged.SafeRaiseAsync( monitor, initialMessage );
+        }
+
+        async ValueTask HandleIncomingAcceptedTransport( IActivityMonitor monitor, IncomingAcceptedTransportJob remoteTransport )
+        {
+            var channel = remoteTransport.Remote.GetFeature<TransportFeature>();
+            if( channel != null )
+            {
+                channel.OnNewTransport( monitor, remoteTransport.Transport );
+            }
+            else
+            {
+                monitor.Error( $"Transport feature has been removed from '{remoteTransport.Remote.FullName}' party. Destroying the incoming transport." );
+                await DestroyTransportAsync( monitor, remoteTransport.Transport );
             }
         }
 

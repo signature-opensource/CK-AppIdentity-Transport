@@ -5,7 +5,6 @@ using System.Numerics;
 
 namespace CK.AppIdentity.TransportLayer.Tests
 {
-
     [TestFixture]
     public class BufferingTests
     {

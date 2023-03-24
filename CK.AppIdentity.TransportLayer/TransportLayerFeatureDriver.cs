@@ -1,13 +1,5 @@
 using CK.Core;
-using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Net;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -16,13 +8,15 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly ITransportTypeService[] _transportTypes;
         readonly TcpSocketTransportTypeService _tcp;
+        readonly MessageProtocolDirectoryService _protocolDirectory;
         TransportManager? _transportManager;
 
-        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes )
+        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )
         {
             _transportTypes = transportTypes.ToArray();
             _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
+            _protocolDirectory = protocolDirectory;
         }
 
         protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )

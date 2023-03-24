@@ -15,7 +15,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportListener? _listener;
         readonly SemaphoreSlim? _sendLock;
-        readonly TransportMessageFactory _receiveFactory;
+        readonly IncomingMessageFactory _receiveFactory;
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
 
@@ -33,7 +33,7 @@ namespace CK.AppIdentity.TransportLayer
             _listener = source;
             _sendLock = multipleCommunicationStreams ? null : new SemaphoreSlim( initialCount: 1, maxCount: 1 );
             _reader = ReadExactlyAsync;
-            _receiveFactory = new TransportMessageFactory();
+            _receiveFactory = new IncomingMessageFactory();
         }
 
         /// <summary>
@@ -84,9 +84,9 @@ namespace CK.AppIdentity.TransportLayer
         public ValueTask<bool> SendAsync( TransportMessage message, CancellationToken cancellation = default )
         {
             Throw.CheckArgument( message != null && message.IsValid );
-            return message.PrefixedMessage.IsSingleSegment
-                    ? SendSingleBufferAsync( message.PrefixedMessage.First, cancellation )
-                    : SendAsync( message.PrefixedMessage, cancellation );
+            return message.WireMessage.IsSingleSegment
+                    ? SendSingleBufferAsync( message.WireMessage.First, cancellation )
+                    : SendAsync( message.WireMessage, cancellation );
         }
 
         /// <summary>

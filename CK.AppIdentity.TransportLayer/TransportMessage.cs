@@ -7,7 +7,7 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// Transport messages are simple length-prefixed block of bytes.
     /// The memory belongs to this message, disposing it releases the internal segments
-    /// that compose the <see cref="PrefixedMessage"/>: the ReadOnlySequence must no more be accessed
+    /// that compose the <see cref="WireMessage"/>: the ReadOnlySequence must no more be accessed
     /// once this message is disposed.
     /// <para>
     /// The maximal total message length is <see cref="int.MaxValue"/> - 6 (2 GiB minus the maximal prefix length that is 6 bytes).
@@ -15,9 +15,9 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class TransportMessage : IDisposable
     {
-        readonly TransportMessageFactory? _messageFactory;
+        readonly MessageFactory? _messageFactory;
         readonly MutableSequence<byte>? _buffer;
-        readonly ReadOnlySequence<byte> _prefixedMessage;
+        readonly ReadOnlySequence<byte> _wireMessage;
         readonly object? _disposeLock;
         int _prefixLength;
         int _retainCount;
@@ -55,21 +55,21 @@ namespace CK.AppIdentity.TransportLayer
             if( empty )
             {
                 _prefixLength = 2;
-                _prefixedMessage = new ReadOnlySequence<byte>( new byte[] { 0, 0 } );
+                _wireMessage = new ReadOnlySequence<byte>( new byte[] { 0, 0 } );
             }
         }
 
         // Constructor for regular, disposable messages.
         // offset skips the reserved bytes at the start that are unused by the prefixed length (short messages). 
-        internal TransportMessage( TransportMessageFactory messageFactory, byte protocolNumber, MutableSequence<byte> buffer, int offset, int prefixLength )
+        internal TransportMessage( MessageFactory messageFactory, byte protocolNumber, MutableSequence<byte> buffer, int offset, int prefixLength )
         {
             Debug.Assert( messageFactory != null && prefixLength > 0 && buffer.Length > 0 );
-            Debug.Assert( prefixLength >= 2 && prefixLength <= TransportMessageFactory._maxPrefixLength );
+            Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _messageFactory = messageFactory;
             _buffer = buffer;
             _prefixLength = prefixLength;
             _protocolNumber = protocolNumber;
-            _prefixedMessage = buffer.GetReadOnlySequence( offset );
+            _wireMessage = buffer.GetReadOnlySequence( offset );
             _retainCount = 1;
             _disposeLock = new object();
         }
@@ -78,10 +78,10 @@ namespace CK.AppIdentity.TransportLayer
         internal TransportMessage( byte protocolNumber, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
         {
             Debug.Assert( prefixedMessage.IsSingleSegment && !prefixedMessage.IsSingleSegment );
-            Debug.Assert( prefixLength >= 2 && prefixLength <= TransportMessageFactory._maxPrefixLength );
+            Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _protocolNumber = protocolNumber;
             _prefixLength = prefixLength;
-            _prefixedMessage = prefixedMessage;
+            _wireMessage = prefixedMessage;
         }
 
         /// <summary>
@@ -97,15 +97,15 @@ namespace CK.AppIdentity.TransportLayer
         public byte ProtocolNumber => _protocolNumber;
 
         /// <summary>
-        /// Gets the full message including its length prefix.
+        /// Gets the full message including its prefix.
         /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
         /// </summary>
-        public ReadOnlySequence<byte> PrefixedMessage
+        public ReadOnlySequence<byte> WireMessage
         {
             get
             {
                 Throw.CheckState( IsValid );
-                return _prefixedMessage;
+                return _wireMessage;
             }
         }
 
@@ -118,7 +118,7 @@ namespace CK.AppIdentity.TransportLayer
             get
             {
                 Throw.CheckState( IsValid );
-                return _prefixedMessage.Slice( _prefixLength );
+                return _wireMessage.Slice( _prefixLength );
             }
         }
 
@@ -126,7 +126,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Retains this message, preventing a <see cref="Dispose()"/> to release the resources.
         /// Dispose must be called as many times as Retain has been called for the resources to be released.
         /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/>
-        /// or a static message (see <see cref="TransportMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
+        /// or a static message (see <see cref="Protocol0MessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
         /// has no effect and returns false.
         /// </summary>
         /// <returns>
@@ -152,7 +152,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Disposes this message.
         /// The <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/> messages ignore this,
-        /// as well as messages created by the static <see cref="TransportMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
+        /// as well as messages created by the static <see cref="Protocol0MessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
         /// method.
         /// </summary>
         public void Dispose()

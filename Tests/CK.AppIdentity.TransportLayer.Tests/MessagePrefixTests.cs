@@ -1,7 +1,10 @@
 using CK.Core;
 using FluentAssertions;
 using NUnit.Framework;
+using System;
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -11,6 +14,78 @@ namespace CK.AppIdentity.TransportLayer.Tests
     [TestFixture]
     public class MessagePrefixTests
     {
+        [Test]
+        public void write_and_read_MessagePrefix()
+        {
+            //// Empty message.
+            //WriteAndRead( 0, 0 ).Should().Be( 2 );
+
+            WriteAndReadFor( 0 );
+            WriteAndReadFor( 63 );
+
+            static void WriteAndReadFor( byte protocol )
+            {
+                WriteAndRead( protocol, 1 ).Should().Be( 2 );
+                WriteAndRead( protocol, 255 ).Should().Be( 2 );
+
+                WriteAndRead( protocol, 256 ).Should().Be( 3 );
+                WriteAndRead( protocol, 257 ).Should().Be( 3 );
+                WriteAndRead( protocol, 65535 ).Should().Be( 3 );
+
+                WriteAndRead( protocol, 65536 ).Should().Be( 4 );
+                WriteAndRead( protocol, 65537 ).Should().Be( 4 );
+                WriteAndRead( protocol, 256 * 65536 - 1 ).Should().Be( 4 );
+
+                WriteAndRead( protocol, 256 * 65536 ).Should().Be( 5 );
+                WriteAndRead( protocol, int.MaxValue ).Should().Be( 5 );
+            }
+
+            static int WriteAndRead( byte protocol, uint messageLength )
+            {
+                Span<byte> memory = stackalloc byte[6];
+                int prefixLen = WritePrefix( protocol, messageLength, memory );
+                Debug.Assert( prefixLen <= 5 );
+                uint readLen = ReadPrefix( memory, out int readPrefixLen, out byte readProtocol );
+                readPrefixLen.Should().Be( prefixLen );
+                readProtocol.Should().Be( protocol );
+                readLen.Should().Be( messageLength );
+                return prefixLen;
+            }
+
+
+            static int WritePrefix( uint protocol, uint messageLength, Span<byte> memory )
+            {
+                Debug.Assert( memory.Length >= 6 );
+                Debug.Assert( messageLength >= 0 && protocol < 64 );
+                uint len = (uint)BitOperations.Log2( messageLength ) / 8;
+                Debug.Assert( len >= 0 && len <= 3 );
+                protocol |= len << 6;
+                memory[0] = (byte)protocol;
+                if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );
+                Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( memory ), 1 ), messageLength );
+                return (int)len + 2;
+            }
+
+            static uint ReadPrefix( ReadOnlySpan<byte> memory, out int readPrefixLen, out byte readProtocol )
+            {
+                // We first read exactly 2 bytes. 
+                byte firstByte = memory[0];
+                readProtocol = (byte)(firstByte & 0b00111111);
+                int lenSize = firstByte >> 6;
+                if( lenSize == 0 )
+                {
+                    // 1 byte length message. It may be 0: this is possible only for
+                    // the "0 Protocol". Handle this error above.
+                    readPrefixLen = 2;
+                    return (uint)memory[1];
+                }
+                // There is at least 2 bytes for the length: the message is longer than 256 bytes,
+                // we can safely fill the header.
+                readPrefixLen = lenSize + 2;
+                return BinaryPrimitives.ReadUInt32LittleEndian( memory.Slice( 1 ) ) & (uint)((1ul << (lenSize + 1 << 3)) - 1);
+            }
+        }
+
         [Test]
         public void NOT_USED_Max_PrefixLength_is_between_1_and_5_bytes()
         {

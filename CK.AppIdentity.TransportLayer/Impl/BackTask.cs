@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -16,6 +17,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     abstract class BackTask
     {
+        [AllowNull]
         Head _head;
         BackTask? _nextFree;
         int _checkTick;
