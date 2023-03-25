@@ -32,7 +32,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Sends a <see cref="TransportMessage"/> that must be <see cref="TransportMessage.IsValid"/> otherwise
         /// an <see cref="ArgumentException"/> is thrown.
         /// <para>
-        /// This can be called concurrently, either an <see cref="AsyncLock"/> is used to serialize the calls OR the underlying protocol
+        /// This can be called concurrently, either a <see cref="SemaphoreSlim"/> is used to serialize the calls OR the underlying transport
         /// supports "parallel communication streams": the caller never need to deal with this.
         /// </para>
         /// <para>

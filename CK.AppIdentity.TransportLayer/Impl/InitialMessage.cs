@@ -21,7 +21,7 @@ namespace CK.AppIdentity.TransportLayer
     sealed class InitialMessage : IUnknownRemote
     {
         /// <summary>
-        /// This version drives the whole "0" protocol version.
+        /// This version drives the whole "0 Protocol" version.
         /// </summary>
         public const int CurrentVersion = 0;
 
