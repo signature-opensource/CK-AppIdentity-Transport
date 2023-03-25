@@ -17,7 +17,14 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class IncomingMessageFactory : MessageFactory
     {
-
+        /// <summary>
+        /// Initializes a new 
+        /// </summary>
+        /// <param name="allowed"></param>
+        public IncomingMessageFactory( IEnumerable<MessageProtocol> allowed )
+        {
+            
+        }
 
         /// <summary>
         /// Creates a <see cref="TransportMessage"/> from an asynchronous buffer provider.
@@ -50,7 +57,7 @@ namespace CK.AppIdentity.TransportLayer
                 // We first read exactly 2 bytes. 
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
-                byte encoding = (byte)(firstByte & 0b00111111);
+                byte protocol = (byte)(firstByte & 0b00111111);
                 int messageLength;
                 int lenSize = firstByte >> 6;
                 if( lenSize == 0 )
@@ -60,15 +67,15 @@ namespace CK.AppIdentity.TransportLayer
                     if( messageLength > maxMessageLength ) return TransportMessage.Invalid;
                     if( messageLength == 0 )
                     {
-                        return encoding == 0
+                        return protocol == 0
                                 ? TransportMessage.Empty
-                                : Throw.InvalidDataException<TransportMessage>( $"Forbidden 0 length message received for encoding '{encoding}'." );
+                                : Throw.InvalidDataException<TransportMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
                     }
                     // The whole message (255 bytes max.) necessarily fits in the header.
                     await exactReader( header.Slice( 2, messageLength ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( 2 + messageLength );
                     releaseBuffer = false;
-                    return new TransportMessage( this, encoding, buffer, offset: 0, prefixLength: 2 );
+                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: 2 );
                 }
                 // The length is on more than one byte. There must be at least 256 bytes
                 // and we can fully handle the maximal 5 bytes prefix: we must now use the lenSize
@@ -93,7 +100,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( header, cancellation ).ConfigureAwait( false );
                     buffer.Advance( header.Length );
                     releaseBuffer = false;
-                    return new TransportMessage( this, encoding, buffer, offset: 0, prefixLength: lenSize + 2 );
+                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
                 }
                 // There is more than the initial buffer. Fills it.
                 await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -113,7 +120,7 @@ namespace CK.AppIdentity.TransportLayer
                     buffer.Advance( messageLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( this, encoding, buffer, offset: 0, prefixLength: lenSize + 2 );
+                return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
             }
             catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
             {

@@ -8,10 +8,10 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly ITransportTypeService[] _transportTypes;
         readonly TcpSocketTransportTypeService _tcp;
-        readonly MessageEncodingDirectoryService _protocolDirectory;
+        readonly MessageProtocolDirectoryService _protocolDirectory;
         TransportManager? _transportManager;
 
-        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageEncodingDirectoryService protocolDirectory )
+        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )
         {
             _transportTypes = transportTypes.ToArray();
