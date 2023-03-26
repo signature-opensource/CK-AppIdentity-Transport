@@ -19,7 +19,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportManager _transportManager;
         readonly ITransportTypeService _transportType;
-        IRemoteParty[] _parties;
+        TransportFeature[] _parties;
 
         /// <summary>
         /// Initializes a new TransportListener.
@@ -28,24 +28,24 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="transportType">The transport type that manages this listener.</param>
         protected TransportListener( TransportManager transportManager, ITransportTypeService transportType )
         {
-            _parties = Array.Empty<IRemoteParty>();
+            _parties = Array.Empty<TransportFeature>();
             _transportManager = transportManager;
             _transportType = transportType;
         }
 
         /// <summary>
-        /// Gets the set of remotes that this listener handles.
+        /// Gets the set of remotes <see cref="TransportFeature"/> that this listener handles.
         /// This is thread safe.
         /// </summary>
-        public IReadOnlyList<IRemoteParty> Parties => _parties;
+        public IReadOnlyList<TransportFeature> Parties => _parties;
 
-        internal void AddParty( IRemoteParty party )
+        internal void AddParty( TransportFeature party )
         {
             Debug.Assert( !_parties.Contains( party ) );
             Util.InterlockedAdd( ref _parties, party );
         }
 
-        internal void RemoveParty( IRemoteParty party )
+        internal void RemoveParty( TransportFeature party )
         {
             Debug.Assert( _parties.Contains( party ) );
             Util.InterlockedRemove( ref _parties, party );

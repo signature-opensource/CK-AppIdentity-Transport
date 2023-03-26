@@ -28,6 +28,7 @@ namespace CK.AppIdentity.TransportLayer
         public MessageProtocol Register( string name, bool isPartySpecific = false )
         {
             Throw.CheckNotNullOrWhiteSpaceArgument( name );
+            Throw.CheckArgument( name.Length <= MessageProtocol.NameMaxLength );
             if( name == MessageProtocol.ZeroProtocol.Name )
             {
                 return MessageProtocol.ZeroProtocol;

@@ -1,3 +1,5 @@
+using System.Security.Cryptography.X509Certificates;
+
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
@@ -16,5 +18,15 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the description of the endpoint that received this new remote.
         /// </summary>
         string IncomingEndPointDescription { get; }
+
+        /// <summary>
+        /// Gets the message protocols supported by this remote.
+        /// </summary>
+        IReadOnlyCollection<string> AvailableProtocols { get; }
+
+        /// <summary>
+        /// Gets the public keys.
+        /// </summary>
+        IReadOnlyList<PublicKey> PublicKeys { get; }
     }
 }

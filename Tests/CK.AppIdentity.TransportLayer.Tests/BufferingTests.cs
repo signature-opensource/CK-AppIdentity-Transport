@@ -5,6 +5,7 @@ using System.Numerics;
 
 namespace CK.AppIdentity.TransportLayer.Tests
 {
+
     [TestFixture]
     public class BufferingTests
     {
@@ -340,11 +341,13 @@ namespace CK.AppIdentity.TransportLayer.Tests
             } ).Should()
                 .Be( 1, "An empty string is only one byte." );
 
+
             ReadWrite( bytes =>
             {
+                var random = new Random( minimumBufferSize );
                 var w = new FastByteWriter( bytes );
                 string s = "";
-                for( int i = 1; i < 75000; ++i )
+                for( int i = 1; i < 75000; i += random.Next( 10 ) )
                 {
                     s += 'a';
                     w.WriteString( s );
@@ -352,9 +355,10 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 w.Commit();
             }, sequence =>
             {
+                var random = new Random( minimumBufferSize );
                 var r = new FastByteReader( sequence );
                 string s = "";
-                for( int i = 1; i < 75000; ++i )
+                for( int i = 1; i < 75000; i += random.Next( 10 ) )
                 {
                     s += 'a';
                     r.ReadString().Should().Be( s, $"Round n°{i}." );

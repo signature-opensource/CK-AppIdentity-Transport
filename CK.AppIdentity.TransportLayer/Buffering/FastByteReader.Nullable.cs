@@ -40,6 +40,9 @@ namespace CK.AppIdentity.TransportLayer
             var v = ReadSmallUInt32();
             return v == 0 ? null : (char)(v - 1);
         }
+
+        public string? ReadNullableString() => ReadByte() == 1 ? ReadString() : null;
+
     }
 
 }

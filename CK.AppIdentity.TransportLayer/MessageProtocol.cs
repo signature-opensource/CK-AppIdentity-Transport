@@ -7,6 +7,11 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public readonly struct MessageProtocol : IEquatable<MessageProtocol>
     {
+        /// <summary>
+        /// Maximal length of <see cref="MessageProtocol.Name"/>.
+        /// </summary>
+        public const int NameMaxLength = 255;
+
         private readonly string _name;
         private readonly bool _isPartySpecific;
 
@@ -20,6 +25,11 @@ namespace CK.AppIdentity.TransportLayer
             _name = name;
             _isPartySpecific = isPartySpecific;
         }
+
+        /// <summary>
+        /// Gets whether this is a valid protocol.
+        /// </summary>
+        public bool IsValid => _name != null;
 
         /// <summary>
         /// Gets this protocol name.

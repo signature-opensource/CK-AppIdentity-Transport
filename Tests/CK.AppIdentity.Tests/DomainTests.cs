@@ -15,7 +15,7 @@ namespace CK.AppIdentity.Tests
         public async Task Domain_initialization()
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( Domain_initialization ) );
-            await using var s = await TestHelper.CreateApplicationService( c =>
+            await using var s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["DomainName"] = "SaaSProduct";
                 c["Local:Name"] = "SaaS1";

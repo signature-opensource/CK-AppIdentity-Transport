@@ -10,7 +10,7 @@ namespace CK.AppIdentity.TransportLayer
     /// that compose the <see cref="WireMessage"/>: the ReadOnlySequence must no more be accessed
     /// once this message is disposed.
     /// <para>
-    /// The maximal total message length is <see cref="int.MaxValue"/> - 6 (2 GiB minus the maximal prefix length that is 6 bytes).
+    /// The maximal total message length is <see cref="int.MaxValue"/> (2 GiB).
     /// </para>
     /// </summary>
     public sealed class TransportMessage : IDisposable
@@ -21,7 +21,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly object? _disposeLock;
         int _prefixLength;
         int _retainCount;
-        byte _protocolNumber;
+        readonly MessageProtocol _protocol;
 
         /// <summary>
         /// A purely invalid message singleton. It can be safely disposed and will remain invalid.
@@ -61,25 +61,25 @@ namespace CK.AppIdentity.TransportLayer
 
         // Constructor for regular, disposable messages.
         // offset skips the reserved bytes at the start that are unused by the prefixed length (short messages). 
-        internal TransportMessage( MessageFactory messageFactory, byte protocolNumber, MutableSequence<byte> buffer, int offset, int prefixLength )
+        internal TransportMessage( MessageFactory messageFactory, MessageProtocol protocol, MutableSequence<byte> buffer, int offset, int prefixLength )
         {
             Debug.Assert( messageFactory != null && prefixLength > 0 && buffer.Length > 0 );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _messageFactory = messageFactory;
             _buffer = buffer;
             _prefixLength = prefixLength;
-            _protocolNumber = protocolNumber;
+            _protocol = protocol;
             _wireMessage = buffer.GetReadOnlySequence( offset );
             _retainCount = 1;
             _disposeLock = new object();
         }
 
         // Constructor for static, non disposable, snapshot messages.
-        internal TransportMessage( byte protocolNumber, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
+        internal TransportMessage( MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
         {
             Debug.Assert( prefixedMessage.IsSingleSegment && !prefixedMessage.IsSingleSegment );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
-            _protocolNumber = protocolNumber;
+            _protocol = protocol;
             _prefixLength = prefixLength;
             _wireMessage = prefixedMessage;
         }
@@ -91,10 +91,9 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsValid => _prefixLength != 0;
 
         /// <summary>
-        /// Gets the protocol number.
-        /// The "0" protocol is the reserved system protocol.
+        /// Gets the message protocol.
         /// </summary>
-        public byte ProtocolNumber => _protocolNumber;
+        public MessageProtocol ProtocolNumber => _protocol;
 
         /// <summary>
         /// Gets the full message including its prefix.

@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.PerfectEvent;
+using System.Diagnostics;
 using System.Net;
 
 namespace CK.AppIdentity.TransportLayer
@@ -7,17 +8,20 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// 
     /// </summary>
-    public class TransportFeature
+    public sealed class TransportFeature
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _remote;
         readonly TransportListener? _listener;
         readonly PerfectEventSender<TransportFeature> _isConnectedChanged;
+        readonly HashSet<MessageProtocol> _availableProtocols;
+        InitialMessage? _outgoingInitialMessage;
 
         /// <summary>
         /// The transport is under control of the TransportManager agent.
         /// </summary>
         ITransport? _transport;
+        MessageProtocolMap _protocolMap;
 
         public TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
         {
@@ -25,19 +29,83 @@ namespace CK.AppIdentity.TransportLayer
             _remote = remote;
             _listener = listener;
             _isConnectedChanged = new PerfectEventSender<TransportFeature>();
+            _availableProtocols = new HashSet<MessageProtocol>();
         }
 
-        internal void OnNewTransport( IActivityMonitor monitor, ITransport transport )
+        internal Task OnNewTransportAsync( IActivityMonitor monitor, ITransport transport, MessageProtocolMap protocolMap )
         {
-            if( _transport != null ) _transportManager.CondemnTransport( _transport );
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            bool isConnected = _transport != null;
+            if( isConnected ) _transportManager.CondemnTransport( _transport! );
+
             _transport = transport;
+            _protocolMap = protocolMap;
+
+            return isConnected != (transport != null)
+                    ? _isConnectedChanged.SafeRaiseAsync( monitor, this )
+                    : Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Gets the registered protocols.
+        /// </summary>
+        public IReadOnlySet<MessageProtocol> AvailableProtocols
+        {
+            get
+            {
+                // This is updated during the initialization activity and accessed at the end
+                // from FeatureInitializatonContext.Trampoline.OnSuccess to initiate
+                // outgoing connections or register the listener party to its endpoint.
+                // No one can see the feature from other activity than the initialization one
+                // since the party and its features are not published until the initialization
+                // activity fully succeeds: it is safe to expose it here.
+                return _availableProtocols;
+            }
+        }
+
+        /// <summary>
+        /// Gets whether this transport is connected to the other party.
+        /// </summary>
         public bool IsConnected => _transport != null;
 
+        /// <summary>
+        /// Gets the party.
+        /// </summary>
         public IRemoteParty Party => _remote;
 
+        /// <summary>
+        /// Raised whenever this <see cref="IsConnected"/> status changed.
+        /// </summary>
         public PerfectEvent<TransportFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
+
+        /// <summary>
+        /// Registers a <see cref="MessageProtocol"/> that must be handled by this transport.
+        /// This can be called only during party initialization.
+        /// </summary>
+        /// <param name="monitor">The monitor.</param>
+        /// <param name="protocol">The protocol that must be supported.</param>
+        /// <returns>True on success, false if registering is not possible because the protocol is already registered.</returns>
+        public bool RegisterProtocol( IActivityMonitor monitor, MessageProtocol protocol )
+        {
+            Throw.CheckArgument( protocol.IsValid && protocol != MessageProtocol.ZeroProtocol );
+            Throw.CheckState( "Must be called only during initialization.", _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            if( !_availableProtocols.Add( protocol ) )
+            {
+                monitor.Error( $"Protocol '{protocol}' is already registered for remote '{_remote.FullName}'." );
+                return false;
+            }
+            return true;
+        }
+
+        internal InitialMessage? OutgoingInitialMessage => _outgoingInitialMessage;
+
+        internal void InitializeOutgoing( TransportTypeAddress target )
+        {
+            _outgoingInitialMessage = new InitialMessage( this );
+            _transportManager.TryConnectTo( this, target );
+        }
+
+
     }
 
 }

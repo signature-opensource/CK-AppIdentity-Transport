@@ -21,51 +21,72 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class OutgoingMessageFactory : MessageFactory
     {
-        byte _protocolNumber;
+        MessageProtocolMap _allowed;
 
-        /// <summary>
-        /// Constructor for the "0" protocol.
-        /// </summary>
-        internal OutgoingMessageFactory()
+        OutgoingMessageFactory()
         {
+            // This map is not IsValid. 
+            _allowed = new MessageProtocolMap();
         }
 
         /// <summary>
-        /// Initializes a new message factory for a given <see cref="TransportMessage.ProtocolNumber"/>.
+        /// Gets the factory for the TransportManager.
         /// </summary>
-        /// <param name="defaultProtocolNumber">Must be between 1 and 63.</param>
-        public OutgoingMessageFactory( byte defaultProtocolNumber )
+        internal static readonly OutgoingMessageFactory ZeroProtocol = new OutgoingMessageFactory();
+
+        /// <summary>
+        /// Initializes a new message factory for a protocol map. 
+        /// </summary>
+        /// <param name="protocols">
+        /// A map that must be <see cref="MessageProtocolMap.IsValid"/> and negotiated
+        /// with the other party.
+        /// </param>
+        public OutgoingMessageFactory( MessageProtocolMap protocols )
         {
-            Throw.CheckOutOfRangeArgument( defaultProtocolNumber > 0 && defaultProtocolNumber < 64 );
-            _protocolNumber = defaultProtocolNumber;
+            Throw.CheckArgument( protocols.IsValid );
+            _allowed = protocols;
         }
+
+        /// <summary>
+        /// Gets the protocols map that this factory is allowed to handle.
+        /// </summary>
+        public MessageProtocolMap AllowedProtocols => _allowed;
 
         /// <summary>
         /// Creates a <see cref="TransportMessage"/> by writing its content.
+        /// The <paramref name="writer"/> must write at least one byte: no protocol (other than the <see cref="MessageProtocol.ZeroProtocol"/>)
+        /// is allowed to send empty messages.
         /// </summary>
-        /// <param name="writer">The writer function.</param>
+        /// <param name="protocol">The protocol. Must be in the <see cref="AllowedProtocols"/>.</param>
+        /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
-        /// <returns>A transport message (can be the <see cref="TransportMessage.Empty"/> if the <paramref name="writer"/> did nothing).</returns>
-        public TransportMessage Create( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        /// <returns>A transport message.</returns>
+        public TransportMessage Create( MessageProtocol protocol, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( this, writer, minSequenceBufferSize, _protocolNumber );
+            return DoCreate( this, writer, minSequenceBufferSize, protocol );
         }
 
         /// <summary>
         /// Creates a static snapshot <see cref="TransportMessage"/>, its content is a single independent segment (not pooled).
         /// <see cref="TransportMessage.Dispose()"/> on a static message does nothing.
         /// </summary>
-        /// <param name="protocolNumber">The protocol number.</param>
+        /// <param name="protocol">The protocol. Must be in the <see cref="AllowedProtocols"/>.</param>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A static transport message.</returns>
-        public static TransportMessage CreateStatic( byte protocolNumber, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public TransportMessage CreateStatic( MessageProtocol protocol, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( null, writer, minSequenceBufferSize, protocolNumber );
+            return DoCreate( null, writer, minSequenceBufferSize, protocol );
         }
 
-        static TransportMessage DoCreate( MessageFactory? factory, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize, byte protocolNumber )
+        TransportMessage DoCreate( MessageFactory? factory, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize, MessageProtocol protocol )
         {
+            int protocolNumber = _allowed.GetProtocolNumber( protocol );
+            // The "0 Protocol" message map is invalid. We use this here: only the "0 Protocol" can create its messages.
+            if( protocolNumber < 0 || (protocolNumber == 0 && _allowed.IsValid) )
+            {
+                Throw.ArgumentException( $"Disallowed protocol '{protocolNumber}'. Allowed protocols are: {_allowed.Protocols.Select( p => p.ToString()).Concatenate()}." );
+            }
             bool releaseBuffer = true;
             var buffer = new MutableSequence<byte>();
             buffer.MinimumBufferSize = minSequenceBufferSize;
@@ -83,6 +104,7 @@ namespace CK.AppIdentity.TransportLayer
                 if( messageLength == 0 )
                 {
                     if( factory == null ) Throw.InvalidOperationException( "A static TransportMessage cannot be empty." );
+                    if( protocolNumber != 0 ) Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{protocol.Name}')." );
                     return TransportMessage.Empty;
                 }
                 Span<byte> prefix = stackalloc byte[_maxPrefixLength];
@@ -90,13 +112,13 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( prefixLength <= _maxPrefixLength );
                 int offset = _maxPrefixLength - prefixLength;
                 prefix.Slice( 0, prefixLength ).CopyTo( header.Span.Slice( offset, prefixLength ) );
-                releaseBuffer = false;
                 if( factory == null )
                 {
                     var content = new ReadOnlySequence<byte>( buffer.GetReadOnlySequence( offset ).ToArray() );
-                    return new TransportMessage( protocolNumber, content, prefixLength );
+                    return new TransportMessage( protocol, content, prefixLength );
                 }
-                return new TransportMessage( factory, protocolNumber, buffer, offset, prefixLength );
+                releaseBuffer = false;
+                return new TransportMessage( factory, protocol, buffer, offset, prefixLength );
             }
             finally
             {
@@ -104,13 +126,13 @@ namespace CK.AppIdentity.TransportLayer
             }
 
 
-            static int WritePrefix( byte protocol, uint messageLength, Span<byte> memory )
+            static int WritePrefix( int protocol, uint messageLength, Span<byte> memory )
             {
                 Debug.Assert( memory.Length >= _maxPrefixLength );
                 Debug.Assert( messageLength >= 0 && protocol < 64 );
                 uint len = (uint)BitOperations.Log2( messageLength ) / 8;
                 Debug.Assert( len >= 0 && len <= 3 );
-                memory[0] = (byte)((len << 6) | protocol);
+                memory[0] = (byte)((len << 6) | (byte)protocol);
                 if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );
                 Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( memory ), 1 ), messageLength );
                 return (int)len + 2;

@@ -21,7 +21,7 @@ namespace CK.AppIdentity.Tests
         public async Task without_feature_builders_Async()
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( without_feature_builders_Async ) );
-            await using ApplicationIdentityService s = await TestHelper.CreateApplicationService( c =>
+            await using ApplicationIdentityService s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["EnvironmentName"] = "Production";
                 c["Local:Name"] = "MyApp";
@@ -131,7 +131,7 @@ namespace CK.AppIdentity.Tests
         [TestCase( false )]
         public async Task feature_builders_initialization_follows_the_dependency_order_Async( bool revert )
         {
-            using var gLog = TestHelper.Monitor.OpenInfo( nameof( without_feature_builders_Async ) );
+            using var gLog = TestHelper.Monitor.OpenInfo( nameof( feature_builders_initialization_follows_the_dependency_order_Async ) );
             CheckOrderFeatureDriver.Reset();
             var c = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, c => c["Local:Name"] = "FakeApp" );
             Debug.Assert( c != null );

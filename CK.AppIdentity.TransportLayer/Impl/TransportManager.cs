@@ -14,8 +14,6 @@ namespace CK.AppIdentity.TransportLayer
         readonly BackTask.Head _headIncomingConnection;
         readonly BackTask.Head _headOutgoingConnection;
 
-        // Message factory for sending connection messages.
-        readonly OutgoingMessageFactory _messageSendingFactory;
         readonly List<InitialMessage> _waitingList;
         readonly PerfectEventSender<InitialMessage> _waitingListChanged;
 
@@ -23,7 +21,6 @@ namespace CK.AppIdentity.TransportLayer
             : base( "CK.AppIdentity.PocoChannel.ConnectionManager" )
         {
             _agent = agent;
-            _messageSendingFactory = new OutgoingMessageFactory();
             _waitingList = new List<InitialMessage>();
             _waitingListChanged = new PerfectEventSender<InitialMessage>();
             _backTasks = new BackTask.List( this );
@@ -48,16 +45,11 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsInApplicationIdentityLoop( IActivityMonitor monitor ) => _agent.IsInLoop( monitor );
 
         /// <summary>
-        /// Gets the message factory for outgoing messages.
-        /// </summary>
-        internal OutgoingMessageFactory MessageSendingFactory => _messageSendingFactory;
-
-        /// <summary>
         /// Gets the <see cref="ApplicationIdentityService"/> agent.
         /// </summary>
         public AppIdentityAgent ApplicationIdentityAgent => _agent;
 
-        internal void TryConnectTo( IRemoteParty remote, TransportTypeAddress target )
+        internal void TryConnectTo( TransportFeature remote, TransportTypeAddress target )
         {
             PushTypedJob( new TryConnectToJob( remote, target ) );
         }
@@ -72,9 +64,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( m );
         }
 
-        internal void IncomingAcceptedTransport( IRemoteParty remote, Transport incoming )
+        internal void NewValidTransport( IRemoteParty remote, Transport incoming, MessageProtocolMap protocolMap )
         {
-            PushTypedJob( new IncomingAcceptedTransportJob( remote, incoming ) );
+            PushTypedJob( new NewValidTransportJob( remote, incoming, protocolMap ) );
         }
 
         internal void CondemnTransport( ITransport transport, TransportMessage[]? byeByeMessages = null )
@@ -84,8 +76,8 @@ namespace CK.AppIdentity.TransportLayer
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
-        sealed record class TryConnectToJob( IRemoteParty remote, TransportTypeAddress target );
-        sealed record class IncomingAcceptedTransportJob( IRemoteParty Remote, Transport Transport );
+        sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
+        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap ProtocolMap );
         sealed record class CondemnTransportJob( ITransport Transport, TransportMessage[]? byeByeMessage );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
@@ -99,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     return default;
                 case TryConnectToJob c:
-                    _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.remote, c.target ), 1 );
+                    _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.Remote, c.Target ), 1 );
                     return default;
                 case Transport t:
                     Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
@@ -107,8 +99,8 @@ namespace CK.AppIdentity.TransportLayer
                     return default;
                 case InitialMessage m:
                     return HandleUnknownIncomingRemote( monitor, m );
-                case IncomingAcceptedTransportJob j:
-                    return HandleIncomingAcceptedTransport( monitor, j );
+                case NewValidTransportJob j:
+                    return HandleNewValidTransport( monitor, j );
                 case CondemnTransportJob j:
                     return HandleCondemnTransport( monitor, j );
             }
@@ -150,16 +142,24 @@ namespace CK.AppIdentity.TransportLayer
             await _waitingListChanged.SafeRaiseAsync( monitor, initialMessage );
         }
 
-        async ValueTask HandleIncomingAcceptedTransport( IActivityMonitor monitor, IncomingAcceptedTransportJob remoteTransport )
+        async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
-            var channel = remoteTransport.Remote.GetFeature<TransportFeature>();
+            IRemoteParty remote = remoteTransport.Remote;
+            var channel = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
             if( channel != null )
             {
-                channel.OnNewTransport( monitor, remoteTransport.Transport );
+                await channel.OnNewTransportAsync( monitor, remoteTransport.Transport, remoteTransport.ProtocolMap );
             }
             else
             {
-                monitor.Error( $"Transport feature has been removed from '{remoteTransport.Remote.FullName}' party. Destroying the incoming transport." );
+                if( remote.IsDestroyed )
+                {
+                    monitor.Error( $"Remote '{remote.FullName}' has been destroyed. Destroying the incoming transport." );
+                }
+                else
+                {
+                    monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the incoming transport." );
+                }
                 await DestroyTransportAsync( monitor, remoteTransport.Transport );
             }
         }

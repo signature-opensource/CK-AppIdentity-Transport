@@ -88,12 +88,12 @@ namespace CK.AppIdentity.TransportLayer
                 r.AddFeature( t );
                 if( listener != null )
                 {
-                    context.Trampoline.OnSuccess( () => listener.AddParty( r ) );
+                    context.Trampoline.OnSuccess( () => listener.AddParty( t ) );
                 }
                 else
                 {
                     Debug.Assert( target != null );
-                    context.Trampoline.OnSuccess( () => _transportManager.TryConnectTo( r, target ) );
+                    context.Trampoline.OnSuccess( () => t.InitializeOutgoing( target ) );
                 }
             }
             return true;

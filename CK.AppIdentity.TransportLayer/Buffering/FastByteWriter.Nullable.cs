@@ -49,6 +49,19 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        // TODO: use length == 0 for null and len + 1 non null strings.
+        public void WriteNullableString( string? value )
+        {
+            if( value == null )
+            {
+                WriteByte( 0 );
+            }
+            else
+            {
+                WriteByte( 1 );
+                WriteString( value );
+            }
+        }
     }
 
 }

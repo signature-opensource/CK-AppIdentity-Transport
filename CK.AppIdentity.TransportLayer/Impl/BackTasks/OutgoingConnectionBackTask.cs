@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class OutgoingConnectionBackTask : BackTask
     {
-        IRemoteParty? _remoteParty;
+        TransportFeature? _remote;
         TransportTypeAddress? _target;
         private int _setupTick;
         CancellationTokenSource? _cts;
@@ -22,12 +22,12 @@ namespace CK.AppIdentity.TransportLayer
 
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remoteParty != null && _target != null && _result != null && _cts != null );
-            if( _remoteParty.IsDestroyed )
+            Debug.Assert( _remote != null && _target != null && _result != null && _cts != null );
+            if( _remote.Party.IsDestroyed )
             {
                 if( _tryCancelCount++ == 0 )
                 {
-                    monitor.Trace( $"Remote '{_remoteParty.FullName}' destroyed. Stopping its OutgoingConnectionBackTask." );
+                    monitor.Trace( $"Remote '{_remote.Party.FullName}' destroyed. Stopping its OutgoingConnectionBackTask." );
                 }
                 if( !CancelOperation( monitor, transportManager ) )
                 {
@@ -41,23 +41,22 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     if( _result.Result != null )
                     {
-                        // Provide the new transport to the TransportFeature and we are done.
-                        var channel = _remoteParty.GetRequiredFeature<TransportFeature>();
-                        channel.OnNewTransport( monitor, _result.Result );
-                        // Let this BackTask be reset.
+                        // The new transport has been provided to the TransportFeature
+                        // by TransportTypeService.TryConnectToAsync.
+                        // We are done, let this BackTask be reset.
                     }
                     else
                     {
                         // No transport, retrying.
-                        Setup( transportManager, _remoteParty, _target );
+                        Setup( transportManager, _remote, _target );
                         Retry( 1 );
                     }
                 }
                 else
                 {
                     // We have an error or have been canceled... (cancellation is not by us and that is weird!, but this is the same: we must retry).
-                    monitor.Warn( $"Failed to connect to '{_remoteParty.FullName}' (try n°{++_tryCount}). Retrying.", _result.Exception );
-                    Setup( transportManager, _remoteParty, _target );
+                    monitor.Warn( $"Failed to connect to '{_remote.Party.FullName}' (try n°{++_tryCount}). Retrying.", _result.Exception );
+                    Setup( transportManager, _remote, _target );
                     Retry( 1 );
                 }
             }
@@ -81,8 +80,8 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         if( howLong > 4 )
                         {
-                            monitor.Error( $"Connection to '{_remoteParty.FullName}' is blocking and the operation cannot be canceled! Forgetting it and retrying." );
-                            Setup( transportManager, _remoteParty, _target );
+                            monitor.Error( $"Connection to '{_remote.Party.FullName}' is blocking and the operation cannot be canceled! Forgetting it and retrying." );
+                            Setup( transportManager, _remote, _target );
                         }
                     }
                 }
@@ -92,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
 
         bool CancelOperation( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remoteParty != null && _result != null && _cts != null );
+            Debug.Assert( _remote != null && _result != null && _cts != null );
 
             // If the result has been canceled or is faulted, we don't care anymore.
             // But if a transport has been created, we must destroy it.
@@ -124,19 +123,19 @@ namespace CK.AppIdentity.TransportLayer
 
         int FromSetupTick => CurrentTick - _setupTick;
 
-        public void Setup( TransportManager transportManager, IRemoteParty remoteParty, TransportTypeAddress target )
+        public void Setup( TransportManager transportManager, TransportFeature remote, TransportTypeAddress target )
         {
-            Debug.Assert( remoteParty != null && target != null && remoteParty != null );
+            Debug.Assert( remote != null && target != null && remote != null );
             _cts ??= new CancellationTokenSource();
-            _result = target.Type.TryConnectToAsync( transportManager.Logger, remoteParty, target.TypedAddress, _cts.Token );
-            _remoteParty = remoteParty;
+            _result = target.Type.TryConnectToAsync( transportManager, remote, target.TypedAddress, _cts.Token );
+            _remote = remote;
             _target = target;
             _setupTick = CurrentTick;
         }
 
         public override void Reset()
         {
-            _remoteParty = null;
+            _remote = null;
             _target = null;
             _tryCancelCount = 0;
             _tryCount = 0;
