@@ -1,3 +1,5 @@
+using CK.Core;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -33,13 +35,12 @@ namespace CK.AppIdentity
         IReadOnlyCollection<IRemoteParty> Remotes { get; }
 
         /// <summary>
-        /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been
-        /// initialized. Initialization errors are set on this task if exceptions occurred: awaiting this
-        /// task will re-throw the initialization errors.
-        /// <para>
-        /// Use <see cref="Task.IsCompletedSuccessfully"/> to know if initialization has been successful.
-        /// </para>
+        /// Tries to create and initialize a new remote.
+        /// This remote will be <see cref="IRemoteParty.IsDynamic"/> and can be destroyed.
         /// </summary>
-        Task FeatureBuildersInitialization { get; }
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="configuration">The configuration to apply.</param>
+        /// <returns>The newly created remote party or null if it cannot be created and initialized.</returns>
+        Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration );
     }
 }

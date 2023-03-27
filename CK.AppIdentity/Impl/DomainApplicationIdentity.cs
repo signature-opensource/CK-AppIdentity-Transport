@@ -9,15 +9,16 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// The optional <see cref="IRootRemoteParty.DomainApplicationIdentity"/>.
+    /// The optional <see cref="IRemoteParty.DomainApplicationIdentity"/>.
     /// </summary>
-    public sealed class DomainApplicationIdentity : ApplicationIdentityBase, IApplicationIdentity
+    sealed class DomainApplicationIdentity : ApplicationIdentityBase, IDomainApplicationIdentity
     {
         readonly RemoteParty _remote;
 
-        internal DomainApplicationIdentity( RemoteParty remote, bool isDynamic )
-            : base( remote.Configuration.DomainConfiguration!, remote, isDynamic )            
+        internal DomainApplicationIdentity( RemoteParty remote )
+            : base( remote.Configuration.DomainConfiguration!, remote )            
         {
+            Debug.Assert( remote.ApplicationIdentity is ApplicationIdentityService, "The host is a root." );
             _remote = remote;
         }
 
@@ -42,7 +43,16 @@ namespace CK.AppIdentity
         public IRemoteParty Host => _remote;
 
         /// <inheritdoc />
-        public Task FeatureBuildersInitialization => _remote.ApplicationIdentity.ApplicationIdentityService.FeatureBuildersInitialization;
+        public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        {
+            return AddDynamicRemotePartyAsync( monitor,
+                                               configuration,
+                                               false,
+                                               ((ApplicationIdentityService)_remote.ApplicationIdentity).Agent,
+                                               _remote.Name,
+                                               _remote.EnvironmentName );
+        }
+
 
         /// <summary>
         /// Checks that if they exist DomainName and Local:Name are both the remoteName, that the EnvironmentName if it exists is the same as the

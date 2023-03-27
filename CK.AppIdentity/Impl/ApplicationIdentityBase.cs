@@ -17,12 +17,12 @@ namespace CK.AppIdentity
         readonly ApplicationIdentityConfiguration _configuration;
         internal RemoteParty[] _remotes;
 
-        private protected ApplicationIdentityBase( ApplicationIdentityConfiguration configuration, RemoteParty? domainHost, bool isDynamic )
+        private protected ApplicationIdentityBase( ApplicationIdentityConfiguration configuration, RemoteParty? domainHost )
         {
             Debug.Assert( configuration != null );
             _configuration = configuration;
             _local = new LocalParty( (IApplicationIdentity)this, configuration.Local, domainHost );
-            _remotes = configuration.Remotes.Select( c => new RemoteParty( (IApplicationIdentity)this, c, isDynamic ) ).ToArray();
+            _remotes = configuration.Remotes.Select( c => new RemoteParty( (IApplicationIdentity)this, c ) ).ToArray();
         }
 
         /// <inheritdoc cref="IApplicationIdentity.Local" />
@@ -34,20 +34,21 @@ namespace CK.AppIdentity
         /// <inheritdoc cref="IApplicationIdentity.Configuration" />
         public ApplicationIdentityConfiguration Configuration => _configuration;
 
-        private protected async Task<bool> AddDynamicRemotePartyAsync( IActivityMonitor monitor,
-                                                                       Action<MutableConfigurationSection> configuration,
-                                                                       bool allowDomain,
-                                                                       AppIdentityAgent agent,
-                                                                       string thisDomainName,
-                                                                       string thisEnvironmentName )
+        private protected async Task<IRemoteParty?> AddDynamicRemotePartyAsync( IActivityMonitor monitor,
+                                                                                Action<MutableConfigurationSection> configuration,
+                                                                                bool allowDomain,
+                                                                                AppIdentityAgent agent,
+                                                                                string thisDomainName,
+                                                                                string thisEnvironmentName )
         {
             Throw.CheckNotNullArgument( configuration );
             var c = CreateDynamicRemoteConfiguration( monitor, configuration, allowDomain, thisDomainName, thisEnvironmentName );
-            if( c == null ) return false;
-            var r = new RemoteParty( (IApplicationIdentity)this, c, true );
-            if( !await agent.InitializeDynamicRemoteAsync( r ) ) return false;
+            Debug.Assert( c.Configuration.Key == "Dynamic" );
+            if( c == null ) return null;
+            var r = new RemoteParty( (IApplicationIdentity)this, c );
+            if( !await agent.InitializeDynamicRemoteAsync( r ) ) return null;
             Util.InterlockedAdd( ref _remotes, r );
-            return true;
+            return r;
         }
 
         RemotePartyConfiguration? CreateDynamicRemoteConfiguration( IActivityMonitor monitor,
@@ -56,12 +57,17 @@ namespace CK.AppIdentity
                                                                     string thisDomainName,
                                                                     string thisEnvironmentName )
         {
-            // Creates a "Remotes:0" mutable section. The "Remotes" parent enable the new configuration
-            // to be hosted by this ApplicationIdentity configuration: lookups apply.
-            var remotes = new MutableConfigurationSection( "Remotes" );
-            var c = remotes.GetMutableSection( "0" );
+            // Anchors the new mutable section below this section: lookups apply.
+            // 
+            // The "Remotes:X" levels are useless. We don't need these because these slots don't carry any
+            // information other than the "collection" (array) and the "index" that we totally ignore.
+            // 
+            var anchor = _configuration.Configuration;
+            var remotes = new MutableConfigurationSection( anchor );
+            var c = remotes.GetMutableSection( "Dynamic" );
+            Debug.Assert( string.IsInterned( c.Key ) == "Dynamic" );
             configuration( c );
-            var final = new ImmutableConfigurationSection( c, _configuration.Configuration.GetSection( "Remotes" ) );
+            var final = new ImmutableConfigurationSection( c, anchor );
             var inheritedProps = new InheritedConfigurationProps( _configuration );
             return  RemotePartyConfiguration.Create( monitor,
                                                      final,

@@ -1,7 +1,9 @@
 using CK.Core;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
@@ -14,17 +16,18 @@ namespace CK.AppIdentity
         readonly DomainApplicationIdentity? _domainAppIdentityService;
         readonly bool _isDynamic;
         int _isDestroyed;
+        internal TaskCompletionSource? _destroyTCS;
 
-        internal RemoteParty( IApplicationIdentity appIdentity, RemotePartyConfiguration configuration, bool isDynamic )
+        internal RemoteParty( IApplicationIdentity appIdentity, RemotePartyConfiguration configuration )
         {
             _features = Array.Empty<object>();
             _appIdentity = appIdentity;
             _configuration = configuration;
             _domainAppIdentityService = configuration.DomainConfiguration != null
-                                        ? new DomainApplicationIdentity( this, isDynamic )
+                                        ? new DomainApplicationIdentity( this )
                                         : null;
             _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.EnvironmentName, configuration.Name );
-            _isDynamic = isDynamic;
+            _isDynamic = ReferenceEquals( configuration.Configuration.Key, "Dynamic" );
         }
 
         /// <inheritdoc />
@@ -65,17 +68,23 @@ namespace CK.AppIdentity
         public RemotePartyConfiguration Configuration => _configuration;
 
         /// <inheritdoc />
-        public DomainApplicationIdentity? DomainApplicationIdentity => _domainAppIdentityService;
+        public IDomainApplicationIdentity? DomainApplicationIdentity => _domainAppIdentityService;
 
         /// <inheritdoc />
         public bool IsDestroyed => _isDestroyed != 0;
 
         /// <inheritdoc />
-        public bool Destroy()
+        public bool SetDestroyed()
         {
             Throw.CheckState( IsDynamic );
+            return DoSetDestroyed();
+        }
+
+        bool DoSetDestroyed()
+        {
             if( Interlocked.CompareExchange( ref _isDestroyed, 0, 1 ) == 0 )
             {
+                _destroyTCS = new TaskCompletionSource();
                 if( _domainAppIdentityService != null )
                 {
                     // Immediately condemns the child remotes and ask to handle
@@ -85,14 +94,22 @@ namespace CK.AppIdentity
                     foreach( var r in _domainAppIdentityService._remotes )
                     {
                         // Use the CAS check on destroy to prevent any
-                        // duplicate request.
-                        r.Destroy();
+                        // duplicate request but skip the IsDynamic check.
+                        r.DoSetDestroyed();
                     }
                 }
                 _appIdentity.ApplicationIdentityService.Agent.OnDestroy( this );
                 return true;
             }
             return false;
+        }
+
+        /// <inheritdoc />
+        public Task DestroyAsync()
+        {
+            SetDestroyed();
+            Debug.Assert( _destroyTCS != null );
+            return _destroyTCS.Task;
         }
     }
 }

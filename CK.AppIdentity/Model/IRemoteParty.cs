@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
@@ -35,9 +36,9 @@ namespace CK.AppIdentity
         string? Address { get; }
 
         /// <summary>
-        /// Gets the DomainApplicationIdentity if this remote defines a domain.
+        /// Gets the <see cref="IDomainApplicationIdentity"/> if this remote defines a domain.
         /// </summary>
-        DomainApplicationIdentity? DomainApplicationIdentity { get; }
+        IDomainApplicationIdentity? DomainApplicationIdentity { get; }
 
         /// <summary>
         /// Gets whether this is a dynamic remote party.
@@ -45,10 +46,20 @@ namespace CK.AppIdentity
         bool IsDynamic { get; }
 
         /// <summary>
-        /// Destroys this remote party. <see cref="IsDynamic"/> must be true
+        /// Initiates the destruction of this remote party. <see cref="IsDynamic"/> must be true
         /// otherwise an <see cref="InvalidOperationException"/> is thrown.
         /// </summary>
         /// <returns>True if this call destroyed this party, false it is already destroyed.</returns>
-        bool Destroy();
+        bool SetDestroyed();
+
+        /// <summary>
+        /// Destroys this remote. Even if <see cref="SetDestroyed"/> has been called, awaiting this
+        /// waits for this remote to be actually destroyed: this can always be awaited.
+        /// <para>
+        /// <see cref="IsDynamic"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
+        /// </para>
+        /// </summary>
+        /// <returns>The awaitable.</returns>
+        Task DestroyAsync();
     }
 }

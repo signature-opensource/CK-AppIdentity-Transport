@@ -1,29 +1,51 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ApplicationIdentityConfiguration">
-    <Position X="0.5" Y="0.5" Width="2.25" />
+    <Position X="0.5" Y="0.5" Width="2.5" />
     <Members>
+      <Field Name="_identifierSyntax" Hidden="true" />
       <Field Name="_nameSuffix" Hidden="true" />
+      <Field Name="_pathSuffix" Hidden="true" />
+      <Method Name="ApplicationIdentityConfiguration" Hidden="true" />
+      <Method Name="CreateDomain" Hidden="true" />
+      <Method Name="CreateRemotes" Hidden="true" />
+      <Method Name="ErrorOnProperty" Hidden="true" />
+      <Method Name="GetName" Hidden="true" />
+      <Method Name="ReadStringArray" Hidden="true" />
+      <Method Name="ReadUniqueStringSet" Hidden="true" />
+      <Method Name="ValidateName" Hidden="true" />
     </Members>
+    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
+      <Path>
+        <Point X="1.75" Y="3.017" />
+        <Point X="1.75" Y="4" />
+        <Point X="8" Y="4" />
+      </Path>
+    </AssociationLine>
     <TypeIdentifier>
-      <HashCode>AAAAAAIAAggIAAAAAQAAAAAIwABACgAAoACCAAAABAA=</HashCode>
+      <HashCode>AAAAAAIAAggIAAAAAQAAAAAIwABACkAAoACCAAAABAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityConfiguration.cs</FileName>
     </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="Configuration" />
+    </ShowAsAssociation>
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
-    <Position X="8" Y="0.75" Width="3.25" />
+    <Position X="8" Y="1.5" Width="3.25" />
     <Members>
       <Field Name="_children" Hidden="true" />
       <Field Name="_key" Hidden="true" />
+      <Field Name="_lookupParent" Hidden="true" />
       <Field Name="_path" Hidden="true" />
       <Field Name="_value" Hidden="true" />
+      <Method Name="DoLookupAllSection" Hidden="true" />
       <Method Name="Find" Hidden="true" />
       <Method Name="IConfiguration.GetChildren" Hidden="true" />
       <Method Name="IConfiguration.GetSection" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AFAQAAAAACCCACYGCACAAAAAAAAIQAAAAAAgAAAAAAA=</HashCode>
+      <HashCode>AFAQAAAAACCSACYGCACAACAEAAAIQAAABAAgAAAAABA=</HashCode>
       <FileName>ConfigurationHelpers\ImmutableConfigurationSection.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
@@ -31,23 +53,36 @@
   <Class Name="CK.AppIdentity.LocalPartyConfiguration">
     <Position X="3.25" Y="0.5" Width="2" />
     <Members>
+      <Field Name="_allowFeatures" Hidden="true" />
+      <Field Name="_disallowFeatures" Hidden="true" />
+      <Field Name="_name" Hidden="true" />
       <Method Name="Create" Hidden="true" />
+      <Method Name="CreateDomainLocal" Hidden="true" />
       <Method Name="LocalPartyConfiguration" Hidden="true" />
     </Members>
-    <Compartments>
-      <Compartment Name="Methods" Collapsed="true" />
-    </Compartments>
+    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
+      <Path>
+        <Point X="4.25" Y="1.988" />
+        <Point X="4.25" Y="3.625" />
+        <Point X="8" Y="3.625" />
+      </Path>
+    </AssociationLine>
     <TypeIdentifier>
       <HashCode>AAAAIABCAAAAAAAAAQAAAAQAgAAAAEAAgAAAAAAgAAA=</HashCode>
       <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
     </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="Configuration" />
+    </ShowAsAssociation>
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
-    <Position X="5.5" Y="0.5" Width="2" />
+    <Position X="5.5" Y="0.5" Width="2.25" />
     <Members>
       <Field Name="_address" Hidden="true" />
+      <Field Name="_allowFeatures" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />
+      <Field Name="_disallowFeatures" Hidden="true" />
       <Field Name="_domainConfiguration" Hidden="true" />
       <Field Name="_domainName" Hidden="true" />
       <Field Name="_environmentName" Hidden="true" />
@@ -55,10 +90,20 @@
       <Method Name="Create" Hidden="true" />
       <Method Name="RemotePartyConfiguration" Hidden="true" />
     </Members>
+    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
+      <Path>
+        <Point X="6.625" Y="2.757" />
+        <Point X="6.625" Y="3.312" />
+        <Point X="8" Y="3.312" />
+      </Path>
+    </AssociationLine>
     <TypeIdentifier>
       <HashCode>AAAgIABCAAABAAAAAQABAAQIgAAAAEACgAmAAEAAAAA=</HashCode>
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
     </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="Configuration" />
+    </ShowAsAssociation>
     <Lollipop Position="0.2" />
   </Class>
   <Font Name="Segoe UI" Size="9" />

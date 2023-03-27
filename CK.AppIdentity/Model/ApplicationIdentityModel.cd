@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ApplicationIdentityService">
-    <Position X="0.5" Y="5" Width="2.25" />
+    <Position X="0.5" Y="5.25" Width="2.25" />
     <Members>
       <Field Name="_agent" Hidden="true" />
       <Field Name="_builders" Hidden="true" />
@@ -15,53 +15,44 @@
       <Method Name="IHostedService.StopAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AIAAQAAABAgAAIAAAAEBAAAIAABAAAABAACAIIAACAA=</HashCode>
+      <HashCode>AIAAQAAABAgAAIAAAAEBAAAIAABABAABAACAIIAACAA=</HashCode>
       <FileName>ApplicationIdentityService.cs</FileName>
     </TypeIdentifier>
-    <Lollipop Position="0.2" />
-  </Class>
-  <Class Name="CK.AppIdentity.DomainApplicationIdentity">
-    <Position X="8" Y="3.25" Width="2.5" />
-    <Members>
-      <Field Name="_remote" Hidden="true" />
-      <Method Name="CheckDomainConfigurationNames" Hidden="true" />
-      <Method Name="DomainApplicationIdentity" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>AAAACAAABAAAAAEAAAAAAAAMAAAACAAAAACAAAAAAAA=</HashCode>
-      <FileName>DomainApplicationIdentity.cs</FileName>
-    </TypeIdentifier>
-    <Lollipop Position="0.2" />
+    <Lollipop Position="0.917" />
   </Class>
   <Interface Name="CK.AppIdentity.IApplicationIdentity">
     <Position X="0.5" Y="1.5" Width="2" />
-    <AssociationLine Name="ApplicationIdentityService" Type="CK.AppIdentity.ApplicationIdentityService" FixedFromPoint="true">
+    <AssociationLine Name="ApplicationIdentityService" Type="CK.AppIdentity.ApplicationIdentityService" FixedToPoint="true">
       <Path>
-        <Point X="2.312" Y="3.18" />
-        <Point X="2.312" Y="5" />
+        <Point X="0.938" Y="3.44" />
+        <Point X="0.938" Y="5.25" />
       </Path>
-      <MemberNameLabel ManuallyPlaced="true">
-        <Position X="0.141" Y="1.582" />
+      <MemberNameLabel ManuallyPlaced="true" ManuallySized="true">
+        <Position X="-1.659" Y="1.257" Height="0.162" Width="1.595" />
       </MemberNameLabel>
     </AssociationLine>
-    <AssociationLine Name="Remotes" Type="CK.AppIdentity.IRemoteParty" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
+    <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty" FixedToPoint="true">
       <Path>
-        <Point X="2.5" Y="3" />
-        <Point X="2.74" Y="3" />
-        <Point X="2.74" Y="4.371" />
-        <Point X="5.25" Y="4.371" />
+        <Point X="2.5" Y="3.062" />
+        <Point X="3.5" Y="3.062" />
       </Path>
-      <MemberNameLabel ManuallyPlaced="true">
-        <Position X="1.935" Y="1.693" />
-      </MemberNameLabel>
-    </AssociationLine>
-    <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty">
       <MemberNameLabel ManuallyPlaced="true">
         <Position X="0.368" Y="0.035" />
       </MemberNameLabel>
     </AssociationLine>
+    <AssociationLine Name="Remotes" Type="CK.AppIdentity.IRemoteParty" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
+      <Path>
+        <Point X="2.5" Y="3.32" />
+        <Point X="3.373" Y="3.32" />
+        <Point X="3.373" Y="4.371" />
+        <Point X="5.25" Y="4.371" />
+      </Path>
+      <MemberNameLabel ManuallyPlaced="true">
+        <Position X="1.977" Y="0.943" />
+      </MemberNameLabel>
+    </AssociationLine>
     <TypeIdentifier>
-      <HashCode>AAAAAAAABgAAAAEAAAAAAAAIAABAAAAAgACAAAAAAAA=</HashCode>
+      <HashCode>AAAAAAAAAgAAAAEAAAAAAAAIAABABAAAgACAAAAAAAA=</HashCode>
       <FileName>Model\IApplicationIdentity.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>
@@ -82,7 +73,7 @@
   <Interface Name="CK.AppIdentity.IRemoteParty">
     <Position X="5.25" Y="2.5" Width="2" />
     <TypeIdentifier>
-      <HashCode>ACAAAAAAAABAAAAAAAAAAAQIAABAAAACgACAAAAAAAA=</HashCode>
+      <HashCode>ACAABAAAAABAAAAAAAAAAIQIAAAAAAACgACAAAAAAAA=</HashCode>
       <FileName>Model\IRemoteParty.cs</FileName>
     </TypeIdentifier>
   </Interface>

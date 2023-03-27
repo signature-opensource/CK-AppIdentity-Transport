@@ -28,7 +28,7 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="configuration">The configuration.</param>
         public ApplicationIdentityService( ApplicationIdentityConfiguration configuration, IServiceProvider serviceProvider )
-            : base( configuration, null, false )
+            : base( configuration, null )
         {
             _features = Array.Empty<object>();
             _builders = new List<ApplicationIdentityFeatureDriver>();
@@ -46,7 +46,14 @@ namespace CK.AppIdentity
         /// <inheritdoc cref="ApplicationIdentityConfiguration.EnvironmentName"/>
         public string EnvironmentName => Configuration.EnvironmentName;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been
+        /// initialized. Initialization errors are set on this task if exceptions occurred: awaiting this
+        /// task will re-throw the initialization errors.
+        /// <para>
+        /// Use <see cref="Task.IsCompletedSuccessfully"/> to know if initialization has been successful.
+        /// </para>
+        /// </summary>
         public Task FeatureBuildersInitialization => _featureBuilderInitialization.Task;
 
         /// <inheritdoc />
@@ -58,6 +65,13 @@ namespace CK.AppIdentity
             var features = Util.InterlockedAddUnique( ref _features, feature );
             return Array.IndexOf( features, feature ) >= 0;
         }
+
+        /// <inheritdoc />
+        public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        {
+            return AddDynamicRemotePartyAsync( monitor, configuration, true, _agent, Configuration.DomainName, Configuration.EnvironmentName );
+        }
+
 
         Task IHostedService.StartAsync( CancellationToken cancellationToken )
         {

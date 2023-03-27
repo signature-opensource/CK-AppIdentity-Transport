@@ -2,6 +2,7 @@ using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -100,6 +101,7 @@ namespace CK.AppIdentity
 
         ValueTask HandleDestroyAsync( IActivityMonitor monitor, RemoteParty destroyed )
         {
+            Debug.Assert( destroyed._destroyTCS != null );
             monitor.Info( $"Destroying Remote {destroyed.FullName}." );
             if( destroyed.ApplicationIdentity is DomainApplicationIdentity hosted )
             {
@@ -110,6 +112,7 @@ namespace CK.AppIdentity
                 }
             }
             else destroyed.ApplicationIdentity.ApplicationIdentityService.RemoveDestroyed( destroyed );
+            destroyed._destroyTCS.SetResult();
             return default;
         }
     }
