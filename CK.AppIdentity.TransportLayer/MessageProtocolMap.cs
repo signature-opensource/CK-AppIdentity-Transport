@@ -9,9 +9,17 @@ namespace CK.AppIdentity.TransportLayer
     public readonly struct MessageProtocolMap
     {
         /// <summary>
-        /// The maximal number of protocols that 2 parties can use.
+        /// The maximal number of protocols that 2 parties can use after negotiation.
         /// </summary>
-        public const int MaxCount = 15;
+        public const int MaxCount = 7;
+
+        /// <summary>
+        /// The maximum number of possible versions per protocol.
+        /// <see cref="MaxCount"/> * <see cref="MaxVersionPerProtocolCount"/> is the maximal
+        /// number of protocols that can appear in the <see cref="IUnknownRemote.AvailableProtocols"/>
+        /// (the initial message). 
+        /// </summary>
+        public const int MaxVersionPerProtocolCount = 3;
 
         readonly MessageProtocol[] _protocols;
 
@@ -45,7 +53,7 @@ namespace CK.AppIdentity.TransportLayer
                 Throw.CheckNotNullArgument( protocols );
                 // Extended message prefix is not implemented yet: there's only 15 allowed protocols. 
                 Throw.CheckArgument( protocols.Length > 0 && protocols.Length < 16 );
-                Throw.CheckArgument( protocols.All( p => p.IsValid && p != MessageProtocol.ZeroProtocol ) );
+                Throw.CheckArgument( protocols.All( p => p != null && p != MessageProtocol.ZeroProtocol ) );
                 Throw.CheckArgument( "Duplicates are not allowed.", protocols.GroupBy( Util.FuncIdentity ).All( g => g.Count() == 1 ) );
             }
         }
@@ -74,7 +82,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="number">The protocol number to find.</param>
         /// <param name="p">The resulting protocol.</param>
         /// <returns>True on success, false if the number is incorrect.</returns>
-        public bool TryFind( byte number, out MessageProtocol p )
+        public bool TryFind( byte number, [NotNullWhen(true)]out MessageProtocol? p )
         {
             if( number == 0 )
             {
@@ -83,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             if( _protocols == null || number > _protocols.Length )
             {
-                p = default;
+                p = null;
                 return false;
             }
             p = _protocols[number - 1];

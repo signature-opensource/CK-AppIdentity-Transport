@@ -1,9 +1,10 @@
 using CK.Core;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// Central registration for <see cref="MessageProtocol"/>.
     /// </summary>
@@ -22,21 +23,25 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Registers a protocol. 
         /// </summary>
-        /// <param name="name">Protocol name. Must not be null, empty or white space.</param>
+        /// <param name="fullName">Protocol name. Must not be null, empty or white space.</param>
         /// <param name="isPartySpecific">True if this protocol is specific to the parties.</param>
         /// <returns>The unique registration.</returns>
-        public MessageProtocol Register( string name, bool isPartySpecific = false )
+        public MessageProtocol Register( string fullName, bool isPartySpecific = false )
         {
-            Throw.CheckNotNullOrWhiteSpaceArgument( name );
-            Throw.CheckArgument( name.Length <= MessageProtocol.NameMaxLength );
-            if( name == MessageProtocol.ZeroProtocol.Name )
+            Throw.CheckNotNullOrWhiteSpaceArgument( fullName );
+            Throw.CheckArgument( fullName.Length <= MessageProtocol.FullNameMaxLength );
+            if( fullName.Equals( MessageProtocol.ZeroProtocol.Name, StringComparison.OrdinalIgnoreCase ) )
             {
                 return MessageProtocol.ZeroProtocol;
             }
-            var registered = _protocols.AddOrUpdate( name, new MessageProtocol( name, isPartySpecific ), ( n, exist ) => exist );
+            if( !TryParse( ref fullName, out var name, out var version ) )
+            {
+                Throw.ArgumentException( $"Invalid '{fullName}' protocol name." );
+            }
+            var registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, isPartySpecific ), ( n, exist ) => exist );
             if( registered.IsPartySpecific != isPartySpecific )
             {
-                Throw.ArgumentException( $"Protocol '{name}' is already registered with IsPartySpecific = {registered.IsPartySpecific}." );
+                Throw.ArgumentException( $"Protocol '{fullName}' is already registered with IsPartySpecific = {registered.IsPartySpecific}." );
             }
             return registered;
         }
@@ -45,23 +50,50 @@ namespace CK.AppIdentity.TransportLayer
         /// Tries to register a protocol: the name must be valid, not "0 Protocol" and no already
         /// registered protocol with same name exist with a different <see cref="MessageProtocol.IsPartySpecific"/>.
         /// </summary>
-        /// <param name="name">Protocol name. Must not be null, empty or white space.</param>
+        /// <param name="fullName">Protocol name. Must not be null, empty or white space.</param>
         /// <param name="isPartySpecific">True if this protocol is specific to the parties.</param>
         /// <param name="registered">The registered message protocol on success.</param>
         /// <returns>True on success, false otherwise.</returns>
-        public bool TryRegister( string name, bool isPartySpecific, out MessageProtocol registered )
+        public bool TryRegister( string fullName, bool isPartySpecific, [NotNullWhen(true)]out MessageProtocol? registered )
         {
-            if( !string.IsNullOrWhiteSpace( name ) && name != MessageProtocol.ZeroProtocol.Name )
+            if( !string.IsNullOrWhiteSpace( fullName )
+                && TryParse( ref fullName, out var name, out var version )
+                && name != MessageProtocol.ZeroProtocol.Name )
             {
-                var r = _protocols.AddOrUpdate( name, new MessageProtocol( name, isPartySpecific ), ( n, exist ) => exist );
+                var r = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, isPartySpecific ), ( n, exist ) => exist );
                 if( r.IsPartySpecific == isPartySpecific )
                 {
                     registered = r;
                     return true;
                 }
             }
-            registered = MessageProtocol.ZeroProtocol;
+            registered = null;
             return false;
         }
+
+        static bool TryParse( ref string fullName, out string name, out ushort version )
+        {
+            fullName = fullName.Trim();
+            int idx = fullName.IndexOf( '.' );
+            if( idx < 0 )
+            {
+                name = fullName;
+                fullName = FormatFullName( name, version = 0 );
+                return true;
+            }
+            if( idx > 0
+                && idx < fullName.Length - 1
+                && ushort.TryParse(fullName.AsSpan(idx), out version ) )
+            {
+                name = fullName.Substring(0, idx);
+                return true;
+            }
+            name = string.Empty;
+            version = 0;
+            return false;
+        }
+
+        internal static string FormatFullName( string name, int version ) => $"{name}.{version}";
+
     }
 }

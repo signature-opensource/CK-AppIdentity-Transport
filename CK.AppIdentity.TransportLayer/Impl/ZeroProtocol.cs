@@ -5,9 +5,14 @@ namespace CK.AppIdentity.TransportLayer
 {
     static class ZeroProtocol
     {
+        /// <summary>
+        /// This version drives the whole "0 Protocol" version.
+        /// </summary>
+        public const int CurrentVersion = 0;
+
         public const int FirstAnswerMaxLength = 1 // One byte discriminator.
                                                 + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
-                                                + MessageProtocolMap.MaxCount * (2 * MessageProtocol.NameMaxLength );
+                                                + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength );
 
         // "1" followed by our version: it can be static.
         static TransportMessage? _downgradeProtocolReplyMessage;
@@ -27,7 +32,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 var w = new FastByteWriter( bytes );
                 // There is currently only one version.
-                Throw.CheckArgument( version == InitialMessage.CurrentVersion );
+                Throw.CheckArgument( version == CurrentVersion );
                 remote.OutgoingInitialMessage.WriteCurrentVersion( ref w );
                 w.Commit();
             } );
@@ -60,7 +65,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( 1 );
-                w.WriteSmallUInt32( InitialMessage.CurrentVersion );
+                w.WriteSmallUInt32( CurrentVersion );
                 w.Commit();
             } );
             return transport.SendAsync( _downgradeProtocolReplyMessage ).AsTask();
@@ -96,7 +101,7 @@ namespace CK.AppIdentity.TransportLayer
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == 2 );
             uint count = r.ReadSmallUInt32();
-            if( count <= MessageProtocolMap.MaxCount )
+            if( count > MessageProtocolMap.MaxCount )
             {
                 logger.Error( $"Remote '{remote.Party.FullName}' returned {count} protocols, MessageProtocolMap.MaxCount is {MessageProtocolMap.MaxCount}." );
                 return default;
@@ -104,16 +109,51 @@ namespace CK.AppIdentity.TransportLayer
             var protocols = new MessageProtocol[count];
             for( int i = 0; i < count; ++i )
             {
-                var name = r.ReadString();
-                var p = remote.AvailableProtocols.FirstOrDefault( p => p.Name == name );
-                if( !p.IsValid )
+                var name = r.ReadString( MessageProtocol.FullNameMaxLength );
+                var p = remote.RegisteredProtocols.FirstOrDefault( p => p.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+                if( p == null )
                 {
                     logger.Error( $"Remote '{remote.Party.FullName}' returned an unknown protocol '{name}'." );
+                    return default;
                 }
                 protocols[i] = p;
             }
-            return MessageProtocolMap.InternalGet( protocols );
+            return remote.ValidateNegotiatedProtocols( logger, protocols ) ? MessageProtocolMap.InternalGet( protocols ) : default;
         }
 
+        internal static Task SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
+        {
+            using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
+            {
+                var w = new FastByteWriter( bytes );
+                w.WriteByte( 3 );
+                w.WriteSmallUInt32( (uint)missingProtocols.Count );
+                foreach( var p in missingProtocols )
+                {
+                    w.WriteString( p.FullName );
+                }
+                w.Commit();
+            } );
+            return incoming.SendAsync( m ).AsTask();
+        }
+
+        internal static string[]? ReadMissingProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
+        {
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == 3 );
+            uint count = r.ReadSmallUInt32();
+            if( count > MessageProtocolMap.MaxCount )
+            {
+                logger.Error( $"Remote '{remote.Party.FullName}' returned {count} missing protocols, MessageProtocolMap.MaxCount is {MessageProtocolMap.MaxCount}." );
+                return null;
+            }
+            var missingProtocols = new string[count];
+            for( int i = 0; i < count; ++i )
+            {
+                missingProtocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
+            }
+            return missingProtocols;
+        }
     }
 }

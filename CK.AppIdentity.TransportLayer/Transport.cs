@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Emit;
 
 namespace CK.AppIdentity.TransportLayer
@@ -15,9 +16,12 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportListener? _listener;
         readonly SemaphoreSlim? _sendLock;
-        readonly IncomingMessageFactory _receiveFactory;
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
+        
+        IncomingMessageFactory _receiveFactory;
+        [AllowNull]
+        OutgoingMessageFactory _sendFactory;
 
         /// <summary>
         /// Initializes a new Transport.
@@ -33,8 +37,25 @@ namespace CK.AppIdentity.TransportLayer
             _listener = source;
             _sendLock = multipleCommunicationStreams ? null : new SemaphoreSlim( initialCount: 1, maxCount: 1 );
             _reader = ReadExactlyAsync;
+            // Starts with the "0 Protocol" support only.
             _receiveFactory = new IncomingMessageFactory();
         }
+
+        /// <summary>
+        /// Called once the protocols have been computed.
+        /// </summary>
+        /// <param name="protocols">The negotiated protocols.</param>
+        internal void SetProtocols( MessageProtocolMap protocols )
+        {
+            _receiveFactory.SetProtocols( protocols );
+            _sendFactory = new OutgoingMessageFactory( protocols );
+        }
+
+        /// <inheritdoc />
+        public MessageProtocolMap NegotiatedProtocols => _receiveFactory.AllowedProtocols;
+
+        /// <inheritdoc />
+        public OutgoingMessageFactory OutgoingMessageFactory => _sendFactory;
 
         /// <summary>
         /// Gets the listener if this transport has been initiated by this server side.
@@ -156,7 +177,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="buffer">The buffer to fill.</param>
         /// <param name="cancellation">Cancellation token.</param>
-        /// <returns></returns>
+        /// <returns>The awaitable.</returns>
         protected virtual async ValueTask ReadExactlyAsync( Memory<byte> buffer, CancellationToken cancellation )
         {
             Memory<byte> readBuffer = buffer;

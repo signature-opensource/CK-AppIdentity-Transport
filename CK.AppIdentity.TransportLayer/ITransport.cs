@@ -8,6 +8,16 @@ namespace CK.AppIdentity.TransportLayer
     public interface ITransport
     {
         /// <summary>
+        /// Gets the protocols that have been negotiated.
+        /// </summary>
+        MessageProtocolMap NegotiatedProtocols { get; }
+
+        /// <summary>
+        /// Gets the factory to use for outgoing messages. It uses the <see cref="NegotiatedProtocols"/>.
+        /// </summary>
+        OutgoingMessageFactory OutgoingMessageFactory { get; }
+
+        /// <summary>
         /// Reads the next incoming <see cref="TransportMessage"/>. Once done with it, <see cref="TransportMessage.Dispose()"/>
         /// must be called.
         /// <para>

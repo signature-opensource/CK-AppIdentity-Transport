@@ -52,6 +52,7 @@ namespace CK.AppIdentity.TransportLayer
         // Constructor for the 3 special singleton messages.
         TransportMessage( bool empty )
         {
+            _protocol = MessageProtocol.ZeroProtocol;
             if( empty )
             {
                 _prefixLength = 2;

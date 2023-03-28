@@ -73,7 +73,7 @@ namespace CK.AppIdentity.TransportLayer
                 try
                 {
                     // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, InitialMessage.CurrentVersion, cancellation ) )
+                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, ZeroProtocol.CurrentVersion, cancellation ) )
                     {
                         // If we are canceled, let the finally condemn the new transport.
                         return null;
@@ -113,7 +113,7 @@ namespace CK.AppIdentity.TransportLayer
                                     {
                                         if( !cancellation.IsCancellationRequested )
                                         {
-                                            transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' expects the ZeroProtocol version '{otherVersion}'. Local '{InitialMessage.CurrentVersion}' cannot handle it." );
+                                            transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' expects the ZeroProtocol version '{otherVersion}'. Local '{ZeroProtocol.CurrentVersion}' cannot handle it." );
                                         }
                                         // Canceled or bad version: let the finally condemn the new transport.
                                         return null;
@@ -140,6 +140,17 @@ namespace CK.AppIdentity.TransportLayer
                                     transportManager.NewValidTransport( remote.Party, transport, protocolMap );
                                 }
                                 break;
+                            }
+                        case 3:
+                            {
+                                // MissingProtocolsMessage
+                                var missingProtocols = ZeroProtocol.ReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                if( missingProtocols == null )
+                                {
+                                    return null;
+                                }
+                                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' expects protocols: {missingProtocols.Concatenate()}." );
+                                return null;
                             }
                         default:
                             transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );

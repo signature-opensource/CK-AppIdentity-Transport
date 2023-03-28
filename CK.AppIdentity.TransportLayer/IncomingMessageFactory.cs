@@ -17,7 +17,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class IncomingMessageFactory : MessageFactory
     {
-        readonly MessageProtocolMap _allowed;
+        MessageProtocolMap _allowed;
 
         /// <summary>
         /// We work with an initial and first buffer of 4K. This is enough for small messages and
@@ -27,15 +27,23 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Constructor for "0 Protocol".
+        /// Internally, a factory starts in this mode and is "upgraded" once the protocols
+        /// have been computed.
         /// </summary>
         internal IncomingMessageFactory()
         {
             _allowed = new MessageProtocolMap();
         }
 
+        internal void SetProtocols( MessageProtocolMap protocols )
+        {
+            Debug.Assert( protocols.IsValid );
+            _allowed = protocols;
+        }
+
         /// <summary>
         /// Initializes a new <see cref="IncomingMessageFactory"/> that handles a set of
-        /// protocols (up to 31): the <see cref="MessageProtocol.ZeroProtocol"/> is always
+        /// protocols: the <see cref="MessageProtocol.ZeroProtocol"/> is always
         /// handled.
         /// </summary>
         /// <param name="protocols">
@@ -81,7 +89,7 @@ namespace CK.AppIdentity.TransportLayer
                 // We first read exactly 2 bytes. 
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
-                byte protocol = (byte)(firstByte & 0b00111111);
+                byte protocol = (byte)(firstByte & 0b00000111);
                 // If the protocol is not allowed, this is a serious error.
                 if( !_allowed.TryFind( protocol, out var messageProtocol ) )
                 {

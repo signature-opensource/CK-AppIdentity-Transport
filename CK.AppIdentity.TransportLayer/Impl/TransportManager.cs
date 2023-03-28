@@ -83,9 +83,10 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( m );
         }
 
-        internal void NewValidTransport( IRemoteParty remote, Transport incoming, MessageProtocolMap protocolMap )
+        internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap )
         {
-            PushTypedJob( new NewValidTransportJob( remote, incoming, protocolMap ) );
+            transport.SetProtocols( protocolMap );
+            PushTypedJob( new NewValidTransportJob( remote, transport ) );
         }
 
         internal void CondemnTransport( ITransport transport, TransportMessage[]? byeByeMessages = null )
@@ -96,7 +97,7 @@ namespace CK.AppIdentity.TransportLayer
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
-        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap ProtocolMap );
+        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport );
         sealed record class CondemnTransportJob( ITransport Transport, TransportMessage[]? byeByeMessage );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
@@ -167,17 +168,17 @@ namespace CK.AppIdentity.TransportLayer
             var channel = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
             if( channel != null )
             {
-                await channel.OnNewTransportAsync( monitor, remoteTransport.Transport, remoteTransport.ProtocolMap );
+                await channel.OnNewTransportAsync( monitor, remoteTransport.Transport );
             }
             else
             {
                 if( remote.IsDestroyed )
                 {
-                    monitor.Error( $"Remote '{remote.FullName}' has been destroyed. Destroying the incoming transport." );
+                    monitor.Info( $"Remote '{remote.FullName}' has been destroyed. Destroying the new transport." );
                 }
                 else
                 {
-                    monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the incoming transport." );
+                    monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
                 }
                 await DestroyTransportAsync( monitor, remoteTransport.Transport );
             }

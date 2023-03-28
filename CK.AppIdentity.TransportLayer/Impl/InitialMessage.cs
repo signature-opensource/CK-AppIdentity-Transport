@@ -1,6 +1,7 @@
 using CK.Core;
 using System.Buffers;
 using System.Collections;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography.X509Certificates;
 
@@ -12,21 +13,19 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class InitialMessage : IUnknownRemote
     {
-        /// <summary>
-        /// This version drives the whole "0 Protocol" version.
-        /// </summary>
-        public const int CurrentVersion = 0;
+        public const int MaxProtocolNameCount = MessageProtocolMap.MaxCount * MessageProtocolMap.MaxVersionPerProtocolCount;
 
-        const int MaxProtocolNameCount = 256;
         const int MaxPublicKeyCount = 2;
         const int MaxPublicKeySize = 2048; // To be tested...
-        const int MaxLength = 8 // "CK-AppId"
-                              + 5 // Version (allows uint.MaxValue)
-                              + (2 + CoreApplicationIdentity.FullNameMaxLength) // Party' FullName
-                              + 5 // Number of protocol names (allows uint.MaxValue)
-                              + MaxProtocolNameCount * (2 + MessageProtocol.NameMaxLength)
-                              + 5 // Number of public keys (allows uint.MaxValue)
-                              + MaxPublicKeyCount * (4 + MaxPublicKeySize);
+        // Used as a high limit so that weirdly big messages are just skipped.
+        // Note that each string or array read are also protected.
+        public const int MaxLength = 8 // "CK-AppId"
+                                   + 5 // Version (allows uint.MaxValue)
+                                   + (2 + CoreApplicationIdentity.FullNameMaxLength) // Party' FullName
+                                   + 5 // Number of protocol names (allows uint.MaxValue)
+                                   + MaxProtocolNameCount * (2 + MessageProtocol.FullNameMaxLength)
+                                   + 5 // Number of public keys (allows uint.MaxValue)
+                                   + MaxPublicKeyCount * (4 + MaxPublicKeySize);
 
         readonly string _fullName;
         readonly string _endPointDescription;
@@ -61,9 +60,10 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="p">The remote party.</param>
         public InitialMessage( TransportFeature f )
         {
+            Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolNameCount );
             _fullName = f.Party.FullName;
             _endPointDescription = string.Empty;
-            _availableProtocols = new ProtocolAdapter( f.AvailableProtocols );
+            _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
             // TODO: f.Party.GetPublicKeys();
             _publicKeys = Array.Empty<PublicKey>();
         }
@@ -101,23 +101,24 @@ namespace CK.AppIdentity.TransportLayer
                 return false;
             }
             otherVersion = checked( (int)r.ReadSmallUInt32() );
-            if( otherVersion > CurrentVersion ) return false;
+            if( otherVersion > ZeroProtocol.CurrentVersion ) return false;
 
             var fullName = r.ReadString( CoreApplicationIdentity.FullNameMaxLength );
             var protocolCount = r.ReadSmallUInt32();
-            Throw.CheckData( protocolCount < 256 );
+            Throw.CheckData( protocolCount <= MaxProtocolNameCount );
             string[] protocols = new string[protocolCount];
             for( int i = 0; i < protocols.Length; i++ )
             {
-                protocols[i] = r.ReadString( MessageProtocol.NameMaxLength );
+                protocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
             var keyCount = r.ReadSmallUInt32();
-            Throw.CheckData( keyCount < 256 );
+            Throw.CheckData( keyCount <= MaxPublicKeyCount );
             PublicKey[] keys = new PublicKey[keyCount];
             for( int i = 0; i < keys.Length; i++ )
             {
-                var len = r.ReadSmallUInt32();
-                var bytes = r.ReadBytes( len );
+                var lenPublicKey = r.ReadSmallUInt32();
+                Throw.CheckData( lenPublicKey <= MaxPublicKeySize );
+                var bytes = r.ReadBytes( lenPublicKey );
                 keys[i] = PublicKey.CreateFromSubjectPublicKeyInfo( bytes, out int bytesRead );
                 Throw.CheckData( bytesRead == bytes.Length );
             }
@@ -128,7 +129,7 @@ namespace CK.AppIdentity.TransportLayer
         public void WriteCurrentVersion( ref FastByteWriter w )
         {
             w.WriteBytes( _prefix );
-            w.WriteSmallUInt32( CurrentVersion );
+            w.WriteSmallUInt32( ZeroProtocol.CurrentVersion );
             w.WriteString( _fullName );
             w.WriteSmallUInt32( (uint)_availableProtocols.Count );
             foreach( var protocol in _availableProtocols )

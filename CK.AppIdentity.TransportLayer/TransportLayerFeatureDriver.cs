@@ -89,12 +89,20 @@ namespace CK.AppIdentity.TransportLayer
                 r.AddFeature( t );
                 if( listener != null )
                 {
-                    context.Trampoline.OnSuccess( () => listener.AddParty( t ) );
+                    context.Trampoline.OnSuccess( () =>
+                    {
+                        t.CloseRegisteredProtocols( context.Monitor );
+                        listener.AddParty( t );
+                    } );
                 }
                 else
                 {
                     Debug.Assert( target != null );
-                    context.Trampoline.OnSuccess( () => t.InitializeOutgoing( target ) );
+                    context.Trampoline.OnSuccess( () =>
+                    {
+                        t.CloseRegisteredProtocols( context.Monitor );
+                        t.InitializeOutgoing( target );
+                    } );
                 }
             }
             return true;
