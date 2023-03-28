@@ -86,13 +86,18 @@ namespace CK.AppIdentity
 
         Task IHostedService.StopAsync( CancellationToken cancellationToken )
         {
-            return _agent.DisposeAsync().AsTask();
+            _agent.SendStop();
+            return _agent.RunningTask;
         }
 
         /// <summary>
         /// Disposes this application identity service: this stops the micro agent.
         /// </summary>
         /// <returns>The awaitable.</returns>
-        public ValueTask DisposeAsync() => _agent.DisposeAsync();
+        public ValueTask DisposeAsync()
+        {
+            _agent.SendStop();
+            return new ValueTask( _agent.RunningTask );
+        }
     }
 }

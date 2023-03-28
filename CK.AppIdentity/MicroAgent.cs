@@ -1,4 +1,5 @@
 using CK.Core;
+using CommunityToolkit.HighPerformance.Helpers;
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -25,6 +26,7 @@ namespace CK.AppIdentity
         readonly IActivityLogger _logger;
         Task? _runningTask;
         RunningStatus _status;
+        static readonly object _stopSignal = new object();
 
         /// <summary>
         /// Initializes a new Micro Agent.
@@ -38,6 +40,9 @@ namespace CK.AppIdentity
             _logger = new LoggerImpl( this );
         }
 
+        /// <summary>
+        /// The agent status.
+        /// </summary>
         public enum RunningStatus
         {
             /// <summary>
@@ -51,14 +56,9 @@ namespace CK.AppIdentity
             Running,
 
             /// <summary>
-            /// The agent is dead. It has been stopped by a call to <see cref="Dispose()"/> or <see cref="DisposeAsync()"/>.
+            /// The agent is dead. It has been stopped by a call to <see cref="SendStop()"/>.
             /// </summary>
-            Disposed,
-
-            /// <summary>
-            /// The agent has been stopped by the cancellation token provided to <see cref="TryStart(CancellationToken)"/>.
-            /// </summary>
-            Canceled
+            Stopped
         }
 
         /// <summary>
@@ -117,50 +117,27 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Tries to start this agent. This can succeed only once but
-        /// may fail to start multiple times: <see cref="OnTryStart(ActivityMonitor)"/>
+        /// may fail to start multiple times: <see cref="OnTryStart(IActivityMonitor)"/>
         /// can be overridden to check any running preconditions.
         /// </summary>
-        /// <param name="token">Optional cancellation token that will stop the agent when signaled.</param>
         /// <returns>
-        /// The running status. When <see cref="RunningStatus.Disposed"/> or <see cref="RunningStatus.Canceled"/>, another agent
+        /// The running status. When <see cref="RunningStatus.Stopped"/>, another agent
         /// should be instantiated.
         /// </returns>
-        protected RunningStatus TryStart( CancellationToken token = default )
+        protected RunningStatus TryStart()
         {
             lock( _channel )
             {
                 if( _status != RunningStatus.WaitingForStart ) return _status;
-                CancellationTokenRegistration regCancel = default;
-                if( token.CanBeCanceled )
+                if( !OnTryStart( _monitor ) )
                 {
-                    if( token.IsCancellationRequested )
-                    {
-                        _status = RunningStatus.Canceled;
-                        _runningTask = Task.CompletedTask;
-                        return _status;
-                    }
-                    regCancel = token.UnsafeRegister( CancelByToken, this );
-                }
-                try
-                {
-                    if( !OnTryStart( _monitor ) )
-                    {
-                        regCancel.Dispose();
-                        return _status;
-                    }
-                }
-                catch
-                {
-                    regCancel.Dispose();
-                    throw;
+                    return _status;
                 }
                 _status = RunningStatus.Running;
                 _runningTask = Task.Run( RunAsync );
                 return _status;
             }
         }
-
-        static void CancelByToken( object? obj ) => Unsafe.As<MicroAgent>( obj! ).DoDispose( RunningStatus.Canceled );
 
         sealed class LoggerImpl : IActivityLogger
         {
@@ -242,7 +219,7 @@ namespace CK.AppIdentity
             {
                 _monitor.Error( "Error while starting the agent.", ex );
             }
-            // We pool the channel until the null closing signal.
+            // We pool the channel until the null final closing signal.
             object? o;
             while( (o = await _channel.Reader.ReadAsync()) != null )
             {
@@ -258,6 +235,11 @@ namespace CK.AppIdentity
                 {
                     try
                     {
+                        if( o == _stopSignal )
+                        {
+                            await OnStopAsync( _monitor );
+                            if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
+                        }
                         if( o is IJob job )
                         {
                             await job.ExecuteAsync( _monitor );
@@ -269,7 +251,15 @@ namespace CK.AppIdentity
                     }
                     catch( Exception ex )
                     {
-                        _monitor.Error( "Unhandled exception while executing Job.", ex );
+                        if( o == _stopSignal )
+                        {
+                            _monitor.Error( "Unhandled exception while stopping.", ex );
+                            if( _channel.Writer.TryWrite( null ) )  _channel.Writer.TryComplete();
+                        }
+                        else
+                        {
+                            _monitor.Error( "Unhandled exception while executing Job.", ex );
+                        }
                     }
                 }
             }
@@ -278,7 +268,7 @@ namespace CK.AppIdentity
             {
                 if( o is ActivityMonitorExternalLogData data ) data.Release();
             }
-            _monitor.MonitorEnd( $"Stopping ApplicationIdentityService micro agent." );
+            _monitor.MonitorEnd( $"Stopping micro agent." );
         }
 
         protected virtual ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
@@ -305,55 +295,39 @@ namespace CK.AppIdentity
         protected virtual ValueTask OnStartAsync( IActivityMonitor monitor ) => default;
 
         /// <summary>
-        /// Stops this agent if it is running but do not wait for its actual stop.
-        /// Use <see cref="DisposeAsync"/> to stop and wait for completion.
+        /// Sends the stop signal that triggers the call to <see cref="OnStopAsync(IActivityMonitor)"/>.
+        /// Use <see cref="RunningTask"/> to wait for completion.
         /// <para>
         /// An agent can successfully start only once.
         /// </para>
         /// </summary>
-        public void Dispose() => DoDispose( RunningStatus.Disposed );
-
-        void DoDispose( RunningStatus disposeOrCanceled )
-        {
-            Debug.Assert( disposeOrCanceled == RunningStatus.Disposed || disposeOrCanceled == RunningStatus.Canceled );
-            lock( _channel )
-            {
-                if( _status < RunningStatus.Disposed )
-                {
-                    _status = disposeOrCanceled;
-                    // Writes the null sentinel to the channel and completes the channel.
-                    if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Stops this agent and wait for its completion.
-        /// </summary>
-        public ValueTask DisposeAsync()
+        /// <returns>True if this call triggered the stop, false if it is already stopped or is not started.</returns>
+        internal protected bool SendStop()
         {
             lock( _channel )
             {
-                if( _status == RunningStatus.WaitingForStart )
+                if( _status == RunningStatus.Running )
                 {
-                    _status = RunningStatus.Disposed;
-                    return default;
+                    _status = RunningStatus.Stopped;
+                    _channel.Writer.TryWrite( _stopSignal );
+                    return true;
                 }
-                Debug.Assert( _runningTask != null );
-                if( _status < RunningStatus.Disposed )
-                {
-                    _status = RunningStatus.Disposed;
-                    if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
-                }
-                return new ValueTask( _runningTask );
             }
+            return false;
         }
 
         /// <summary>
-        /// Called at the end of the running the loop.
+        /// Called at the end of the running the loop. This can push new actions and
+        /// will eventually stop this agent and signal the <see cref="RunningTask"/>.
+        /// Does nothing at this level.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <returns>The awaitable.</returns>
         protected virtual ValueTask OnStopAsync( IActivityMonitor monitor ) => default;
+
+        /// <summary>
+        /// Gets a task that is completed if this agent is not yet started or if it has run.
+        /// </summary>
+        public Task RunningTask => _runningTask ?? Task.CompletedTask;
     }
 }

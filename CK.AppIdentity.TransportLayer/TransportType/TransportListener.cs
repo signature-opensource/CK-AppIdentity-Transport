@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -9,27 +10,27 @@ namespace CK.AppIdentity.TransportLayer
     /// when an incoming connexion is detected:
     /// <list type="number">
     /// <item>Creates the concrete Transport instance.</item>
-    /// <item>Calls <see cref="TransportManager.OnIncomingConnection(Transport)"/>.</item>
+    /// <item>Calls <see cref="OnIncomingTransport(Transport)"/>.</item>
     /// </list>
-    /// A listener is bound to a set of remotes: the connection manager will accept or reject
-    /// the new Transport based on this set and the <see cref="InitialMessage"/> it will receive
-    /// from the remote.
+    /// A listener is bound to a set of remote parties: the connection manager will accept
+    /// or reject the new Transport based on this set and the initial message it will
+    /// receive from the remote.
     /// </summary>
     public abstract class TransportListener
     {
-        readonly TransportManager _transportManager;
+        [AllowNull]
+        internal TransportManager _transportManager;
         readonly ITransportTypeService _transportType;
         TransportFeature[] _parties;
 
         /// <summary>
         /// Initializes a new TransportListener.
         /// </summary>
-        /// <param name="transportManager">The TransportManager.</param>
         /// <param name="transportType">The transport type that manages this listener.</param>
-        protected TransportListener( TransportManager transportManager, ITransportTypeService transportType )
+        protected TransportListener( ITransportTypeService transportType )
         {
+            Throw.CheckNotNullArgument( transportType );
             _parties = Array.Empty<TransportFeature>();
-            _transportManager = transportManager;
             _transportType = transportType;
         }
 
@@ -52,9 +53,19 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Gets the transport manager.
+        /// Gets the <see cref="IActivityLogger"/> to use.
         /// </summary>
-        public TransportManager TransportManager => _transportManager;
+        protected IActivityLogger Logger => _transportManager.Logger;
+
+        /// <summary>
+        /// Must be called when a new <see cref="Transport"/> is connected.
+        /// </summary>
+        /// <param name="transport">The new transport.</param>
+        protected void OnIncomingTransport( Transport transport )
+        {
+            Throw.CheckNotNullArgument( transport );
+            _transportManager.IncomingTransport( transport );
+        }
 
         /// <summary>
         /// Gets a string that describes this listener's endpoint.

@@ -55,6 +55,14 @@ namespace CK.AppIdentity.TransportLayer
 
             public int Count => _queue.Count;
 
+            public void Destroy( IActivityMonitor monitor )
+            {
+                while( _queue.Count > 0 )
+                {
+                    _queue.Dequeue().OnDestroy( monitor, _transportManager );
+                }
+            }
+
             public void OnHeartBeat( IActivityMonitor monitor )
             {
                 var t = _queue.Peek();
@@ -131,5 +139,12 @@ namespace CK.AppIdentity.TransportLayer
         /// Must reset all the fields of this task. Called before releasing this task to its pool.
         /// </summary>
         public abstract void Reset();
+
+        /// <summary>
+        /// Called when the transport manager is destroyed.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="transportManager">The dying transport manager.</param>
+        public abstract void OnDestroy( IActivityMonitor monitor, TransportManager transportManager );
     }
 }

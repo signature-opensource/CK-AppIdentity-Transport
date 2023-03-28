@@ -54,27 +54,58 @@ namespace CK.AppIdentity.Tests
         [CKTypeDefiner]
         public abstract class CheckOrderFeatureDriver : ApplicationIdentityFeatureDriver
         {
-            static int _current;
+            internal static int _count;
+            internal static int _currentSetupOrder;
+            internal static int _setupDynamicCount;
+            internal static int _teardownDynamicCount;
+            internal static int _teardownCount;
 
-            public static void Reset() => _current = 0;
+            public static void Reset()
+            {
+                _count = 0;
+                _currentSetupOrder = 0;
+                _setupDynamicCount = 0;
+                _teardownDynamicCount = 0;
+                _teardownCount = 0;
+            }
 
             protected CheckOrderFeatureDriver( ApplicationIdentityService s )
                 : base( s, true )
             {
+                ++_count;
             }
 
-            public int OrderInitialization { get; private set; }
+            public int SetupOrder { get; private set; }
 
-            protected override Task<bool> InitializeAsync(FeatureInitializatonContext context)
+            protected override Task<bool> SetupAsync(FeatureLifetimeContext context)
             {
-                OrderInitialization = _current++;
-                context.Monitor.Trace( $"Initialized {GetType().Name} ({OrderInitialization})." );
+                SetupOrder = _currentSetupOrder++;
+                context.Monitor.Trace( $"Setup {GetType().Name} ({SetupOrder})." );
                 return Task.FromResult( true );
             }
 
-            protected override Task<bool> InitializeDynamicRemoteAsync(FeatureInitializatonContext context, IRemoteParty remoteParty)
+            protected override Task<bool> SetupDynamicRemoteAsync(FeatureLifetimeContext context, IRemoteParty remoteParty)
             {
-                throw new NotImplementedException();
+                _setupDynamicCount++;
+                context.Memory.GetValueOrDefault( "SetupDynamicOrder", 0 ).Should().Be( SetupOrder );
+                context.Memory["SetupDynamicOrder"] = SetupOrder + 1;
+                return Task.FromResult( true );
+            }
+
+            protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+            {
+                _teardownDynamicCount++;
+                context.Memory.GetValueOrDefault( "TeardownDynamicOrder", _currentSetupOrder ).Should().Be( _currentSetupOrder - SetupOrder );
+                context.Memory["TeardownDynamicOrder"] = _currentSetupOrder - SetupOrder - 1;
+                return Task.CompletedTask;
+            }
+
+            protected override Task TeardownAsync( FeatureLifetimeContext context )
+            {
+                _teardownCount++;
+                context.Memory.GetValueOrDefault( "TeardownOrder", _currentSetupOrder ).Should().Be( _currentSetupOrder - SetupOrder );
+                context.Memory["TeardownOrder"] = _currentSetupOrder - SetupOrder - 1;
+                return Task.CompletedTask;
             }
         }
 
@@ -154,6 +185,7 @@ namespace CK.AppIdentity.Tests
             var services = serviceBuilder.BuildServiceProvider();
 
             var s = services.GetRequiredService<ApplicationIdentityService>();
+
             _ = ((IHostedService)s).StartAsync( default );
             await s.FeatureBuildersInitialization;
 
@@ -164,13 +196,7 @@ namespace CK.AppIdentity.Tests
             var fB_A = services.GetRequiredService<FB_AFeatureDriver>();
             var fC_A_3 = services.GetRequiredService<FC_A_3FeatureDriver>();
             var fD_B_2 = services.GetRequiredService<FD_B_2FeatureDriver>();
-            f1.OrderInitialization.Should().Be( 0 );
-            f2_1.OrderInitialization.Should().BeGreaterThan( f1.OrderInitialization );
-            f3_2.OrderInitialization.Should().BeGreaterThan( f2_1.OrderInitialization );
-            fA_1.OrderInitialization.Should().BeGreaterThan( f1.OrderInitialization );
-            fB_A.OrderInitialization.Should().BeGreaterThan( fA_1.OrderInitialization );
-            fC_A_3.OrderInitialization.Should().BeGreaterThan( fA_1.OrderInitialization ).And.BeGreaterThan( f3_2.OrderInitialization );
-            fD_B_2.OrderInitialization.Should().BeGreaterThan( fB_A.OrderInitialization ).And.BeGreaterThan( f2_1.OrderInitialization );
+            CheckOrderFeatureDriver._count.Should().Be( 7 );
 
             f1.FeatureName.Should().Be( "F1" );
             f2_1.FeatureName.Should().Be( "F2_1" );
@@ -179,6 +205,29 @@ namespace CK.AppIdentity.Tests
             fB_A.FeatureName.Should().Be( "FB_A" );
             fC_A_3.FeatureName.Should().Be( "FC_A_3" );
             fD_B_2.FeatureName.Should().Be( "FD_B_2" );
+
+            f1.SetupOrder.Should().Be( 0 );
+            f2_1.SetupOrder.Should().BeGreaterThan( f1.SetupOrder );
+            f3_2.SetupOrder.Should().BeGreaterThan( f2_1.SetupOrder );
+            fA_1.SetupOrder.Should().BeGreaterThan( f1.SetupOrder );
+            fB_A.SetupOrder.Should().BeGreaterThan( fA_1.SetupOrder );
+            fC_A_3.SetupOrder.Should().BeGreaterThan( fA_1.SetupOrder ).And.BeGreaterThan( f3_2.SetupOrder );
+            fD_B_2.SetupOrder.Should().BeGreaterThan( fB_A.SetupOrder ).And.BeGreaterThan( f2_1.SetupOrder );
+
+            var r = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            {
+                c["Name"] = "SomeDynamicRemote";
+            } );
+            Debug.Assert( r != null );
+            CheckOrderFeatureDriver._setupDynamicCount.Should().Be( 7 );
+            CheckOrderFeatureDriver._teardownDynamicCount.Should().Be( 0 );
+
+            await r.DestroyAsync();
+            CheckOrderFeatureDriver._teardownDynamicCount.Should().Be( 7 );
+            CheckOrderFeatureDriver._teardownCount.Should().Be( 0 );
+
+            await s.DisposeAsync();
+            CheckOrderFeatureDriver._teardownCount.Should().Be( 7 );
         }
     }
 }

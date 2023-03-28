@@ -77,14 +77,17 @@ namespace CK.AppIdentity
         public bool SetDestroyed()
         {
             Throw.CheckState( IsDynamic );
-            return DoSetDestroyed();
+            return DoSetDestroyed( true );
         }
 
-        bool DoSetDestroyed()
+        bool DoSetDestroyed( bool isTop )
         {
             if( Interlocked.CompareExchange( ref _isDestroyed, 0, 1 ) == 0 )
             {
                 _destroyTCS = new TaskCompletionSource();
+                // We set the destroy flag and tcs on subordinates but we
+                // trigger the agent on the destroyed root so that the feature drivers
+                // see the "destruction" the same as the "initialization".
                 if( _domainAppIdentityService != null )
                 {
                     // Immediately condemns the child remotes and ask to handle
@@ -95,10 +98,10 @@ namespace CK.AppIdentity
                     {
                         // Use the CAS check on destroy to prevent any
                         // duplicate request but skip the IsDynamic check.
-                        r.DoSetDestroyed();
+                        r.DoSetDestroyed( false );
                     }
                 }
-                _appIdentity.ApplicationIdentityService.Agent.OnDestroy( this );
+                if( isTop ) _appIdentity.ApplicationIdentityService.Agent.OnDestroy( this );
                 return true;
             }
             return false;

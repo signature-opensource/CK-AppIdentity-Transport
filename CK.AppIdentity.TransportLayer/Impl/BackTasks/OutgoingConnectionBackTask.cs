@@ -20,6 +20,12 @@ namespace CK.AppIdentity.TransportLayer
         int _tryCancelCount;
         int _tryCount;
 
+        public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
+        {
+            Debug.Assert( _remote != null && _result != null && _cts != null );
+            CancelOperation( monitor, transportManager );
+        }
+
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
             Debug.Assert( _remote != null && _target != null && _result != null && _cts != null );

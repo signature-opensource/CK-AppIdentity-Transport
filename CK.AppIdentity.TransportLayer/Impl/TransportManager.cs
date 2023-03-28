@@ -5,6 +5,16 @@ using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.TransportLayer
 {
+
+    public interface ITransportManager
+    {
+        /// <summary>
+        /// Gets the <see cref="ApplicationIdentityService"/> agent.
+        /// </summary>
+        AppIdentityAgent ApplicationIdentityAgent { get; }
+
+    }
+
     public sealed partial class TransportManager : MicroAgent
     {
         readonly AppIdentityAgent _agent;
@@ -33,6 +43,15 @@ namespace CK.AppIdentity.TransportLayer
         static void OnTimer( object? state ) => Unsafe.As<TransportManager>( state! ).PushTypedJob( DBNull.Value );
 
         internal bool Start() => TryStart() == RunningStatus.Running;
+
+        internal new void SendStop() => base.SendStop();
+
+        protected override ValueTask OnStopAsync( IActivityMonitor monitor )
+        {
+            _heartbeat.Dispose();
+            _backTasks.Destroy( monitor );
+            return base.OnStopAsync( monitor );
+        }
 
         /// <summary>
         /// Gets whether the provided monitor is the one if the <see cref="AppIdentityAgent"/>.

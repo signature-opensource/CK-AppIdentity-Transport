@@ -19,7 +19,7 @@ namespace CK.AppIdentity.BlobChannel
             _protocol = messageProtocolDirectory.Register( "Blob" );
         }
 
-        protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             bool success = true;
             foreach( var r in ApplicationIdentityService.Remotes )
@@ -46,7 +46,17 @@ namespace CK.AppIdentity.BlobChannel
 
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty party )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        {
+            throw new NotImplementedException();
+        }
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        {
+            throw new NotImplementedException();
+        }
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
             throw new NotImplementedException();
         }

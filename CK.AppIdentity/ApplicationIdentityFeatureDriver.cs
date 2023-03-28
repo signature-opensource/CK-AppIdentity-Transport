@@ -10,9 +10,7 @@ namespace CK.AppIdentity
 {
     /// <summary>
     /// Base class for feature builders. Such builders are singleton auto services that can depend on
-    /// any other singleton services, including other <see cref="ApplicationIdentityFeatureDriver"/>. When
-    /// <see cref="InitializeAsync(IActivityMonitor, AppIdentityAgent)"/> is called, dependent builders have
-    /// already been initialized.
+    /// any other singleton services, including other <see cref="ApplicationIdentityFeatureDriver"/>. 
     /// </summary>
     [CKTypeDefiner]
     public abstract class ApplicationIdentityFeatureDriver : ISingletonAutoService
@@ -97,18 +95,47 @@ namespace CK.AppIdentity
         /// The <see cref="ApplicationIdentityService"/> property is available as well as helpers to know if this feature is allowed on
         /// a party (see <see cref="IsAllowedFeature(ILocalParty)"/> and <see cref="IsAllowedFeature(IRemoteParty)"/>).
         /// </para>
+        /// <para>
+        /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
+        /// </para>
         /// </summary>
-        /// <param name="context">The initialization context.</param>
+        /// <param name="context">The lifetime context.</param>
         /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
-        internal protected abstract Task<bool> InitializeAsync( FeatureInitializatonContext context );
+        internal protected abstract Task<bool> SetupAsync( FeatureLifetimeContext context );
 
         /// <summary>
         /// Must do whatever is required to register features into <see cref="IRemoteParty.Features"/> and <see cref="IRemoteParty.DomainApplicationIdentity"/>'s features
         /// or subordinated remotes.
+        /// <para>
+        /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
+        /// </para>
         /// </summary>
-        /// <param name="context">The initialization context.</param>
+        /// <param name="context">The lifetime context.</param>
         /// <param name="party">The dynamic remote party to initialize.</param>
         /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
-        internal protected abstract Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty party );
+        internal protected abstract Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party );
+
+        /// <summary>
+        /// Called when a dynamic party is destroyed. In the case of a domain (<see cref="IRemoteParty.DomainApplicationIdentity"/> is not null),
+        /// the <paramref name="party"/> is the root remote to be destroyed, not each subordinated remotes: this mimics
+        /// the <see cref="SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/> work.
+        /// <para>
+        /// This is called in reverse order (from most dependent feature drivers to basic ones).
+        /// </para>
+        /// </summary>
+        /// <param name="context">The lifetime context.</param>
+        /// <param name="party">The dynamic remote party to cleanup.</param>
+        /// <returns>The awaitable.</returns>
+        internal protected abstract Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party );
+
+        /// <summary>
+        /// Called by a stopping agent. Must get rid of any acquired resources at any level.
+        /// <para>
+        /// This is called in reverse order (from most dependent feature drivers to basic ones).
+        /// </para>
+        /// </summary>
+        /// <param name="context">The lifetime context.</param>
+        /// <returns>The awaitable.</returns>
+        internal protected abstract Task TeardownAsync( FeatureLifetimeContext context );
     }
 }

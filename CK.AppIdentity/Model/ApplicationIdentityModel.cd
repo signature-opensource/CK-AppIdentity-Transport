@@ -48,7 +48,7 @@
         <Point X="5.25" Y="4.371" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
-        <Position X="1.977" Y="0.943" />
+        <Position X="2.01" Y="0.835" />
       </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
@@ -82,6 +82,14 @@
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAICQAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
       <FileName>Model\IParty.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Interface Name="CK.AppIdentity.IDomainApplicationIdentity" HideInheritanceLine="true">
+    <Position X="5.25" Y="6.25" Width="2.5" />
+    <InheritanceLine Type="CK.AppIdentity.IApplicationIdentity" IsHidden="true" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Model\IDomainApplicationIdentity.cs</FileName>
     </TypeIdentifier>
   </Interface>
   <Font Name="Segoe UI" Size="9" />

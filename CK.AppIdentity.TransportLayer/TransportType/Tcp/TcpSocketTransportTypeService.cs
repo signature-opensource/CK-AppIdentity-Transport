@@ -63,7 +63,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress )
+        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress )
         {
             var ipEndPoint = (IPEndPoint)typedAddress;
             try
@@ -82,7 +82,7 @@ namespace CK.AppIdentity.TransportLayer
                 socket.Bind( ipEndPoint );
                 socket.Listen();
                 Debug.Assert( socket.LocalEndPoint is IPEndPoint );
-                return new TcpSocketListener( transportManager, this, ipEndPoint, socket );
+                return new TcpSocketListener( this, ipEndPoint, socket );
             }
             catch( Exception ex )
             {

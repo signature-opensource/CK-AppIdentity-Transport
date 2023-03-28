@@ -9,14 +9,13 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     sealed class TcpSocketListener : TransportListener
     {
         readonly IPEndPoint _address;
         readonly Socket _listenSocket;
 
-        public TcpSocketListener( TransportManager manager, TcpSocketTransportTypeService tcpService, IPEndPoint address, Socket listenSocket )
-            : base( manager, tcpService )
+        public TcpSocketListener( TcpSocketTransportTypeService tcpService, IPEndPoint address, Socket listenSocket )
+            : base( tcpService )
         {
             _address = address;
             _listenSocket = listenSocket;
@@ -54,7 +53,7 @@ namespace CK.AppIdentity.TransportLayer
 
         async Task RunAcceptAsync()
         {
-            TransportManager.Logger.Info( $"Starting TCP listener on '{_address}'." );
+            Logger.Info( $"Starting TCP listener on '{_address}'." );
             while( true )
             {
                 try
@@ -62,7 +61,7 @@ namespace CK.AppIdentity.TransportLayer
                     var acceptSocket = await _listenSocket.AcceptAsync();
                     // Disable Nagle algorithm: a message is fully buffered. We don't need it.
                     acceptSocket.NoDelay = true;
-                    TransportManager.IncomingTransport( new TcpSocketTransport( acceptSocket, this ) );
+                    OnIncomingTransport( new TcpSocketTransport( acceptSocket, this ) );
                 }
                 catch( ObjectDisposedException )
                 {
@@ -76,10 +75,10 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 catch( SocketException )
                 {
-                    TransportManager.Logger.Warn( $"An incoming TCP connection got reset while it was in the backlog on '{_address}'." );
+                    Logger.Warn( $"An incoming TCP connection got reset while it was in the backlog on '{_address}'." );
                 }
             }
-            TransportManager.Logger.Info( $"Ending TCP listener on '{_address}'." );
+            Logger.Info( $"Ending TCP listener on '{_address}'." );
         }
     }
 }

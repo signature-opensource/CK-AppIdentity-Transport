@@ -17,6 +17,12 @@ namespace CK.AppIdentity.TransportLayer
         Transport? _incoming;
         Task? _result;
 
+        public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
+        {
+            Debug.Assert( _incoming != null && _result != null );
+            transportManager.CondemnTransport( _incoming );
+        }
+
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
             Debug.Assert( _incoming != null && _result != null );
@@ -76,8 +82,8 @@ namespace CK.AppIdentity.TransportLayer
                 var expected = initialMessage.AvailableProtocols.Concatenate( "', '" );
                 var locals = remote.AvailableProtocols.Select( p => p.Name ).Concatenate( "', '" );
                 var level = common.Length == 0 ? LogLevel.Error : LogLevel.Warn;
-                _transportManager.Logger.Log( level, $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' " +
-                    $"expects us to support '{expected}' protocols but here, only '{locals}' are available." );
+                _transportManager.Logger.Log( level, $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' "
+                                                     + $"expects us to support '{expected}' protocols but here, only '{locals}' are available." );
                 if( common.Length == 0 ) return;
             }
             // If there is more protocols on both sides that the current maximal number or protocols
@@ -88,8 +94,8 @@ namespace CK.AppIdentity.TransportLayer
                 Array.Sort( common, (s1,s2) => s2.Name.CompareTo( s1.Name ) );
 
                 var removed = common.Skip( MessageProtocolMap.MaxCount ).Select( p => p.Name );
-                _transportManager.Logger.Warn( $"More than {MessageProtocolMap.MaxCount} protocols are in common with Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}', " +
-                    $"protocols '{removed.Concatenate( "', '" )}' won't be supported." );
+                _transportManager.Logger.Warn( $"More than {MessageProtocolMap.MaxCount} protocols are in common with Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}', "
+                                               + $"protocols '{removed.Concatenate( "', '" )}' won't be supported." );
                 Array.Resize( ref common, MessageProtocolMap.MaxCount );
             }
             var protocolMap = MessageProtocolMap.InternalGet( common );

@@ -30,10 +30,9 @@ namespace CK.AppIdentity.TransportLayer
         /// Creates a new listener: the <paramref name="endPoint"/> is not currently listening.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
-        /// <param name="transportManager">The transport manager.</param>
         /// <param name="typedAddress">The listening end point (necessarily a compatible address that has been parsed by this service).</param>
         /// <returns>The transport listener or null if it cannot be created.</returns>
-        protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, TransportManager transportManager, object typedAddress );
+        protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress );
 
         /// <summary>
         /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
@@ -55,8 +54,12 @@ namespace CK.AppIdentity.TransportLayer
                     return exists;
                 }
             }
-            var l = TryCreateListener( monitor, transportManager, endPoint.TypedAddress );
-            if( l != null ) _listeners.Add( l );
+            var l = TryCreateListener( monitor, endPoint.TypedAddress );
+            if( l != null )
+            {
+                l._transportManager = transportManager;
+                _listeners.Add( l );
+            }
             return l;
         }
 

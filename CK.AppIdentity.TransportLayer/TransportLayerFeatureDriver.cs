@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.IO;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -19,7 +20,7 @@ namespace CK.AppIdentity.TransportLayer
             _protocolDirectory = protocolDirectory;
         }
 
-        protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             _transportManager = new TransportManager( context.Agent );
             bool success = _transportManager.Start();
@@ -31,17 +32,17 @@ namespace CK.AppIdentity.TransportLayer
             ApplicationIdentityService.AddFeature( _transportManager );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                success &= InitializeRemote( context, r );
+                success &= SetupDynamicRemote( context, r );
             }
             return Task.FromResult( true );
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty remoteParty )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
         {
-            return Task.FromResult( InitializeRemote( context, remoteParty ) );
+            return Task.FromResult( SetupDynamicRemote( context, remoteParty ) );
         }
 
-        bool InitializeRemote( FeatureInitializatonContext context, IRemoteParty r )
+        bool SetupDynamicRemote( FeatureLifetimeContext context, IRemoteParty r )
         {
             bool success = true;
             if( r.DomainApplicationIdentity != null )
@@ -61,7 +62,7 @@ namespace CK.AppIdentity.TransportLayer
             return success;
         }
 
-        bool PlugTransportFeature( FeatureInitializatonContext context, IRemoteParty r )
+        bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
             Debug.Assert( _transportManager != null );
             // Skip "Undefined" but this is not an error.
@@ -198,6 +199,39 @@ namespace CK.AppIdentity.TransportLayer
                 }
             }
             return true;
+        }
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        {
+            if( party.DomainName != CoreApplicationIdentity.DefaultDomainName )
+            {
+                if( party.DomainApplicationIdentity != null )
+                {
+                    foreach( var rSub in party.DomainApplicationIdentity.Remotes )
+                    {
+                        var t = rSub.GetFeature<TransportFeature>();
+                        t?.Teardown();
+                    }
+                }
+                else 
+                {
+                    var t = party.GetFeature<TransportFeature>();
+                    t?.Teardown();
+                }
+            }
+            return Task.CompletedTask;
+        }
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        {
+            Debug.Assert( _transportManager != null );
+            foreach( var r in ApplicationIdentityService.Remotes )
+            {
+                var t = r.GetFeature<TransportFeature>();
+                t?.Teardown();
+            }
+            _transportManager.SendStop();
+            return _transportManager.RunningTask;
         }
     }
 }

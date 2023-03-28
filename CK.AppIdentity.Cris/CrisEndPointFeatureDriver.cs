@@ -13,7 +13,7 @@ namespace CK.AppIdentity.Cris
         {
         }
 
-        protected override Task<bool> InitializeAsync( FeatureInitializatonContext context )
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             // We always add the DomainCrisEndPoint feature (pure events) on the root domain
             // and on subordinate domains: it is the RemoteCrisEndPoint that are added or not.
@@ -46,7 +46,17 @@ namespace CK.AppIdentity.Cris
             return Task.FromResult( true );
         }
 
-        protected override Task<bool> InitializeDynamicRemoteAsync( FeatureInitializatonContext context, IRemoteParty remoteParty )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
+        {
+            throw new System.NotImplementedException();
+        }
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        {
+            throw new System.NotImplementedException();
+        }
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
             throw new System.NotImplementedException();
         }

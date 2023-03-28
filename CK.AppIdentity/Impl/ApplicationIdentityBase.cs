@@ -43,8 +43,8 @@ namespace CK.AppIdentity
         {
             Throw.CheckNotNullArgument( configuration );
             var c = CreateDynamicRemoteConfiguration( monitor, configuration, allowDomain, thisDomainName, thisEnvironmentName );
-            Debug.Assert( c.Configuration.Key == "Dynamic" );
             if( c == null ) return null;
+            Debug.Assert( c.Configuration.Key == "Dynamic" );
             var r = new RemoteParty( (IApplicationIdentity)this, c );
             if( !await agent.InitializeDynamicRemoteAsync( r ) ) return null;
             Util.InterlockedAdd( ref _remotes, r );

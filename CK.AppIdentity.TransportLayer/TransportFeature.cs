@@ -105,7 +105,24 @@ namespace CK.AppIdentity.TransportLayer
             _transportManager.TryConnectTo( this, target );
         }
 
-
+        /// <summary>
+        /// We don't want to expose any DisposeAsync or Dispose on this public TransportFeature.
+        /// This is called when tearing down the remote party.
+        /// </summary>
+        internal void Teardown()
+        {
+            // If we are not connected:
+            //   - If the party is a caller, we don't have anything to do: the OutgoingConnectionBackTask
+            //     tests the party.IsDestroyed and dies.
+            //   - If we are listening we must remove this party from the listener.
+            if( _listener != null )
+            {
+                _listener.RemoveParty( this );
+            }
+            // Closing the transport should be done from the transport manager loop.
+            var t = _transport;
+            if( t != null ) _transportManager.CondemnTransport( t );
+        }
     }
 
 }
