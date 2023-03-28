@@ -108,15 +108,14 @@ namespace CK.AppIdentity.TransportLayer
             // We send the accept message: it this fails, it's useless to put the connection manager at work.
             await ZeroProtocol.SendAcceptedMessageAsync( remote, _incoming, protocolMap );
             // Wait for the final message.
-            using var ack = await _incoming.ReadNextAsync();
+            // It must be a single "1" byte.
+            using var finalMessage = await _incoming.ReadNextAsync( maxMessageLength: 1 );
+            if( !finalMessage.IsValid || finalMessage.Protocol != MessageProtocol.ZeroProtocol || finalMessage.Message.FirstSpan[0] != 1 )
             {
-                if( ack != TransportMessage.Empty )
-                {
-                    _transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' didn't confirm." );
-                    return;
-                }
+                _transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' didn't confirm." );
+                return;
             }
-            // By providing the party here instead of the transport, we'll check
+            // By providing the party here instead of the transport feature, we'll check
             // that the RemoteParty is not destroyed and the existence of the TransportFeature.
             _transportManager.NewValidTransport( remote.Party, _incoming, protocolMap );
         }

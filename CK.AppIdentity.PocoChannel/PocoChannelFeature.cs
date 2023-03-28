@@ -14,15 +14,5 @@ namespace CK.AppIdentity.PocoChannel
         }
 
         protected override IEnumerable<MessageProtocol> Protocols => _protocols;
-
-        protected override bool ValidateNegotiatedProtocols( IActivityLogger logger, IReadOnlyList<MessageProtocol> protocols )
-        {
-            if( !protocols.Contains( _protocols[0] ) )
-            {
-                logger.Error( $"Remote for '{Transport.Party.FullName}' must support the 'Poco' protocol." );
-                return false;
-            }
-            return true;
-        }
     }
 }

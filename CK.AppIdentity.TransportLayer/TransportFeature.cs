@@ -115,26 +115,15 @@ namespace CK.AppIdentity.TransportLayer
         internal bool RegisterProtocol( IActivityMonitor monitor, MessageProtocol protocol )
         {
             Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ), "Must be called only during initialization." );
-            if( _registeredProtocols.Count == InitialMessage.MaxProtocolNameCount )
+            if( _registeredProtocols.Count == InitialMessage.MaxProtocolFullNameCount )
             {
-                monitor.Error( $"Unable to register protocol '{protocol}'. There is already {InitialMessage.MaxProtocolNameCount} protocols registered for remote '{_remote.FullName}'." );
+                monitor.Error( $"Unable to register protocol '{protocol}'. There is already {InitialMessage.MaxProtocolFullNameCount} protocols registered for remote '{_remote.FullName}'." );
                 return false;
             }
             if( !_registeredProtocols.Add( protocol ) )
             {
                 monitor.Error( $"Protocol '{protocol}' is already registered for remote '{_remote.FullName}'." );
                 return false;
-            }
-            return true;
-        }
-
-        internal bool ValidateNegotiatedProtocols( IActivityLogger logger, IReadOnlyList<MessageProtocol> protocols )
-        {
-            var p = _firstProtocol;
-            while( p != null )
-            {
-                if( !p.ValidateNegotiatedProtocols( logger, protocols ) ) return false;
-                p = p._nextProtocol;
             }
             return true;
         }

@@ -13,7 +13,10 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class InitialMessage : IUnknownRemote
     {
-        public const int MaxProtocolNameCount = MessageProtocolMap.MaxCount * MessageProtocolMap.MaxVersionPerProtocolCount;
+        // The maximum number of possible versions per protocol.
+        const int MaxVersionPerProtocolCount = 3;
+
+        public const int MaxProtocolFullNameCount = MessageProtocolMap.MaxCount * MaxVersionPerProtocolCount;
 
         const int MaxPublicKeyCount = 2;
         const int MaxPublicKeySize = 2048; // To be tested...
@@ -23,7 +26,7 @@ namespace CK.AppIdentity.TransportLayer
                                    + 5 // Version (allows uint.MaxValue)
                                    + (2 + CoreApplicationIdentity.FullNameMaxLength) // Party' FullName
                                    + 5 // Number of protocol names (allows uint.MaxValue)
-                                   + MaxProtocolNameCount * (2 + MessageProtocol.FullNameMaxLength)
+                                   + MaxProtocolFullNameCount * (2 + MessageProtocol.FullNameMaxLength)
                                    + 5 // Number of public keys (allows uint.MaxValue)
                                    + MaxPublicKeyCount * (4 + MaxPublicKeySize);
 
@@ -60,7 +63,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="p">The remote party.</param>
         public InitialMessage( TransportFeature f )
         {
-            Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolNameCount );
+            Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
             _fullName = f.Party.FullName;
             _endPointDescription = string.Empty;
             _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
@@ -105,7 +108,7 @@ namespace CK.AppIdentity.TransportLayer
 
             var fullName = r.ReadString( CoreApplicationIdentity.FullNameMaxLength );
             var protocolCount = r.ReadSmallUInt32();
-            Throw.CheckData( protocolCount <= MaxProtocolNameCount );
+            Throw.CheckData( protocolCount <= MaxProtocolFullNameCount );
             string[] protocols = new string[protocolCount];
             for( int i = 0; i < protocols.Length; i++ )
             {

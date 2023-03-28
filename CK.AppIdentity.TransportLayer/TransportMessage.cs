@@ -94,7 +94,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the message protocol.
         /// </summary>
-        public MessageProtocol ProtocolNumber => _protocol;
+        public MessageProtocol Protocol => _protocol;
 
         /// <summary>
         /// Gets the full message including its prefix.

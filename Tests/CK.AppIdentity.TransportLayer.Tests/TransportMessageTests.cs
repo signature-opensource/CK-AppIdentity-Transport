@@ -56,7 +56,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.ProtocolNumber.Should().Be( m.ProtocolNumber );
+                mBack.Protocol.Should().Be( m.Protocol );
                 mBack.WireMessage.Length.Should().Be( m.WireMessage.Length );
                 mBack.Message.Length.Should().Be( m.Message.Length );
                 mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
@@ -95,7 +95,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync ).ConfigureAwait( false );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.ProtocolNumber.Should().Be( m.ProtocolNumber );
+                mBack.Protocol.Should().Be( m.Protocol );
                 mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
             }
         }

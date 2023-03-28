@@ -130,10 +130,11 @@ namespace CK.AppIdentity.TransportLayer
                                 var protocolMap = ZeroProtocol.TryReadAcceptedMessage( transportManager.Logger, firstAnswer, remote );
                                 if( !protocolMap.IsValid )
                                 {
+                                    await ZeroProtocol.SendFinalMessageAsync( transport, remote, false );
                                     return null;
                                 }
                                 // Sends the Ack.
-                                if( await transport.SendAsync( TransportMessage.Empty ) )
+                                if( await ZeroProtocol.SendFinalMessageAsync( transport, remote, true ) )
                                 {
                                     // Accepts the transport.
                                     disposeTransport = false;

@@ -47,20 +47,6 @@ namespace CK.AppIdentity.TransportLayer
         abstract protected IEnumerable<MessageProtocol> Protocols { get; }
 
         /// <summary>
-        /// Extension point that validates the final negotiated protocols between this party and the other one.
-        /// This enables a new transport to be totally rejected if the final protocols are not satisfying.
-        /// Returns true at this level: by default, even if none of the <see cref="Protocols"/> for this feature
-        /// exist, the transport is accepted and it is up to this feature to handle its unavailability.
-        /// </summary>
-        /// <param name="logger">The logger that must be used to explicit errors or warnings.</param>
-        /// <param name="protocols">The final set of protocols that will be available on the transport.</param>
-        /// <returns>True to accept the protocols (and deals with them), false to reject the transport.</returns>
-        internal protected virtual bool ValidateNegotiatedProtocols( IActivityLogger logger, IReadOnlyList<MessageProtocol> protocols )
-        {
-            return true;
-        }
-
-        /// <summary>
         /// Gets the <see cref="TransportFeature"/>.
         /// </summary>
         protected TransportFeature Transport => _transportFeature;

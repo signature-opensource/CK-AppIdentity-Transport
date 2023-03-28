@@ -13,14 +13,6 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public const int MaxCount = 7;
 
-        /// <summary>
-        /// The maximum number of possible versions per protocol.
-        /// <see cref="MaxCount"/> * <see cref="MaxVersionPerProtocolCount"/> is the maximal
-        /// number of protocols that can appear in the <see cref="IUnknownRemote.AvailableProtocols"/>
-        /// (the initial message). 
-        /// </summary>
-        public const int MaxVersionPerProtocolCount = 3;
-
         readonly MessageProtocol[] _protocols;
 
         MessageProtocolMap( MessageProtocol[] protocols )

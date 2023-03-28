@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -16,6 +17,10 @@ namespace CK.AppIdentity.TransportLayer
 
         // "1" followed by our version: it can be static.
         static TransportMessage? _downgradeProtocolReplyMessage;
+        // A single "1": it can be static.
+        static TransportMessage? _finalSuccessMessage;
+        // A single "0": it can be static.
+        static TransportMessage? _finalFailureMessage;
 
         /// <summary>
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
@@ -106,22 +111,30 @@ namespace CK.AppIdentity.TransportLayer
                 logger.Error( $"Remote '{remote.Party.FullName}' returned {count} protocols, MessageProtocolMap.MaxCount is {MessageProtocolMap.MaxCount}." );
                 return default;
             }
+            // A valid answer is composed only of different protocol names (a single version per protocol) and
+            // all our BestRegisteredProtocols must be satisfied (may be with an old version).
             var protocols = new MessageProtocol[count];
             for( int i = 0; i < count; ++i )
             {
-                var name = r.ReadString( MessageProtocol.FullNameMaxLength );
-                var p = remote.RegisteredProtocols.FirstOrDefault( p => p.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) );
+                var fullName = r.ReadString( MessageProtocol.FullNameMaxLength );
+                var p = remote.RegisteredProtocols.FirstOrDefault( p => p.FullName.Equals( fullName, StringComparison.OrdinalIgnoreCase ) );
                 if( p == null )
                 {
-                    logger.Error( $"Remote '{remote.Party.FullName}' returned an unknown protocol '{name}'." );
+                    logger.Error( $"Remote '{remote.Party.FullName}' returned an unwanted protocol '{fullName}'." );
                     return default;
                 }
                 protocols[i] = p;
             }
-            return remote.ValidateNegotiatedProtocols( logger, protocols ) ? MessageProtocolMap.InternalGet( protocols ) : default;
+            var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
+            if( missing.Any() )
+            {
+                logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate()}'." );
+                return default;
+            }
+            return MessageProtocolMap.InternalGet( protocols );
         }
 
-        internal static Task SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
+        public static Task SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
         {
             using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
             {
@@ -137,7 +150,7 @@ namespace CK.AppIdentity.TransportLayer
             return incoming.SendAsync( m ).AsTask();
         }
 
-        internal static string[]? ReadMissingProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
+        public static string[]? ReadMissingProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -154,6 +167,24 @@ namespace CK.AppIdentity.TransportLayer
                 missingProtocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
             return missingProtocols;
+        }
+
+        public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
+        {
+            TransportMessage m = value
+                    ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( MessageProtocol.ZeroProtocol, bytes =>
+                        {
+                            var m = bytes.GetSpan( 1 );
+                            m[0] = 1;
+                            bytes.Advance( 1 );
+                        } )
+                    : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( MessageProtocol.ZeroProtocol, bytes =>
+                    {
+                        var m = bytes.GetSpan( 1 );
+                        m[0] = 0;
+                        bytes.Advance( 1 );
+                    } );
+            return transport.SendAsync( m );
         }
     }
 }
