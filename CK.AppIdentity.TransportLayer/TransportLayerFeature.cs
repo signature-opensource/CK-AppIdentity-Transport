@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.PerfectEvent;
+using System;
 using System.Diagnostics;
 using System.Net;
 
@@ -8,32 +9,35 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// 
     /// </summary>
-    public sealed class TransportFeature
+    public sealed class TransportLayerFeature
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _remote;
         readonly TransportListener? _listener;
-        readonly PerfectEventSender<TransportFeature> _isConnectedChanged;
+        readonly PerfectEventSender<TransportLayerFeature> _isConnectedChanged;
+        readonly ChannelFeature?[] _channels;
         readonly HashSet<MessageProtocol> _registeredProtocols;
-        IReadOnlyCollection<MessageProtocol>? _bestRegisteredProtocols;
+        readonly List<MessageProtocol> _bestRegisteredProtocols;
+
         InitialMessage? _outgoingInitialMessage;
-        internal MessageProtocolFeature? _firstProtocol;
 
         /// <summary>
         /// The transport is under control of the TransportManager agent.
         /// </summary>
-        ITransport? _transport;
+        Transport? _transport;
 
-        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
+        internal TransportLayerFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
         {
             _transportManager = transportManager;
             _remote = remote;
             _listener = listener;
-            _isConnectedChanged = new PerfectEventSender<TransportFeature>();
+            _channels = new ChannelFeature[1+MessageProtocolMap.MaxCount];
+            _isConnectedChanged = new PerfectEventSender<TransportLayerFeature>();
             _registeredProtocols = new HashSet<MessageProtocol>();
+            _bestRegisteredProtocols = new List<MessageProtocol>();
         }
 
-        internal Task OnNewTransportAsync( IActivityMonitor monitor, ITransport transport )
+        internal Task OnNewTransportAsync( IActivityMonitor monitor, Transport transport )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
 
@@ -51,7 +55,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the registered protocols with their best respective version among the
         /// available <see cref="RegisteredProtocols"/>.
         /// </summary>
-        public IReadOnlyCollection<MessageProtocol> BestRegisteredProtocols
+        public IReadOnlyList<MessageProtocol> BestRegisteredProtocols
         {
             get
             {
@@ -72,9 +76,72 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        internal int RegisterChannel( IActivityMonitor monitor,
+                                      ChannelFeature channel,
+                                      string channelFeatureName,
+                                      string protocolName,
+                                      IEnumerable<ushort> protocolVersions,
+                                      bool isPartySpecific )
+        {
+            Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            if( _bestRegisteredProtocols.Count == MessageProtocolMap.MaxCount )
+            {
+                monitor.Error( $"Unable to register '{channelFeatureName}'. There is already {MessageProtocolMap.MaxCount} channels registered for remote '{_remote.FullName}'." );
+                return -1;
+            }
+            int idxSorted;
+            using var versions = protocolVersions.OrderByDescending( Util.FuncIdentity ).GetEnumerator();
+            if( versions.MoveNext() )
+            {
+                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, versions.Current, isPartySpecific );
+                if( idxSorted < 0 ) return -1;
+                while( versions.MoveNext() )
+                {
+                    if( !_transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, versions.Current, isPartySpecific, out var messageProtocol ) )
+                    {
+                        return -1;
+                    }
+                    if( !_registeredProtocols.Add( messageProtocol ) )
+                    {
+                        monitor.Error( $"Channel '{channelFeatureName}': duplicate protocol versions detected ({messageProtocol.FullName})." );
+                        return -1;
+                    }
+                }
+            }
+            else
+            {
+                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0, isPartySpecific );
+                if( idxSorted < 0 ) return -1;
+            }
+            _channels[++idxSorted] = channel;
+            return idxSorted;
+        }
+
+        int RegisterBestProtocol( IActivityMonitor monitor, string channelFeatureName, string protocolName, ushort version, bool isPartySpecific )
+        {
+            if( _transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, version, isPartySpecific, out var messageProtocol ) )
+            {
+                int i = 0;
+                for( ; i < _bestRegisteredProtocols.Count; i++ )
+                {
+                    int cmp = StringComparer.OrdinalIgnoreCase.Compare( messageProtocol.Name, _bestRegisteredProtocols[i].Name );
+                    if( cmp == 0 )
+                    {
+                        monitor.Error( $"Channel '{channelFeatureName}' for remote '{_remote.FullName}': protocol '{messageProtocol.FullName}' is already managed by another channel." );
+                        return -1;
+                    }
+                    if( cmp > 0 ) break;
+                }
+                _bestRegisteredProtocols.Insert( i, messageProtocol );
+                _registeredProtocols.Add( messageProtocol );
+                return i;
+            }
+            return -1;
+        }
+
         /// <summary>
-        /// The _registeredProtocols is updated during the initialization activity and
-        /// this is called at the end by FeatureInitializatonContext.Trampoline.OnSuccess.
+        /// The _registeredProtocols, _bestRegisteredProtocols and _channels are updated
+        /// during the initialization activity.
         /// Once done, the _registeredProtocols is used to initiate outgoing connections
         /// and _bestRegisteredProtocols is used to answer to incoming connections from
         /// the listener party.
@@ -86,15 +153,10 @@ namespace CK.AppIdentity.TransportLayer
         internal void CloseRegisteredProtocols( IActivityMonitor monitor )
         {
             Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
-            Debug.Assert( _bestRegisteredProtocols == null, "Closed only once." );
-            var a = _registeredProtocols.GroupBy( p => p.Name )
-                                        .Select( g => g.MaxBy( g => g.Version ) )
-                                        .ToArray();
-            if( a.Length == 0 )
+            if( _bestRegisteredProtocols.Count == 0 )
             {
                 monitor.Warn( $"No message protocol registered for '{_remote.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
             }
-            _bestRegisteredProtocols = a!;
         }
 
         /// <summary>
@@ -110,23 +172,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Raised whenever this <see cref="IsConnected"/> status changed.
         /// </summary>
-        public PerfectEvent<TransportFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
-
-        internal bool RegisterProtocol( IActivityMonitor monitor, MessageProtocol protocol )
-        {
-            Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ), "Must be called only during initialization." );
-            if( _registeredProtocols.Count == InitialMessage.MaxProtocolFullNameCount )
-            {
-                monitor.Error( $"Unable to register protocol '{protocol}'. There is already {InitialMessage.MaxProtocolFullNameCount} protocols registered for remote '{_remote.FullName}'." );
-                return false;
-            }
-            if( !_registeredProtocols.Add( protocol ) )
-            {
-                monitor.Error( $"Protocol '{protocol}' is already registered for remote '{_remote.FullName}'." );
-                return false;
-            }
-            return true;
-        }
+        public PerfectEvent<TransportLayerFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
 
         /// <summary>
         /// Gets the initial message to send when this is a caller.

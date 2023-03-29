@@ -10,6 +10,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         /// <summary>
         /// The maximal number of protocols that 2 parties can use after negotiation.
+        /// This is also the greatest possible protocol number.
         /// </summary>
         public const int MaxCount = 7;
 
@@ -21,18 +22,18 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Gets a <see cref="MessageProtocolMap"/> for the provided ordered list of protocols.
+        /// Gets a <see cref="MessageProtocolMap"/> for the provided set of protocols.
         /// </summary>
         /// <param name="protocols">
-        /// The ordered list of supported protocols that has been negotiated with the other party.
-        /// Must not be empty, contain more than 31 protocols, contain duplicates or any <see cref="MessageProtocol.ZeroProtocol"/>
-        /// or not <see cref="MessageProtocol.IsValid"/> protocols.
+        /// The list of supported protocols that has been negotiated with the other party.
+        /// Must not be empty, contain more than <see cref="MaxCount"/> protocols, contain duplicates <see cref="MessageProtocol.Name"/>
+        /// or any invalid or "0 Protocol".
         /// </param>
         /// <returns>The map to use.</returns>
         public static MessageProtocolMap Get( IEnumerable<MessageProtocol> protocols )
         {
             Throw.CheckNotNullArgument( protocols );
-            return InternalGet( protocols.ToArray() );
+            return InternalGet( protocols.OrderBy( p => p.Name ).ToArray() );
         }
 
         internal static MessageProtocolMap InternalGet( MessageProtocol[] protocols )
@@ -43,10 +44,9 @@ namespace CK.AppIdentity.TransportLayer
             static void CheckProtocolArrayArgument( MessageProtocol[] protocols )
             {
                 Throw.CheckNotNullArgument( protocols );
-                // Extended message prefix is not implemented yet: there's only 15 allowed protocols. 
-                Throw.CheckArgument( protocols.Length > 0 && protocols.Length < 16 );
+                Throw.CheckArgument( protocols.Length > 0 && protocols.Length <= MaxCount );
                 Throw.CheckArgument( protocols.All( p => p != null && p != MessageProtocol.ZeroProtocol ) );
-                Throw.CheckArgument( "Duplicates are not allowed.", protocols.GroupBy( Util.FuncIdentity ).All( g => g.Count() == 1 ) );
+                Throw.CheckArgument( protocols.Select( p => p.Name ).IsSortedStrict() );
             }
         }
 

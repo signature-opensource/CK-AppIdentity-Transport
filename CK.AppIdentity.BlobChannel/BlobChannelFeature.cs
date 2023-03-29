@@ -3,17 +3,12 @@ using CK.Core;
 
 namespace CK.AppIdentity.BlobChannel
 {
-    public sealed class BlobChannelFeature : MessageProtocolFeature
+    public sealed class BlobChannelFeature : ChannelFeature
     {
-        readonly MessageProtocol[] _protocols;
-
-        internal BlobChannelFeature( TransportFeature transport, MessageProtocolDirectoryService messageProtocolDirectory )
+        internal BlobChannelFeature( TransportLayerFeature transport )
             : base( transport ) 
         {
-            _protocols = new[] { messageProtocolDirectory.Register( "Blob" ) }; 
         }
-
-        protected override IEnumerable<MessageProtocol> Protocols => _protocols;
 
     }
 

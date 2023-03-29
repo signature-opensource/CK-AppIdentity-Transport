@@ -18,6 +18,8 @@ namespace CK.AppIdentity.TransportLayer
     public sealed partial class TransportManager : MicroAgent
     {
         readonly AppIdentityAgent _agent;
+        readonly MessageProtocolDirectoryService _protocolDirectory;
+
         // Heart beats handles the BackTask list.
         readonly Timer _heartbeat;
         readonly BackTask.List _backTasks;
@@ -27,10 +29,11 @@ namespace CK.AppIdentity.TransportLayer
         readonly List<InitialMessage> _waitingList;
         readonly PerfectEventSender<InitialMessage> _waitingListChanged;
 
-        internal TransportManager( AppIdentityAgent agent )
+        internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
             : base( "CK.AppIdentity.PocoChannel.ConnectionManager" )
         {
             _agent = agent;
+            _protocolDirectory = protocolDirectory;
             _waitingList = new List<InitialMessage>();
             _waitingListChanged = new PerfectEventSender<InitialMessage>();
             _backTasks = new BackTask.List( this );
@@ -68,7 +71,12 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public AppIdentityAgent ApplicationIdentityAgent => _agent;
 
-        internal void TryConnectTo( TransportFeature remote, TransportTypeAddress target )
+        /// <summary>
+        /// Gets the message protocol directory.
+        /// </summary>
+        public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
+
+        internal void TryConnectTo( TransportLayerFeature remote, TransportTypeAddress target )
         {
             PushTypedJob( new TryConnectToJob( remote, target ) );
         }
@@ -89,16 +97,16 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new NewValidTransportJob( remote, transport ) );
         }
 
-        internal void CondemnTransport( ITransport transport, TransportMessage[]? byeByeMessages = null )
+        internal void CondemnTransport( Transport transport, TransportMessage[]? byeByeMessages = null )
         {
             PushTypedJob( new CondemnTransportJob( transport, byeByeMessages ) );
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
-        sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
+        sealed record class TryConnectToJob( TransportLayerFeature Remote, TransportTypeAddress Target );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport );
-        sealed record class CondemnTransportJob( ITransport Transport, TransportMessage[]? byeByeMessage );
+        sealed record class CondemnTransportJob( Transport Transport, TransportMessage[]? byeByeMessage );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
@@ -136,7 +144,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async Task DestroyTransportAsync( IActivityMonitor monitor, ITransport t )
+        async Task DestroyTransportAsync( IActivityMonitor monitor, Transport t )
         {
             try
             {
@@ -165,7 +173,7 @@ namespace CK.AppIdentity.TransportLayer
         async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
             IRemoteParty remote = remoteTransport.Remote;
-            var channel = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
+            var channel = remote.IsDestroyed ? null : remote.GetFeature<TransportLayerFeature>();
             if( channel != null )
             {
                 await channel.OnNewTransportAsync( monitor, remoteTransport.Transport );

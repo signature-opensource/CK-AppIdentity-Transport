@@ -71,6 +71,28 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
+        internal bool TryRegister( IActivityMonitor monitor, string name, ushort version, bool isPartySpecific, [NotNullWhen(true)]out MessageProtocol? registered )
+        {
+            name = name.Trim();
+            if( name.Length == 0 || name.Contains( '.' ) || name.Equals( MessageProtocol.ZeroProtocol.Name, StringComparison.OrdinalIgnoreCase ) )
+            {
+                monitor.Error( $"Unable to register invalid protocol name '{name}'." );
+            }
+            else
+            {
+                var fullName = FormatFullName( name, version );
+                var r = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, isPartySpecific ), ( n, exist ) => exist );
+                if( r.IsPartySpecific == isPartySpecific )
+                {
+                    registered = r;
+                    return true;
+                }
+                monitor.Error( $"Protocol '{fullName}' is already registered with IsPartySpecific = {r.IsPartySpecific}." );
+            }
+            registered = null;
+            return false;
+        }
+
         static bool TryParse( ref string fullName, out string name, out ushort version )
         {
             fullName = fullName.Trim();

@@ -23,17 +23,17 @@ namespace CK.AppIdentity.TransportLayer
         static TransportMessage? _finalFailureMessage;
 
         /// <summary>
-        /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
+        /// Tries to send a TransportMessage of the <see cref="TransportLayerFeature.OutgoingInitialMessage"/> in a specific version.
         /// </summary>
         /// <param name="remote">The target remote.</param>
         /// <param name="transport">The newly created transport.</param>
         /// <param name="version">The serialization version.</param>
         /// <param name="cancellation">Cancellation token.</param>
         /// <returns>False if <paramref name="cancellation"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-        public static ValueTask<bool> SendInitialMessageAsync( TransportFeature remote, Transport transport, int version, CancellationToken cancellation )
+        public static ValueTask<bool> SendInitialMessageAsync( TransportLayerFeature remote, Transport transport, int version, CancellationToken cancellation )
         {
             Debug.Assert( remote.OutgoingInitialMessage != null );
-            using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
+            using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 // There is currently only one version.
@@ -46,7 +46,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static Task SendUnknownRemoteReplyMessageAsync( Transport transport, string? userAcceptUri )
         {
-            using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
+            using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( 0 );
@@ -66,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static Task SendDowngradeProtocolReplyAsync( Transport transport )
         {
-            _downgradeProtocolReplyMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( MessageProtocol.ZeroProtocol, bytes =>
+            _downgradeProtocolReplyMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( 1 );
@@ -84,9 +84,9 @@ namespace CK.AppIdentity.TransportLayer
             return (int)r.ReadSmallUInt32();
         }
 
-        public static Task SendAcceptedMessageAsync( TransportFeature remote, Transport transport, MessageProtocolMap protocolMap )
+        public static Task SendAcceptedMessageAsync( TransportLayerFeature remote, Transport transport, MessageProtocolMap protocolMap )
         {
-            using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
+            using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( 2 );
@@ -100,7 +100,7 @@ namespace CK.AppIdentity.TransportLayer
             return transport.SendAsync( m ).AsTask();
         }
 
-        public static MessageProtocolMap TryReadAcceptedMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
+        public static MessageProtocolMap TryReadAcceptedMessage( IActivityLogger logger, TransportMessage message, TransportLayerFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -136,7 +136,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static Task SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
         {
-            using var m = OutgoingMessageFactory.ZeroProtocol.Create( MessageProtocol.ZeroProtocol, bytes =>
+            using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( 3 );
@@ -150,7 +150,7 @@ namespace CK.AppIdentity.TransportLayer
             return incoming.SendAsync( m ).AsTask();
         }
 
-        public static string[]? ReadMissingProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
+        public static string[]? ReadMissingProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportLayerFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -169,16 +169,16 @@ namespace CK.AppIdentity.TransportLayer
             return missingProtocols;
         }
 
-        public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
+        public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportLayerFeature remote, bool value )
         {
             TransportMessage m = value
-                    ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( MessageProtocol.ZeroProtocol, bytes =>
+                    ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
                         {
                             var m = bytes.GetSpan( 1 );
                             m[0] = 1;
                             bytes.Advance( 1 );
                         } )
-                    : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( MessageProtocol.ZeroProtocol, bytes =>
+                    : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 1 );
                         m[0] = 0;

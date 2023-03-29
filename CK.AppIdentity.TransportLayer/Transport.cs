@@ -12,16 +12,13 @@ namespace CK.AppIdentity.TransportLayer
     /// Concrete implementations can be <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>:
     /// the connection manager will prefer <see cref="IAsyncDisposable"/> and will call the latter otherwise.
     /// </summary>
-    public abstract class Transport : ITransport
+    public abstract class Transport
     {
         readonly TransportListener? _listener;
         readonly SemaphoreSlim? _sendLock;
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
-        
-        IncomingMessageFactory _receiveFactory;
-        [AllowNull]
-        OutgoingMessageFactory _sendFactory;
+        readonly IncomingMessageFactory _receiveFactory;
 
         /// <summary>
         /// Initializes a new Transport.
@@ -42,20 +39,18 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Called once the protocols have been computed.
+        /// Called once the protocols have been resolved.
         /// </summary>
         /// <param name="protocols">The negotiated protocols.</param>
         internal void SetProtocols( MessageProtocolMap protocols )
         {
             _receiveFactory.SetProtocols( protocols );
-            _sendFactory = new OutgoingMessageFactory( protocols );
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the protocols that have been negotiated.
+        /// </summary>
         public MessageProtocolMap NegotiatedProtocols => _receiveFactory.AllowedProtocols;
-
-        /// <inheritdoc />
-        public OutgoingMessageFactory OutgoingMessageFactory => _sendFactory;
 
         /// <summary>
         /// Gets the listener if this transport has been initiated by this server side.
@@ -68,7 +63,25 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public string RemoteEndPointDescription => _remoteEndPointDescription;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Reads the next incoming <see cref="TransportMessage"/>. Once done with it, <see cref="TransportMessage.Dispose()"/>
+        /// must be called.
+        /// <para>
+        /// This must obviously be called sequentially otherwise kittens will die.
+        /// </para>
+        /// <para>
+        /// This raises any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
+        /// <paramref name="cancellation"/> token has been signaled, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// When <see cref="TransportMessage.Invalid"/> is returned it means that an invalid message prefix has been read or it exceeds
+        /// the <paramref name="maxMessageLength"/> parameter: in an case, an invalid message condemns this transport (just like an exception). 
+        /// </para>
+        /// </summary>
+        /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
+        /// <param name="cancellation">Cancellation token.</param>
+        /// <returns>
+        /// A message that may be one of the <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/> or <see cref="TransportMessage.Empty"/>
+        /// special messages.
+        /// </returns>
         public Task<TransportMessage> ReadNextAsync( int maxMessageLength = -1, CancellationToken cancellation = default )
         {
             return _receiveFactory.ReadAsync( _reader, maxMessageLength, cancellation );
@@ -101,7 +114,21 @@ namespace CK.AppIdentity.TransportLayer
             //return m;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Sends a <see cref="TransportMessage"/> that must be <see cref="TransportMessage.IsValid"/> otherwise
+        /// an <see cref="ArgumentException"/> is thrown.
+        /// <para>
+        /// This can be called concurrently, either a <see cref="SemaphoreSlim"/> is used to serialize the calls OR the underlying transport
+        /// supports "parallel communication streams": the caller never need to deal with this.
+        /// </para>
+        /// <para>
+        /// This throws any error thrown by the underlying transport.
+        /// This always returns true except if the operation was canceled and the <paramref name="cancellation"/> token has been signaled.
+        /// </para>
+        /// </summary>
+        /// <param name="message">The valid message to send.</param>
+        /// <param name="cancellation">Optional cancellation token.</param>
+        /// <returns>True if the message has been sent, false it <paramref name="cancellation"/> has been signaled.</returns>
         public ValueTask<bool> SendAsync( TransportMessage message, CancellationToken cancellation = default )
         {
             Throw.CheckArgument( message != null && message.IsValid );

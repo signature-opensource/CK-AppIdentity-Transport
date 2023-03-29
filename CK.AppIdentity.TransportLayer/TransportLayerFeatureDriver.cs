@@ -22,7 +22,7 @@ namespace CK.AppIdentity.TransportLayer
 
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
-            _transportManager = new TransportManager( context.Agent );
+            _transportManager = new TransportManager( context.Agent, _protocolDirectory );
             bool success = _transportManager.Start();
             if( !success )
             {
@@ -85,7 +85,7 @@ namespace CK.AppIdentity.TransportLayer
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportFeature( _transportManager, r, listener );
+                var t = new TransportLayerFeature( _transportManager, r, listener );
                 r.AddFeature( t );
                 if( listener != null )
                 {
@@ -217,13 +217,13 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     foreach( var rSub in party.DomainApplicationIdentity.Remotes )
                     {
-                        var t = rSub.GetFeature<TransportFeature>();
+                        var t = rSub.GetFeature<TransportLayerFeature>();
                         t?.Teardown();
                     }
                 }
                 else 
                 {
-                    var t = party.GetFeature<TransportFeature>();
+                    var t = party.GetFeature<TransportLayerFeature>();
                     t?.Teardown();
                 }
             }
@@ -235,7 +235,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _transportManager != null );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                var t = r.GetFeature<TransportFeature>();
+                var t = r.GetFeature<TransportLayerFeature>();
                 t?.Teardown();
             }
             _transportManager.SendStop();

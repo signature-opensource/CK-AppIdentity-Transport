@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer
     /// There is only 2 ways to create an outgoing transport message:
     /// <list type="number">
     /// <item><see cref="Create(Action{IBufferWriter{byte}}, int)"/> for messages that must be disposed</item>
-    /// <item>The static <see cref="CreateStatic(byte,Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
+    /// <item><see cref="CreateStatic(Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
     /// </list>
     /// <para>
     /// This class is thread safe.
@@ -21,12 +21,12 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class OutgoingMessageFactory : MessageFactory
     {
-        MessageProtocolMap _allowed;
+        MessageProtocol _protocol;
+        int _protocolNumber;
 
         OutgoingMessageFactory()
         {
-            // This map is not IsValid. 
-            _allowed = new MessageProtocolMap();
+            _protocol = MessageProtocol.ZeroProtocol;
         }
 
         /// <summary>
@@ -35,60 +35,52 @@ namespace CK.AppIdentity.TransportLayer
         internal static readonly OutgoingMessageFactory ZeroProtocol = new OutgoingMessageFactory();
 
         /// <summary>
-        /// Initializes a new message factory for a protocol map. 
+        /// Initializes a new message factory for a protocol and its protocol number.
         /// </summary>
-        /// <param name="protocols">
-        /// A map that must be <see cref="MessageProtocolMap.IsValid"/> and negotiated
-        /// with the other party.
-        /// </param>
-        public OutgoingMessageFactory( MessageProtocolMap protocols )
+        /// <param name="protocolNumber">Must be between 1 and <see cref="MessageProtocolMap.MaxCount"/>.</param>
+        /// <param name="protocol">The protocol. Must not be the "0 Protocol".</param>
+        public OutgoingMessageFactory( int protocolNumber, MessageProtocol protocol )
         {
-            Throw.CheckArgument( protocols.IsValid );
-            _allowed = protocols;
+            Throw.CheckArgument( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
+            Throw.CheckArgument( protocol != null && protocol != MessageProtocol.ZeroProtocol );
+            _protocolNumber = protocolNumber;
+            _protocol = protocol;
         }
 
         /// <summary>
-        /// Gets the protocols map that this factory is allowed to handle.
+        /// Gets the protocol that this factory uses.
         /// </summary>
-        public MessageProtocolMap AllowedProtocols => _allowed;
+        public MessageProtocol Protocol => _protocol;
 
         /// <summary>
         /// Creates a <see cref="TransportMessage"/> by writing its content.
         /// The <paramref name="writer"/> must write at least one byte: no protocol (other than the <see cref="MessageProtocol.ZeroProtocol"/>)
         /// is allowed to send empty messages.
         /// </summary>
-        /// <param name="protocol">The protocol. Must be in the <see cref="AllowedProtocols"/>.</param>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A transport message.</returns>
-        public TransportMessage Create( MessageProtocol protocol, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public TransportMessage Create( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( this, writer, minSequenceBufferSize, protocol );
+            return DoCreate( this, writer, minSequenceBufferSize );
         }
 
         /// <summary>
         /// Creates a static snapshot <see cref="TransportMessage"/>, its content is a single independent segment (not pooled).
         /// <see cref="TransportMessage.Dispose()"/> on a static message does nothing.
         /// </summary>
-        /// <param name="protocol">The protocol. Must be in the <see cref="AllowedProtocols"/>.</param>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A static transport message.</returns>
-        public TransportMessage CreateStatic( MessageProtocol protocol, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public TransportMessage CreateStatic( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( null, writer, minSequenceBufferSize, protocol );
+            return DoCreate( null, writer, minSequenceBufferSize );
         }
 
-        TransportMessage DoCreate( MessageFactory? factory, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize, MessageProtocol protocol )
+        TransportMessage DoCreate( MessageFactory? factory, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize )
         {
-            int protocolNumber = _allowed.GetProtocolNumber( protocol );
-            // The "0 Protocol" message map is invalid. We use this here: only the "0 Protocol" can create its messages.
-            if( protocolNumber < 0 || (protocolNumber == 0 && _allowed.IsValid) )
-            {
-                Throw.ArgumentException( $"Disallowed protocol '{protocolNumber}'. Allowed protocols are: {_allowed.Protocols.Select( p => p.ToString()).Concatenate()}." );
-            }
             bool releaseBuffer = true;
-            var buffer = new MutableSequence<byte>();
+            var buffer = GetBuffer();
             buffer.MinimumBufferSize = minSequenceBufferSize;
             try
             {
@@ -103,26 +95,26 @@ namespace CK.AppIdentity.TransportLayer
                 var messageLength = (uint)buffer.Length - _maxPrefixLength;
                 if( messageLength == 0 )
                 {
-                    if( factory == null ) Throw.InvalidOperationException( "A static TransportMessage cannot be empty." );
-                    if( protocolNumber != 0 ) Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{protocol.Name}')." );
+                    if( _protocolNumber != 0 ) Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{_protocol.FullName}')." );
+                    else if( factory == null ) Throw.InvalidOperationException( "A static TransportMessage cannot be empty." );
                     return TransportMessage.Empty;
                 }
                 Span<byte> prefix = stackalloc byte[_maxPrefixLength];
-                prefixLength = WritePrefix( protocolNumber, messageLength, prefix );
+                prefixLength = WritePrefix( _protocolNumber, messageLength, prefix );
                 Debug.Assert( prefixLength <= _maxPrefixLength );
                 int offset = _maxPrefixLength - prefixLength;
                 prefix.Slice( 0, prefixLength ).CopyTo( header.Span.Slice( offset, prefixLength ) );
                 if( factory == null )
                 {
                     var content = new ReadOnlySequence<byte>( buffer.GetReadOnlySequence( offset ).ToArray() );
-                    return new TransportMessage( protocol, content, prefixLength );
+                    return new TransportMessage( _protocol, content, prefixLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( factory, protocol, buffer, offset, prefixLength );
+                return new TransportMessage( factory, _protocol, buffer, offset, prefixLength );
             }
             finally
             {
-                if( releaseBuffer ) buffer.Dispose();
+                if( releaseBuffer ) Release( buffer );
             }
 
 

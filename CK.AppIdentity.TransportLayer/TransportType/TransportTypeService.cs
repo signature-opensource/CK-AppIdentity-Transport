@@ -63,7 +63,7 @@ namespace CK.AppIdentity.TransportLayer
             return l;
         }
 
-        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportFeature remote, object typedAddress, CancellationToken cancellation )
+        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportLayerFeature remote, object typedAddress, CancellationToken cancellation )
         {
             Debug.Assert( remote.OutgoingInitialMessage != null );
             var transport = await TryConnectAsync( transportManager.Logger, typedAddress, cancellation );

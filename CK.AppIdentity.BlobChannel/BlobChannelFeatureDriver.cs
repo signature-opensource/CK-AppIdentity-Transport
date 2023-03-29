@@ -6,23 +6,18 @@ namespace CK.AppIdentity.BlobChannel
     /// <summary>
     /// Blob channels is a opt-in feature: to activate it, "AllowFeatures" of the remote must contain "BlobChannel".
     /// </summary>
-    public sealed class BlobChannelFeatureDriver : MessageProtocolFeatureDriver<BlobChannelFeature>
+    public sealed class BlobChannelFeatureDriver : ChannelFeatureDriver<BlobChannelFeature>
     {
         public BlobChannelFeatureDriver( ApplicationIdentityService s, MessageProtocolDirectoryService messageProtocolDirectory )
-            : base( s, messageProtocolDirectory, false )
+            : base( s, false )
         {
         }
 
-        protected override bool PlugFeature( FeatureLifetimeContext context,
-                                             IRemoteParty party,
-                                             TransportFeature transport,
-                                             MessageProtocolDirectoryService messageProtocolDirectory )
+        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportLayerFeature transport, out BlobChannelFeature? channel )
         {
-            var f = new BlobChannelFeature( transport, messageProtocolDirectory );
-            party.AddFeature( f );
+            channel = new BlobChannelFeature( transport );
             return true;
         }
-
     }
 
 }

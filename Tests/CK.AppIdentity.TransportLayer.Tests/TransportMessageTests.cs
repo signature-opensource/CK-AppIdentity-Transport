@@ -21,7 +21,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 ProtocolDirectory = new MessageProtocolDirectoryService();
                 TestProtocol = ProtocolDirectory.Register( "Test" );
                 TestMap = MessageProtocolMap.Get( TestProtocol );
-                Outgoing = new OutgoingMessageFactory( TestMap );
+                Outgoing = new OutgoingMessageFactory( 1, TestProtocol );
                 Incoming = new IncomingMessageFactory( TestMap );
             }
 
@@ -40,12 +40,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
 
             for( int i = 4091; i < 5000; ++i )
             {
-                await WriteAndReadAsync( ctx.TestProtocol, ctx.Outgoing, ctx.Incoming, i );
+                await WriteAndReadAsync( ctx.Outgoing, ctx.Incoming, i );
             }
 
-            static async Task WriteAndReadAsync( MessageProtocol protocol, OutgoingMessageFactory outgoing, IncomingMessageFactory incoming, int lenString )
+            static async Task WriteAndReadAsync( OutgoingMessageFactory outgoing, IncomingMessageFactory incoming, int lenString )
             {
-                using var m = outgoing.Create( protocol, bytes =>
+                using var m = outgoing.Create( bytes =>
                 {
                     var w = new FastByteWriter( bytes );
                     w.WriteString( new string( 'A', lenString ) );
@@ -78,12 +78,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
 
             for( var i = 0; i < 100; ++i )
             {
-                await WriteAndReadAsync( ctx.TestProtocol, ctx.Outgoing, ctx.Incoming, buffer, random );
+                await WriteAndReadAsync( ctx.Outgoing, ctx.Incoming, buffer, random );
             }
 
-            static async Task WriteAndReadAsync( MessageProtocol protocol, OutgoingMessageFactory outgoing, IncomingMessageFactory incoming, byte[] buffer, Random random )
+            static async Task WriteAndReadAsync( OutgoingMessageFactory outgoing, IncomingMessageFactory incoming, byte[] buffer, Random random )
             {
-                using var m = outgoing.Create( protocol, bytes =>
+                using var m = outgoing.Create( bytes =>
                 {
                     var w = new FastByteWriter( bytes );
                     int len = random.Next( buffer.Length - 1 ) + 1;

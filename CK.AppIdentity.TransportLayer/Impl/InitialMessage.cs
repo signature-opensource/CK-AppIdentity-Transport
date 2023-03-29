@@ -61,7 +61,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Outgoing message constructor. 
         /// </summary>
         /// <param name="p">The remote party.</param>
-        public InitialMessage( TransportFeature f )
+        public InitialMessage( TransportLayerFeature f )
         {
             Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
             _fullName = f.Party.FullName;

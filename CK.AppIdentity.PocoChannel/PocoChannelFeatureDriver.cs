@@ -10,20 +10,16 @@ namespace CK.AppIdentity.PocoChannel
     /// <summary>
     /// Poco channel is a opt-out feature: to deactivate it, use "DisallowFeatures" with "PocoChannel".
     /// </summary>
-    public sealed class PocoChannelFeatureDriver : MessageProtocolFeatureDriver<PocoChannelFeature>
+    public sealed class PocoChannelFeatureDriver : ChannelFeatureDriver<PocoChannelFeature>
     {
         public PocoChannelFeatureDriver( ApplicationIdentityService s, MessageProtocolDirectoryService messageProtocolDirectory )
-            : base( s, messageProtocolDirectory, true )
+            : base( s, true )
         {
         }
 
-        protected override bool PlugFeature( FeatureLifetimeContext context,
-                                             IRemoteParty party,
-                                             TransportFeature transport,
-                                             MessageProtocolDirectoryService messageProtocolDirectory )
+        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportLayerFeature transport, out PocoChannelFeature? channel )
         {
-            var f = new PocoChannelFeature( transport, messageProtocolDirectory );
-            party.AddFeature( f );
+            channel = new PocoChannelFeature( transport );
             return true;
         }
     }

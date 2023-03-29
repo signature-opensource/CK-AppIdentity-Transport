@@ -1,34 +1,32 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
+using System;
+using System.Diagnostics;
+using System.Threading;
 
 namespace CK.AppIdentity.BlobChannel
 {
     /// <summary>
-    /// Base class for <see cref="MessageProtocolFeature"/> drivers.
+    /// Base class for <see cref="ChannelFeature"/> drivers.
     /// </summary>
     [CKTypeDefiner]
-    public abstract class MessageProtocolFeatureDriver<T> : ApplicationIdentityFeatureDriver where T : MessageProtocolFeature
+    public abstract class ChannelFeatureDriver<T> : ApplicationIdentityFeatureDriver where T : ChannelFeature
     {
-        readonly MessageProtocolDirectoryService _messageProtocolDirectory;
-
         /// <summary>
-        /// Initializes a new <see cref="MessageProtocolFeatureDriver{T}"/>.
+        /// Initializes a new <see cref="ChannelFeatureDriver{T}"/>.
         /// </summary>
         /// <param name="s">The application identity service.</param>
-        /// <param name="messageProtocolDirectory">The message protocol directory service.</param>
         /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
-        public MessageProtocolFeatureDriver( ApplicationIdentityService s,
-                                             MessageProtocolDirectoryService messageProtocolDirectory,
-                                             bool isAllowedByDefault )
+        /// 
+        protected ChannelFeatureDriver( ApplicationIdentityService s,
+                                        bool isAllowedByDefault )
             : base( s, isAllowedByDefault )
         {
-            _messageProtocolDirectory = messageProtocolDirectory;
+            if( FeatureName.Length <= 7 || !FeatureName.EndsWith( "Channel" ) )
+            {
+                Throw.InvalidOperationException( $"Feature '{FeatureName}' is a transport channel: it must end with 'Channel'. Type '{GetType():C}' must be renamed." );
+            }
         }
-
-        /// <summary>
-        /// Gets the <see cref="MessageProtocolDirectoryService"/>.
-        /// </summary>
-        protected MessageProtocolDirectoryService MessageProtocolDirectory => _messageProtocolDirectory;
 
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
@@ -101,30 +99,51 @@ namespace CK.AppIdentity.BlobChannel
         {
             if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
             {
-                var transport = r.GetFeature<TransportFeature>();
+                var transport = r.GetFeature<TransportLayerFeature>();
                 // No Transport implies no communication.
                 if( transport == null )
                 {
                     context.Monitor.Warn( $"No Transport feature available on '{r.FullName}'. {FeatureName} cannot be setup." );
                     return true;
                 }
-                return PlugFeature( context, r, transport, _messageProtocolDirectory );
+                if( transport.Party != r )
+                {
+                    context.Monitor.Fatal( $"Transport feature mismatch on '{r.FullName}': its transport is bound to '{transport.Party.FullName}'. {FeatureName} cannot be setup." );
+                    return false;
+                }
+                // If TryCreateChannel returns false, this is an error.
+                if( !TryCreateChannel( context, transport, out var channel ) ) return false;
+                // But there may be no error and no channel.
+                if( channel != null )
+                {
+                    // RegisterChannel on the TransportFeature allocates the protocol number
+                    // for the channel.
+                    int protocolNumber = transport.RegisterChannel( context.Monitor,
+                                                                    channel,
+                                                                    FeatureName,
+                                                                    channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
+                                                                    channel.Versions,
+                                                                    channel.IsPartySpecificProtocol );
+                    if( protocolNumber < 0 ) return false;
+                    Debug.Assert( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
+                    channel.Initialize( protocolNumber );
+                    r.AddFeature( channel );
+                }
             }
             return true;
         }
 
         /// <summary>
-        /// This is called when the feature is allowed on the remote and the <see cref="TransportFeature"/> is available:
-        /// a configured <see cref="T"/> feature should be added to the <paramref name="party"/> if possible.
+        /// This is called when the feature is allowed on the remote and the <see cref="TransportLayerFeature"/> is available:
+        /// a configured <see cref="T"/> feature should be created if possible.
         /// </summary>
         /// <param name="context">The initialization context that exposes the monitor to use and its trampoline if needed.</param>
         /// <param name="transport">The transport feature of the party.</param>
-        /// <param name="messageProtocolDirectory">The message protocol directory.</param>
-        /// <returns>True on success (even if no feature has been added to the party), false if the initialization fails.</returns>
-        abstract protected bool PlugFeature( FeatureLifetimeContext context,
-                                             IRemoteParty party,
-                                             TransportFeature transport,
-                                             MessageProtocolDirectoryService messageProtocolDirectory );
+        /// <param name="channel">Channel feature to be added to the <see cref="TransportLayerFeature.Party"/>.</param>
+        /// <returns>True on success (even if <paramref name="channel"/> is null), false if the initialization fails.</returns>
+        abstract protected bool TryCreateChannel( FeatureLifetimeContext context,
+                                                  TransportLayerFeature transport,
+                                                  out T? channel );
     }
 
 }
