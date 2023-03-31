@@ -1,10 +1,9 @@
 using CK.Core;
 using System.Diagnostics;
-using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
 {
-    static class ZeroProtocol
+    partial class ZeroProtocol
     {
         /// <summary>
         /// This version drives the whole "0 Protocol" version.
@@ -13,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public const int FirstAnswerMaxLength = 1 // One byte discriminator.
                                                 + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
-                                                + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength );
+                                                + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength);
 
         // "1" followed by our version: it can be static.
         static TransportMessage? _downgradeProtocolReplyMessage;
@@ -28,9 +27,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="remote">The target remote.</param>
         /// <param name="transport">The newly created transport.</param>
         /// <param name="version">The serialization version.</param>
-        /// <param name="cancellation">Cancellation token.</param>
-        /// <returns>False if <paramref name="cancellation"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-        public static ValueTask<bool> SendInitialMessageAsync( TransportLayerFeature remote, Transport transport, int version, CancellationToken cancellation )
+        /// <returns>False if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
+        public static ValueTask<bool> SendInitialMessageAsync( TransportLayerFeature remote, Transport transport, int version )
         {
             Debug.Assert( remote.OutgoingInitialMessage != null );
             using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
@@ -41,7 +39,7 @@ namespace CK.AppIdentity.TransportLayer
                 remote.OutgoingInitialMessage.WriteCurrentVersion( ref w );
                 w.Commit();
             } );
-            return transport.SendAsync( m, cancellation );
+            return transport.SendAsync( m );
         }
 
         public static Task SendUnknownRemoteReplyMessageAsync( Transport transport, string? userAcceptUri )
@@ -173,11 +171,11 @@ namespace CK.AppIdentity.TransportLayer
         {
             TransportMessage m = value
                     ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
-                        {
-                            var m = bytes.GetSpan( 1 );
-                            m[0] = 1;
-                            bytes.Advance( 1 );
-                        } )
+                    {
+                        var m = bytes.GetSpan( 1 );
+                        m[0] = 1;
+                        bytes.Advance( 1 );
+                    } )
                     : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 1 );

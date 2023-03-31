@@ -1,11 +1,19 @@
 using CK.Core;
 using CK.PerfectEvent;
 using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Net;
 
 namespace CK.AppIdentity.TransportLayer
 {
+    public enum ListeningMode
+    {
+        Default,
+        RoundRobin,
+        Parallel
+    }
+
     /// <summary>
     /// 
     /// </summary>
@@ -18,38 +26,183 @@ namespace CK.AppIdentity.TransportLayer
         readonly ChannelFeature?[] _channels;
         readonly HashSet<MessageProtocol> _registeredProtocols;
         readonly List<MessageProtocol> _bestRegisteredProtocols;
+        readonly ListeningMode _listeningMode;
+        readonly ILiveMessageEndPointCollection _endPoints;
 
         InitialMessage? _outgoingInitialMessage;
 
-        /// <summary>
-        /// The transport is under control of the TransportManager agent.
-        /// </summary>
-        Transport? _transport;
+        MessageEndPoint? _firstEndPoint;
+        int _endPointCount;
+        bool _isConnected;
 
-        internal TransportLayerFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
+        internal TransportLayerFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, ListeningMode listeningMode )
         {
             _transportManager = transportManager;
             _remote = remote;
             _listener = listener;
-            _channels = new ChannelFeature[1+MessageProtocolMap.MaxCount];
+            _listeningMode = listeningMode;
+            _channels = new ChannelFeature[MessageProtocolMap.MaxCount];
             _isConnectedChanged = new PerfectEventSender<TransportLayerFeature>();
             _registeredProtocols = new HashSet<MessageProtocol>();
             _bestRegisteredProtocols = new List<MessageProtocol>();
+            _endPoints = new LiveEnumerator( this );
         }
 
-        internal Task OnNewTransportAsync( IActivityMonitor monitor, Transport transport )
+        internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Debug.Assert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
+            Debug.Assert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
 
-            bool isConnected = _transport != null;
-            if( isConnected ) _transportManager.CondemnTransport( _transport! );
-
-            _transport = transport;
-
-            return isConnected != (transport != null)
-                    ? _isConnectedChanged.SafeRaiseAsync( monitor, this )
-                    : Task.CompletedTask;
+            MessageEndPoint? newOne = null;
+            if( _firstEndPoint == null )
+            {
+                _firstEndPoint = newOne = new MessageEndPoint( _transportManager, this, transport );
+            }
+            else if( _listeningMode == ListeningMode.Default )
+            {
+                // If the current endpoint is still alive (this means we are a server because if we were
+                // a client a new transport only pops when the current one is dead, but we don't really care here),
+                // we signal its end and immediately tell the channels about this killing.
+                if( _firstEndPoint.IsConnected )
+                {
+                    _firstEndPoint.Transport.SetCondemned();
+                    await OnTransportCondemnAsync( monitor, _firstEndPoint.Transport, potentialRecycling: transport );
+                }
+                _firstEndPoint.Rebind( monitor, _transportManager, transport );
+            }
+            else
+            {
+                newOne = new MessageEndPoint( _transportManager, this, transport );
+                _firstEndPoint._prevEndPoint = _firstEndPoint;
+                newOne._nextEndPoint = _firstEndPoint;
+                // Important: publish the head after the nodes have been configured.
+                _firstEndPoint = newOne;
+            }
+            if( newOne != null )
+            {
+                // For ListeningMode.Default, this definitely transitions _endPointCount from 0 to 1:
+                // from now on, the endpoint will be rebound.
+                ++_endPointCount;
+                Debug.Assert( newOne.Feature == this );
+            }
+            var messageHandlers = new IMessageHandler[_bestRegisteredProtocols.Count];
+            for( int i = 0; i < messageHandlers.Length; i++ )
+            {
+                var c = _channels[i];
+                Debug.Assert( c != null );
+                messageHandlers[i] = c.EnsureMessageHandler( monitor, protocols.Protocols[i] );
+            }
+            transport.StartReceive( monitor, _transportManager, protocols, messageHandlers );
+            if( !_isConnected )
+            {
+                _isConnected = true;
+                await _isConnectedChanged.SafeRaiseAsync( monitor, this );
+            }
         }
+
+        internal async Task OnTransportCondemnAsync( IActivityMonitor monitor, Transport transport, Transport? potentialRecycling = null )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Debug.Assert( transport.Lifetime.IsCancellationRequested );
+            // The condemned transport has been previously added:
+            // - The endpoint has been set and is managed by this feature.
+            // - The receivers have been set.
+            Debug.Assert( transport.EndPoint != null 
+                          && transport.EndPoint.Feature == this
+                          && transport.Handlers != null );
+            bool newConnected;
+            // First, removes the endpoint from the list when in multiple mode. 
+            if( _listeningMode == ListeningMode.Default )
+            {
+                newConnected = potentialRecycling != null;
+            }
+            else
+            {
+                Debug.Assert( potentialRecycling == null, "There is no recycling when in multiple mode." );
+                newConnected = --_endPointCount > 0;
+                var e = transport.EndPoint;
+                // Skip the forward link first.
+                var prev = e._prevEndPoint;
+                if( prev != null ) prev._nextEndPoint = e._nextEndPoint;
+                else _firstEndPoint = e._nextEndPoint;
+                // Update the backward link.
+                if( e._nextEndPoint != null ) e._nextEndPoint._prevEndPoint = prev;
+                // Do NOT clear _nextEndPoint: this is the key point for the live enumerator
+                // to be able to enumerate next endpoints from a dead one!
+                e._prevEndPoint = null;
+                // The disconnected end point doesn't appear anymore in the list.
+                // Currently, we can only save the message if a remote with the same protocol version
+                // is available (we use the MessageHandlers to TryEnqueue the messages).
+                // If the messages cannot be transfered, they are disposed (0 protocol messages are always disposed).
+                if( !_remote.IsDestroyed )
+                {
+                    e.HandlePendingOutgoingMessages( monitor );
+                }
+            }
+            // Second, tell the handlers about the disconnected endpoint.  
+            foreach( var r in transport.Handlers )
+            {
+                await r.OnDisconnectedAsync( monitor, transport.EndPoint, potentialRecycling );
+            }
+            if( _isConnected != newConnected )
+            {
+                _isConnected = newConnected;
+                await _isConnectedChanged.SafeRaiseAsync( monitor, this );
+            }
+        }
+
+        sealed class LiveEnumerator : ILiveMessageEndPointCollection
+        {
+            readonly TransportLayerFeature _f;
+
+            public LiveEnumerator( TransportLayerFeature f ) => _f = f;
+
+            public int Count => _f._endPointCount;
+
+            public IEnumerator<MessageEndPoint> GetEnumerator()
+            {
+                var e = _f._firstEndPoint;
+                while( e != null )
+                {
+                    if( e.IsConnected ) yield return e;
+                    e = e._nextEndPoint;
+                }
+            }
+
+            public MessageEndPoint? GetNext( MessageEndPoint? previous )
+            {
+                var n = previous?._nextEndPoint ?? _f._firstEndPoint;
+                bool loop = false;
+                while( n != null )
+                {
+                    if( n.IsConnected ) break;
+                    n = n._nextEndPoint;
+                    if( n == null )
+                    {
+                        if( loop ) break;
+                        n = _f._firstEndPoint;
+                        loop = true;
+                    }
+                }
+                return n;
+            }
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        /// <summary>
+        /// Gets the <see cref="ListeningMode"/>.
+        /// The <see cref="ListeningMode.Default"/> applies to clients and single party listeners.
+        /// </summary>
+        public ListeningMode ListeningMode => _listeningMode;
+
+        /// <summary>
+        /// Gets the set of currently connected endpoints. This is a "live" set:
+        /// its count can change at anytime and a end point with a false <see cref="MessageEndPoint.IsConnected"/>
+        /// can appear in the set.
+        /// </summary>
+        public ILiveMessageEndPointCollection LiveEndPoints => _endPoints;
 
         /// <summary>
         /// Gets the registered protocols with their best respective version among the
@@ -59,7 +212,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _bestRegisteredProtocols !=null, "This is safe: see CloseRegisteredProtocols comment." );
+                Debug.Assert( _bestRegisteredProtocols !=null, "This is safe: see CloseChannelRegistration comment." );
                 return _bestRegisteredProtocols!;
             }
         }
@@ -71,7 +224,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _bestRegisteredProtocols != null, "This is safe: see CloseRegisteredProtocols comment." );
+                Debug.Assert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
                 return _registeredProtocols;
             }
         }
@@ -113,7 +266,8 @@ namespace CK.AppIdentity.TransportLayer
                 idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0, isPartySpecific );
                 if( idxSorted < 0 ) return -1;
             }
-            _channels[++idxSorted] = channel;
+            channel._baseProtocolName = protocolName;
+            _channels[idxSorted] = channel;
             return idxSorted;
         }
 
@@ -150,9 +304,11 @@ namespace CK.AppIdentity.TransportLayer
         /// activity fully succeeds: it is safe to expose both _registeredProtocols and
         /// _bestRegisteredProtocols.
         /// </summary>
-        internal void CloseRegisteredProtocols( IActivityMonitor monitor )
+        internal void CloseChannelRegistration( IActivityMonitor monitor )
         {
             Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            Debug.Assert( _channels.Take( _bestRegisteredProtocols.Count ).All( c => c != null ) );
+            Debug.Assert( _channels.Skip( _bestRegisteredProtocols.Count ).All( c => c == null ) );
             if( _bestRegisteredProtocols.Count == 0 )
             {
                 monitor.Warn( $"No message protocol registered for '{_remote.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
@@ -162,7 +318,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets whether this transport is connected to the other party.
         /// </summary>
-        public bool IsConnected => _transport != null;
+        public bool IsConnected => _isConnected;
 
         /// <summary>
         /// Gets the party.

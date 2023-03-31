@@ -1,19 +1,34 @@
 using CK.Core;
+using System.Diagnostics.CodeAnalysis;
 
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Base class for message protocol handlers.
+    /// Base class for channel features.
     /// </summary>
     public abstract class ChannelFeature
     {
         readonly TransportLayerFeature _transportFeature;
-        int _protocolNumber;
+
+        // Set by TransportLayerFeature.RegisterChannel on success.
+        // On failure, the channel feature is not referenced by anybody.
+        [AllowNull]
+        internal string _baseProtocolName;
 
         protected ChannelFeature( TransportLayerFeature transportFeature )
         {
             _transportFeature = transportFeature;
         }
+
+        /// <summary>
+        /// Gets the <see cref="MessageProtocol.Name"/> that is handled by this channel.
+        /// </summary>
+        public string BaseProtocolName => _baseProtocolName;
+
+        /// <summary>
+        /// Gets the versioned protocols that are handled by this channel.
+        /// </summary>
+        public IEnumerable<MessageProtocol> SupportedProtocols => _transportFeature.RegisteredProtocols.Where( p => p.Name == _baseProtocolName );
 
         /// <summary>
         /// Gets a <see cref="MessageProtocol.Name"/> if the protocol name based on the <see cref="ApplicationIdentityFeatureDriver.FeatureName"/>
@@ -29,19 +44,15 @@ namespace CK.AppIdentity.TransportLayer
         internal protected virtual IEnumerable<ushort> Versions => Array.Empty<ushort>();
 
         /// <summary>
-        /// Gets whether the protocol is specific to the party.
-        /// Defaults to false.
-        /// </summary>
-        internal protected virtual bool IsPartySpecificProtocol => false;
-
-        /// <summary>
         /// Gets the <see cref="TransportLayerFeature"/>.
         /// </summary>
         protected TransportLayerFeature Transport => _transportFeature;
 
-        internal void Initialize( int protocolNumber )
+
+        internal IMessageHandler EnsureMessageHandler( IActivityMonitor monitor, MessageProtocol protocol )
         {
-            _protocolNumber = protocolNumber;
+
+            throw new NotImplementedException();
         }
 
         /// <summary>

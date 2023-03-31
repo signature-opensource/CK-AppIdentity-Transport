@@ -76,22 +76,35 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( (listen == null) != (target == null) );
                 // If we are listening and cannot setup a listener on the local address, it's an error.
                 TransportListener? listener = null;
-                if( listen != null && (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
+                ListeningMode listeningMode = ListeningMode.Default;
+                if( listen != null )
                 {
-                    return false;
+                    if( (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
+                    {
+                        return false;
+                    }
+                    var mode = r.Configuration.Configuration.TryLookupValue( "ListeningMode" );
+                    if( mode != null )
+                    {
+                        if( !Enum.TryParse( mode, ignoreCase: true, out listeningMode ) )
+                        {
+                            context.Monitor.Error( $"Invalid '{}:ListeningMode'. Expected {Enum.GetNames<ListeningMode>().Concatenate()}. Got '{mode}'." );
+                            return false;
+                        }
+                    }
                 }
                 // No direct initialization error: add the TransportFeature to the party.
                 // The initialization is not finished: if the party is listening it must be registered in its
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportLayerFeature( _transportManager, r, listener );
+                var t = new TransportLayerFeature( _transportManager, r, listener, listeningMode );
                 r.AddFeature( t );
                 if( listener != null )
                 {
                     context.Trampoline.OnSuccess( () =>
                     {
-                        t.CloseRegisteredProtocols( context.Monitor );
+                        t.CloseChannelRegistration( context.Monitor );
                         listener.AddParty( t );
                     } );
                 }
@@ -100,7 +113,7 @@ namespace CK.AppIdentity.TransportLayer
                     Debug.Assert( target != null );
                     context.Trampoline.OnSuccess( () =>
                     {
-                        t.CloseRegisteredProtocols( context.Monitor );
+                        t.CloseChannelRegistration( context.Monitor );
                         t.InitializeOutgoing( target );
                     } );
                 }

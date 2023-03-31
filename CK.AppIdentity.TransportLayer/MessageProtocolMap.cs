@@ -69,28 +69,6 @@ namespace CK.AppIdentity.TransportLayer
         public IReadOnlyList<MessageProtocol> Protocols => _protocols ?? Array.Empty<MessageProtocol>();
 
         /// <summary>
-        /// Tries to find a <see cref="MessageProtocol"/> by its number in this map.
-        /// </summary>
-        /// <param name="number">The protocol number to find.</param>
-        /// <param name="p">The resulting protocol.</param>
-        /// <returns>True on success, false if the number is incorrect.</returns>
-        public bool TryFind( byte number, [NotNullWhen(true)]out MessageProtocol? p )
-        {
-            if( number == 0 )
-            {
-                p = MessageProtocol.ZeroProtocol;
-                return true;
-            }
-            if( _protocols == null || number > _protocols.Length )
-            {
-                p = null;
-                return false;
-            }
-            p = _protocols[number - 1];
-            return true;
-        }
-
-        /// <summary>
         /// Gets the protocol number for a given message protocol.
         /// </summary>
         /// <param name="protocol">The protocol.</param>

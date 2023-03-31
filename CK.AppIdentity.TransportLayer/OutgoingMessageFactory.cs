@@ -54,7 +54,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Creates a <see cref="TransportMessage"/> by writing its content.
-        /// The <paramref name="writer"/> must write at least one byte: no protocol (other than the <see cref="MessageProtocol.ZeroProtocol"/>)
+        /// The <paramref name="writer"/> must write at least one byte: no protocol (other than the "0 Protocol")
         /// is allowed to send empty messages.
         /// </summary>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>

@@ -132,8 +132,8 @@ namespace CK.AppIdentity.TransportLayer
         public void Setup( TransportManager transportManager, TransportLayerFeature remote, TransportTypeAddress target )
         {
             Debug.Assert( remote != null && target != null && remote != null );
-            _cts ??= new CancellationTokenSource();
-            _result = target.Type.TryConnectToAsync( transportManager, remote, target.TypedAddress, _cts.Token );
+            _cts = new CancellationTokenSource();
+            _result = target.Type.TryConnectToAsync( transportManager, remote, target.TypedAddress, _cts );
             _remote = remote;
             _target = target;
             _setupTick = CurrentTick;
@@ -145,7 +145,7 @@ namespace CK.AppIdentity.TransportLayer
             _target = null;
             _tryCancelCount = 0;
             _tryCount = 0;
-            if( _cts != null && !_cts.TryReset() ) _cts = null;
+            _cts = null;
         }
     }
 }

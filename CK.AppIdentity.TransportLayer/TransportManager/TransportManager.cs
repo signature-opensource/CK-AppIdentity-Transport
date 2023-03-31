@@ -93,20 +93,30 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap )
         {
-            transport.SetProtocols( protocolMap );
-            PushTypedJob( new NewValidTransportJob( remote, transport ) );
+            PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap ) );
+        }
+
+        internal void TransportReceiveErrorMessage( Transport transport, Exception? ex )
+        {
+            throw new NotImplementedException();
+        }
+
+        internal void TransportKeepAliveReceived( Transport transport )
+        {
+            throw new NotImplementedException();
         }
 
         internal void CondemnTransport( Transport transport, TransportMessage[]? byeByeMessages = null )
         {
+            transport.SetCondemned();
             PushTypedJob( new CondemnTransportJob( transport, byeByeMessages ) );
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         sealed record class TryConnectToJob( TransportLayerFeature Remote, TransportTypeAddress Target );
-        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport );
-        sealed record class CondemnTransportJob( Transport Transport, TransportMessage[]? byeByeMessage );
+        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
+        sealed record class CondemnTransportJob( Transport Transport, bool Error, Exception? exception );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
@@ -173,10 +183,10 @@ namespace CK.AppIdentity.TransportLayer
         async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
             IRemoteParty remote = remoteTransport.Remote;
-            var channel = remote.IsDestroyed ? null : remote.GetFeature<TransportLayerFeature>();
-            if( channel != null )
+            var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportLayerFeature>();
+            if( feature != null )
             {
-                await channel.OnNewTransportAsync( monitor, remoteTransport.Transport );
+                await feature.OnTransportAppearAsync( monitor, remoteTransport.Transport, remoteTransport.Protocols );
             }
             else
             {

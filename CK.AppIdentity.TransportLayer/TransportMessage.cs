@@ -126,7 +126,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Retains this message, preventing a <see cref="Dispose()"/> to release the resources.
         /// Dispose must be called as many times as Retain has been called for the resources to be released.
         /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/>
-        /// or a static message (see <see cref="Protocol0MessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
+        /// or a static message (see <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
         /// has no effect and returns false.
         /// </summary>
         /// <returns>
@@ -152,7 +152,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Disposes this message.
         /// The <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/> messages ignore this,
-        /// as well as messages created by the static <see cref="Protocol0MessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
+        /// as well as messages created by the static <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
         /// method.
         /// </summary>
         public void Dispose()

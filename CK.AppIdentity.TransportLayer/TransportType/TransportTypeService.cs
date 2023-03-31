@@ -63,17 +63,18 @@ namespace CK.AppIdentity.TransportLayer
             return l;
         }
 
-        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportLayerFeature remote, object typedAddress, CancellationToken cancellation )
+        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportLayerFeature remote, object typedAddress, CancellationTokenSource cancellation )
         {
             Debug.Assert( remote.OutgoingInitialMessage != null );
-            var transport = await TryConnectAsync( transportManager.Logger, typedAddress, cancellation );
+            var transport = await TryConnectAsync( transportManager.Logger, typedAddress, cancellation.Token );
             if( transport != null )
             {
+                transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
                 try
                 {
                     // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, ZeroProtocol.CurrentVersion, cancellation ) )
+                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, ZeroProtocol.CurrentVersion ) )
                     {
                         // If we are canceled, let the finally condemn the new transport.
                         return null;
@@ -81,7 +82,7 @@ namespace CK.AppIdentity.TransportLayer
 
                     bool retriedDowngrade = false;
                     retry:
-                    var firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength, cancellation );
+                    var firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
                     if( !firstAnswer.IsValid || firstAnswer == TransportMessage.Empty )
                     {
                         transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );
@@ -109,7 +110,7 @@ namespace CK.AppIdentity.TransportLayer
                                 int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                                 if( !retriedDowngrade )
                                 {
-                                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, otherVersion, cancellation ) )
+                                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, otherVersion ) )
                                     {
                                         if( !cancellation.IsCancellationRequested )
                                         {
