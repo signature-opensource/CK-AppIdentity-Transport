@@ -1,3 +1,6 @@
+
+#pragma warning disable CA1816 // Dispose methods should call SuppressFinalize
+
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>

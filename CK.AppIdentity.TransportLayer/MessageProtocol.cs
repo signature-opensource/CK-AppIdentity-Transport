@@ -17,15 +17,13 @@ namespace CK.AppIdentity.TransportLayer
         readonly string _fullName;
         readonly string _name;
         readonly int _version;
-        readonly bool _isPartySpecific;
 
         /// <summary>
         /// Gets the "0 Protocol" singleton.
         /// </summary>
         public static readonly MessageProtocol ZeroProtocol = new MessageProtocol( MessageProtocolDirectoryService.FormatFullName( "0 Protocol", TransportLayer.ZeroProtocol.CurrentVersion ),
                                                                                    "0 Protocol",
-                                                                                   TransportLayer.ZeroProtocol.CurrentVersion,
-                                                                                   false );
+                                                                                   TransportLayer.ZeroProtocol.CurrentVersion );
 
         internal MessageProtocol( string fullName, string name, int version, bool isPartySpecific = false )
         {
@@ -33,7 +31,6 @@ namespace CK.AppIdentity.TransportLayer
             _fullName = fullName;
             _name = name;
             _version = version;
-            _isPartySpecific = isPartySpecific;
         }
 
         /// <summary>
@@ -52,14 +49,9 @@ namespace CK.AppIdentity.TransportLayer
         public int Version => _version;
 
         /// <summary>
-        /// Gets whether this protocol is specific to the parties.
-        /// </summary>
-        public bool IsPartySpecific => _isPartySpecific;
-
-        /// <summary>
         /// Overridden to return the <see cref="FullName"/>.
         /// </summary>
         /// <returns>The full name.</returns>
-        public override string ToString() => _isPartySpecific ? $"{_fullName} (PartySpecific)" : _fullName;
+        public override string ToString() => _fullName;
     }
 }

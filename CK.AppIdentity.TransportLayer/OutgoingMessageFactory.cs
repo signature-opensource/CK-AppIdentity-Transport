@@ -21,8 +21,8 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class OutgoingMessageFactory : MessageFactory
     {
-        MessageProtocol _protocol;
-        int _protocolNumber;
+        readonly MessageProtocol _protocol;
+        readonly int _protocolNumber;
 
         OutgoingMessageFactory()
         {

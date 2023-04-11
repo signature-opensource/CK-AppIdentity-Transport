@@ -16,13 +16,14 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public abstract partial class Transport
     {
-        static readonly UnboundedChannelOptions _senderChannelOptions = new UnboundedChannelOptions() { SingleReader = true };
-
         readonly TransportListener? _listener;
         // Captures once for all the delegate on the ReadExactlyAsync method.
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
         readonly IncomingMessageFactory _receiveFactory;
+        // Set by StartReceive: the protocol handlers have been resolved from the
+        // negotiated ones.
+        IProtocolHandler[]? _handlers;
         // Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
         // as soon as the Transport has been created.
         [AllowNull]
@@ -56,6 +57,8 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _endPoint == null && messageEndPoint != null );
             _endPoint = messageEndPoint;
         }
+
+        internal MessageEndPoint? EndPoint => _endPoint;
 
         /// <summary>
         /// Gets the protocols that have been negotiated.
@@ -92,8 +95,6 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal MessageEndPoint? EndPoint => _endPoint;
-
         /// <summary>
         /// Used during the initial negotiation.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
@@ -114,15 +115,11 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Used during the initial negotiation.
         /// <see cref="TransportMessage.IsValid"/> must be true.
-        /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
-        /// <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
-        /// <para>
-        /// This throws any error thrown by the underlying transport.
-        /// This always returns true except if the operation was canceled and the <paramref name="cancellation"/> token has been signaled.
-        /// </para>
+        /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/>
+        /// if <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
         /// </summary>
         /// <param name="message">The valid message to send.</param>
-        /// <returns>True if the message has been sent, false it <see cref="IsCondemned"/> has been signaled.</returns>
+        /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
         internal ValueTask<bool> SendAsync( TransportMessage message )
         {
             Throw.CheckArgument( message != null && message.IsValid );
@@ -137,9 +134,9 @@ namespace CK.AppIdentity.TransportLayer
         /// Calls to this methods are serialized.
         /// </summary>
         /// <param name="buffer">The buffer to send.</param>
-        /// <param name="cancellationToken">Optional cancellation token.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The awaitable.</returns>
-        protected abstract ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default );
+        protected abstract ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken );
 
         /// <summary>
         /// Sends a <see cref="ReadOnlySequence{T}"/> of bytes.
@@ -177,7 +174,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Must read the incoming available data and return the number of bytes read.
         /// If the underlying transport natively supports exact buffer reading, <see cref="ReadExactlyAsync(Memory{byte}, CancellationToken)"/> should be overridden.
-        /// In such case this ReceiveAsync method doesn't need to implemented as it will never be called.
+        /// In such case this ReceiveAsync method doesn't need to be implemented (it will never be called).
         /// </summary>
         /// <param name="buffer">The buffer to fill with the read data.</param>
         /// <param name="cancellation">Cancellation token.</param>

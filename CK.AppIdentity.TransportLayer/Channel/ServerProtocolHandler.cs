@@ -5,11 +5,30 @@ using System.Net;
 
 namespace CK.AppIdentity.TransportLayer
 {
+    public abstract class PeerProtocolHandler : IProtocolHandler
+    {
+        ValueTask IProtocolHandler.OnDisconnectedAsync( IActivityMonitor monitor, MessageEndPoint endPoint, Transport? potentialRecycling )
+        {
+            throw new NotImplementedException();
+        }
+
+        ValueTask IProtocolHandler.ReceiveAsync( MessageEndPoint endPoint, TransportMessage message )
+        {
+            throw new NotImplementedException();
+        }
+
+        bool IProtocolHandler.TryEnqueueUnsentMessages( TransportMessage m )
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+
     /// <summary>
     /// Base class for server message handler: <see cref="TransportLayerFeature.ListeningMode"/> is
     /// <see cref="ListeningMode.RoundRobin"/> or <see cref="ListeningMode.Parallel"/>.
     /// </summary>
-    public abstract class ServerMessageHandler : IMessageHandler
+    public abstract class ServerProtocolHandler : IProtocolHandler
     {
         readonly TransportLayerFeature _feature;
         readonly MessageProtocol _protocol;
@@ -17,7 +36,7 @@ namespace CK.AppIdentity.TransportLayer
         MessageEndPoint? _currentRoundRobin;
 
         /// <summary>
-        /// Opaque structure for <see cref="ServerMessageHandler"/> instantiation.
+        /// Opaque structure for <see cref="ServerProtocolHandler"/> instantiation.
         /// Only the <see cref="Protocol"/> to support is exposed.
         /// </summary>
         public ref struct CreateParameters
@@ -40,10 +59,10 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Initializes a new <see cref="ServerMessageHandler"/> that handles <see cref="CreateParameters.Protocol"/>.
+        /// Initializes a new <see cref="ServerProtocolHandler"/> that handles <see cref="CreateParameters.Protocol"/>.
         /// </summary>
         /// <param name="parameters"></param>
-        protected ServerMessageHandler( ref CreateParameters parameters )
+        protected ServerProtocolHandler( ref CreateParameters parameters )
         {
             Throw.CheckState( parameters._feature.ListeningMode != ListeningMode.Default );
             _feature = parameters._feature;
@@ -69,7 +88,7 @@ namespace CK.AppIdentity.TransportLayer
             return _messageFactory.Create( writer, minSequenceBufferSize );
         }
 
-        bool IMessageHandler.TryEnqueueUnsentMessages( TransportMessage m ) => TryEnqueue( m );
+        bool IProtocolHandler.TryEnqueueUnsentMessages( TransportMessage m ) => TryEnqueue( m );
 
         /// <summary>
         /// Attempts to send the message to the transport queues.
@@ -110,7 +129,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The awaitable.</returns>
         public abstract ValueTask ReceiveAsync( MessageEndPoint endPoint, TransportMessage message );
 
-        ValueTask IMessageHandler.OnDisconnectedAsync( IActivityMonitor monitor, MessageEndPoint endPoint, Transport? potentialRecycling )
+        ValueTask IProtocolHandler.OnDisconnectedAsync( IActivityMonitor monitor, MessageEndPoint endPoint, Transport? potentialRecycling )
         {
             if( _feature.Party.IsDestroyed )
             {

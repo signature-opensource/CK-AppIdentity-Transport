@@ -7,12 +7,6 @@ using System.Net;
 
 namespace CK.AppIdentity.TransportLayer
 {
-    public enum ListeningMode
-    {
-        Default,
-        RoundRobin,
-        Parallel
-    }
 
     /// <summary>
     /// 
@@ -23,8 +17,11 @@ namespace CK.AppIdentity.TransportLayer
         readonly IRemoteParty _remote;
         readonly TransportListener? _listener;
         readonly PerfectEventSender<TransportLayerFeature> _isConnectedChanged;
+        // Preallocated array of MessageProtocolMap.MaxCount (7).
         readonly ChannelFeature?[] _channels;
+        // All available protocols with their versions.
         readonly HashSet<MessageProtocol> _registeredProtocols;
+        // Available protocols with the highest version.
         readonly List<MessageProtocol> _bestRegisteredProtocols;
         readonly ListeningMode _listeningMode;
         readonly ILiveMessageEndPointCollection _endPoints;
@@ -86,14 +83,14 @@ namespace CK.AppIdentity.TransportLayer
                 ++_endPointCount;
                 Debug.Assert( newOne.Feature == this );
             }
-            var messageHandlers = new IMessageHandler[_bestRegisteredProtocols.Count];
-            for( int i = 0; i < messageHandlers.Length; i++ )
+            var protocolHandlers = new IProtocolHandler[_bestRegisteredProtocols.Count];
+            for( int i = 0; i < protocolHandlers.Length; i++ )
             {
                 var c = _channels[i];
                 Debug.Assert( c != null );
-                messageHandlers[i] = c.EnsureMessageHandler( monitor, protocols.Protocols[i] );
+                protocolHandlers[i] = c.EnsureMessageHandler( monitor, protocols.Protocols[i] );
             }
-            transport.StartReceive( monitor, _transportManager, protocols, messageHandlers );
+            transport.StartReceive( monitor, _transportManager, protocols, protocolHandlers );
             if( !_isConnected )
             {
                 _isConnected = true;
@@ -111,16 +108,16 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( transport.EndPoint != null 
                           && transport.EndPoint.Feature == this
                           && transport.Handlers != null );
-            bool newConnected;
+            bool isNewConnected;
             // First, removes the endpoint from the list when in multiple mode. 
             if( _listeningMode == ListeningMode.Default )
             {
-                newConnected = potentialRecycling != null;
+                isNewConnected = potentialRecycling != null;
             }
             else
             {
                 Debug.Assert( potentialRecycling == null, "There is no recycling when in multiple mode." );
-                newConnected = --_endPointCount > 0;
+                isNewConnected = --_endPointCount > 0;
                 var e = transport.EndPoint;
                 // Skip the forward link first.
                 var prev = e._prevEndPoint;
@@ -145,9 +142,9 @@ namespace CK.AppIdentity.TransportLayer
             {
                 await r.OnDisconnectedAsync( monitor, transport.EndPoint, potentialRecycling );
             }
-            if( _isConnected != newConnected )
+            if( _isConnected != isNewConnected )
             {
-                _isConnected = newConnected;
+                _isConnected = isNewConnected;
                 await _isConnectedChanged.SafeRaiseAsync( monitor, this );
             }
         }
@@ -233,8 +230,7 @@ namespace CK.AppIdentity.TransportLayer
                                       ChannelFeature channel,
                                       string channelFeatureName,
                                       string protocolName,
-                                      IEnumerable<ushort> protocolVersions,
-                                      bool isPartySpecific )
+                                      IEnumerable<ushort> protocolVersions )
         {
             Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
             if( _bestRegisteredProtocols.Count == MessageProtocolMap.MaxCount )
@@ -246,11 +242,11 @@ namespace CK.AppIdentity.TransportLayer
             using var versions = protocolVersions.OrderByDescending( Util.FuncIdentity ).GetEnumerator();
             if( versions.MoveNext() )
             {
-                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, versions.Current, isPartySpecific );
+                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, versions.Current );
                 if( idxSorted < 0 ) return -1;
                 while( versions.MoveNext() )
                 {
-                    if( !_transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, versions.Current, isPartySpecific, out var messageProtocol ) )
+                    if( !_transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, versions.Current, out var messageProtocol ) )
                     {
                         return -1;
                     }
@@ -263,7 +259,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0, isPartySpecific );
+                idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0 );
                 if( idxSorted < 0 ) return -1;
             }
             channel._baseProtocolName = protocolName;
@@ -271,9 +267,9 @@ namespace CK.AppIdentity.TransportLayer
             return idxSorted;
         }
 
-        int RegisterBestProtocol( IActivityMonitor monitor, string channelFeatureName, string protocolName, ushort version, bool isPartySpecific )
+        int RegisterBestProtocol( IActivityMonitor monitor, string channelFeatureName, string protocolName, ushort version )
         {
-            if( _transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, version, isPartySpecific, out var messageProtocol ) )
+            if( _transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, version, out var messageProtocol ) )
             {
                 int i = 0;
                 for( ; i < _bestRegisteredProtocols.Count; i++ )
@@ -352,13 +348,14 @@ namespace CK.AppIdentity.TransportLayer
             //   - If the party is a caller, we don't have anything to do: the OutgoingConnectionBackTask
             //     tests the party.IsDestroyed and dies.
             //   - If we are listening we must remove this party from the listener.
-            if( _listener != null )
+            _listener?.RemoveParty( this );
+            // Closing the transport is done from the transport manager loop.
+            var e = _firstEndPoint;
+            while( e != null )
             {
-                _listener.RemoveParty( this );
+                if( !e.Transport.IsCondemned ) _transportManager.CondemnTransport( e.Transport );
+                e = e._nextEndPoint;
             }
-            // Closing the transport should be done from the transport manager loop.
-            var t = _transport;
-            if( t != null ) _transportManager.CondemnTransport( t );
         }
 
     }

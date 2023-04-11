@@ -122,11 +122,10 @@ namespace CK.AppIdentity.BlobChannel
                                                                     channel,
                                                                     FeatureName,
                                                                     channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
-                                                                    channel.Versions,
-                                                                    channel.IsPartySpecificProtocol );
+                                                                    channel.Versions );
                     if( protocolNumber < 0 ) return false;
                     Debug.Assert( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
-                    channel.Initialize( protocolNumber );
+                    channel.SetProtocolNumber( protocolNumber );
                     r.AddFeature( channel );
                 }
             }

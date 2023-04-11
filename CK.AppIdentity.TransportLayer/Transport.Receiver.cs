@@ -6,13 +6,11 @@ namespace CK.AppIdentity.TransportLayer
 {
     public abstract partial class Transport
     {
-        IMessageHandler[]? _outputs;
-
-        internal IReadOnlyList<IMessageHandler>? Handlers => _outputs;
+        internal IReadOnlyList<IProtocolHandler>? Handlers => _handlers;
 
         /// <summary>
         /// Binds the <see cref="Handlers"/> and starts the reading loop that
-        /// dispatch the incoming messages to the appropriate receiver based on
+        /// dispatch the incoming messages to the appropriate handler based on
         /// the protocol number.
         /// <para>
         /// This is the last step that "activates" a Transport: the protocols have been
@@ -25,23 +23,24 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="monitor">The transport manager monitor.</param>
         /// <param name="transportManager">The transport manager.</param>
         /// <param name="protocols">The negotiated protocols from which the receivers have been obtained.</param>
-        /// <param name="outputs">The <see cref="Handlers"/>.</param>
+        /// <param name="handlers">The <see cref="Handlers"/>.</param>
         internal void StartReceive( IActivityMonitor monitor,
                                     TransportManager transportManager,
                                     MessageProtocolMap protocols,
-                                    IMessageHandler[] outputs )
+                                    IProtocolHandler[] handlers )
         {
             Debug.Assert( transportManager.IsInLoop( monitor ) );
             Debug.Assert( protocols.IsValid );
-            Debug.Assert( outputs.Length == protocols.Protocols.Count );
+            Debug.Assert( handlers.Length == protocols.Protocols.Count );
             Debug.Assert( !_receiveFactory.AllowedProtocols.IsValid );
             _receiveFactory.SetBoundMode( protocols );
-            Task.Run( () => RunReceive( transportManager, this, outputs ) );
+            _handlers = handlers;
+            Task.Run( () => RunReceive( transportManager, this, handlers ) );
         }
 
         static async void RunReceive( TransportManager transportManager,
                                       Transport transport,
-                                      IMessageHandler[] outputs )
+                                      IProtocolHandler[] outputs )
         {
             Debug.Assert( transport.EndPoint != null );
             var receiveFactory = transport._receiveFactory;
@@ -72,7 +71,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                         else
                         {
-                            transport.EnsureZeroProtocol().Receive( m );
+                            transport.EnsureZeroProtocol().Receive( transportManager, m );
                         }
                     }
                     else

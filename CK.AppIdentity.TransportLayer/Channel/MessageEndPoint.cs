@@ -7,10 +7,11 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// The <see cref="Transport"/> seen by message handlers.
+    /// This hosts the outgoing message queue. When in multiple listening mode, these end points are chained.
     /// </summary>
     public sealed partial class MessageEndPoint
     {
-        static readonly UnboundedChannelOptions _senderChannelOptions = new UnboundedChannelOptions() { SingleReader = true };
+        static readonly UnboundedChannelOptions _senderChannelOptions = new() { SingleReader = true };
         // Transport can be rebound when ListeningMode is Default: either we are a client or a server listening to a single remote.
         Transport _transport;
         internal MessageEndPoint? _prevEndPoint;
@@ -28,7 +29,7 @@ namespace CK.AppIdentity.TransportLayer
         internal void Rebind( IActivityMonitor monitor, TransportManager transportManager, Transport transport )
         {
             Debug.Assert( transportManager.IsInLoop( monitor ) );
-            Debug.Assert( _transport.Lifetime.IsCancellationRequested );
+            Debug.Assert( _transport.IsCondemned );
             Debug.Assert( _feature.ListeningMode == ListeningMode.Default );
             StartSend( transportManager, transport );
         }
@@ -135,9 +136,9 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// This is called when a multiple endpoint is disconnected: unsent messages are if possible transfered
-        /// to other endpoints or disposed. If the party is being destroyed, <see cref="ClearPendingOutgoingMessages(IActivityMonitor)"/>
-        /// is called on all endpoints (including <see cref="ListeningMode.Default"/> one).
+        /// This is called when a multiple listening endpoint is disconnected: unsent messages are if possible transfered
+        /// to other endpoints or disposed. If the party is being destroyed, it is <see cref="ClearPendingOutgoingMessages(IActivityMonitor)"/>
+        /// that is called on all endpoints (including <see cref="ListeningMode.Default"/> one).
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         internal void HandlePendingOutgoingMessages( IActivityMonitor monitor )

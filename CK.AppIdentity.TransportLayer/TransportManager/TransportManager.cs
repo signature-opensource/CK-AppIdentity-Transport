@@ -98,7 +98,12 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void TransportReceiveErrorMessage( Transport transport, Exception? ex )
         {
-            throw new NotImplementedException();
+            PushTypedJob( new CondemnTransportJob( transport, true, ex ) );
+        }
+
+        internal void TransportErrorSendMessage( Transport transport, Exception ex )
+        {
+            PushTypedJob( new CondemnTransportJob( transport, true, ex ) );
         }
 
         internal void TransportKeepAliveReceived( Transport transport )
@@ -106,10 +111,10 @@ namespace CK.AppIdentity.TransportLayer
             throw new NotImplementedException();
         }
 
-        internal void CondemnTransport( Transport transport, TransportMessage[]? byeByeMessages = null )
+        internal void CondemnTransport( Transport transport )
         {
             transport.SetCondemned();
-            PushTypedJob( new CondemnTransportJob( transport, byeByeMessages ) );
+            PushTypedJob( new CondemnTransportJob( transport, false, null ) );
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
@@ -145,16 +150,15 @@ namespace CK.AppIdentity.TransportLayer
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
-        async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
+        static async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
         {
             using( monitor.OpenTrace( $"Condemning transport '{j.Transport}'." ) )
             {
-                // TODO: handle ByeBye messages (with a back task).
                 await DestroyTransportAsync( monitor, j.Transport );
             }
         }
 
-        async Task DestroyTransportAsync( IActivityMonitor monitor, Transport t )
+        static async Task DestroyTransportAsync( IActivityMonitor monitor, Transport t )
         {
             try
             {
@@ -180,7 +184,7 @@ namespace CK.AppIdentity.TransportLayer
             await _waitingListChanged.SafeRaiseAsync( monitor, initialMessage );
         }
 
-        async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
+        static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
             IRemoteParty remote = remoteTransport.Remote;
             var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportLayerFeature>();

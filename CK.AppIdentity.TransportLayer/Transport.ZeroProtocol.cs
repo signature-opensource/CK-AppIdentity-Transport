@@ -1,3 +1,4 @@
+using CK.Core;
 using System.Diagnostics;
 
 namespace CK.AppIdentity.TransportLayer
@@ -5,6 +6,8 @@ namespace CK.AppIdentity.TransportLayer
     public abstract partial class Transport
     {
         ZeroProtocol? _0Protocol;
+
+        ZeroProtocol EnsureZeroProtocol() => _0Protocol ??= new ZeroProtocol( this );
 
         sealed class ZeroProtocol
         {
@@ -15,13 +18,19 @@ namespace CK.AppIdentity.TransportLayer
                 _transport = transport;
             }
 
-            internal void Receive( TransportMessage m )
+            internal void Receive( TransportManager transportManager, TransportMessage m )
             {
-                throw new NotImplementedException();
+                Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
+                if( m == TransportMessage.Empty )
+                {
+                    transportManager.TransportKeepAliveReceived( _transport );
+                }
+                else
+                {
+                    transportManager.Logger.Warn( $"Received unknown '0 Protocol' message. Ignoring it." );
+                }
             }
         }
-
-        ZeroProtocol EnsureZeroProtocol() => _0Protocol ??= new ZeroProtocol( this );
     }
 
 }

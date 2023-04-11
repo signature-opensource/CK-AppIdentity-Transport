@@ -19,6 +19,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly MutableSequence<byte>? _buffer;
         readonly ReadOnlySequence<byte> _wireMessage;
         readonly object? _disposeLock;
+        object? _source;
         int _prefixLength;
         int _retainCount;
         readonly MessageProtocol _protocol;
@@ -97,6 +98,24 @@ namespace CK.AppIdentity.TransportLayer
         public MessageProtocol Protocol => _protocol;
 
         /// <summary>
+        /// Gets or sets an optional source object associated to this <see cref="TransportMessage"/>.
+        /// For an outgoing message, this typically reference a data object that is serialized in the message.
+        /// <para>
+        /// When this object is <see cref="IDisposable"/>, it is automatically disposed when this message
+        /// is disposed.
+        /// </para>
+        /// </summary>
+        public object? Source
+        {
+            get => _source;
+            set
+            {
+                Throw.CheckState( IsValid && this != Empty );
+                _source = value;
+            }
+        }
+
+        /// <summary>
         /// Gets the full message including its prefix.
         /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
         /// </summary>
@@ -159,13 +178,24 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( _disposeLock != null && _prefixLength != 0 )
             {
-                lock( _disposeLock)
+                lock( _disposeLock )
                 {
                     if( _prefixLength != 0 && --_retainCount == 0 )
                     {
                         _prefixLength = 0;
                         Debug.Assert( _buffer != null && _messageFactory != null );
                         _messageFactory.Release( _buffer );
+                        if( _source is IDisposable s )
+                        {
+                            try
+                            {
+                                s.Dispose();
+                            }
+                            catch( Exception e )
+                            {
+                                ActivityMonitor.StaticLogger.Error( "While disposing Source object of a TransportMessage.", e );
+                            }
+                        }
                     }
                 }
             }

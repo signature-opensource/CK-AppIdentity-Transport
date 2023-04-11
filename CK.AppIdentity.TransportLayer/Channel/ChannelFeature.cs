@@ -14,6 +14,7 @@ namespace CK.AppIdentity.TransportLayer
         // On failure, the channel feature is not referenced by anybody.
         [AllowNull]
         internal string _baseProtocolName;
+        private int _protocolNumber;
 
         protected ChannelFeature( TransportLayerFeature transportFeature )
         {
@@ -49,7 +50,12 @@ namespace CK.AppIdentity.TransportLayer
         protected TransportLayerFeature Transport => _transportFeature;
 
 
-        internal IMessageHandler EnsureMessageHandler( IActivityMonitor monitor, MessageProtocol protocol )
+        internal void SetProtocolNumber( int protocolNumber )
+        {
+            _protocolNumber = protocolNumber;
+        }
+
+        internal IProtocolHandler EnsureMessageHandler( IActivityMonitor monitor, MessageProtocol protocol )
         {
 
             throw new NotImplementedException();
@@ -63,7 +69,6 @@ namespace CK.AppIdentity.TransportLayer
         internal protected virtual void Teardown( FeatureLifetimeContext context )
         {
         }
-
     }
 
 }

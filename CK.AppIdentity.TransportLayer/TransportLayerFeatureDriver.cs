@@ -83,12 +83,13 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         return false;
                     }
-                    var mode = r.Configuration.Configuration.TryLookupValue( "ListeningMode" );
+                    var config = r.Configuration.Configuration;
+                    var mode = config.TryLookupValue( "ListeningMode" );
                     if( mode != null )
                     {
                         if( !Enum.TryParse( mode, ignoreCase: true, out listeningMode ) )
                         {
-                            context.Monitor.Error( $"Invalid '{}:ListeningMode'. Expected {Enum.GetNames<ListeningMode>().Concatenate()}. Got '{mode}'." );
+                            context.Monitor.Error( $"Invalid '{config.Path}:ListeningMode'. Expected {Enum.GetNames<ListeningMode>().Concatenate()}. Got '{mode}'." );
                             return false;
                         }
                     }
