@@ -16,7 +16,7 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly string _fullName;
         readonly string _name;
-        readonly int _version;
+        readonly ushort _version;
 
         /// <summary>
         /// Gets the "0 Protocol" singleton.
@@ -25,7 +25,7 @@ namespace CK.AppIdentity.TransportLayer
                                                                                    "0 Protocol",
                                                                                    TransportLayer.ZeroProtocol.CurrentVersion );
 
-        internal MessageProtocol( string fullName, string name, int version, bool isPartySpecific = false )
+        internal MessageProtocol( string fullName, string name, ushort version, bool isPartySpecific = false )
         {
             Debug.Assert( fullName.Length <= FullNameMaxLength );
             _fullName = fullName;
@@ -46,7 +46,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets this protocol version.
         /// </summary>
-        public int Version => _version;
+        public ushort Version => _version;
 
         /// <summary>
         /// Overridden to return the <see cref="FullName"/>.

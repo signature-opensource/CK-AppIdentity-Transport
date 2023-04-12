@@ -6,7 +6,7 @@ namespace CK.AppIdentity.TransportLayer
 {
     public abstract partial class Transport
     {
-        internal IReadOnlyList<IProtocolHandler>? Handlers => _handlers;
+        internal IReadOnlyList<PeerProtocolHandler>? Handlers => _handlers;
 
         /// <summary>
         /// Binds the <see cref="Handlers"/> and starts the reading loop that
@@ -27,7 +27,7 @@ namespace CK.AppIdentity.TransportLayer
         internal void StartReceive( IActivityMonitor monitor,
                                     TransportManager transportManager,
                                     MessageProtocolMap protocols,
-                                    IProtocolHandler[] handlers )
+                                    PeerProtocolHandler[] handlers )
         {
             Debug.Assert( transportManager.IsInLoop( monitor ) );
             Debug.Assert( protocols.IsValid );
@@ -40,7 +40,7 @@ namespace CK.AppIdentity.TransportLayer
 
         static async void RunReceive( TransportManager transportManager,
                                       Transport transport,
-                                      IProtocolHandler[] outputs )
+                                      PeerProtocolHandler[] handlers )
         {
             Debug.Assert( transport.EndPoint != null );
             var receiveFactory = transport._receiveFactory;
@@ -76,8 +76,8 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     else
                     {
-                        Debug.Assert( receiveFactory._lastProtocolNumber > 0 && receiveFactory._lastProtocolNumber <= outputs.Length );
-                        await outputs[receiveFactory._lastProtocolNumber - 1].ReceiveAsync( transport.EndPoint, m ).ConfigureAwait( false );
+                        Debug.Assert( receiveFactory._lastProtocolNumber > 0 && receiveFactory._lastProtocolNumber <= handlers.Length );
+                        await handlers[receiveFactory._lastProtocolNumber - 1].ReceiveAsync( transport.EndPoint, m ).ConfigureAwait( false );
                     }
                 }
             }

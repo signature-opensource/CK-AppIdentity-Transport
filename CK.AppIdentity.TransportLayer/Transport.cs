@@ -23,7 +23,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly IncomingMessageFactory _receiveFactory;
         // Set by StartReceive: the protocol handlers have been resolved from the
         // negotiated ones.
-        IProtocolHandler[]? _handlers;
+        PeerProtocolHandler[]? _handlers;
         // Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
         // as soon as the Transport has been created.
         [AllowNull]
@@ -88,11 +88,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SetCondemned()
         {
-            if( !_cts.IsCancellationRequested )
-            {
-                _cts.Cancel();
-                _endPoint?.OnTransportSetCondemned();
-            }
+            _cts.Cancel();
         }
 
         /// <summary>

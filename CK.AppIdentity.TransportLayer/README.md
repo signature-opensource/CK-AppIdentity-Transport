@@ -16,7 +16,7 @@ not specified, it defaults to 'tcp:'.
 
 When a `IRemoteParty.Address` is not specified, a third and last property can be used to disambiguate the type of
 transport listener to use: the `UseTransport` property is a string that must be the transport protocol name of
-a one of the `ListeningAddress` defined above.
+one of the `ListeningAddress` defined above.
 
 A `ListeningAddress` property at one level can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. This is valid
@@ -25,7 +25,7 @@ but when more than one address is specified, there must be only one address per 
 ## TransportMessage
 A [`TransportMessage`](TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.
 The message is `IDisposable`: it holds its memory buffers that are pooled array of bytes. Messages can only be created
-by 3 methods of the [`TransportMessageFactory`](TransportMessageFactory.cs).
+by methods of the [`IncomingMessageFactory`](IncomingMessageFactory.cs) or [`OutgoingMessageFactory`](OutgoingMessageFactory.cs).
 
 
 ## Message Prefix: Protocol and Length

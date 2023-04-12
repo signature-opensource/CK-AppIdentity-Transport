@@ -75,7 +75,8 @@ namespace CK.AppIdentity.TransportLayer
             // We know the remote full name. We first verify the signature.
             // TODO.
 
-            // The remote is who it pretends to be, let's check the protocols.
+            // The remote is who it pretends to be, let's check the full protocol list we received by intersecting it
+            // with our declared protocol (and selecting the highest common version for each of them).
             MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )
                                                                      .GroupBy( p => p.Name )
                                                                      .Select( g => g.MaxBy( g => g.Version ) )

@@ -1,4 +1,5 @@
 using CK.Core;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 namespace CK.AppIdentity.TransportLayer
@@ -10,11 +11,13 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportLayerFeature _transportFeature;
 
-        // Set by TransportLayerFeature.RegisterChannel on success.
+        // Set by TransportLayerFeature.RegisterChannel on success (derived from the concrete type name).
         // On failure, the channel feature is not referenced by anybody.
         [AllowNull]
         internal string _baseProtocolName;
-        private int _protocolNumber;
+        // Set by TransportLayerFeature.CloseChannelRegistration once the protocols have been
+        // successfully registered and its number (1..MessageProtocolMap.MaxCount) is known.
+        internal int _protocolNumber;
 
         protected ChannelFeature( TransportLayerFeature transportFeature )
         {
@@ -49,14 +52,10 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         protected TransportLayerFeature Transport => _transportFeature;
 
-
-        internal void SetProtocolNumber( int protocolNumber )
+        internal PeerProtocolHandler EnsureHandler( IActivityMonitor monitor, MessageEndPoint endPoint, MessageProtocol protocol )
         {
-            _protocolNumber = protocolNumber;
-        }
-
-        internal IProtocolHandler EnsureMessageHandler( IActivityMonitor monitor, MessageProtocol protocol )
-        {
+            Debug.Assert( protocol.Name == _baseProtocolName );
+            Debug.Assert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
 
             throw new NotImplementedException();
         }

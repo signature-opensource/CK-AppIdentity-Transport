@@ -76,22 +76,11 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( (listen == null) != (target == null) );
                 // If we are listening and cannot setup a listener on the local address, it's an error.
                 TransportListener? listener = null;
-                ListeningMode listeningMode = ListeningMode.Default;
                 if( listen != null )
                 {
                     if( (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
                     {
                         return false;
-                    }
-                    var config = r.Configuration.Configuration;
-                    var mode = config.TryLookupValue( "ListeningMode" );
-                    if( mode != null )
-                    {
-                        if( !Enum.TryParse( mode, ignoreCase: true, out listeningMode ) )
-                        {
-                            context.Monitor.Error( $"Invalid '{config.Path}:ListeningMode'. Expected {Enum.GetNames<ListeningMode>().Concatenate()}. Got '{mode}'." );
-                            return false;
-                        }
                     }
                 }
                 // No direct initialization error: add the TransportFeature to the party.
@@ -99,7 +88,7 @@ namespace CK.AppIdentity.TransportLayer
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportLayerFeature( _transportManager, r, listener, listeningMode );
+                var t = new TransportLayerFeature( _transportManager, r, listener );
                 r.AddFeature( t );
                 if( listener != null )
                 {
@@ -232,13 +221,13 @@ namespace CK.AppIdentity.TransportLayer
                     foreach( var rSub in party.DomainApplicationIdentity.Remotes )
                     {
                         var t = rSub.GetFeature<TransportLayerFeature>();
-                        t?.Teardown();
+                        t?.Teardown( context.Monitor );
                     }
                 }
                 else 
                 {
                     var t = party.GetFeature<TransportLayerFeature>();
-                    t?.Teardown();
+                    t?.Teardown( context.Monitor );
                 }
             }
             return Task.CompletedTask;
@@ -250,7 +239,7 @@ namespace CK.AppIdentity.TransportLayer
             foreach( var r in ApplicationIdentityService.Remotes )
             {
                 var t = r.GetFeature<TransportLayerFeature>();
-                t?.Teardown();
+                t?.Teardown( context.Monitor );
             }
             _transportManager.SendStop();
             return _transportManager.RunningTask;

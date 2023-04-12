@@ -7,15 +7,13 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// The <see cref="Transport"/> seen by message handlers.
-    /// This hosts the outgoing message queue. When in multiple listening mode, these end points are chained.
+    /// This hosts the outgoing message queue.
     /// </summary>
     public sealed partial class MessageEndPoint
     {
         static readonly UnboundedChannelOptions _senderChannelOptions = new() { SingleReader = true };
-        // Transport can be rebound when ListeningMode is Default: either we are a client or a server listening to a single remote.
+
         Transport _transport;
-        internal MessageEndPoint? _prevEndPoint;
-        internal MessageEndPoint? _nextEndPoint;
         readonly TransportLayerFeature _feature;
         readonly Channel<TransportMessage> _senderChannel;
 
@@ -30,7 +28,6 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( transportManager.IsInLoop( monitor ) );
             Debug.Assert( _transport.IsCondemned );
-            Debug.Assert( _feature.ListeningMode == ListeningMode.Default );
             StartSend( transportManager, transport );
         }
 
@@ -43,16 +40,6 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         internal Transport Transport => _transport;
-
-        internal void OnTransportSetCondemned()
-        {
-            // We don't close a single transport connection: this preserves
-            // the message queue.
-            if( _feature.ListeningMode != ListeningMode.Default )
-            {
-                _senderChannel.Writer.TryComplete();
-            }
-        }
 
         /// <summary>
         /// Gets the feature that manages this end point.
@@ -71,7 +58,7 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsConnected => !_transport.Lifetime.IsCancellationRequested;
 
         /// <summary>
-        /// Attempts to send the message to the transport queues.
+        /// Attempts to send the message to the transport queue.
         /// </summary>
         /// <param name="message">The message to enqueue.</param>
         /// <returns>true if the message has been enqueued.</returns>
@@ -94,7 +81,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>
         /// True if the message has been be enqueued, false if the connection has been lost.
         /// </returns>
-        public async ValueTask<bool> Enqueue( TransportMessage message, CancellationToken cancellationToken = default )
+        public async ValueTask<bool> EnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default )
         {
             try
             {
@@ -135,62 +122,14 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        /// <summary>
-        /// This is called when a multiple listening endpoint is disconnected: unsent messages are if possible transfered
-        /// to other endpoints or disposed. If the party is being destroyed, it is <see cref="ClearPendingOutgoingMessages(IActivityMonitor)"/>
-        /// that is called on all endpoints (including <see cref="ListeningMode.Default"/> one).
-        /// </summary>
-        /// <param name="monitor">The monitor to use.</param>
-        internal void HandlePendingOutgoingMessages( IActivityMonitor monitor )
-        {
-            Debug.Assert( _feature.ListeningMode != ListeningMode.Default );
-            var r = _senderChannel.Reader;
-            IDisposableGroup? warnGroup = null;
-            int zeroCount = 0;
-            int lost = 0;
-            int requeued = 0;
-            while( r.TryRead( out var m ) )
-            {
-                warnGroup ??= monitor.OpenWarn( $"Handling unsent messages for disconnected '{EndPointDescription}'." );
-                if( m.Protocol == MessageProtocol.ZeroProtocol )
-                {
-                    zeroCount++;
-                    continue;
-                }
-                Debug.Assert( _transport.Handlers != null, "There cannot be sent messages before the Transport.StartReceive has been called." );
-                int protocolNumber = _transport.NegotiatedProtocols.GetProtocolNumber( m.Protocol );
-                if( !_transport.Handlers[protocolNumber].TryEnqueueUnsentMessages( m ) )
-                {
-                    ++lost;
-                    monitor.Error( $"Unable to re-queue message for protocol '{m.Protocol}'. Message is lost." );
-                    m.Dispose();
-                }
-                else
-                {
-                    ++requeued;
-                }
-            }
-            if( warnGroup != null )
-            {
-                if( zeroCount > 0 ) monitor.Warn( $"Lost {zeroCount} '0 protocol' messages." );
-                if( lost == 0 )
-                {
-                    monitor.Info( $"{requeued} messages have been successfully transfered to other endpoints." );
-                }
-                else
-                {
-                    monitor.CloseGroup( $"Lost {lost} out of {requeued+lost} messages." );
-                }
-            }
-        }
-
-        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor )
+        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
         {
             var r = _senderChannel.Reader;
             int count = 0;
             while( r.TryRead( out var m ) )
             {
                 ++count;
+                action?.Invoke( m );
                 m.Dispose();
             }
             monitor.Trace( $"Cleanup {count} unsent messages for '{EndPointDescription}'." ); 

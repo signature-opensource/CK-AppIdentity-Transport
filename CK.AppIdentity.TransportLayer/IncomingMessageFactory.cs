@@ -11,7 +11,8 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// Factory for ingoing <see cref="TransportMessage"/>.
-    /// There is only 1 way to create an incoming transport message: reading it from an asynchronous buffer provider.
+    /// There is only 1 way to create an incoming transport message: reading it from an asynchronous buffer provider
+    /// that reads an exact count of bytes.
     /// <para>
     /// This class is thread safe.
     /// </para>

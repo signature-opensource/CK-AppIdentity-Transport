@@ -8,7 +8,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// This version drives the whole "0 Protocol" version.
         /// </summary>
-        public const int CurrentVersion = 0;
+        public const ushort CurrentVersion = 0;
 
         public const int FirstAnswerMaxLength = 1 // One byte discriminator.
                                                 + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
@@ -132,6 +132,13 @@ namespace CK.AppIdentity.TransportLayer
             return MessageProtocolMap.InternalGet( protocols );
         }
 
+        /// <summary>
+        /// Message sent by the <see cref="IncomingConnectionBackTask"/> when the initial message of the remote misses some
+        /// of our protocols.
+        /// </summary>
+        /// <param name="incoming">The transport.</param>
+        /// <param name="missingProtocols">The missing protocols.</param>
+        /// <returns>The awaitable.</returns>
         public static Task SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
         {
             using var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>

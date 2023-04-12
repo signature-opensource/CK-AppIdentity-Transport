@@ -118,14 +118,14 @@ namespace CK.AppIdentity.BlobChannel
                 {
                     // RegisterChannel on the TransportFeature allocates the protocol number
                     // for the channel.
-                    int protocolNumber = transport.RegisterChannel( context.Monitor,
-                                                                    channel,
-                                                                    FeatureName,
-                                                                    channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
-                                                                    channel.Versions );
-                    if( protocolNumber < 0 ) return false;
-                    Debug.Assert( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
-                    channel.SetProtocolNumber( protocolNumber );
+                    if( !transport.RegisterChannel( context.Monitor,
+                                                    channel,
+                                                    FeatureName,
+                                                    channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
+                                                    channel.Versions ) )
+                    {
+                        return false;
+                    }
                     r.AddFeature( channel );
                 }
             }
