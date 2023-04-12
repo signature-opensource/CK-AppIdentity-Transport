@@ -13,7 +13,7 @@ namespace CK.AppIdentity.BlobChannel
         {
         }
 
-        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportLayerFeature transport, out BlobChannelFeature? channel )
+        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out BlobChannelFeature? channel )
         {
             channel = new BlobChannelFeature( transport );
             return true;

@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class OutgoingConnectionBackTask : BackTask
     {
-        TransportLayerFeature? _remote;
+        TransportFeature? _remote;
         TransportTypeAddress? _target;
         private int _setupTick;
         CancellationTokenSource? _cts;
@@ -129,11 +129,11 @@ namespace CK.AppIdentity.TransportLayer
 
         int FromSetupTick => CurrentTick - _setupTick;
 
-        public void Setup( TransportManager transportManager, TransportLayerFeature remote, TransportTypeAddress target )
+        public void Setup( TransportManager transportManager, TransportFeature remote, TransportTypeAddress target )
         {
             Debug.Assert( remote != null && target != null && remote != null );
             _cts = new CancellationTokenSource();
-            _result = target.Type.TryConnectToAsync( transportManager, remote, target.TypedAddress, _cts );
+            _result = target.Type.TryConnectToAsync( transportManager, remote, target, _cts );
             _remote = remote;
             _target = target;
             _setupTick = CurrentTick;

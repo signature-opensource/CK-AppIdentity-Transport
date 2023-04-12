@@ -39,7 +39,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
             serviceBuilder.AddSingleton( c );
             serviceBuilder.AddSingleton<ApplicationIdentityService>();
             serviceBuilder.AddSingleton<MessageProtocolDirectoryService>();
-            serviceBuilder.AddSingleton<TransportLayerFeatureDriver>();
+            serviceBuilder.AddSingleton<TransportFeatureDriver>();
             configureServices?.Invoke( serviceBuilder );
             var services = serviceBuilder.BuildServiceProvider();
 

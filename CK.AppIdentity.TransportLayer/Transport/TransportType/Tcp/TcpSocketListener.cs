@@ -61,7 +61,7 @@ namespace CK.AppIdentity.TransportLayer
                     var acceptSocket = await _listenSocket.AcceptAsync();
                     // Disable Nagle algorithm: a message is fully buffered. We don't need it.
                     acceptSocket.NoDelay = true;
-                    OnIncomingTransport( new TcpSocketTransport( acceptSocket, this ) );
+                    OnIncomingTransport( new TcpSocketTransport( this, acceptSocket ) );
                 }
                 catch( ObjectDisposedException )
                 {

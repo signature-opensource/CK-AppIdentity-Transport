@@ -45,14 +45,14 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        protected override async Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation )
+        protected override async Task<Transport?> TryConnectAsync( IActivityLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation )
         {
-            var ipEndPoint = (IPEndPoint)typedAddress;
+            var ipEndPoint = (IPEndPoint)typedAddress.TypedAddress;
             var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
             try
             {
                 await socket.ConnectAsync( ipEndPoint ).ConfigureAwait( false );
-                return new TcpSocketTransport( socket, null );
+                return new TcpSocketTransport( typedAddress, socket );
             }
             catch( Exception ex )
             {

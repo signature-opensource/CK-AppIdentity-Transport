@@ -21,14 +21,8 @@ namespace CK.AppIdentity.TransportLayer
             internal void Receive( TransportManager transportManager, TransportMessage m )
             {
                 Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
-                if( m == TransportMessage.Empty )
-                {
-                    transportManager.TransportKeepAliveReceived( _transport );
-                }
-                else
-                {
-                    transportManager.Logger.Warn( $"Received unknown '0 Protocol' message. Ignoring it." );
-                }
+                transportManager.Logger.Warn( $"Received unknown '0 Protocol' message. Ignoring it." );
+                m.Dispose();
             }
         }
     }

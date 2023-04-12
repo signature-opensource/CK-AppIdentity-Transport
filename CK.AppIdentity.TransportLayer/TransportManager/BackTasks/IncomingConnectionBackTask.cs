@@ -56,7 +56,7 @@ namespace CK.AppIdentity.TransportLayer
             if( initialMessage == null ) return;
 
             // Accessing the Parties is thread safe.
-            TransportLayerFeature? remote = _incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.FullName );
+            TransportFeature? remote = _incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.FullName );
             // If the remote is not known, signals this InitialMessage to the TransportManager:
             // The incoming Remote may be accepted later but for now, we reject the connection.
             if( remote == null )

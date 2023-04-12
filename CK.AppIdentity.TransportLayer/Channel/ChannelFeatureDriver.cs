@@ -99,7 +99,7 @@ namespace CK.AppIdentity.BlobChannel
         {
             if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
             {
-                var transport = r.GetFeature<TransportLayerFeature>();
+                var transport = r.GetFeature<TransportFeature>();
                 // No Transport implies no communication.
                 if( transport == null )
                 {
@@ -133,15 +133,15 @@ namespace CK.AppIdentity.BlobChannel
         }
 
         /// <summary>
-        /// This is called when the feature is allowed on the remote and the <see cref="TransportLayerFeature"/> is available:
+        /// This is called when the feature is allowed on the remote and the <see cref="TransportFeature"/> is available:
         /// a configured <see cref="T"/> feature should be created if possible.
         /// </summary>
         /// <param name="context">The initialization context that exposes the monitor to use and its trampoline if needed.</param>
         /// <param name="transport">The transport feature of the party.</param>
-        /// <param name="channel">Channel feature to be added to the <see cref="TransportLayerFeature.Party"/>.</param>
+        /// <param name="channel">Channel feature to be added to the <see cref="TransportFeature.Party"/>.</param>
         /// <returns>True on success (even if <paramref name="channel"/> is null), false if the initialization fails.</returns>
         abstract protected bool TryCreateChannel( FeatureLifetimeContext context,
-                                                  TransportLayerFeature transport,
+                                                  TransportFeature transport,
                                                   out T? channel );
     }
 

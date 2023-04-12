@@ -6,9 +6,14 @@ namespace CK.AppIdentity.PocoChannel
     public class PocoChannelFeature : ChannelFeature
     {
 
-        public PocoChannelFeature( TransportLayerFeature transportFeature )
+        public PocoChannelFeature( TransportFeature transportFeature )
             : base( transportFeature )
         {
+        }
+
+        protected override PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c )
+        {
+            throw new NotImplementedException();
         }
     }
 }

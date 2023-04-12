@@ -17,7 +17,7 @@ namespace CK.AppIdentity.PocoChannel
         {
         }
 
-        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportLayerFeature transport, out PocoChannelFeature? channel )
+        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out PocoChannelFeature? channel )
         {
             channel = new PocoChannelFeature( transport );
             return true;

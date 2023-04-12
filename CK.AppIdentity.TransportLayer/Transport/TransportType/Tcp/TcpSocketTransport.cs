@@ -11,8 +11,14 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly Socket _socket;
 
-        public TcpSocketTransport( Socket socket, TcpSocketListener? source )
-            : base( source, socket.RemoteEndPoint?.ToString() )
+        public TcpSocketTransport( TcpSocketListener listener, Socket socket )
+            : base( listener, socket.RemoteEndPoint?.ToString() )
+        {
+            _socket = socket;
+        }
+
+        public TcpSocketTransport( TransportTypeAddress targetAddress, Socket socket )
+            : base( targetAddress, socket.RemoteEndPoint?.ToString() ?? targetAddress.TypedAddress.ToString() )
         {
             _socket = socket;
         }

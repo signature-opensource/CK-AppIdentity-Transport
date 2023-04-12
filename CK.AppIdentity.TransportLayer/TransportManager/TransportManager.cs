@@ -76,7 +76,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
 
-        internal void TryConnectTo( TransportLayerFeature remote, TransportTypeAddress target )
+        internal void TryConnectTo( TransportFeature remote, TransportTypeAddress target )
         {
             PushTypedJob( new TryConnectToJob( remote, target ) );
         }
@@ -106,11 +106,6 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new CondemnTransportJob( transport, true, ex ) );
         }
 
-        internal void TransportKeepAliveReceived( Transport transport )
-        {
-            throw new NotImplementedException();
-        }
-
         internal void CondemnTransport( Transport transport )
         {
             transport.SetCondemned();
@@ -119,9 +114,9 @@ namespace CK.AppIdentity.TransportLayer
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
-        sealed record class TryConnectToJob( TransportLayerFeature Remote, TransportTypeAddress Target );
+        sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
-        sealed record class CondemnTransportJob( Transport Transport, bool Error, Exception? exception );
+        sealed record class CondemnTransportJob( Transport Transport, bool Error, Exception? Exception );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
@@ -150,15 +145,32 @@ namespace CK.AppIdentity.TransportLayer
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
-        static async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
+        async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
         {
-            using( monitor.OpenTrace( $"Condemning transport '{j.Transport}'." ) )
+            var t = j.Transport;
+            using( monitor.OpenGroup( j.Error ? LogLevel.Error : LogLevel.Trace, $"Condemning transport '{t}'.", j.Exception ) )
             {
-                await DestroyTransportAsync( monitor, j.Transport );
+                if( j.Error && j.Exception == null )
+                {
+                    monitor.Info( "An invalid message has been received." );
+                }
+                // Starts by disposing the current transport before attempting to reconnect.
+                await SafeDestroyTransportAsync( monitor, t );
+                // If the transport is an outgoing connection and has been activated, launch the
+                // reconnection back task.
+                if( t.TargetAddress != null && t.OutgoingMessageQueue != null )
+                {
+                    var f = t.OutgoingMessageQueue.Feature;
+                    if( !f.Party.IsDestroyed )
+                    {
+                        monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}'." );
+                        _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), 1 );
+                    }
+                }
             }
         }
 
-        static async Task DestroyTransportAsync( IActivityMonitor monitor, Transport t )
+        static async Task SafeDestroyTransportAsync( IActivityMonitor monitor, Transport t )
         {
             try
             {
@@ -187,7 +199,7 @@ namespace CK.AppIdentity.TransportLayer
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
             IRemoteParty remote = remoteTransport.Remote;
-            var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportLayerFeature>();
+            var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
             if( feature != null )
             {
                 await feature.OnTransportAppearAsync( monitor, remoteTransport.Transport, remoteTransport.Protocols );
@@ -202,7 +214,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
                 }
-                await DestroyTransportAsync( monitor, remoteTransport.Transport );
+                await SafeDestroyTransportAsync( monitor, remoteTransport.Transport );
             }
         }
 

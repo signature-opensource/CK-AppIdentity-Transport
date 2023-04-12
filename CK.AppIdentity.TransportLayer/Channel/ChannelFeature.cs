@@ -9,9 +9,10 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public abstract class ChannelFeature
     {
-        readonly TransportLayerFeature _transportFeature;
+        readonly TransportFeature _transportFeature;
+        readonly List<PeerProtocolHandler> _handlers;
 
-        // Set by TransportLayerFeature.RegisterChannel on success (derived from the concrete type name).
+        // Set by TransportLayerFeature.RegisterChannel on success (OverrideProtocolName or derived from the concrete type name).
         // On failure, the channel feature is not referenced by anybody.
         [AllowNull]
         internal string _baseProtocolName;
@@ -19,9 +20,10 @@ namespace CK.AppIdentity.TransportLayer
         // successfully registered and its number (1..MessageProtocolMap.MaxCount) is known.
         internal int _protocolNumber;
 
-        protected ChannelFeature( TransportLayerFeature transportFeature )
+        protected ChannelFeature( TransportFeature transportFeature )
         {
             _transportFeature = transportFeature;
+            _handlers = new List<PeerProtocolHandler>();
         }
 
         /// <summary>
@@ -48,16 +50,27 @@ namespace CK.AppIdentity.TransportLayer
         internal protected virtual IEnumerable<ushort> Versions => Array.Empty<ushort>();
 
         /// <summary>
-        /// Gets the <see cref="TransportLayerFeature"/>.
+        /// Gets the <see cref="TransportFeature"/>.
         /// </summary>
-        protected TransportLayerFeature Transport => _transportFeature;
+        protected TransportFeature Transport => _transportFeature;
 
-        internal PeerProtocolHandler EnsureHandler( IActivityMonitor monitor, MessageEndPoint endPoint, MessageProtocol protocol )
+        /// <summary>
+        /// Gets the handlers that have been instantiated for each version.
+        /// </summary>
+        protected IReadOnlyList<PeerProtocolHandler> Handlers => _handlers;
+
+        internal PeerProtocolHandler EnsureHandler( IActivityMonitor monitor, OutgoingMessageQueue endPoint, MessageProtocol protocol )
         {
             Debug.Assert( protocol.Name == _baseProtocolName );
             Debug.Assert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
-
-            throw new NotImplementedException();
+            var h = _handlers.FirstOrDefault( p => p.Protocol == protocol );
+            if( h == null )
+            {
+                var factory = new OutgoingMessageFactory( _protocolNumber, protocol );
+                var c = new PeerProtocolHandler.CreateParameters( endPoint, factory );
+                h = CreateHandler( monitor, ref c );
+            }
+            return h;
         }
 
         /// <summary>
@@ -68,6 +81,15 @@ namespace CK.AppIdentity.TransportLayer
         internal protected virtual void Teardown( FeatureLifetimeContext context )
         {
         }
+
+        /// <summary>
+        /// Must create a handler for the <see cref="PeerProtocolHandler.CreateParameters.Protocol"/> in the appropriate version.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="c">The opaque creation parameters.</param>
+        /// <returns>A handler for the protocol.</returns>
+        protected abstract PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c );
+
     }
 
 }

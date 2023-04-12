@@ -27,7 +27,7 @@ namespace CK.AppIdentity.TransportLayer
         public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string configurationPath, string? configurationKey );
 
         /// <summary>
-        /// Creates a new listener: the <paramref name="endPoint"/> is not currently listening.
+        /// Creates a new listener: the <paramref name="typedAddress"/> is not currently listening.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="typedAddress">The listening end point (necessarily a compatible address that has been parsed by this service).</param>
@@ -63,9 +63,9 @@ namespace CK.AppIdentity.TransportLayer
             return l;
         }
 
-        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportLayerFeature remote, object typedAddress, CancellationTokenSource cancellation )
+        internal async Task<Transport?> TryConnectToAsync( TransportManager transportManager, TransportFeature remote, TransportTypeAddress typedAddress, CancellationTokenSource cancellation )
         {
-            Debug.Assert( remote.OutgoingInitialMessage != null );
+            Debug.Assert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
             var transport = await TryConnectAsync( transportManager.Logger, typedAddress, cancellation.Token );
             if( transport != null )
             {
@@ -178,10 +178,10 @@ namespace CK.AppIdentity.TransportLayer
         /// should be returned and the <paramref name="logger"/> be used to log a detailed error.
         /// </summary>
         /// <param name="logger">The logger to use.</param>
-        /// <param name="typedAddress">The target end point (necessarily a compatible address that has been parsed by this service).</param>
+        /// <param name="typedAddress">The target end point (necessarily an address that has been parsed by this service).</param>
         /// <param name="cancellation">Cancellation token that will be signaled if the connection attempt timeout is reached.</param>
         /// <returns>A Transport or null.</returns>
-        protected abstract Task<Transport?> TryConnectAsync( IActivityLogger logger, object typedAddress, CancellationToken cancellation );
+        protected abstract Task<Transport?> TryConnectAsync( IActivityLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation );
 
     }
 }

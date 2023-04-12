@@ -28,36 +28,41 @@ namespace CK.AppIdentity.TransportLayer
         /// A purely invalid message singleton. It can be safely disposed and will remain invalid.
         /// <see cref="Canceled"/> is also invalid but conveys a cancellation of the process.
         /// <para>
-        /// Its protocol number is the "0" protocol.
+        /// Its protocol is the "0 Protocol".
         /// </para>
         /// </summary>
-        public static readonly TransportMessage Invalid = new TransportMessage( false );
+        public static readonly TransportMessage Invalid = new TransportMessage( 0 );
 
         /// <summary>
         /// A canceled message singleton is invalid. It can be safely disposed and will remain invalid.
         /// <para>
-        /// Its protocol number is the "0" protocol.
+        /// Its protocol is the "0 Protocol".
         /// </para>
         /// </summary>
-        public static readonly TransportMessage Canceled = new TransportMessage( false );
+        public static readonly TransportMessage Canceled = new TransportMessage( 0 );
 
         /// <summary>
-        /// The empty message singleton is a 0 byte prefixed message.
+        /// The "0 Protocol" empty message singleton is a 0 byte prefixed message (2 bytes on the wire).
         /// It can be safely disposed and will remain valid and empty.
-        /// <para>
-        /// Its protocol number is the "0" protocol.
-        /// </para>
         /// </summary>
-        public static readonly TransportMessage Empty = new TransportMessage( true );
+        public static readonly TransportMessage Empty = new TransportMessage( 1 );
 
-        // Constructor for the 3 special singleton messages.
-        TransportMessage( bool empty )
+        /// <summary>
+        /// The "0 Protocol" empty acknowledgment message singleton (2 bytes on the wire) with
+        /// <see cref="TransportMessage.IsControl"/> set.
+        /// It can be safely disposed and will remain valid and empty.
+        /// </summary>
+        public static readonly TransportMessage EmptyAck = new TransportMessage( 2 );
+
+        // Constructor for the 4 special singleton messages.
+        TransportMessage( int emptyOrAck )
         {
+            Debug.Assert( emptyOrAck >= 0 && emptyOrAck <= 2 );
             _protocol = MessageProtocol.ZeroProtocol;
-            if( empty )
+            if( emptyOrAck != 0 )
             {
                 _prefixLength = 2;
-                _wireMessage = new ReadOnlySequence<byte>( new byte[] { 0, 0 } );
+                _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : 0b0010000), 0 } );
             }
         }
 
@@ -91,6 +96,16 @@ namespace CK.AppIdentity.TransportLayer
         /// and has not been disposed yet.
         /// </summary>
         public bool IsValid => _prefixLength != 0;
+
+        /// <summary>
+        /// Gets whether this message is a valid control message.
+        /// </summary>
+        public bool IsControl => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & 0b00100000) != 0 : false;
+
+        /// <summary>
+        /// Gets whether this message is a valid data message.
+        /// </summary>
+        public bool IsData => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & 0b00100000) == 0 : false;
 
         /// <summary>
         /// Gets the message protocol.
@@ -144,7 +159,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Retains this message, preventing a <see cref="Dispose()"/> to release the resources.
         /// Dispose must be called as many times as Retain has been called for the resources to be released.
-        /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/>
+        /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/>, <see cref="Empty"/> and <see cref="EmptyAck"/>
         /// or a static message (see <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
         /// has no effect and returns false.
         /// </summary>
@@ -170,7 +185,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Disposes this message.
-        /// The <see cref="Invalid"/>, <see cref="Canceled"/> and <see cref="Empty"/> messages ignore this,
+        /// The <see cref="Invalid"/>, <see cref="Canceled"/>, <see cref="Empty"/> and <see cref="EmptyAck"/> messages ignore this,
         /// as well as messages created by the static <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
         /// method.
         /// </summary>

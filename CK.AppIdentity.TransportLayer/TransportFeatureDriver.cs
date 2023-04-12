@@ -5,14 +5,14 @@ using System.IO;
 namespace CK.AppIdentity.TransportLayer
 {
 
-    public class TransportLayerFeatureDriver : ApplicationIdentityFeatureDriver
+    public class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
         readonly ITransportTypeService[] _transportTypes;
         readonly TcpSocketTransportTypeService _tcp;
         readonly MessageProtocolDirectoryService _protocolDirectory;
         TransportManager? _transportManager;
 
-        public TransportLayerFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
+        public TransportFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )
         {
             _transportTypes = transportTypes.ToArray();
@@ -88,7 +88,7 @@ namespace CK.AppIdentity.TransportLayer
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportLayerFeature( _transportManager, r, listener );
+                var t = new TransportFeature( _transportManager, r, listener );
                 r.AddFeature( t );
                 if( listener != null )
                 {
@@ -220,13 +220,13 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     foreach( var rSub in party.DomainApplicationIdentity.Remotes )
                     {
-                        var t = rSub.GetFeature<TransportLayerFeature>();
+                        var t = rSub.GetFeature<TransportFeature>();
                         t?.Teardown( context.Monitor );
                     }
                 }
                 else 
                 {
-                    var t = party.GetFeature<TransportLayerFeature>();
+                    var t = party.GetFeature<TransportFeature>();
                     t?.Teardown( context.Monitor );
                 }
             }
@@ -238,7 +238,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _transportManager != null );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                var t = r.GetFeature<TransportLayerFeature>();
+                var t = r.GetFeature<TransportFeature>();
                 t?.Teardown( context.Monitor );
             }
             _transportManager.SendStop();

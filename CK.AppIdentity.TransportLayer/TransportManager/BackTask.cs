@@ -87,9 +87,9 @@ namespace CK.AppIdentity.TransportLayer
             /// Configures a BackTask to run in the background.
             /// </summary>
             /// <typeparam name="T">The type of the BackTask.</typeparam>
-            /// <param name="head"></param>
-            /// <param name="configure"></param>
-            /// <param name="ticks"></param>
+            /// <param name="head">The back task head for <typeparamref name="T"/>.</param>
+            /// <param name="configure">The configuration action.</param>
+            /// <param name="ticks">Must be positive.</param>
             public void Add<T>( Head head, Action<T> configure, int ticks ) where T : BackTask, new()
             {
                 Debug.Assert( ticks > 0 );

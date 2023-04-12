@@ -7,16 +7,15 @@ using System.Net;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// 
     /// </summary>
-    public sealed class TransportLayerFeature
+    public sealed class TransportFeature
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _remote;
         readonly TransportListener? _listener;
-        readonly PerfectEventSender<TransportLayerFeature> _isConnectedChanged;
+        readonly PerfectEventSender<TransportFeature> _isConnectedChanged;
         // Channels are ordered like bestRegisteredProtocols.
         readonly List<ChannelFeature> _channels;
         // All available protocols with their versions.
@@ -26,16 +25,16 @@ namespace CK.AppIdentity.TransportLayer
 
         InitialMessage? _outgoingInitialMessage;
 
-        MessageEndPoint? _endPoint;
+        OutgoingMessageQueue? _endPoint;
         bool _isConnected;
 
-        internal TransportLayerFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
+        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
         {
             _transportManager = transportManager;
             _remote = remote;
             _listener = listener;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
-            _isConnectedChanged = new PerfectEventSender<TransportLayerFeature>();
+            _isConnectedChanged = new PerfectEventSender<TransportFeature>();
             _registeredProtocols = new HashSet<MessageProtocol>();
             _bestRegisteredProtocols = new List<MessageProtocol>( MessageProtocolMap.MaxCount );
         }
@@ -48,17 +47,12 @@ namespace CK.AppIdentity.TransportLayer
 
             if( _endPoint == null )
             {
-                _endPoint = new MessageEndPoint( _transportManager, this, transport );
+                _endPoint = new OutgoingMessageQueue( _transportManager, this, transport );
             }
             else
             {
-                // If the current endpoint is still alive (this means we are a server because if we were
-                // a client a new transport only pops when the current one is dead, but we don't really care here),
-                // we signal its end and immediately tell the channels about this killing.
-                if( _endPoint.IsConnected )
-                {
-                    _endPoint.Transport.SetCondemned();
-                }
+                // Ensures that the current transport is condemned.
+                _endPoint.CurrentTransport.SetCondemned();
                 _endPoint.Rebind( monitor, _transportManager, transport );
             }
             Debug.Assert( _endPoint.Feature == this );
@@ -207,7 +201,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Raised whenever this <see cref="IsConnected"/> status changed.
         /// </summary>
-        public PerfectEvent<TransportLayerFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
+        public PerfectEvent<TransportFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
 
         /// <summary>
         /// Gets the initial message to send when this is a caller.
@@ -237,9 +231,9 @@ namespace CK.AppIdentity.TransportLayer
             if( e != null )
             {
                 e.ClearPendingOutgoingMessages( monitor );
-                if( !e.Transport.IsCondemned )
+                if( !e.CurrentTransport.IsCondemned )
                 {
-                    _transportManager.CondemnTransport( e.Transport );
+                    _transportManager.CondemnTransport( e.CurrentTransport );
                 }
             }
         }

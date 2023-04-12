@@ -23,21 +23,23 @@ but when more than one address is specified, there must be only one address per 
 `"ListeningAddress": [ "tcp:localhost:37120", "pipe:TheNamedPipe" ]`.
 
 ## TransportMessage
-A [`TransportMessage`](TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.
+A [`TransportMessage`](Message/TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.
 The message is `IDisposable`: it holds its memory buffers that are pooled array of bytes. Messages can only be created
-by methods of the [`IncomingMessageFactory`](IncomingMessageFactory.cs) or [`OutgoingMessageFactory`](OutgoingMessageFactory.cs).
+by methods of the [`IncomingMessageFactory`](Message/IncomingMessageFactory.cs) or [`OutgoingMessageFactory`](Message/OutgoingMessageFactory.cs).
 
 
 ## Message Prefix: Protocol and Length
 
 All messages exchanged by the Transport layer are prefixed by the message's protocol and length.
-- The prefix starts with a first byte: `|L0|L1|R0|R1|R2|P0|P1|P2|`.
+- The prefix starts with a first byte: `|L0|L1|CD|R0|R1|P0|P1|P2|`.
   - The 2 MSB (L0-L1) gives us the number of bytes of the message length:
     - `00` 1 byte, the message length is between 0 and 255 bytes.
     - `01` 2 bytes, the message length is between 256 and 65535 bytes.
     - `10` 3 bytes, the message length is between 65536 and 16 777 215 bytes.
     - `11` 4 bytes, the message length is between 16 777 216 and 2 147 483 648 bytes (2 Gib).
-  - The `R0`, `R1` and `R2` bits are reserved for future use.
+  - The `CD` bit is the "Control/Data" bit. This is a convenient bit that can be used by protocols
+    as a one bit discriminator, typically between a regular data message and one (or more) control message.
+  - The `R0` and `R1` bits are reserved for future use.
   - P0-P2 bits is the Protocol, a number between 0 and 7. This number defines the "type" of the
   message: the writer or serializer that has been used to write the payload and the reader or "deserializer"
   that must be used to read it back.
@@ -58,13 +60,14 @@ negotiate the ones they can and want to use. Any Transport between 2 parties can
 The final length of a message on the wire is between 2 bytes (the special Empty message, see below) and 2 Gib.
 A minimal 1 byte message requires 3 bytes (in any of the 7 available protocols). 
 
-Three special singletons TransportMessage exist (all tied to the "0 Protocol").
-The first 2 messages never cross a frontier, they can only be used locally on a party:
+Two special public singletons TransportMessage exist (tied to the "0 Protocol").
+They never cross a frontier, they can only be used locally on a party:
 - The `TransportMessage.Invalid` is the "invalid" message, used when an invalid message is received.
 - The `TransportMessage.Canceled` is a second "invalid" message, that is used to signal a canceled read operation.
-- The `TransportMessage.Empty` is a valid message that can be exchanged: it is used
-for KeepAlive messages. Its length on the wire is 2 bytes and is the shortest message that exists. Regular protocols
-(other than the "0 Protocol") are not allowed to send empty messages.
 
+Internally, 2 other special "0 Protocol" messages exist: `TransportMessage.Empty` and `TransportMessage.EmptyAck`.
+They are valid messages that are exchanged to implement the KeepAlive functionality.
+Their length on the wire is 2 bytes and they are the shortest message that exist. Regular protocols
+(other than the "0 Protocol") are not allowed to send empty messages.
 
 

@@ -88,8 +88,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
         /// <param name="cancellation">Cancellation token.</param>
         /// <returns>
-        /// A message that may be one of the <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/> or <see cref="TransportMessage.Empty"/>
-        /// special messages.
+        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
+        /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
         public Task<TransportMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
                                                  int maxMessageLength = int.MaxValue,
@@ -112,6 +112,7 @@ namespace CK.AppIdentity.TransportLayer
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
                 int protocolNumber = (byte)(firstByte & 0b00000111);
+                bool isControl = (firstByte & 0b00100000) != 0;
                 // If the protocol is not allowed, this is a serious error.
                 MessageProtocol? protocol = null;
                 if( protocolNumber == 0 ) protocol = MessageProtocol.ZeroProtocol;
@@ -135,7 +136,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( messageLength == 0 )
                     {
                         return protocolNumber == 0
-                                ? TransportMessage.Empty
+                                ? (isControl ? TransportMessage.EmptyAck : TransportMessage.Empty)
                                 : Throw.InvalidDataException<TransportMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
                     }
                     // The whole message (255 bytes max.) necessarily fits in the header.

@@ -16,7 +16,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public abstract partial class Transport
     {
-        readonly TransportListener? _listener;
+        readonly object? _listenerOrTargetAddress;
         // Captures once for all the delegate on the ReadExactlyAsync method.
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
@@ -28,7 +28,31 @@ namespace CK.AppIdentity.TransportLayer
         // as soon as the Transport has been created.
         [AllowNull]
         CancellationTokenSource _cts;
-        MessageEndPoint? _endPoint;
+        OutgoingMessageQueue? _messageQueue;
+
+        /// <summary>
+        /// Initializes a new Transport from a <see cref="TransportListener"/>.
+        /// </summary>
+        /// <param name="listener">The listener that created this transport from an incoming connexion.</param>
+        /// <param name="remoteEndPointDescription">
+        /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
+        /// </param>
+        protected Transport( TransportListener listener, string? remoteEndPointDescription )
+            : this( (object)listener, remoteEndPointDescription )
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new Transport by an outgoing connection to <paramref name="targetAddress"/>.
+        /// </summary>
+        /// <param name="targetAddress">The target address.</param>
+        /// <param name="remoteEndPointDescription">
+        /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
+        /// </param>
+        protected Transport( TransportTypeAddress targetAddress, string? remoteEndPointDescription )
+            : this( (object)targetAddress, remoteEndPointDescription )
+        {
+        }
 
         /// <summary>
         /// Initializes a new Transport.
@@ -37,12 +61,13 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="remoteEndPointDescription">
         /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
         /// </param>
-        protected Transport( TransportListener? source, string? remoteEndPointDescription )
+        Transport( object source, string? remoteEndPointDescription )
         {
             _remoteEndPointDescription = remoteEndPointDescription ?? "<No EndPoint description>";
-            _listener = source;
+            _listenerOrTargetAddress = source;
             _reader = ReadExactlyAsync;
             // Starts with the "0 Protocol" support only.
+            // Negotiated protocols are set by StartReceive.
             _receiveFactory = new IncomingMessageFactory();
             _cts = new CancellationTokenSource();
         }
@@ -52,13 +77,13 @@ namespace CK.AppIdentity.TransportLayer
             _cts = cancellation;
         }
 
-        internal void SetMessageEndPoint( MessageEndPoint messageEndPoint )
+        internal void SetOutgoingMessageQueue( OutgoingMessageQueue messageQueue )
         {
-            Debug.Assert( _endPoint == null && messageEndPoint != null );
-            _endPoint = messageEndPoint;
+            Debug.Assert( _messageQueue == null && messageQueue != null );
+            _messageQueue = messageQueue;
         }
 
-        internal MessageEndPoint? EndPoint => _endPoint;
+        internal OutgoingMessageQueue? OutgoingMessageQueue => _messageQueue;
 
         /// <summary>
         /// Gets the protocols that have been negotiated.
@@ -67,9 +92,14 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Gets the listener if this transport has been initiated by this server side.
-        /// Null if this transport is initiated by the remote party.
+        /// Null if this transport is initiated by an outgoing connection to <see cref="TargetAddress"/>.
         /// </summary>
-        public TransportListener? Listener => _listener;
+        public TransportListener? Listener => _listenerOrTargetAddress as TransportListener;
+
+        /// <summary>
+        /// Gets the target address if this transport has been initiated by an outgoing connection.
+        /// </summary>
+        public TransportTypeAddress? TargetAddress => _listenerOrTargetAddress as TransportTypeAddress;
 
         /// <summary>
         /// Gets a string that describes the remote's endpoint.
@@ -98,13 +128,13 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
         /// <returns>
-        /// A message that may be one of the <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/> or <see cref="TransportMessage.Empty"/>
-        /// special messages.
+        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
+        /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
         internal Task<TransportMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
             Debug.Assert( maxMessageLength > 0 );
-            Debug.Assert( _endPoint == null, "Not started yet." );
+            Debug.Assert( _messageQueue == null, "Not started yet." );
             return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _cts.Token );
         }
 
@@ -119,7 +149,7 @@ namespace CK.AppIdentity.TransportLayer
         internal ValueTask<bool> SendAsync( TransportMessage message )
         {
             Throw.CheckArgument( message != null && message.IsValid );
-            Debug.Assert( _endPoint == null, "Not started yet." );
+            Debug.Assert( _messageQueue == null, "Not started yet." );
             return message.WireMessage.IsSingleSegment
                     ? SendSingleBufferAsync( message.WireMessage.First, _cts.Token )
                     : SendAsync( message.WireMessage, _cts.Token );
@@ -140,7 +170,7 @@ namespace CK.AppIdentity.TransportLayer
         /// This always returns true except if the operation was canceled and the <paramref name="cancellation"/> token has been signaled.
         /// <para>
         /// <para>
-        /// Default implementation simply calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> of each sequence.
+        /// Default implementation simply calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> on each sequence.
         /// </para>
         /// </para>
         /// <para>

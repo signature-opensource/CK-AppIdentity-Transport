@@ -6,6 +6,9 @@ namespace CK.AppIdentity.TransportLayer
 {
     public abstract partial class Transport
     {
+        /// <summary>
+        /// Gets the handlers to which incoming messages are routed.
+        /// </summary>
         internal IReadOnlyList<PeerProtocolHandler>? Handlers => _handlers;
 
         /// <summary>
@@ -42,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
                                       Transport transport,
                                       PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( transport.EndPoint != null );
+            Debug.Assert( transport.OutgoingMessageQueue != null );
             var receiveFactory = transport._receiveFactory;
             var reader = transport._reader;
             try
@@ -52,22 +55,33 @@ namespace CK.AppIdentity.TransportLayer
                     var m = await receiveFactory.DoReadAsync( reader, int.MaxValue, transport.Lifetime );
                     if( m.Protocol == MessageProtocol.ZeroProtocol )
                     {
+                        // Handles cancellation and error.
+                        if( m == TransportMessage.Canceled )
+                        {
+                            transportManager.Logger.Trace( $"Canceled received for '{transport.RemoteEndPointDescription}'." );
+                            break;
+                        }
+                        if( m == TransportMessage.Invalid )
+                        {
+                            transportManager.TransportReceiveErrorMessage( transport, null );
+                            break;
+                        }
+                        // Handles KeepAlive directly without instantiating the ZeroProtocol handler.
                         if( m == TransportMessage.Empty )
                         {
                             // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
                             // the other side worries about us because we did not send it any message for some time.
                             // Let's reassure it.
-                            transportManager.TransportKeepAliveReceived( transport );
+                            Debug.Assert( transport.OutgoingMessageQueue != null );
+                            if( !transport.OutgoingMessageQueue.TryEnqueue( TransportMessage.EmptyAck ) )
+                            {
+                                transportManager.Logger.Warn( $"Received a KeepAlive from '{transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" );
+                            }
                         }
-                        else if( m == TransportMessage.Canceled )
+                        else if( m == TransportMessage.EmptyAck )
                         {
-                            transportManager.Logger.Trace( $"Canceled received for '{transport.RemoteEndPointDescription}'." );
-                            break;
-                        }
-                        else if( m == TransportMessage.Invalid )
-                        {
-                            transportManager.TransportReceiveErrorMessage( transport, null );
-                            break;
+                            // The empty message acknowledgment: the IncomingMessageFactory.LastReceived has been updated.
+                            // we have nothing to do.
                         }
                         else
                         {
@@ -77,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
                     else
                     {
                         Debug.Assert( receiveFactory._lastProtocolNumber > 0 && receiveFactory._lastProtocolNumber <= handlers.Length );
-                        await handlers[receiveFactory._lastProtocolNumber - 1].ReceiveAsync( transport.EndPoint, m ).ConfigureAwait( false );
+                        await handlers[receiveFactory._lastProtocolNumber - 1].ReceiveAsync( m ).ConfigureAwait( false );
                     }
                 }
             }
