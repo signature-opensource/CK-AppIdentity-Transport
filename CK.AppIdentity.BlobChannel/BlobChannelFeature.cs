@@ -1,6 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.PerfectEvent;
+using System.Buffers;
 using System.Diagnostics;
 
 namespace CK.AppIdentity.BlobChannel
@@ -16,6 +17,20 @@ namespace CK.AppIdentity.BlobChannel
         }
 
         public PerfectEvent<BlobChannelFeature, byte[]> Received => _received.PerfectEvent;
+
+        public bool TrySend( byte[] data )
+        {
+            Throw.CheckArgument( data.Length > 0 );
+            var h = CurrentHandler;
+            if( h != null )
+            {
+                var message = h.MessageFactory.Create( bytes => bytes.Write( data ) );
+                message.Source = data;
+                if( h.TryEnqueue( message ) ) return true;
+                message.Dispose();
+            }
+            return false;
+        }
 
         protected override PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c )
         {
@@ -33,8 +48,11 @@ namespace CK.AppIdentity.BlobChannel
                 _feature = feature;
             }
 
-            protected override async ValueTask ReceiveAsync( TransportMessage message )
+            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message )
             {
+                var payload = message.Message.ToArray();
+                message.Dispose();
+                await _feature._received.SafeRaiseAsync( monitor, _feature, payload );
             }
         }
     }

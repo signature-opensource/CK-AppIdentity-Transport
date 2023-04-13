@@ -11,8 +11,13 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// A Transport is able to send and receive <see cref="TransportMessage"/>.
+    /// <para>
+    /// It is instantiated by a <see cref="TransportListener"/> or by <see cref="TransportTypeService.TryConnectAsync(IActivityLogger, TransportTypeAddress, CancellationToken)"/>.
+    /// </para>
+    /// <para>
     /// Concrete implementations can be <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>:
     /// the connection manager will prefer <see cref="IAsyncDisposable"/> and will call the latter otherwise.
+    /// </para>
     /// </summary>
     public abstract partial class Transport
     {
@@ -28,7 +33,10 @@ namespace CK.AppIdentity.TransportLayer
         // as soon as the Transport has been created.
         [AllowNull]
         CancellationTokenSource _cts;
-        OutgoingMessageQueue? _messageQueue;
+        // When this transport has been accepted, we give it the possibility to inject
+        // a null marker message in the queue to signal its condemnation. to the current send loop.
+        // This is the only (good) reason why we need the queue here.
+        TransportController? _controller;
 
         /// <summary>
         /// Initializes a new Transport from a <see cref="TransportListener"/>.
@@ -40,6 +48,7 @@ namespace CK.AppIdentity.TransportLayer
         protected Transport( TransportListener listener, string? remoteEndPointDescription )
             : this( (object)listener, remoteEndPointDescription )
         {
+            Throw.CheckNotNullArgument( listener );
         }
 
         /// <summary>
@@ -52,22 +61,16 @@ namespace CK.AppIdentity.TransportLayer
         protected Transport( TransportTypeAddress targetAddress, string? remoteEndPointDescription )
             : this( (object)targetAddress, remoteEndPointDescription )
         {
+            Throw.CheckNotNullArgument( targetAddress );
         }
 
-        /// <summary>
-        /// Initializes a new Transport.
-        /// </summary>
-        /// <param name="source">The listener when this transport is created from an incoming connexion.</param>
-        /// <param name="remoteEndPointDescription">
-        /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
-        /// </param>
         Transport( object source, string? remoteEndPointDescription )
         {
             _remoteEndPointDescription = remoteEndPointDescription ?? "<No EndPoint description>";
             _listenerOrTargetAddress = source;
             _reader = ReadExactlyAsync;
             // Starts with the "0 Protocol" support only.
-            // Negotiated protocols are set by StartReceive.
+            // Negotiated protocols are set by StartReceiveAsync.
             _receiveFactory = new IncomingMessageFactory();
             _cts = new CancellationTokenSource();
         }
@@ -77,13 +80,13 @@ namespace CK.AppIdentity.TransportLayer
             _cts = cancellation;
         }
 
-        internal void SetOutgoingMessageQueue( OutgoingMessageQueue messageQueue )
+        internal void SetController( TransportController controller )
         {
-            Debug.Assert( _messageQueue == null && messageQueue != null );
-            _messageQueue = messageQueue;
+            Debug.Assert( _controller == null && controller != null );
+            _controller = controller;
         }
 
-        internal OutgoingMessageQueue? OutgoingMessageQueue => _messageQueue;
+        internal TransportController? Controller => _controller;
 
         /// <summary>
         /// Gets the protocols that have been negotiated.
@@ -116,9 +119,15 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public CancellationToken Lifetime => _cts.Token;
 
-        internal void SetCondemned()
+        internal void SetCondemned( IActivityMonitor monitor )
         {
-            _cts.Cancel();
+            if( !_cts.IsCancellationRequested )
+            {
+                _cts.Cancel();
+                // Signals the send loop with a null message: this ensures that even when no
+                // message are waiting, the send loop ends without relying on cancellation exception.
+                _controller?.OnTransportCondemned( monitor );
+            }
         }
 
         /// <summary>
@@ -134,12 +143,11 @@ namespace CK.AppIdentity.TransportLayer
         internal Task<TransportMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
             Debug.Assert( maxMessageLength > 0 );
-            Debug.Assert( _messageQueue == null, "Not started yet." );
+            Debug.Assert( _controller == null, "Not started yet." );
             return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _cts.Token );
         }
 
         /// <summary>
-        /// Used during the initial negotiation.
         /// <see cref="TransportMessage.IsValid"/> must be true.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/>
         /// if <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
@@ -149,7 +157,7 @@ namespace CK.AppIdentity.TransportLayer
         internal ValueTask<bool> SendAsync( TransportMessage message )
         {
             Throw.CheckArgument( message != null && message.IsValid );
-            Debug.Assert( _messageQueue == null, "Not started yet." );
+            if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
             return message.WireMessage.IsSingleSegment
                     ? SendSingleBufferAsync( message.WireMessage.First, _cts.Token )
                     : SendAsync( message.WireMessage, _cts.Token );
@@ -245,6 +253,12 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         internal void DisposeMessageReceiveFactory() => _receiveFactory.Dispose();
+
+        /// <summary>
+        /// Overridden to return the type name and the <see cref="RemoteEndPointDescription"/>.
+        /// </summary>
+        /// <returns>A readable string.</returns>
+        public override string ToString() => $"{GetType().Name} - {_remoteEndPointDescription}";
 
     }
 }

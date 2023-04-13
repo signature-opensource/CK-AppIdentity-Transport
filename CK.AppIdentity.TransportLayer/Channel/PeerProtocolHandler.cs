@@ -4,19 +4,22 @@ namespace CK.AppIdentity.TransportLayer
 {
     public abstract class PeerProtocolHandler
     {
-        readonly OutgoingMessageQueue _queue;
+        readonly TransportController _queue;
         readonly OutgoingMessageFactory _messageFactory;
+        internal readonly PeerProtocolHandler? _nextHandler;
 
         /// <summary>
         /// Encapsulates create parameters of <see cref="PeerProtocolHandler"/>.
         /// </summary>
         public readonly ref struct CreateParameters
         {
-            internal readonly OutgoingMessageQueue _queue;
+            internal readonly PeerProtocolHandler? _nextHandler;
+            internal readonly TransportController _queue;
             internal readonly OutgoingMessageFactory _messageFactory;
 
-            internal CreateParameters( OutgoingMessageQueue queue, OutgoingMessageFactory messageFactory )
+            internal CreateParameters( PeerProtocolHandler? nextHandler, TransportController queue, OutgoingMessageFactory messageFactory )
             {
+                _nextHandler = nextHandler;
                 _queue = queue;
                 _messageFactory = messageFactory;
             }
@@ -35,6 +38,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             _queue = createParameters._queue;
             _messageFactory = createParameters._messageFactory;
+            _nextHandler = createParameters._nextHandler;
         }
 
         /// <summary>
@@ -80,9 +84,26 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Called for each message received.
         /// </summary>
+        /// <param name="monitor">The receiving monitor.</param>
         /// <param name="message">The message that must be disposed once done with it.</param>
         /// <returns>The awaitable.</returns>
-        internal protected abstract ValueTask ReceiveAsync( TransportMessage message );
+        internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message );
 
+        /// <summary>
+        /// Called right before a message is sent to the remote. Does nothing by default (always returns true).
+        /// <para>
+        /// The <paramref name="replacement"/> can be used to implement version conversion if the message's protocol differ
+        /// from this <see cref="Protocol"/>. 
+        /// </para>
+        /// </summary>
+        /// <param name="logger">The logger to use.</param>
+        /// <param name="message">The message that is about to be sent.</param>
+        /// <param name="replacement">Optional message that will be sent instead of the queued <paramref name="message"/>.</param>
+        /// <returns>True to send the message, false to skip it.</returns>
+        internal protected virtual bool OnSendMessage( IActivityLogger logger, ITransportMessage message, out TransportMessage? replacement )
+        {
+            replacement = null;
+            return true;
+        }
     }
 }

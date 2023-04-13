@@ -8,46 +8,48 @@ namespace CK.AppIdentity.TransportLayer
     {
         /// <summary>
         /// Gets the handlers to which incoming messages are routed.
+        /// This is set by StartReceiveAsync and used by the <see cref="Controller"/>.
         /// </summary>
         internal IReadOnlyList<PeerProtocolHandler>? Handlers => _handlers;
 
         /// <summary>
-        /// Binds the <see cref="Handlers"/> and starts the reading loop that
-        /// dispatch the incoming messages to the appropriate handler based on
-        /// the protocol number.
+        /// Binds the <see cref="Handlers"/> and starts the reading loop that dispatches the incoming messages to the
+        /// appropriate handler based on the message protocol number.
         /// <para>
-        /// This is the last step that "activates" a Transport: the protocols have been
-        /// negotiated and the channels have setup a dedicated receiver for every protocols.
+        /// This is the last step that makes a Transport ready to receive messages: the protocols
+        /// have been negotiated and the channels have setup a dedicated receiver for every protocols.
         /// </para>
         /// <para>
         /// The receiving loop ends as soon as the <see cref="Lifetime"/> is signaled.
         /// </para>
         /// </summary>
-        /// <param name="monitor">The transport manager monitor.</param>
+        /// <param name="receiveMonitor">The existing and available feature's receive monitor or null if a new one must be created.</param>
         /// <param name="transportManager">The transport manager.</param>
-        /// <param name="protocols">The negotiated protocols from which the receivers have been obtained.</param>
+        /// <param name="protocols">The negotiated protocols from which the handlers have been obtained.</param>
         /// <param name="handlers">The <see cref="Handlers"/>.</param>
-        internal void StartReceive( IActivityMonitor monitor,
-                                    TransportManager transportManager,
-                                    MessageProtocolMap protocols,
-                                    PeerProtocolHandler[] handlers )
+        /// <returns>The receive monitor that should be reused.</returns>
+        internal Task<IActivityMonitor> StartReceiveAsync( IActivityMonitor? receiveMonitor,
+                                                           TransportManager transportManager,
+                                                           MessageProtocolMap protocols,
+                                                           PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( transportManager.IsInLoop( monitor ) );
             Debug.Assert( protocols.IsValid );
             Debug.Assert( handlers.Length == protocols.Protocols.Count );
-            Debug.Assert( !_receiveFactory.AllowedProtocols.IsValid );
-            _receiveFactory.SetBoundMode( protocols );
+            _receiveFactory.SetAllowedProtocols( protocols );
             _handlers = handlers;
-            Task.Run( () => RunReceive( transportManager, this, handlers ) );
+            return Task.Run( () => RunReceiveAsync( receiveMonitor, transportManager, this, handlers ) );
         }
 
-        static async void RunReceive( TransportManager transportManager,
-                                      Transport transport,
-                                      PeerProtocolHandler[] handlers )
+        static async Task<IActivityMonitor> RunReceiveAsync( IActivityMonitor? receiveMonitor,
+                                                             TransportManager transportManager,
+                                                             Transport transport,
+                                                             PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( transport.OutgoingMessageQueue != null );
+            Debug.Assert( transport.Controller != null );
+            receiveMonitor ??= new ActivityMonitor( $"Receive loop for '{transport.Controller.Feature.Party.FullName}'." );
             var receiveFactory = transport._receiveFactory;
             var reader = transport._reader;
+            using var log = receiveMonitor.OpenInfo( $"Receiving messages from '{transport}'." );
             try
             {
                 for(; ; )
@@ -55,50 +57,43 @@ namespace CK.AppIdentity.TransportLayer
                     var m = await receiveFactory.DoReadAsync( reader, int.MaxValue, transport.Lifetime );
                     if( m.Protocol == MessageProtocol.ZeroProtocol )
                     {
-                        // Handles cancellation and error.
+                        // Handles Canceled and Invalid messages.
                         if( m == TransportMessage.Canceled )
                         {
-                            transportManager.Logger.Trace( $"Canceled received for '{transport.RemoteEndPointDescription}'." );
+                            receiveMonitor.Trace( $"Canceled message received." );
                             break;
                         }
                         if( m == TransportMessage.Invalid )
                         {
-                            transportManager.TransportReceiveErrorMessage( transport, null );
+                            receiveMonitor.Error( $"Invalid message received." );
+                            transportManager.CondemnTransport( transport );
                             break;
                         }
-                        // Handles KeepAlive directly without instantiating the ZeroProtocol handler.
-                        if( m == TransportMessage.Empty )
-                        {
-                            // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
-                            // the other side worries about us because we did not send it any message for some time.
-                            // Let's reassure it.
-                            Debug.Assert( transport.OutgoingMessageQueue != null );
-                            if( !transport.OutgoingMessageQueue.TryEnqueue( TransportMessage.EmptyAck ) )
-                            {
-                                transportManager.Logger.Warn( $"Received a KeepAlive from '{transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" );
-                            }
-                        }
-                        else if( m == TransportMessage.EmptyAck )
+                        // Handles KeepAlive ack directly without bothering the controller.
+                        if( m == TransportMessage.EmptyAck )
                         {
                             // The empty message acknowledgment: the IncomingMessageFactory.LastReceived has been updated.
                             // we have nothing to do.
+                            receiveMonitor.Trace( $"Received KeepAlive acknowledgment." );
                         }
                         else
                         {
-                            transport.EnsureZeroProtocol().Receive( transportManager, m );
+                            transport.Controller.Receive0Message( receiveMonitor, m );
                         }
                     }
                     else
                     {
-                        Debug.Assert( receiveFactory._lastProtocolNumber > 0 && receiveFactory._lastProtocolNumber <= handlers.Length );
-                        await handlers[receiveFactory._lastProtocolNumber - 1].ReceiveAsync( m ).ConfigureAwait( false );
+                        Debug.Assert( m.ProtocolNumber > 0 && m.ProtocolNumber <= handlers.Length );
+                        await handlers[m.ProtocolNumber - 1].ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
                     }
                 }
             }
             catch( Exception ex )
             {
-                transportManager.TransportReceiveErrorMessage( transport, ex );
+                receiveMonitor.Error( $"While receiving on '{transport}'.", ex );
+                transportManager.CondemnTransport( transport );
             }
+            return receiveMonitor;
         }
 
     }

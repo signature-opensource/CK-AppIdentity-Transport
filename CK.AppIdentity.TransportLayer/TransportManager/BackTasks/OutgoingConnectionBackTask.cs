@@ -43,28 +43,16 @@ namespace CK.AppIdentity.TransportLayer
             }
             else if( _result.IsCompleted )
             {
-                if( _result.IsCompletedSuccessfully )
-                {
-                    if( _result.Result != null )
-                    {
-                        // The new transport has been provided to the TransportFeature
-                        // by TransportTypeService.TryConnectToAsync.
-                        // We are done, let this BackTask be reset.
-                    }
-                    else
-                    {
-                        // No transport, retrying.
-                        Setup( transportManager, _remote, _target );
-                        Retry( 1 );
-                    }
-                }
-                else
+                if( !_result.IsCompletedSuccessfully || _result.Result == null )
                 {
                     // We have an error or have been canceled... (cancellation is not by us and that is weird!, but this is the same: we must retry).
                     monitor.Warn( $"Failed to connect to '{_remote.Party.FullName}' (try n°{++_tryCount}). Retrying.", _result.Exception );
                     Setup( transportManager, _remote, _target );
                     Retry( 1 );
                 }
+                // Else the new transport has been provided to the TransportFeature
+                // by TransportTypeService.TryConnectToAsync.
+                // We are done, let this BackTask be reset.
             }
             else
             {

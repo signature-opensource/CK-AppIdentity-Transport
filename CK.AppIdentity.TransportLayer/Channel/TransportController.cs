@@ -1,0 +1,243 @@
+using CK.Core;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Threading.Channels;
+
+namespace CK.AppIdentity.TransportLayer
+{
+    /// <summary>
+    /// This is a stable adapter between successive <see cref="Transport"/> instances and a a <see cref="TransportFeature"/>.
+    /// This hosts the outgoing message channel for all protocols supported by the feature.
+    /// </summary>
+    sealed partial class TransportController
+    {
+        static readonly UnboundedChannelOptions _senderChannelOptions = new() { SingleReader = true };
+
+        readonly TransportManager _transportManager;
+        readonly TransportFeature _feature;
+        readonly Channel<TransportMessage?> _senderChannel;
+        Transport _transport;
+        Task<IActivityMonitor>? _receiveTask;
+        Task? _sendTask;
+        int _sendLoopNumber;
+
+        internal TransportController( TransportManager transportManager, TransportFeature feature, Transport transport )
+        {
+            _transportManager = transportManager;
+            _feature = feature;
+            _senderChannel = Channel.CreateUnbounded<TransportMessage?>( _senderChannelOptions );
+            _transport = transport;
+            _transport.SetController( this );
+        }
+
+        internal void Rebind( IActivityMonitor monitor, Transport transport )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Debug.Assert( _transport.IsCondemned );
+            _transport = transport;
+            _transport.SetController( this );
+        }
+
+        /// <summary>
+        /// Gets the current transport.
+        /// </summary>
+        public Transport CurrentTransport => _transport;
+
+        /// <summary>
+        /// Gets the feature that manages this end point.
+        /// </summary>
+        public TransportFeature Feature => _feature;
+
+        public bool TryEnqueue( TransportMessage message ) => _senderChannel.Writer.TryWrite( message );
+
+        /// <summary>
+        /// Waits for a space to enqueue a message.
+        /// </summary>
+        /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the wait operation.</param>
+        /// <returns>
+        /// True when a new message can be enqueued, false if the channel is closed (the remote is destroyed).
+        /// </returns>
+        public ValueTask<bool> WaitToEnqueueAsync( CancellationToken cancellationToken = default ) => _senderChannel.Writer.WaitToWriteAsync( cancellationToken );
+
+        public async ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default )
+        {
+            try
+            {
+                await _senderChannel.Writer.WriteAsync( message, cancellationToken ).ConfigureAwait( false );
+                return true;
+            }
+            catch( OperationCanceledException ) when ( cancellationToken.IsCancellationRequested )
+            {
+                return false;
+            }
+            catch( ChannelClosedException )
+            {
+                return false;
+            }
+        }
+
+        internal void StopSending( IActivityMonitor monitor )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Interlocked.Increment( ref _sendLoopNumber );
+            // Null marker to end the send loop even if there is no message.
+            _senderChannel.Writer.TryWrite( null );
+        }
+
+        internal void OnTransportCondemned( IActivityMonitor monitor )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            // Null marker to end the send loop even if there is no message.
+            _senderChannel.Writer.TryWrite( null );
+        }
+
+        internal ValueTask StartReceiveAsync( IActivityMonitor monitor, MessageProtocolMap protocols, PeerProtocolHandler[] handlers )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            // First starts the transport receive loop: this sets the protocol map and handlers on the transport.
+            // We allow here the current receiving task to not be completed: the previous Transport can continue to receive
+            // a message (in such case, we create a new monitor for the new transport).
+            IActivityMonitor? receiveMonitor = null;
+            if( _receiveTask != null )
+            {
+                Debug.Assert( _receiveTask.IsCompleted == _receiveTask.IsCompletedSuccessfully, "The receive task can only be completed successfully or pending." );
+                if( _receiveTask.IsCompleted )
+                {
+                    receiveMonitor = _receiveTask.Result;
+                }
+                else
+                {
+                    monitor.Warn( $"Current receive task for '{_feature.Party.FullName}' is pending. A new monitor is instantiated." );
+                }
+            }
+            // The receive loop is tied to the transport, it will end when the transport is condemned.
+            _receiveTask = _transport.StartReceiveAsync( receiveMonitor, _transportManager, protocols, handlers );
+            // Then start the send loop. The send loop will also end when the transport is condemned but it can be
+            // stopped at any time.
+            if( _sendTask != null && !_sendTask.IsCompleted )
+            {
+                // This is rather improbable.
+                return WaitToStartSendAsync( monitor );
+            }
+            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader ) );
+            return default;
+        }
+
+        async ValueTask WaitToStartSendAsync( IActivityMonitor monitor )
+        {
+            Debug.Assert( _sendTask != null );
+            monitor.Warn( $"Current send task for '{_feature.Party.FullName}' is pending. Waiting for its completion." );
+            await _sendTask.ConfigureAwait( false );
+            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader ) );
+        }
+
+        static async Task RunSendAsync( TransportManager transportManager,
+                                        TransportController transportController,
+                                        Transport transport,
+                                        ChannelReader<TransportMessage?> reader )
+        {
+            try
+            {
+                int sendLoopNumber = transportController._sendLoopNumber;
+                Debug.Assert( transportController._transport ==  transport && transport.Controller == transportController );
+                var handlers = transport.Handlers;
+                Debug.Assert( handlers != null );
+                transportManager.Logger.Trace( $"Starting sending loop #{sendLoopNumber} for '{transport.RemoteEndPointDescription}'." );
+                while( await reader.WaitToReadAsync().ConfigureAwait( false ) )
+                {
+                    if( transport.IsCondemned || sendLoopNumber != transportController._sendLoopNumber )
+                    {
+                        break;
+                    }
+                    if( reader.TryPeek( out var m ) )
+                    {
+                        if( m == null )
+                        {
+                            // Null marker is here to react to a condemned transport or StopSending.
+                            // Since this is not the case, ignore it.
+                            reader.TryRead( out m );
+                        }
+                        else
+                        {
+                            if( m.ProtocolNumber == 0 )
+                            {
+                                // Even if the send is canceled in "0 Protocol", always consume the message:
+                                // the "0 Protocol" has no interest to interact with different transports.
+                                await transport.SendAsync( m ).ConfigureAwait( false );
+                                m.Dispose();
+                                reader.TryRead( out m );
+                            }
+                            else
+                            {
+                                PeerProtocolHandler currentHandler = handlers[m.ProtocolNumber - 1];
+                                if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
+                                {
+                                    var toSend = replacement ?? m;
+                                    if( toSend.Protocol != currentHandler.Protocol )
+                                    {
+                                        transportManager.Logger.Warn( $"{currentHandler.GetType():C}.OnSendMessage has not converted a message from '{toSend.ProtocolNumber}' to '{currentHandler.Protocol}'). Message is dropped." );
+                                    }
+                                    else
+                                    {
+                                        // If the send is canceled, ends this loop without consuming the message.
+                                        if( !await transport.SendAsync( toSend ).ConfigureAwait( false ) )
+                                        {
+                                            replacement?.Dispose();
+                                            break;
+                                        }
+                                    }
+                                }
+                                m.Dispose();
+                                reader.TryRead( out m );
+                                replacement?.Dispose();
+                            }
+                        }
+                    }
+                }
+                transportManager.Logger.Trace( $"Stopped sending loop #{sendLoopNumber} for '{transport.RemoteEndPointDescription}'." );
+            }
+            catch( Exception ex )
+            {
+                Debug.Assert( ex is not ChannelClosedException, "The way we use it avoids to rely on the ChannelClosedException." );
+                transportManager.TransportErrorSendMessage( transport, ex );
+            }
+        }
+
+
+        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
+        {
+            var r = _senderChannel.Reader;
+            int count = 0;
+            while( r.TryRead( out var m ) )
+            {
+                if( m == null ) continue;
+                ++count;
+                action?.Invoke( m );
+                m.Dispose();
+            }
+            monitor.Trace( $"Cleanup {count} unsent messages for '{_transport.RemoteEndPointDescription}'." );
+        }
+
+        internal void Receive0Message( IActivityMonitor receiveMonitor, TransportMessage m )
+        {
+            Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
+            if( m == TransportMessage.Empty )
+            {
+                // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
+                // the other side worries about us because we did not send it any message for some time.
+                // Let's reassure it.
+                receiveMonitor.Trace( $"Received KeepAlive request." );
+                if( !TryEnqueue( TransportMessage.EmptyAck ) )
+                {
+                    receiveMonitor.Warn( $"Received a KeepAlive from '{_transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" );
+                }
+            }
+            else
+            {
+                receiveMonitor.Warn( $"Received unknown '0 Protocol' message. Ignoring it." );
+                m.Dispose();
+            }
+        }
+    }
+}

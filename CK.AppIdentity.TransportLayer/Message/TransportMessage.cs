@@ -13,9 +13,12 @@ namespace CK.AppIdentity.TransportLayer
     /// The maximal total message length is <see cref="int.MaxValue"/> (2 GiB).
     /// </para>
     /// </summary>
-    public sealed class TransportMessage : IDisposable
+    public sealed class TransportMessage : ITransportMessage, IDisposable
     {
+        internal const int IsControlFlag = 0b00100000;
+
         readonly MessageFactory? _messageFactory;
+        readonly int _protocolNumber;
         readonly MutableSequence<byte>? _buffer;
         readonly ReadOnlySequence<byte> _wireMessage;
         readonly object? _disposeLock;
@@ -68,11 +71,12 @@ namespace CK.AppIdentity.TransportLayer
 
         // Constructor for regular, disposable messages.
         // offset skips the reserved bytes at the start that are unused by the prefixed length (short messages). 
-        internal TransportMessage( MessageFactory messageFactory, MessageProtocol protocol, MutableSequence<byte> buffer, int offset, int prefixLength )
+        internal TransportMessage( MessageFactory messageFactory, int protocolNumber, MessageProtocol protocol, MutableSequence<byte> buffer, int offset, int prefixLength )
         {
             Debug.Assert( messageFactory != null && prefixLength > 0 && buffer.Length > 0 );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _messageFactory = messageFactory;
+            _protocolNumber = protocolNumber;
             _buffer = buffer;
             _prefixLength = prefixLength;
             _protocol = protocol;
@@ -82,39 +86,31 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         // Constructor for static, non disposable, snapshot messages.
-        internal TransportMessage( MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
+        internal TransportMessage( int protocolNumber, MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
         {
             Debug.Assert( prefixedMessage.IsSingleSegment && !prefixedMessage.IsSingleSegment );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
+            _protocolNumber = protocolNumber;
             _protocol = protocol;
             _prefixLength = prefixLength;
             _wireMessage = prefixedMessage;
         }
 
-        /// <summary>
-        /// Gets whether this message is valid: it is not the <see cref="Invalid"/> nor the <see cref="Canceled"/> message
-        /// and has not been disposed yet.
-        /// </summary>
+        /// <inheritdoc />
         public bool IsValid => _prefixLength != 0;
 
-        /// <summary>
-        /// Gets whether this message is a valid control message.
-        /// </summary>
-        public bool IsControl => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & 0b00100000) != 0 : false;
+        /// <inheritdoc />
+        public bool IsControl => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsControlFlag) != 0 : false;
 
-        /// <summary>
-        /// Gets whether this message is a valid data message.
-        /// </summary>
-        public bool IsData => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & 0b00100000) == 0 : false;
+        /// <inheritdoc />
+        public bool IsData => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsControlFlag) == 0 : false;
 
-        /// <summary>
-        /// Gets the message protocol.
-        /// </summary>
+        /// <inheritdoc />
         public MessageProtocol Protocol => _protocol;
 
         /// <summary>
         /// Gets or sets an optional source object associated to this <see cref="TransportMessage"/>.
-        /// For an outgoing message, this typically reference a data object that is serialized in the message.
+        /// For an outgoing message, this typically references a data object that is serialized in the message.
         /// <para>
         /// When this object is <see cref="IDisposable"/>, it is automatically disposed when this message
         /// is disposed.
@@ -130,10 +126,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        /// <summary>
-        /// Gets the full message including its prefix.
-        /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
-        /// </summary>
+        /// <inheritdoc />
         public ReadOnlySequence<byte> WireMessage
         {
             get
@@ -143,10 +136,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        /// <summary>
-        /// Gets the message.
-        /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
-        /// </summary>
+        /// <inheritdoc />
         public ReadOnlySequence<byte> Message
         {
             get
@@ -155,6 +145,12 @@ namespace CK.AppIdentity.TransportLayer
                 return _wireMessage.Slice( _prefixLength );
             }
         }
+
+        /// <summary>
+        /// Gets the protocol number in the protocol map that has been used to create this message.
+        /// This has absolutely no reason to be made public.
+        /// </summary>
+        internal int ProtocolNumber => _protocolNumber;
 
         /// <summary>
         /// Retains this message, preventing a <see cref="Dispose()"/> to release the resources.

@@ -25,7 +25,7 @@ namespace CK.AppIdentity.TransportLayer
 
         InitialMessage? _outgoingInitialMessage;
 
-        OutgoingMessageQueue? _endPoint;
+        TransportController? _controller;
         bool _isConnected;
 
         internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
@@ -45,25 +45,29 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
             Debug.Assert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
 
-            if( _endPoint == null )
+            // First, instantiates or rebinds the TransportController so that it can be
+            // provided to the protocol handlers.
+            if( _controller == null )
             {
-                _endPoint = new OutgoingMessageQueue( _transportManager, this, transport );
+                _controller = new TransportController( _transportManager, this, transport );
             }
             else
             {
-                // Ensures that the current transport is condemned.
-                _endPoint.CurrentTransport.SetCondemned();
-                _endPoint.Rebind( monitor, _transportManager, transport );
+                _controller.Rebind( monitor, transport );
             }
-            Debug.Assert( _endPoint.Feature == this );
+            Debug.Assert( _controller.Feature == this );
+            // Second, ensures that protocol handlers for the right version are available
+            // and are set to be the current one.
             var protocolHandlers = new PeerProtocolHandler[_bestRegisteredProtocols.Count];
             for( int i = 0; i < protocolHandlers.Length; i++ )
             {
                 var c = _channels[i];
                 Debug.Assert( c != null );
-                protocolHandlers[i] = c.EnsureHandler( monitor, _endPoint, protocols.Protocols[i] );
+                protocolHandlers[i] = c.EnsureCurrentHandler( monitor, _controller, protocols.Protocols[i] );
             }
-            transport.StartReceive( monitor, _transportManager, protocols, protocolHandlers );
+            // The protocols are available.
+            // We start receiving messages from this new transport: this sets the protocol map and handlers on the transport.
+            await _controller.StartReceiveAsync( monitor, protocols, protocolHandlers );
             if( !_isConnected )
             {
                 _isConnected = true;
@@ -227,7 +231,7 @@ namespace CK.AppIdentity.TransportLayer
             //   - If we are listening we must remove this party from the listener.
             _listener?.RemoveParty( this );
             // Closing the transport is done from the transport manager loop.
-            var e = _endPoint;
+            var e = _controller;
             if( e != null )
             {
                 e.ClearPendingOutgoingMessages( monitor );

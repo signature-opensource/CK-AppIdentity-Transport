@@ -20,8 +20,6 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class IncomingMessageFactory : MessageFactory
     {
         MessageProtocolMap _protocols;
-        // Crappy DoReadAsync side effect to avoid a tuple return...
-        internal int _lastProtocolNumber;
         DateTime _lastReceived;
 
         /// <summary>
@@ -40,7 +38,7 @@ namespace CK.AppIdentity.TransportLayer
             _protocols = new MessageProtocolMap();
         }
 
-        internal void SetBoundMode( MessageProtocolMap protocols )
+        internal void SetAllowedProtocols( MessageProtocolMap protocols )
         {
             Debug.Assert( protocols.IsValid );
             _protocols = protocols;
@@ -112,7 +110,6 @@ namespace CK.AppIdentity.TransportLayer
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
                 int protocolNumber = (byte)(firstByte & 0b00000111);
-                bool isControl = (firstByte & 0b00100000) != 0;
                 // If the protocol is not allowed, this is a serious error.
                 MessageProtocol? protocol = null;
                 if( protocolNumber == 0 ) protocol = MessageProtocol.ZeroProtocol;
@@ -124,7 +121,6 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     protocol = _protocols.Protocols[protocolNumber - 1];
                 }
-                _lastProtocolNumber = protocolNumber;
                 _lastReceived = DateTime.UtcNow;
                 int messageLength;
                 int lenSize = firstByte >> 6;
@@ -136,14 +132,14 @@ namespace CK.AppIdentity.TransportLayer
                     if( messageLength == 0 )
                     {
                         return protocolNumber == 0
-                                ? (isControl ? TransportMessage.EmptyAck : TransportMessage.Empty)
+                                ? ((firstByte & TransportMessage.IsControlFlag) != 0 ? TransportMessage.EmptyAck : TransportMessage.Empty)
                                 : Throw.InvalidDataException<TransportMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
                     }
                     // The whole message (255 bytes max.) necessarily fits in the header.
                     await exactReader( header.Slice( 2, messageLength ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( 2 + messageLength );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: 2 );
+                    return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: 2 );
                 }
                 // The length is on more than one byte. There must be at least 256 bytes
                 // and we can fully handle the maximal 5 bytes prefix: we must now use the lenSize
@@ -168,7 +164,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( header, cancellation ).ConfigureAwait( false );
                     buffer.Advance( header.Length );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                    return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
                 }
                 // There is more than the initial buffer. Fills it.
                 await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -188,7 +184,7 @@ namespace CK.AppIdentity.TransportLayer
                     buffer.Advance( messageLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
             }
             catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
             {

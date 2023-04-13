@@ -10,7 +10,6 @@ namespace CK.AppIdentity.TransportLayer
     public abstract class ChannelFeature
     {
         readonly TransportFeature _transportFeature;
-        readonly List<PeerProtocolHandler> _handlers;
 
         // Set by TransportLayerFeature.RegisterChannel on success (OverrideProtocolName or derived from the concrete type name).
         // On failure, the channel feature is not referenced by anybody.
@@ -20,10 +19,12 @@ namespace CK.AppIdentity.TransportLayer
         // successfully registered and its number (1..MessageProtocolMap.MaxCount) is known.
         internal int _protocolNumber;
 
+        PeerProtocolHandler? _firstHandler;
+        PeerProtocolHandler? _currentHandler;
+
         protected ChannelFeature( TransportFeature transportFeature )
         {
             _transportFeature = transportFeature;
-            _handlers = new List<PeerProtocolHandler>();
         }
 
         /// <summary>
@@ -55,21 +56,28 @@ namespace CK.AppIdentity.TransportLayer
         protected TransportFeature Transport => _transportFeature;
 
         /// <summary>
-        /// Gets the handlers that have been instantiated for each version.
+        /// Gets the current handler.
         /// </summary>
-        protected IReadOnlyList<PeerProtocolHandler> Handlers => _handlers;
+        protected PeerProtocolHandler? CurrentHandler => _currentHandler; 
 
-        internal PeerProtocolHandler EnsureHandler( IActivityMonitor monitor, OutgoingMessageQueue endPoint, MessageProtocol protocol )
+        internal PeerProtocolHandler EnsureCurrentHandler( IActivityMonitor monitor, TransportController endPoint, MessageProtocol protocol )
         {
             Debug.Assert( protocol.Name == _baseProtocolName );
             Debug.Assert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
-            var h = _handlers.FirstOrDefault( p => p.Protocol == protocol );
+            if( _currentHandler != null && _currentHandler.Protocol == protocol ) return _currentHandler;
+            var h = _firstHandler;
+            while( h != null )
+            {
+                if( h.Protocol == protocol ) break;
+                h = h._nextHandler;
+            }
             if( h == null )
             {
                 var factory = new OutgoingMessageFactory( _protocolNumber, protocol );
-                var c = new PeerProtocolHandler.CreateParameters( endPoint, factory );
-                h = CreateHandler( monitor, ref c );
+                var c = new PeerProtocolHandler.CreateParameters( _firstHandler, endPoint, factory );
+                _firstHandler = h = CreateHandler( monitor, ref c );
             }
+            _currentHandler = h;
             return h;
         }
 

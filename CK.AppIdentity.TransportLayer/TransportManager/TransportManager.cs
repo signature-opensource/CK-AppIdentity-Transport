@@ -96,27 +96,21 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap ) );
         }
 
-        internal void TransportReceiveErrorMessage( Transport transport, Exception? ex )
-        {
-            PushTypedJob( new CondemnTransportJob( transport, true, ex ) );
-        }
-
         internal void TransportErrorSendMessage( Transport transport, Exception ex )
         {
-            PushTypedJob( new CondemnTransportJob( transport, true, ex ) );
+            PushTypedJob( new CondemnTransportJob( transport, ex ) );
         }
 
         internal void CondemnTransport( Transport transport )
         {
-            transport.SetCondemned();
-            PushTypedJob( new CondemnTransportJob( transport, false, null ) );
+            PushTypedJob( new CondemnTransportJob( transport, null ) );
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
-        sealed record class CondemnTransportJob( Transport Transport, bool Error, Exception? Exception );
+        sealed record class CondemnTransportJob( Transport Transport, Exception? Exception );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
@@ -148,19 +142,16 @@ namespace CK.AppIdentity.TransportLayer
         async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
         {
             var t = j.Transport;
-            using( monitor.OpenGroup( j.Error ? LogLevel.Error : LogLevel.Trace, $"Condemning transport '{t}'.", j.Exception ) )
+            using( monitor.OpenGroup( j.Exception != null ? LogLevel.Error : LogLevel.Trace, $"Condemning transport '{t}'.", j.Exception ) )
             {
-                if( j.Error && j.Exception == null )
-                {
-                    monitor.Info( "An invalid message has been received." );
-                }
+                t.SetCondemned( monitor );
                 // Starts by disposing the current transport before attempting to reconnect.
                 await SafeDestroyTransportAsync( monitor, t );
                 // If the transport is an outgoing connection and has been activated, launch the
                 // reconnection back task.
-                if( t.TargetAddress != null && t.OutgoingMessageQueue != null )
+                if( t.TargetAddress != null && t.Controller != null )
                 {
-                    var f = t.OutgoingMessageQueue.Feature;
+                    var f = t.Controller.Feature;
                     if( !f.Party.IsDestroyed )
                     {
                         monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}'." );

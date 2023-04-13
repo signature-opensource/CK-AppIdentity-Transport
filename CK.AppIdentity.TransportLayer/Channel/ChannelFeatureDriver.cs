@@ -139,7 +139,7 @@ namespace CK.AppIdentity.BlobChannel
         /// <param name="context">The initialization context that exposes the monitor to use and its trampoline if needed.</param>
         /// <param name="transport">The transport feature of the party.</param>
         /// <param name="channel">Channel feature to be added to the <see cref="TransportFeature.Party"/>.</param>
-        /// <returns>True on success (even if <paramref name="channel"/> is null), false if the initialization fails.</returns>
+        /// <returns>True on success (even if <paramref name="channel"/> is null), false if the whole configuration must fail.</returns>
         abstract protected bool TryCreateChannel( FeatureLifetimeContext context,
                                                   TransportFeature transport,
                                                   out T? channel );

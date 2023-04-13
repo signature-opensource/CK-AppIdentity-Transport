@@ -107,10 +107,10 @@ namespace CK.AppIdentity.TransportLayer
                 if( factory == null )
                 {
                     var content = new ReadOnlySequence<byte>( buffer.GetReadOnlySequence( offset ).ToArray() );
-                    return new TransportMessage( _protocol, content, prefixLength );
+                    return new TransportMessage( _protocolNumber, _protocol, content, prefixLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( factory, _protocol, buffer, offset, prefixLength );
+                return new TransportMessage( factory, _protocolNumber, _protocol, buffer, offset, prefixLength );
             }
             finally
             {
