@@ -92,7 +92,7 @@ namespace CK.AppIdentity.TransportLayer
             _senderChannel.Writer.TryWrite( null );
         }
 
-        internal ValueTask StartReceiveAsync( IActivityMonitor monitor, MessageProtocolMap protocols, PeerProtocolHandler[] handlers )
+        internal ValueTask ActivateAsync( IActivityMonitor monitor, MessageProtocolMap protocols, PeerProtocolHandler[] handlers )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
             // First starts the transport receive loop: this sets the protocol map and handlers on the transport.

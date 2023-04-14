@@ -88,7 +88,7 @@ namespace CK.AppIdentity.TransportLayer
         // Constructor for static, non disposable, snapshot messages.
         internal TransportMessage( int protocolNumber, MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
         {
-            Debug.Assert( prefixedMessage.IsSingleSegment && !prefixedMessage.IsSingleSegment );
+            Debug.Assert( prefixedMessage.IsSingleSegment );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _protocolNumber = protocolNumber;
             _protocol = protocol;

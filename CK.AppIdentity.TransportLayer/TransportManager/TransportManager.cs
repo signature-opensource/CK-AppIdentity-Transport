@@ -117,17 +117,26 @@ namespace CK.AppIdentity.TransportLayer
             switch( job )
             {
                 case DBNull:
-                    using( monitor.OpenTrace( $"TransportManager heartbeat ({_backTasks.Count} background tasks to check)." ) )
                     {
-                        _backTasks.OnHeartBeat( monitor );
+                        int c = _backTasks.AliveCount;
+                        if( c > 0 )
+                        {
+                            using( monitor.OpenTrace( $"TransportManager heartbeat ({c} active background tasks out of {_backTasks.TotalCount})." ) )
+                            {
+                                var (handled, done) = _backTasks.OnHeartBeat( monitor );
+                                monitor.CloseGroup( $"{done} completed out of {handled} handled." );
+                            }
+                        }
+                        return default;
                     }
-                    return default;
                 case TryConnectToJob c:
-                    _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.Remote, c.Target ), 1 );
+                    monitor.Trace( $"Initiating connection to '{c.Target}' for '{c.Remote.Party.FullName}'." );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.Remote, c.Target ), 1 );
                     return default;
                 case Transport t:
                     Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
-                    _backTasks.Add<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
+                    monitor.Trace( $"Handling new transport from listener '{t.Listener.EndPointDescription}' for '{t.RemoteEndPointDescription}'." );
+                    _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
                 case InitialMessage m:
                     return HandleUnknownIncomingRemote( monitor, m );
@@ -155,7 +164,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( !f.Party.IsDestroyed )
                     {
                         monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}'." );
-                        _backTasks.Add<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), 1 );
+                        _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), 1 );
                     }
                 }
             }

@@ -55,10 +55,9 @@ namespace CK.AppIdentity
         public IEnumerable<object> Features => _features;
 
         /// <inheritdoc />
-        public bool AddFeature( object feature )
+        public void AddFeature( object feature )
         {
-            var features = Util.InterlockedAddUnique( ref _features, feature );
-            return Array.IndexOf( features, feature ) >= 0;
+            Util.InterlockedAddUnique( ref _features, feature );
         }
 
         /// <inheritdoc />
@@ -66,5 +65,7 @@ namespace CK.AppIdentity
 
         /// <inheritdoc />
         public bool IsDestroyed => _isDestroyed;
+
+        public override string ToString() => _fullName.Path;
     }
 }

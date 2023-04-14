@@ -9,38 +9,38 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// The optional <see cref="IRemoteParty.DomainApplicationIdentity"/>.
+    /// The optional <see cref="IRemoteParty.DomainApplicationIdentity"/> when a remote defines a domain.
     /// </summary>
     sealed class DomainApplicationIdentity : ApplicationIdentityBase, IDomainApplicationIdentity
     {
-        readonly RemoteParty _remote;
+        readonly RemoteParty _host;
 
         internal DomainApplicationIdentity( RemoteParty remote )
             : base( remote.Configuration.DomainConfiguration!, remote )            
         {
             Debug.Assert( remote.ApplicationIdentity is ApplicationIdentityService, "The host is a root." );
-            _remote = remote;
+            _host = remote;
         }
 
         /// <summary>
         /// Gets the root application identity service.
         /// </summary>
-        public ApplicationIdentityService ApplicationIdentityService => _remote.ApplicationIdentity.ApplicationIdentityService;
+        public ApplicationIdentityService ApplicationIdentityService => _host.ApplicationIdentity.ApplicationIdentityService;
 
         /// <summary>
-        /// Gets the domain name that is the <see cref="Host"/> domain name.
+        /// Gets the domain name: it is the <see cref="Host"/> domain name.
         /// </summary>
-        public string DomainName => _remote.Name;
+        public string DomainName => _host.Name;
 
         /// <summary>
-        /// Gets the environment name that is the <see cref="Host"/> environment name.
+        /// Gets the environment name: it is the <see cref="Host"/> environment name.
         /// </summary>
-        public string EnvironmentName => _remote.EnvironmentName;
+        public string EnvironmentName => _host.EnvironmentName;
 
         /// <summary>
         /// Gets the remote party that hosts this domain.
         /// </summary>
-        public IRemoteParty Host => _remote;
+        public IRemoteParty Host => _host;
 
         /// <inheritdoc />
         public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
@@ -48,9 +48,9 @@ namespace CK.AppIdentity
             return AddDynamicRemotePartyAsync( monitor,
                                                configuration,
                                                false,
-                                               ((ApplicationIdentityService)_remote.ApplicationIdentity).Agent,
-                                               _remote.Name,
-                                               _remote.EnvironmentName );
+                                               ((ApplicationIdentityService)_host.ApplicationIdentity).Agent,
+                                               _host.Name,
+                                               _host.EnvironmentName );
         }
 
 
@@ -89,5 +89,8 @@ namespace CK.AppIdentity
             }
             return success;
         }
+
+        public override string ToString() => $"DomainApplicationIdentity of {_host.FullName.Path}";
+
     }
 }

@@ -1,12 +1,7 @@
 using CK.Core;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Contracts;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,7 +16,7 @@ namespace CK.AppIdentity
         object[] _features;
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
-        internal TaskCompletionSource _featureBuilderInitialization;
+        internal TaskCompletionSource _initialization;
 
         /// <summary>
         /// Initialized a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
@@ -33,7 +28,7 @@ namespace CK.AppIdentity
             _features = Array.Empty<object>();
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _agent = new AppIdentityAgent( this, serviceProvider );
-            _featureBuilderInitialization = new TaskCompletionSource();
+            _initialization = new TaskCompletionSource();
         }
 
         internal AppIdentityAgent Agent => _agent;
@@ -54,16 +49,15 @@ namespace CK.AppIdentity
         /// Use <see cref="Task.IsCompletedSuccessfully"/> to know if initialization has been successful.
         /// </para>
         /// </summary>
-        public Task FeatureBuildersInitialization => _featureBuilderInitialization.Task;
+        public Task InitializationTask => _initialization.Task;
 
         /// <inheritdoc />
         public IEnumerable<object> Features => _features;
 
         /// <inheritdoc />
-        public bool AddFeature( object feature )
+        public void AddFeature( object feature )
         {
-            var features = Util.InterlockedAddUnique( ref _features, feature );
-            return Array.IndexOf( features, feature ) >= 0;
+            Util.InterlockedAddUnique( ref _features, feature );
         }
 
         /// <inheritdoc />
@@ -99,5 +93,8 @@ namespace CK.AppIdentity
             _agent.SendStop();
             return new ValueTask( _agent.RunningTask );
         }
+
+        public override string ToString() => $"Application: {_local.FullName}";
+
     }
 }

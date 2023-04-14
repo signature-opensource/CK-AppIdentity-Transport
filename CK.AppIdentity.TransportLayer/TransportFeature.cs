@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Diagnostics;
 using System.Net;
+using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -15,7 +16,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly TransportManager _transportManager;
         readonly IRemoteParty _remote;
         readonly TransportListener? _listener;
-        readonly PerfectEventSender<TransportFeature> _isConnectedChanged;
+        readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
         // Channels are ordered like bestRegisteredProtocols.
         readonly List<ChannelFeature> _channels;
         // All available protocols with their versions.
@@ -26,7 +27,8 @@ namespace CK.AppIdentity.TransportLayer
         InitialMessage? _outgoingInitialMessage;
 
         TransportController? _controller;
-        bool _isConnected;
+        TaskCompletionSource _readyTask;
+        ConnectionAvailabitity _connectionAvailabitity;
 
         internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
         {
@@ -34,9 +36,10 @@ namespace CK.AppIdentity.TransportLayer
             _remote = remote;
             _listener = listener;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
-            _isConnectedChanged = new PerfectEventSender<TransportFeature>();
+            _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
             _registeredProtocols = new HashSet<MessageProtocol>();
             _bestRegisteredProtocols = new List<MessageProtocol>( MessageProtocolMap.MaxCount );
+            _readyTask = new TaskCompletionSource();
         }
 
         internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols )
@@ -66,14 +69,42 @@ namespace CK.AppIdentity.TransportLayer
                 protocolHandlers[i] = c.EnsureCurrentHandler( monitor, _controller, protocols.Protocols[i] );
             }
             // The protocols are available.
-            // We start receiving messages from this new transport: this sets the protocol map and handlers on the transport.
-            await _controller.StartReceiveAsync( monitor, protocols, protocolHandlers );
-            if( !_isConnected )
-            {
-                _isConnected = true;
-                await _isConnectedChanged.SafeRaiseAsync( monitor, this );
-            }
+            // We start receiving messages from this new transport (this sets the protocol map and handlers on the transport)
+            // and starts sending the messages in the controller queue.
+            await _controller.ActivateAsync( monitor, protocols, protocolHandlers );
+            // Always signals the ready task.
+            _readyTask.TrySetResult();
+            await UpdateConnectionAvailabitityAsync( monitor );
         }
+
+        Task UpdateConnectionAvailabitityAsync( IActivityMonitor monitor )
+        {
+            Debug.Assert( _readyTask.Task.IsCompleted );
+            // TODO: Consider _controller queue load.
+            var a = ConnectionAvailabitity.Connected;
+            if( _connectionAvailabitity != a )
+            {
+                _connectionAvailabitity = a;
+                return _connectionAvailabilityChanged.SafeRaiseAsync( monitor, this );
+            }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Gets the last received time (<see cref="DateTimeKind.Utc"/>).
+        /// </summary>
+        public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
+
+        /// <summary>
+        /// Gets the current connection availability.
+        /// </summary>
+        public ConnectionAvailabitity ConnectionAvailabitity => _connectionAvailabitity;
+
+        /// <summary>
+        /// Raised whenever this <see cref="ConnectionAvailabitity"/> changed.
+        /// </summary>
+        public PerfectEvent<TransportFeature> ConnectionAvailabitityChanged => _connectionAvailabilityChanged.PerfectEvent;
+
 
         /// <summary>
         /// Gets the registered protocols with their best respective version among the
@@ -187,25 +218,20 @@ namespace CK.AppIdentity.TransportLayer
             {
                 for( int i = 0; i < _channels.Count; ++i )
                 {
-                    _channels[i]._protocolNumber = i;
+                    _channels[i]._protocolNumber = i + 1;
                 }
             }
         }
 
         /// <summary>
-        /// Gets whether this transport is connected to the other party.
+        /// Gets a task that is completed when a connection has been established or re-established.
         /// </summary>
-        public bool IsConnected => _isConnected;
+        public Task ReadyTask => _readyTask.Task;
 
         /// <summary>
         /// Gets the party.
         /// </summary>
         public IRemoteParty Party => _remote;
-
-        /// <summary>
-        /// Raised whenever this <see cref="IsConnected"/> status changed.
-        /// </summary>
-        public PerfectEvent<TransportFeature> IsConnectedChanged => _isConnectedChanged.PerfectEvent;
 
         /// <summary>
         /// Gets the initial message to send when this is a caller.

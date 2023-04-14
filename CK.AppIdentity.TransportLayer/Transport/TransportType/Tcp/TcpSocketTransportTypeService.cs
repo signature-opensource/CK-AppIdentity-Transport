@@ -40,7 +40,7 @@ namespace CK.AppIdentity.TransportLayer
                 if( endPoint.Port == 0 ) endPoint.Port = DefaultPort;
                 return new TransportTypeAddress( this, endPoint );
             }
-            monitor.Error( $"Invalid '{string.Join( ':', configurationPath, configurationKey )}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
+            monitor.Error( $"Invalid '{string.Join( ':', configurationPath, configurationKey )}' = '{typed}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
             return null;
         }
 
@@ -57,7 +57,7 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 socket.Dispose();
-                logger.Error( $"Trying to connect a TCP socket to '{ipEndPoint}'.", ex );
+                logger.Error( $"Unable to connect a TCP socket to '{ipEndPoint}'.", ex );
                 return null;
             }
         }

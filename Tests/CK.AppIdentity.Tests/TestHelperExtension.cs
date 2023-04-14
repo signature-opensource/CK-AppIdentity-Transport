@@ -46,7 +46,7 @@ namespace CK.AppIdentity.Tests
             // This is done by host. We wait for the FeatureBuildersInitialization task.
             _ = ((IHostedService)s).StartAsync( default );
 
-            await s.FeatureBuildersInitialization;
+            await s.InitializationTask;
             return s;
         }
     }

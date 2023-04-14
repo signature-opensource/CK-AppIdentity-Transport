@@ -161,7 +161,12 @@ namespace CK.AppIdentity.TransportLayer
                 return true;
             }
             available.TryAdd( _tcp, _tcp.DefaultListeningAddress );
-            Debug.Assert( available.Count >= 2 );
+            if( available.Count == 1 )
+            {
+                listen = available.Values.First();
+                return true;
+            }
+            // More than one type of Transport: "UseTransport" decides or we use the 'tcp' if "UseTransport" is missing.
             var useTransportSection = r.Configuration.Configuration.TryLookupSection( "UseTransport" );
             var useTransport = useTransportSection?.Value;
             if( useTransport == null )

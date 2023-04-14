@@ -28,7 +28,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public sealed class Head
         {
-            public BackTask? First;
+            public BackTask? FreeHead;
 #if DEBUG
             public readonly Type Type;
             Head( Type tTask ) => Type = tTask;
@@ -46,6 +46,7 @@ namespace CK.AppIdentity.TransportLayer
             readonly TransportManager _transportManager;
             readonly PriorityQueue<BackTask, int> _queue;
             int _tick;
+            int _totalCount;
 
             public List( TransportManager transportManager )
             {
@@ -53,7 +54,8 @@ namespace CK.AppIdentity.TransportLayer
                 _queue = new PriorityQueue<BackTask, int>();
             }
 
-            public int Count => _queue.Count;
+            public int AliveCount => _queue.Count;
+            public int TotalCount => _totalCount;
 
             public void Destroy( IActivityMonitor monitor )
             {
@@ -63,11 +65,15 @@ namespace CK.AppIdentity.TransportLayer
                 }
             }
 
-            public void OnHeartBeat( IActivityMonitor monitor )
+            public (int,int) OnHeartBeat( IActivityMonitor monitor )
             {
+                Debug.Assert( _queue.Count > 0 );
+                int handled = 0;
+                int done = 0;
                 var t = _queue.Peek();
                 while( t._checkTick <= _tick )
                 {
+                    ++handled;
                     t.Check( monitor, _transportManager );
                     if( t._checkTick > _tick )
                     {
@@ -75,12 +81,17 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     else
                     {
+                        ++done;
                         t.Reset();
-                        t._nextFree = t._head.First;
-                        t._head.First = t;
+                        t._nextFree = t._head.FreeHead;
+                        t._head.FreeHead = t;
                     }
+                    _queue.Dequeue();
+                    if( _queue.Count == 0 ) break;
+                    t = _queue.Peek();
                 }
                 ++_tick;
+                return (handled, done);
             }
 
             /// <summary>
@@ -90,15 +101,13 @@ namespace CK.AppIdentity.TransportLayer
             /// <param name="head">The back task head for <typeparamref name="T"/>.</param>
             /// <param name="configure">The configuration action.</param>
             /// <param name="ticks">Must be positive.</param>
-            public void Add<T>( Head head, Action<T> configure, int ticks ) where T : BackTask, new()
+            public void Initialize<T>( Head head, Action<T> configure, int ticks ) where T : BackTask, new()
             {
                 Debug.Assert( ticks > 0 );
-                T t;
-                if( head.First != null )
+                var t = (T?)head.FreeHead;
+                if( t != null )
                 {
-                    t = (T)head.First;
-                    Debug.Assert( t._head == head );
-                    head.First = t._nextFree;
+                    head.FreeHead = t._nextFree;
                 }
                 else
                 {
@@ -106,8 +115,10 @@ namespace CK.AppIdentity.TransportLayer
                     Throw.CheckArgument( head.Type == typeof(T) );
 #endif
                     t = new() { _head = head };
+                    ++_totalCount;
                 }
-                t._checkTick = _tick + 1;
+                Debug.Assert( t._head == head );
+                t._checkTick = _tick + ticks;
                 configure( t );
                 _queue.Enqueue( t, t._checkTick );
             }

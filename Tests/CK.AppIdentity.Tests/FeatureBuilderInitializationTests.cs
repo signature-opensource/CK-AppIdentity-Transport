@@ -187,7 +187,7 @@ namespace CK.AppIdentity.Tests
             var s = services.GetRequiredService<ApplicationIdentityService>();
 
             _ = ((IHostedService)s).StartAsync( default );
-            await s.FeatureBuildersInitialization;
+            await s.InitializationTask;
 
             var f1 = services.GetRequiredService<F1FeatureDriver>();
             var f2_1 = services.GetRequiredService<F2_1FeatureDriver>();

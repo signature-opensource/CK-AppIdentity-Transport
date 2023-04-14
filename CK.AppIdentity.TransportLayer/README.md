@@ -20,7 +20,7 @@ one of the `ListeningAddress` defined above.
 
 A `ListeningAddress` property at one level can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. This is valid
-`"ListeningAddress": [ "tcp:localhost:37120", "pipe:TheNamedPipe" ]`.
+`"ListeningAddress": [ "tcp:127.0.0.1:37120", "pipe:TheNamedPipe" ]`.
 
 ## TransportMessage
 A [`TransportMessage`](Message/TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.
@@ -67,7 +67,32 @@ They never cross a frontier, they can only be used locally on a party:
 
 Internally, 2 other special "0 Protocol" messages exist: `TransportMessage.Empty` and `TransportMessage.EmptyAck`.
 They are valid messages that are exchanged to implement the KeepAlive functionality.
-Their length on the wire is 2 bytes and they are the shortest message that exist. Regular protocols
+Their length on the wire is 2 bytes and they are the shortest messages that exist. Regular protocols
 (other than the "0 Protocol") are not allowed to send empty messages.
 
+## Connected or not connected?
+Even if CK.AppIdentity is designed to work with connected remotes, the availability of a connection between two parties is
+highly instable. One major goal of this library is to be easy to use and instability brings a lot of complexities.
+To minimize the impact, numerous design choices have been made but the most important one is that sent messages are
+internally queued and that temporary disconnection are transparently handled.
 
+The [`TransportFeature`](TransportFeature.cs) exposes a `Task ReadyTask { get; }` that is completed when a first connection has been successfully
+established with the remote. This task can be awaited (or its [`Task.IsCompleted`](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.iscompleted)
+status can be checked) before sending any data to the remote.
+If the connection is lost, queued data are transmitted as soon as a new connection is available.
+Obviously, pending messages cannot be collected _ad infitum_. The transport feature exposes a simplified "level of pressure"
+with the ConnectionAvailabitity enumeration. This should be used before sending any data to a remote.
+
+| Value | Name       | Description  |
+|-------|------------|--------------|
+|0      | None       | No connection at all. This is the initial state but may be restored (along with a new pending `ReadyTask`) when a long disconnection occurs.  |
+|1      | DangerZone | The remote has been disconnected for some time or the message queue reached a high threshold. |
+|2      | Low        | The remote has been disconnected for some time or the message queue reached a moderately high threshold.  |
+|3      | Connected  | The remote is connected.  |
+
+```
+   0      15%   25%   35%        50%     65%   75%              100%
+   +-------+-----+-----+----------+-------+-----+----------------+     
+>> Connected           Low                      DangerZone
+<< Connected     Low                      DangerZone
+```

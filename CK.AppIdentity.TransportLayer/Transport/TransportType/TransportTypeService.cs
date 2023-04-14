@@ -8,6 +8,7 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// Base class for <see cref="ITransportTypeService"/> implementations.
     /// </summary>
+    [CKTypeDefiner]
     public abstract class TransportTypeService : ITransportTypeService
     {
         readonly List<TransportListener> _listeners;

@@ -13,7 +13,6 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class IncomingConnectionBackTask : BackTask
     {
-        TransportManager? _transportManager;
         Transport? _incoming;
         Task? _result;
 
@@ -28,35 +27,33 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _incoming != null && _result != null );
             if( !_result.IsCompleted  )
             {
-                monitor.Warn( $"Incoming connection handling for '{_incoming.RemoteEndPointDescription}' timed out. Destroying the transport." );
+                monitor.Warn( $"Incoming connection timeout for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
+                transportManager.CondemnTransport( _incoming );
             }
-            transportManager.CondemnTransport( _incoming );
         }
 
         public override void Reset()
         {
-            _transportManager = null;
             _incoming = null;
             _result = null;
         }
 
         public void Setup( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( transportManager != null && incoming.Listener != null );
-            _transportManager = transportManager;
+            Debug.Assert( incoming.Listener != null );
             _incoming = incoming;
-            _result = Task.Run( RunAsync );
+            _result = Task.Run( () => RunAsync( transportManager, incoming ) );
         }
 
-        async Task RunAsync()
+        static async Task RunAsync( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( _transportManager != null && _incoming != null && _incoming.Listener != null );
+            Debug.Assert( incoming?.Listener != null );
 
-            InitialMessage? initialMessage = await HandleInitialMessageAsync();
+            InitialMessage? initialMessage = await HandleInitialMessageAsync( transportManager, incoming );
             if( initialMessage == null ) return;
 
             // Accessing the Parties is thread safe.
-            TransportFeature? remote = _incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.FullName );
+            TransportFeature? remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.IncomingFullName );
             // If the remote is not known, signals this InitialMessage to the TransportManager:
             // The incoming Remote may be accepted later but for now, we reject the connection.
             if( remote == null )
@@ -67,9 +64,12 @@ namespace CK.AppIdentity.TransportLayer
                 // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party if it is configured.
                 // TODO:
                 string? userAcceptUri = null; // _transportManager.ApplicationIdentityAgent.GetAcceptUriFor( initialMessage.FullName );
-                await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( _incoming, userAcceptUri );
-                // Tell the Transport manager about this potential new IUnknownRemote party.
-                _transportManager.UnknownIncomingRemote( initialMessage );
+                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri ) )
+                {
+                    // if the transport has not been condemned, tell the Transport manager about
+                    // this potential new IUnknownRemote party.
+                    transportManager.UnknownIncomingRemote( initialMessage );
+                }
                 return;
             }
             // We know the remote full name. We first verify the signature.
@@ -93,10 +93,11 @@ namespace CK.AppIdentity.TransportLayer
                 var texts = missingGroups.Select( g => $"'{g.Key}': '{g.Select( p => p.FullName ).Concatenate( "', '" )}')" )
                                          .Concatenate( Environment.NewLine );
 
-                _transportManager.Logger.Error( $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' "
-                                              + $"misses support for '{missingGroups.Count()}' protocols:{Environment.NewLine}{texts}." );
+                transportManager.Logger.Error( $"Remote '{initialMessage.IncomingFullName}' at '{incoming.RemoteEndPointDescription}' "
+                                              + $"misses support for {missingGroups.Count()} protocols:{Environment.NewLine}{texts}." );
 
-                await ZeroProtocol.SendMissingProtocolsMessageAsync( _incoming, missing );
+                // If this message cannot be sent, we don't care.
+                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, missing );
                 return;
             }
             // We could check here that we cannot honor protocols of the other party but we let him decide:
@@ -107,62 +108,66 @@ namespace CK.AppIdentity.TransportLayer
             // or be part of a CompositeTransport, the connection manager and the TransprtFeateure are in
             // charge of these choices.
             // We send the accept message: it this fails, it's useless to put the connection manager at work.
-            await ZeroProtocol.SendAcceptedMessageAsync( remote, _incoming, protocolMap );
-            // Wait for the final message.
-            // It must be a single "1" byte.
-            using var finalMessage = await _incoming.ReadNextAsync( maxMessageLength: 1 );
-            if( !finalMessage.IsValid || finalMessage.Protocol != MessageProtocol.ZeroProtocol || finalMessage.Message.FirstSpan[0] != 1 )
+            if( await ZeroProtocol.SendAcceptedMessageAsync( remote, incoming, protocolMap ) )
             {
-                _transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{_incoming.RemoteEndPointDescription}' didn't confirm." );
-                return;
+                // Wait for the final message.
+                // It must be a single "1" byte.
+                using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 1 );
+                if( finalMessage.IsValid && finalMessage.Protocol == MessageProtocol.ZeroProtocol && finalMessage.Message.FirstSpan[0] == 1 )
+                {
+                    // By providing the party here instead of the transport feature, we'll check
+                    // that the RemoteParty is not destroyed and the existence of the TransportFeature.
+                    transportManager.NewValidTransport( remote.Party, incoming, protocolMap );
+                }
+                else
+                {
+                    transportManager.Logger.Warn( $"Remote '{initialMessage.IncomingFullName}' at '{incoming.RemoteEndPointDescription}' didn't confirm." );
+                }
             }
-            // By providing the party here instead of the transport feature, we'll check
-            // that the RemoteParty is not destroyed and the existence of the TransportFeature.
-            _transportManager.NewValidTransport( remote.Party, _incoming, protocolMap );
         }
 
-        async Task<InitialMessage?> HandleInitialMessageAsync()
+        static async Task<InitialMessage?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( _transportManager != null && _incoming != null && _incoming.Listener != null );
+            Debug.Assert( incoming?.Listener != null );
             InitialMessage? initialMessage;
 
-            TransportMessage? incoming = null;
+            TransportMessage? message = null;
             try
             {
                 bool downgradedVersion = false;
                 retry:
-                incoming = await _incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength );
-                if( !incoming.IsValid || incoming == TransportMessage.Empty )
+                message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength );
+                if( !message.IsValid || message == TransportMessage.Empty || message == TransportMessage.EmptyAck )
                 {
-                    _transportManager.Logger.Warn( $"Empty or too long initial message received from '{_incoming.RemoteEndPointDescription}'." );
+                    transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
-                bool success = InitialMessage.TryParse( _incoming.Listener.EndPointDescription, incoming, out initialMessage, out var otherVersion );
+                bool success = InitialMessage.TryParse( incoming.Listener.EndPointDescription, message, out initialMessage, out var otherVersion );
                 if( !success )
                 {
                     if( otherVersion == -1 )
                     {
                         // Nothing to do: this is not a remote!
-                        _transportManager.Logger.Warn( $"Initial message received from '{_incoming.RemoteEndPointDescription}' miss the 'CK-AppId' prefix." );
+                        transportManager.Logger.Warn( $"Initial message received from '{incoming.RemoteEndPointDescription}' miss the 'CK-AppId' prefix." );
                         return null;
                     }
                     // The remote's version of the InitialMessage is greater than ours.
                     if( !downgradedVersion )
                     {
-                        _transportManager.Logger.Warn( $"Replying DowngradeProtocolReplyMessage to '{_incoming.RemoteEndPointDescription}' (remote version is '{otherVersion}', our is '{ZeroProtocol.CurrentVersion}')." );
-                        await ZeroProtocol.SendDowngradeProtocolReplyAsync( _incoming );
+                        transportManager.Logger.Warn( $"Replying DowngradeProtocolReplyMessage to '{incoming.RemoteEndPointDescription}' (remote version is '{otherVersion}', our is '{ZeroProtocol.CurrentVersion}')." );
+                        await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming );
                         // If the other can downgrade, it's cool. But do this only once.
                         downgradedVersion = true;
                         goto retry;
                     }
-                    _transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{_incoming.RemoteEndPointDescription}'." );
+                    transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{incoming.RemoteEndPointDescription}'." );
                     return null;
                 }
             }
             finally
             {
-                incoming?.Dispose();
+                message?.Dispose();
             }
             return initialMessage;
         }

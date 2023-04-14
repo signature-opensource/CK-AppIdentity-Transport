@@ -1,6 +1,5 @@
 using CK.Core;
 using System.Diagnostics;
-using System.Threading.Channels;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -20,7 +19,8 @@ namespace CK.AppIdentity.TransportLayer
         /// have been negotiated and the channels have setup a dedicated receiver for every protocols.
         /// </para>
         /// <para>
-        /// The receiving loop ends as soon as the <see cref="Lifetime"/> is signaled.
+        /// The receiving loop ends as soon as the <see cref="Lifetime"/> is signaled or if a read error occurs
+        /// that triggers the condemnation of this transport: this loop is run once and only once.
         /// </para>
         /// </summary>
         /// <param name="receiveMonitor">The existing and available feature's receive monitor or null if a new one must be created.</param>

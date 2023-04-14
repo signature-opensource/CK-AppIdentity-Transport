@@ -5,6 +5,10 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
+    /// <summary>
+    /// Generalizes the root <see cref="ApplicationIdentityService"/> and <see cref="IDomainApplicationIdentity"/>
+    /// when a remote define a domain (see <see cref="IRemoteParty.DomainApplicationIdentity"/>).
+    /// </summary>
     public interface IApplicationIdentity
     {
         /// <summary>

@@ -53,7 +53,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the <see cref="TransportFeature"/>.
         /// </summary>
-        protected TransportFeature Transport => _transportFeature;
+        public TransportFeature Transport => _transportFeature;
 
         /// <summary>
         /// Gets the current handler.

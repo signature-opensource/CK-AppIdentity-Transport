@@ -240,7 +240,7 @@ namespace CK.AppIdentity
                             await OnStopAsync( _monitor );
                             if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
                         }
-                        if( o is IJob job )
+                        else if( o is IJob job )
                         {
                             await job.ExecuteAsync( _monitor );
                         }

@@ -119,6 +119,11 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public CancellationToken Lifetime => _cts.Token;
 
+        /// <summary>
+        /// Gets the last received time.
+        /// </summary>
+        public DateTime LastReceived => _receiveFactory.LastReceived;
+
         internal void SetCondemned( IActivityMonitor monitor )
         {
             if( !_cts.IsCancellationRequested )

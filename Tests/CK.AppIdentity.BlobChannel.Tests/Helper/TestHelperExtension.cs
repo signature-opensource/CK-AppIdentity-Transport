@@ -1,3 +1,4 @@
+using CK.AppIdentity.TransportLayer;
 using CK.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,7 +7,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
-namespace CK.AppIdentity.TransportLayer.Tests
+namespace CK.AppIdentity.BlobChannel.Tests
 {
     static class TestHelperExtension
     {
@@ -41,7 +42,16 @@ namespace CK.AppIdentity.TransportLayer.Tests
             serviceBuilder.AddSingleton( c );
             serviceBuilder.AddSingleton<ApplicationIdentityService>();
             serviceBuilder.AddSingleton<MessageProtocolDirectoryService>();
+
             serviceBuilder.AddSingleton<TransportFeatureDriver>();
+            serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
+
+            serviceBuilder.AddSingleton<BlobChannelFeatureDriver>();
+            serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
+
+            serviceBuilder.AddSingleton<TcpSocketTransportTypeService>();
+            serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<TcpSocketTransportTypeService>() );
+
             configureServices?.Invoke( serviceBuilder );
             var services = serviceBuilder.BuildServiceProvider();
 

@@ -38,10 +38,10 @@ namespace CK.AppIdentity
             // We now use the builders that have been registered in the service: they
             // are necessarily topologically ordered by their dependencies so the calls
             // to InitializeAsync follows the ordering.
-            int count = _serviceProvider.GetServices<ApplicationIdentityFeatureDriver>().Count();
+            int count = _serviceProvider.GetServices<IApplicationIdentityFeatureDriver>().Count();
             if( count != _service._builders.Count )
             {
-                var missing = _serviceProvider.GetServices<ApplicationIdentityFeatureDriver>().Except( _service._builders ).Select( b => b.GetType() );
+                var missing = _serviceProvider.GetServices<IApplicationIdentityFeatureDriver>().Except( _service._builders ).Select( b => b.GetType() );
                 monitor.Error( $"Found {count} AppIdentityFeatureBuilder but only {_service._builders.Count} have registered themselves." +
                                $" Missing registration for: {missing.Select( t => t.ToCSharpName() ).Concatenate()}." );
                 return false;
@@ -51,14 +51,14 @@ namespace CK.AppIdentity
 
         protected override async ValueTask OnStartAsync( IActivityMonitor monitor )
         {
-            using( monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing {_service._builders.Count} AppIdentityFeatureBuilder." ) )
+            using( monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing '{_service._builders.Select( f => f.FeatureName ).Concatenate("', '")}' features." ) )
             {
                 var initContext = new FeatureLifetimeContext( monitor, this, _service._builders );
                 var result = await initContext.ExecuteSetupAsync();
-                if( result == null ) _service._featureBuilderInitialization.SetResult();
+                if( result == null ) _service._initialization.SetResult();
                 else
                 {
-                    _service._featureBuilderInitialization.SetException( result );
+                    _service._initialization.SetException( result );
                     monitor.CloseGroup( "Failed." );
                 }
             }

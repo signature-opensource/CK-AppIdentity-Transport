@@ -1,9 +1,5 @@
 using CK.Core;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
@@ -13,7 +9,7 @@ namespace CK.AppIdentity
     /// any other singleton services, including other <see cref="ApplicationIdentityFeatureDriver"/>. 
     /// </summary>
     [CKTypeDefiner]
-    public abstract class ApplicationIdentityFeatureDriver : ISingletonAutoService
+    public abstract class ApplicationIdentityFeatureDriver : IApplicationIdentityFeatureDriver
     {
         readonly ApplicationIdentityService _s;
         readonly string _featureName;

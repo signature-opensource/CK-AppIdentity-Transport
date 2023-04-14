@@ -16,8 +16,6 @@ namespace CK.AppIdentity
         /// Atomically (thread safe) adds a feature if it doesn't already exist.
         /// </summary>
         /// <param name="feature">The feature to add.</param>
-        /// <returns>True if the feature has been added, false if the feature already exists.</returns>
-        bool AddFeature( object feature );
-
+        void AddFeature( object feature );
     }
 }

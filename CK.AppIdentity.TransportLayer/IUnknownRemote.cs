@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the remote party full name.
         /// </summary>
-        string FullName { get; }
+        string IncomingFullName { get; }
 
         /// <summary>
         /// Gets the description of the endpoint that received this new remote.
