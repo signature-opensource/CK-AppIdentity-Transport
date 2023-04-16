@@ -76,19 +76,22 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( (listen == null) != (target == null) );
                 // If we are listening and cannot setup a listener on the local address, it's an error.
                 TransportListener? listener = null;
+                bool disallowEviction = false;
                 if( listen != null )
                 {
                     if( (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
                     {
                         return false;
                     }
+                    var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
+                    disallowEviction = a != null && a.Equals( "True", StringComparison.OrdinalIgnoreCase );
                 }
                 // No direct initialization error: add the TransportFeature to the party.
                 // The initialization is not finished: if the party is listening it must be registered in its
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportFeature( _transportManager, r, listener );
+                var t = new TransportFeature( _transportManager, r, listener, disallowEviction );
                 r.AddFeature( t );
                 if( listener != null )
                 {

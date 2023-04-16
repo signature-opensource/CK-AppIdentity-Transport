@@ -14,10 +14,6 @@ namespace CK.AppIdentity.TransportLayer
     /// <para>
     /// It is instantiated by a <see cref="TransportListener"/> or by <see cref="TransportTypeService.TryConnectAsync(IActivityLogger, TransportTypeAddress, CancellationToken)"/>.
     /// </para>
-    /// <para>
-    /// Concrete implementations can be <see cref="IAsyncDisposable"/> or <see cref="IDisposable"/>:
-    /// the connection manager will prefer <see cref="IAsyncDisposable"/> and will call the latter otherwise.
-    /// </para>
     /// </summary>
     public abstract partial class Transport
     {
@@ -33,9 +29,7 @@ namespace CK.AppIdentity.TransportLayer
         // as soon as the Transport has been created.
         [AllowNull]
         CancellationTokenSource _cts;
-        // When this transport has been accepted, we give it the possibility to inject
-        // a null marker message in the queue to signal its condemnation. to the current send loop.
-        // This is the only (good) reason why we need the queue here.
+        // Set when this transport has been accepted.
         TransportController? _controller;
 
         /// <summary>
@@ -257,7 +251,18 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal void DisposeMessageReceiveFactory() => _receiveFactory.Dispose();
+        internal ValueTask DestroyAsync( IActivityMonitor monitor )
+        {
+            _receiveFactory.Dispose();
+            return DisposeAsync( monitor );
+        }
+
+        /// <summary>
+        /// Must close any communication handle.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <returns>The awaitable.</returns>
+        protected abstract ValueTask DisposeAsync( IActivityMonitor monitor );
 
         /// <summary>
         /// Overridden to return the type name and the <see cref="RemoteEndPointDescription"/>.

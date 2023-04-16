@@ -19,7 +19,7 @@ namespace CK.AppIdentity
         readonly IServiceProvider _serviceProvider;
 
         internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider )
-            : base( "ApplicationIdentityService Agent." )
+            : base( $"ApplicationIdentityService Agent for '{service}'." )
         {
             _service = service;
             _serviceProvider = serviceProvider;
@@ -28,7 +28,12 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the service provider of the running application.
         /// </summary>
-        public IServiceProvider serviceProvider => _serviceProvider;
+        public IServiceProvider ServiceProvider => _serviceProvider;
+
+        /// <summary>
+        /// Gets the <see cref="ApplicationIdentityService"/>.
+        /// </summary>
+        public ApplicationIdentityService ApplicationIdentityService => _service;
 
         internal void Start() => Throw.CheckState( TryStart() == RunningStatus.Running );
 
@@ -51,14 +56,14 @@ namespace CK.AppIdentity
 
         protected override async ValueTask OnStartAsync( IActivityMonitor monitor )
         {
-            using( monitor.OpenInfo( $"Starting ApplicationIdentityService: initializing '{_service._builders.Select( f => f.FeatureName ).Concatenate("', '")}' features." ) )
+            using( monitor.OpenInfo( $"Starting {ToString()}: initializing '{_service._builders.Select( f => f.FeatureName ).Concatenate("', '")}' features." ) )
             {
                 var initContext = new FeatureLifetimeContext( monitor, this, _service._builders );
-                var result = await initContext.ExecuteSetupAsync();
-                if( result == null ) _service._initialization.SetResult();
+                Exception? error = await initContext.ExecuteSetupAsync();
+                if( error == null ) _service._initialization.SetResult();
                 else
                 {
-                    _service._initialization.SetException( result );
+                    _service._initialization.SetException( error );
                     monitor.CloseGroup( "Failed." );
                 }
             }

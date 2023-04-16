@@ -30,7 +30,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly PerfectEventSender<InitialMessage> _waitingListChanged;
 
         internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
-            : base( "CK.AppIdentity.PocoChannel.ConnectionManager" )
+            : base( $"TransportManager for '{agent.ApplicationIdentityService}'." )
         {
             _agent = agent;
             _protocolDirectory = protocolDirectory;
@@ -135,7 +135,7 @@ namespace CK.AppIdentity.TransportLayer
                     return default;
                 case Transport t:
                     Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
-                    monitor.Trace( $"Handling new transport from listener '{t.Listener.EndPointDescription}' for '{t.RemoteEndPointDescription}'." );
+                    monitor.Trace( $"Received connection '{t.RemoteEndPointDescription}' from listener '{t.Listener.EndPointDescription}'." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
                 case InitialMessage m:
@@ -158,7 +158,7 @@ namespace CK.AppIdentity.TransportLayer
                 await SafeDestroyTransportAsync( monitor, t );
                 // If the transport is an outgoing connection and has been activated, launch the
                 // reconnection back task.
-                if( t.TargetAddress != null && t.Controller != null )
+                if( t.TargetAddress != null && t.Controller != null && !t.Controller.Feature.Party.IsDestroyed )
                 {
                     var f = t.Controller.Feature;
                     if( !f.Party.IsDestroyed )
@@ -170,23 +170,15 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        static async Task SafeDestroyTransportAsync( IActivityMonitor monitor, Transport t )
+        static async ValueTask SafeDestroyTransportAsync( IActivityMonitor monitor, Transport t )
         {
             try
             {
-                if( t is IAsyncDisposable a )
-                {
-                    await a.DisposeAsync().ConfigureAwait( false );
-                }
-                else if( t is IDisposable d )
-                {
-                    d.Dispose();
-                }
-                ((Transport)t).DisposeMessageReceiveFactory();
+                await t.DestroyAsync( monitor );
             }
             catch( Exception ex )
             {
-                monitor.Error( "While destroying transport.", ex );
+                monitor.Error( $"While destroying transport '{t.GetType():C} - {t.RemoteEndPointDescription}'.", ex );
             }
         }
 
@@ -198,23 +190,27 @@ namespace CK.AppIdentity.TransportLayer
 
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
-            IRemoteParty remote = remoteTransport.Remote;
-            var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
-            if( feature != null )
+            using( monitor.OpenInfo( $"New transport '{remoteTransport.Transport}' for '{remoteTransport.Remote.FullName}'." ) )
             {
-                await feature.OnTransportAppearAsync( monitor, remoteTransport.Transport, remoteTransport.Protocols );
-            }
-            else
-            {
-                if( remote.IsDestroyed )
+                IRemoteParty remote = remoteTransport.Remote;
+                var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
+                if( feature != null )
                 {
-                    monitor.Info( $"Remote '{remote.FullName}' has been destroyed. Destroying the new transport." );
+                    await feature.OnTransportAppearAsync( monitor, remoteTransport.Transport, remoteTransport.Protocols );
                 }
                 else
                 {
-                    monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
+                    remoteTransport.Transport.SetCondemned( monitor );
+                    if( remote.IsDestroyed )
+                    {
+                        monitor.Info( $"Remote '{remote.FullName}' has been destroyed. Destroying the new transport." );
+                    }
+                    else
+                    {
+                        monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
+                    }
+                    await SafeDestroyTransportAsync( monitor, remoteTransport.Transport );
                 }
-                await SafeDestroyTransportAsync( monitor, remoteTransport.Transport );
             }
         }
 

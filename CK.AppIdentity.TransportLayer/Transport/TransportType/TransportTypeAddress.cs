@@ -5,6 +5,9 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     /// <param name="Type">The transport type.</param>
     /// <param name="TypedAddress">Specific address type.</param>
-    public sealed record class TransportTypeAddress( TransportTypeService Type, object TypedAddress );
+    public sealed record class TransportTypeAddress( TransportTypeService Type, object TypedAddress )
+    {
+        public override string ToString() => $"{Type.GetType().Name} - {TypedAddress}";
+    }
 
 }

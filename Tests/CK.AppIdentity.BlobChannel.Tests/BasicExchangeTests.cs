@@ -1,3 +1,4 @@
+using CK.Core;
 using CK.Monitoring;
 using FluentAssertions;
 using NUnit.Framework;
@@ -35,6 +36,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var b1 = app1.Remotes.FindRequired( "App2" ).GetRequiredFeature<BlobChannelFeature>();
             b1.Received.Sync += ( monitor, sender, bytes ) =>
             {
+                monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
                 sender.Should().BeSameAs( b1 );
                 r1.Add( bytes );
             };
@@ -43,6 +45,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var b2 = app2.Remotes.FindRequired( "App1" ).GetRequiredFeature<BlobChannelFeature>();
             b2.Received.Sync += ( monitor, sender, bytes ) =>
             {
+                monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
                 sender.Should().BeSameAs( b2 );
                 r2.Add( bytes );
             };

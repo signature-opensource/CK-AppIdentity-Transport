@@ -1,3 +1,4 @@
+using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {
-    sealed class TcpSocketTransport : Transport, IDisposable
+    sealed class TcpSocketTransport : Transport
     {
         readonly Socket _socket;
 
@@ -23,9 +24,10 @@ namespace CK.AppIdentity.TransportLayer
             _socket = socket;
         }
 
-        public void Dispose()
+        protected override ValueTask DisposeAsync( IActivityMonitor monitor )
         {
             _socket.Dispose();
+            return default;
         }
 
         protected override ValueTask<int> ReceiveAsync( Memory<byte> buffer, CancellationToken cancellationToken = default )

@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
 
@@ -100,15 +101,23 @@ namespace CK.AppIdentity.TransportLayer
                 await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, missing );
                 return;
             }
+            //// This Transport is now valid (up to us). However, our remote may not accept "eviction".
+            //if( remote.DisallowEviction )
+            //{
+            //    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming );
+            //    return;
+            //}
+            //if( remote.ConnectionAvailabitity != ConnectionAvailabitity.None )
+            //{
+            //    remote.
+            //}
+
             // We could check here that we cannot honor protocols of the other party but we let him decide:
             // we send the AcceptedMessage with the best protocols and it's on him. 
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
-            // This Transport is now valid (up to us). The connection manager has no reason to reject it:
-            // either this Transport will be the first one of the Remote or replace the current one
-            // or be part of a CompositeTransport, the connection manager and the TransprtFeateure are in
-            // charge of these choices.
-            // We send the accept message: it this fails, it's useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedMessageAsync( remote, incoming, protocolMap ) )
+            // We now have no reason to reject it: we send the accept message: it this fails, it's
+            // useless to put the connection manager at work.
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( remote, incoming, protocolMap ) )
             {
                 // Wait for the final message.
                 // It must be a single "1" byte.

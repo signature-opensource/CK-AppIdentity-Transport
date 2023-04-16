@@ -284,7 +284,6 @@ namespace CK.AppIdentity
             if( value == null && defaultValue != null )
             {
                 if( !ValidateName( monitor, $"default value for '{propertyName}'", ref defaultValue, true, isDomainName ) ) return false;
-                monitor.Info( $"Undefined configuration property '{configuration.Path}:{propertyName}'. Using default value '{defaultValue}'." );
                 value = defaultValue;
             }
             Debug.Assert( value != null );

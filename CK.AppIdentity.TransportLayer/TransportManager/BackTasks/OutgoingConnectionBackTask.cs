@@ -121,7 +121,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( remote != null && target != null && remote != null );
             _cts = new CancellationTokenSource();
-            _result = target.Type.TryConnectToAsync( transportManager, remote, target, _cts );
+            _result = TryConnectToAsync( transportManager, remote, target, _cts );
             _remote = remote;
             _target = target;
             _setupTick = CurrentTick;
@@ -135,5 +135,113 @@ namespace CK.AppIdentity.TransportLayer
             _tryCount = 0;
             _cts = null;
         }
+
+        async Task<Transport?> TryConnectToAsync( TransportManager transportManager,
+                                                  TransportFeature remote,
+                                                  TransportTypeAddress typedAddress,
+                                                  CancellationTokenSource cancellation )
+        {
+            Debug.Assert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
+            var transport = await typedAddress.Type.TryConnectAsync( transportManager.Logger, typedAddress, cancellation.Token );
+            if( transport != null )
+            {
+                transport.SetCancellationSource( cancellation );
+                bool disposeTransport = true;
+                try
+                {
+                    // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
+                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, ZeroProtocol.CurrentVersion ) )
+                    {
+                        // If we are canceled, let the finally destroy the new transport.
+                        return null;
+                    }
+                    bool retriedDowngrade = false;
+                    retry:
+                    var firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
+                    if( !firstAnswer.IsValid || firstAnswer == TransportMessage.Empty )
+                    {
+                        transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );
+                        return null;
+                    }
+                    var head = firstAnswer.Message.First;
+                    Debug.Assert( head.Length > 0, "The message is not empty (handled above)." );
+                    switch( head.Span[0] )
+                    {
+                        case ZeroProtocol.DiscrimnatorUnknownRemote: 
+                            {
+
+                                string? userAcceptUri = ZeroProtocol.ReadUnknownRemoteReplyMessageAsync( firstAnswer );
+                                transportManager.Logger.Warn( $"The remote '{remote.Party.FullName}' doesn't know us. UserAcceptUri='{userAcceptUri}'." );
+                                if( userAcceptUri != null )
+                                {
+                                    // TODO:
+                                    // transportManager.InformUserAcceptUri( remote, userAcceptUri );
+                                }
+                                return null;
+                            }
+                        case ZeroProtocol.DiscriminatorDowngradeProtocol: 
+                            {
+                                int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
+                                if( !retriedDowngrade )
+                                {
+                                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, otherVersion ) )
+                                    {
+                                        if( !cancellation.IsCancellationRequested )
+                                        {
+                                            transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' expects the ZeroProtocol version '{otherVersion}'. Local '{ZeroProtocol.CurrentVersion}' cannot handle it." );
+                                        }
+                                        // Canceled or bad version: let the finally condemn the new transport.
+                                        return null;
+                                    }
+                                    retriedDowngrade = true;
+                                    goto retry;
+                                }
+                                transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' sent 2 downgrade protocol request." );
+                                return null;
+                            }
+                        case ZeroProtocol.DiscriminatorAcceptedProtocolsMessage: 
+                            {
+                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                if( !protocolMap.IsValid )
+                                {
+                                    await ZeroProtocol.SendFinalMessageAsync( transport, remote, false );
+                                    return null;
+                                }
+                                // Sends the Ack.
+                                if( await ZeroProtocol.SendFinalMessageAsync( transport, remote, true ) )
+                                {
+                                    // Accepts the transport.
+                                    disposeTransport = false;
+                                    transportManager.NewValidTransport( remote.Party, transport, protocolMap );
+                                }
+                                break;
+                            }
+                        case ZeroProtocol.DiscriminatorMissingProtocols: 
+                            {
+                                var missingProtocols = ZeroProtocol.ReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                if( missingProtocols == null )
+                                {
+                                    return null;
+                                }
+                                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' expects protocols: '{missingProtocols.Concatenate( "', '" )}'." );
+                                return null;
+                            }
+                        default:
+                            transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );
+                            return null;
+                    }
+                }
+                finally
+                {
+                    if( disposeTransport )
+                    {
+                        transportManager.CondemnTransport( transport );
+                        transport = null;
+                    }
+                }
+            }
+            return transport;
+        }
+
     }
 }

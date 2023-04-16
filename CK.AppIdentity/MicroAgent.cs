@@ -23,7 +23,7 @@ namespace CK.AppIdentity
         // We use null as the close signal (no need for a cancellation token source).
         // We use the channel object as the lock (it is the single private object).
         readonly Channel<object?> _channel;
-        readonly IActivityLogger _logger;
+        readonly string _name;
         Task? _runningTask;
         RunningStatus _status;
         static readonly object _stopSignal = new object();
@@ -36,8 +36,9 @@ namespace CK.AppIdentity
         {
             Throw.CheckNotNullArgument( name );
             _monitor = new ActivityMonitor( name, new DateTimeStampProvider() );
+            Debug.Assert( _monitor.ThreadSafeLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
-            _logger = new LoggerImpl( this );
+            _name = name;
         }
 
         /// <summary>
@@ -69,7 +70,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets this micro agent logger.
         /// </summary>
-        public IActivityLogger Logger => _logger;
+        public IActivityLogger Logger => _monitor.ThreadSafeLogger!;
 
         /// <summary>
         /// Executes a synchronous action on the agent loop. The goal is to avoid any closure in the action: the <paramref name="arg"/>
@@ -136,30 +137,6 @@ namespace CK.AppIdentity
                 _status = RunningStatus.Running;
                 _runningTask = Task.Run( RunAsync );
                 return _status;
-            }
-        }
-
-        sealed class LoggerImpl : IActivityLogger
-        {
-            readonly MicroAgent _agent;
-
-            public LoggerImpl( MicroAgent agent )
-            {
-                _agent = agent;
-            }
-
-            public CKTrait AutoTags => _agent._monitor.AutoTags;
-
-            public LogLevelFilter ActualFilter => _agent._monitor.ActualFilter.Line;
-
-            public void UnfilteredLog( ref ActivityMonitorLogData data )
-            {
-                Debug.Assert( _agent._monitor.SafeStampProvider != null, "Using the stamp provider of the monitor." );
-                var e = data.AcquireExternalData( _agent._monitor.SafeStampProvider );
-                if( !_agent._channel.Writer.TryWrite( e ) )
-                {
-                    e.Release();
-                }
             }
         }
 
@@ -237,8 +214,11 @@ namespace CK.AppIdentity
                     {
                         if( o == _stopSignal )
                         {
-                            await OnStopAsync( _monitor );
-                            if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
+                            using( _monitor.OpenInfo( $"Stopping '{ToString()}'." ) )
+                            {
+                                await OnStopAsync( _monitor );
+                                if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
+                            }
                         }
                         else if( o is IJob job )
                         {
@@ -329,5 +309,12 @@ namespace CK.AppIdentity
         /// Gets a task that is completed if this agent is not yet started or if it has run.
         /// </summary>
         public Task RunningTask => _runningTask ?? Task.CompletedTask;
+
+        /// <summary>
+        /// Overridden to return the <see cref="Name"/> of this agent that is the
+        /// initial <see cref="Monitor"/>'s <see cref="IActivityMonitor.Topic"/>.
+        /// </summary>
+        /// <returns>This agent's name.</returns>
+        public override sealed string ToString() => _name;
     }
 }

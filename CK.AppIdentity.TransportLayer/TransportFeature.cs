@@ -29,8 +29,9 @@ namespace CK.AppIdentity.TransportLayer
         TransportController? _controller;
         TaskCompletionSource _readyTask;
         ConnectionAvailabitity _connectionAvailabitity;
+        bool _disallowEviction;
 
-        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener )
+        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, bool disallowEviction )
         {
             _transportManager = transportManager;
             _remote = remote;
@@ -40,6 +41,7 @@ namespace CK.AppIdentity.TransportLayer
             _registeredProtocols = new HashSet<MessageProtocol>();
             _bestRegisteredProtocols = new List<MessageProtocol>( MessageProtocolMap.MaxCount );
             _readyTask = new TaskCompletionSource();
+            _disallowEviction = disallowEviction;
         }
 
         internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols )
@@ -52,10 +54,12 @@ namespace CK.AppIdentity.TransportLayer
             // provided to the protocol handlers.
             if( _controller == null )
             {
+                monitor.Trace( $"Creating TransportController for '{_remote.FullName}'." );
                 _controller = new TransportController( _transportManager, this, transport );
             }
             else
             {
+                monitor.Trace( $"Rebinding TransportController for '{_remote.FullName}'." );
                 _controller.Rebind( monitor, transport );
             }
             Debug.Assert( _controller.Feature == this );
@@ -80,8 +84,10 @@ namespace CK.AppIdentity.TransportLayer
         Task UpdateConnectionAvailabitityAsync( IActivityMonitor monitor )
         {
             Debug.Assert( _readyTask.Task.IsCompleted );
+
             // TODO: Consider _controller queue load.
             var a = ConnectionAvailabitity.Connected;
+
             if( _connectionAvailabitity != a )
             {
                 _connectionAvailabitity = a;
@@ -114,7 +120,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _bestRegisteredProtocols !=null, "This is safe: see CloseChannelRegistration comment." );
+                Debug.Assert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
                 return _bestRegisteredProtocols!;
             }
         }
@@ -234,8 +240,24 @@ namespace CK.AppIdentity.TransportLayer
         public IRemoteParty Party => _remote;
 
         /// <summary>
+        /// Gets whether we are listening or calling the remote.
+        /// </summary>
+        public bool IsListening => _listener != null;
+
+        /// <summary>
+        /// Gets or sets whether this remote disallows a new remote incoming transport
+        /// when a remote instance is currently connected. This applies only if <see cref="IsListening"/> is true.
+        /// Defaults to false: a new remote connection replaces the current one.
+        /// </summary>
+        public bool DisallowEviction
+        {
+            get => _disallowEviction;
+            set => _disallowEviction = value;
+        }
+
+        /// <summary>
         /// Gets the initial message to send when this is a caller.
-        /// This will be used each time a new connection must be acquired.
+        /// This will be used each time a new connection must be established.
         /// </summary>
         internal InitialMessage? OutgoingInitialMessage => _outgoingInitialMessage;
 

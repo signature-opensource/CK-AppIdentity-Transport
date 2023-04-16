@@ -5,6 +5,13 @@ namespace CK.AppIdentity.TransportLayer
 {
     partial class ZeroProtocol
     {
+        internal const byte DiscrimnatorUnknownRemote = 0;
+        internal const byte DiscriminatorFinalMessage = 1;
+        internal const byte DiscriminatorDowngradeProtocol = 2;
+        internal const byte DiscriminatorAcceptedProtocolsMessage = 3;
+        internal const byte DiscriminatorMissingProtocols = 4;
+        internal const byte DiscriminatorEvictionDisallowed = 5;
+
         /// <summary>
         /// This version drives the whole "0 Protocol" version.
         /// </summary>
@@ -17,10 +24,12 @@ namespace CK.AppIdentity.TransportLayer
         // Static messages use no initialization lock (we don't care of the rare case where 2 concurrent messages will be instantiated).
         // "1" followed by our version: it can be static.
         static TransportMessage? _downgradeProtocolReplyMessage;
-        // A single "1": it can be static.
+        // The DiscriminatorFinalMessage with a single "1": it can be static.
         static TransportMessage? _finalSuccessMessage;
-        // A single "0": it can be static.
+        // The DiscriminatorFinalMessage with a single "0": it can be static.
         static TransportMessage? _finalFailureMessage;
+        // The DiscriminatorEvictionDisallowed: it can be static.
+        static TransportMessage? _evictionDisallowedMessage;
 
         /// <summary>
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
@@ -50,7 +59,7 @@ namespace CK.AppIdentity.TransportLayer
             var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
-                w.WriteByte( 0 );
+                w.WriteByte( DiscrimnatorUnknownRemote );
                 w.WriteNullableString( userAcceptUri );
                 w.Commit();
             } );
@@ -63,7 +72,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == 0 );
+            Debug.Assert( discriminator == DiscrimnatorUnknownRemote );
             return r.ReadNullableString();
         }
 
@@ -72,7 +81,7 @@ namespace CK.AppIdentity.TransportLayer
             _downgradeProtocolReplyMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
             {
                 var w = new FastByteWriter( bytes );
-                w.WriteByte( 1 );
+                w.WriteByte( DiscriminatorDowngradeProtocol );
                 w.WriteSmallUInt32( CurrentVersion );
                 w.Commit();
             } );
@@ -83,16 +92,16 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == 1 );
+            Debug.Assert( discriminator == DiscriminatorDowngradeProtocol );
             return (int)r.ReadSmallUInt32();
         }
 
-        public static async ValueTask<bool> SendAcceptedMessageAsync( TransportFeature remote, Transport transport, MessageProtocolMap protocolMap )
+        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( TransportFeature remote, Transport transport, MessageProtocolMap protocolMap )
         {
             var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
-                w.WriteByte( 2 );
+                w.WriteByte( DiscriminatorAcceptedProtocolsMessage );
                 w.WriteSmallUInt32( (uint)protocolMap.Protocols.Count );
                 foreach( var p in protocolMap.Protocols )
                 {
@@ -105,11 +114,11 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static MessageProtocolMap TryReadAcceptedMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IActivityLogger logger, TransportMessage message, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == 2 );
+            Debug.Assert( discriminator == DiscriminatorAcceptedProtocolsMessage );
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {
@@ -133,10 +142,26 @@ namespace CK.AppIdentity.TransportLayer
             var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
             if( missing.Any() )
             {
-                logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate()}'." );
+                logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate("' ,'")}'." );
                 return default;
             }
             return MessageProtocolMap.InternalGet( protocols );
+        }
+
+        /// <summary>
+        /// Message sent by the <see cref="IncomingConnectionBackTask"/> when the transport is valid
+        /// but <see cref="TransportFeature.DisallowEviction"/> is false.
+        /// </summary>
+        /// <param name="incoming">The transport.</param>
+        /// <returns>The awaitable.</returns>
+        public static ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming )
+        {
+            var m = _evictionDisallowedMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
+            {
+                var b = bytes.GetSpan( 1 );
+                b[0] = DiscriminatorEvictionDisallowed;
+            } );
+            return incoming.SendAsync( m );
         }
 
         /// <summary>
@@ -151,7 +176,7 @@ namespace CK.AppIdentity.TransportLayer
             var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
-                w.WriteByte( 3 );
+                w.WriteByte( DiscriminatorMissingProtocols );
                 w.WriteSmallUInt32( (uint)missingProtocols.Count );
                 foreach( var p in missingProtocols )
                 {
@@ -168,7 +193,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == 3 );
+            Debug.Assert( discriminator == DiscriminatorMissingProtocols );
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {
@@ -188,14 +213,16 @@ namespace CK.AppIdentity.TransportLayer
             TransportMessage m = value
                     ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
                     {
-                        var m = bytes.GetSpan( 1 );
-                        m[0] = 1;
+                        var m = bytes.GetSpan( 2 );
+                        m[0] = DiscriminatorFinalMessage;
+                        m[1] = 1;
                         bytes.Advance( 1 );
                     } )
                     : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
                     {
-                        var m = bytes.GetSpan( 1 );
-                        m[0] = 0;
+                        var m = bytes.GetSpan( 2 );
+                        m[0] = DiscriminatorFinalMessage;
+                        m[1] = 0;
                         bytes.Advance( 1 );
                     } );
             return transport.SendAsync( m );
