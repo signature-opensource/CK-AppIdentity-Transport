@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity\CK.AppIdentity.csproj" />
-    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0006-develop" />
+    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0008-develop" />
   </ItemGroup>
 
 </Project>

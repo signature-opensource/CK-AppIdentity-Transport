@@ -33,7 +33,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             } );
             // Setup App1.
             var r1 = new List<byte[]>();
-            var b1 = app1.Remotes.FindRequired( "App2" ).GetRequiredFeature<BlobChannelFeature>();
+            var b1 = app1.Remotes.FindRequired( app2.Local.Name ).GetRequiredFeature<BlobChannelFeature>();
             b1.Received.Sync += ( monitor, sender, bytes ) =>
             {
                 monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
@@ -42,7 +42,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             };
             // Setup App2.
             var r2 = new List<byte[]>();
-            var b2 = app2.Remotes.FindRequired( "App1" ).GetRequiredFeature<BlobChannelFeature>();
+            var b2 = app2.Remotes.FindRequired( app1.Local.Name ).GetRequiredFeature<BlobChannelFeature>();
             b2.Received.Sync += ( monitor, sender, bytes ) =>
             {
                 monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
@@ -72,8 +72,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
             r1[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
             r1[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
 
-            await app1.DisposeAsync();
             await app2.DisposeAsync();
+            await app1.DisposeAsync();
         }
 
     }

@@ -27,8 +27,8 @@ namespace CK.AppIdentity
         {
             _features = Array.Empty<object>();
             _builders = new List<ApplicationIdentityFeatureDriver>();
-            _agent = new AppIdentityAgent( this, serviceProvider );
             _initialization = new TaskCompletionSource();
+            _agent = new AppIdentityAgent( this, serviceProvider );
         }
 
         internal AppIdentityAgent Agent => _agent;

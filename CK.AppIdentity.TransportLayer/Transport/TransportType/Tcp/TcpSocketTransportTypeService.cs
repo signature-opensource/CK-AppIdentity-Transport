@@ -45,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        internal protected override async Task<Transport?> TryConnectAsync( IActivityLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation )
+        internal protected override async Task<Transport?> TryConnectAsync( IParallelLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation )
         {
             var ipEndPoint = (IPEndPoint)typedAddress.TypedAddress;
             var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );

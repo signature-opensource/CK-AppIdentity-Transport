@@ -60,16 +60,20 @@ namespace CK.AppIdentity.TransportLayer
                         // Handles Canceled and Invalid messages.
                         if( m == TransportMessage.Canceled )
                         {
+                            // The transport.LifeTime has been signaled: the transport has been
+                            // killed.
                             receiveMonitor.Trace( $"Canceled message received." );
                             break;
                         }
                         if( m == TransportMessage.Invalid )
                         {
+                            // The message was invalid. This is a serious error: kill
+                            // the transport as if an exception occurred.
                             receiveMonitor.Error( $"Invalid message received." );
-                            transportManager.CondemnTransport( transport );
+                            transportManager.KillTransport( transport );
                             break;
                         }
-                        // Handles KeepAlive ack directly without bothering the controller.
+                        // Handles KeepAlive acknowledgment directly without bothering the controller.
                         if( m == TransportMessage.EmptyAck )
                         {
                             // The empty message acknowledgment: the IncomingMessageFactory.LastReceived has been updated.
@@ -78,7 +82,11 @@ namespace CK.AppIdentity.TransportLayer
                         }
                         else
                         {
-                            transport.Controller.Receive0Message( receiveMonitor, m );
+                            // A bye-bye message or a fatal protocol error occurred.
+                            if( !transport.Controller.Receive0Message( receiveMonitor, m ) )
+                            {
+                                break;
+                            }
                         }
                     }
                     else
@@ -91,7 +99,7 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 receiveMonitor.Error( $"While receiving on '{transport}'.", ex );
-                transportManager.CondemnTransport( transport );
+                transportManager.KillTransport( transport );
             }
             return receiveMonitor;
         }

@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-      <PackageReference Include="CK.Monitoring.Hosting" Version="18.0.3--0007-develop" />
+      <PackageReference Include="CK.Monitoring.Hosting" Version="18.0.3--0011-develop" />
   </ItemGroup>
 
   <ItemGroup>

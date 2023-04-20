@@ -56,16 +56,16 @@ namespace CK.AppIdentity.Tests
         {
             internal static int _count;
             internal static int _currentSetupOrder;
-            internal static int _setupDynamicCount;
-            internal static int _teardownDynamicCount;
+            internal static int _dynamicSetupCount;
+            internal static int _dynamicTeardownCount;
             internal static int _teardownCount;
 
             public static void Reset()
             {
                 _count = 0;
                 _currentSetupOrder = 0;
-                _setupDynamicCount = 0;
-                _teardownDynamicCount = 0;
+                _dynamicSetupCount = 0;
+                _dynamicTeardownCount = 0;
                 _teardownCount = 0;
             }
 
@@ -84,27 +84,34 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task<bool> SetupDynamicRemoteAsync(FeatureLifetimeContext context, IRemoteParty remoteParty)
+            protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
             {
-                _setupDynamicCount++;
-                context.Memory.GetValueOrDefault( "SetupDynamicOrder", 0 ).Should().Be( SetupOrder );
-                context.Memory["SetupDynamicOrder"] = SetupOrder + 1;
+                _dynamicSetupCount++;
+                context.Monitor.Trace( $"SetupDynamic {GetType().Name} ({SetupOrder})." );
+                context.Memory.GetValueOrDefault( "DynamicSetupOrder", 0 ).Should().Be( SetupOrder );
+                context.Memory["DynamicSetupOrder"] = SetupOrder + 1;
                 return Task.FromResult( true );
             }
 
             protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
             {
-                _teardownDynamicCount++;
-                context.Memory.GetValueOrDefault( "TeardownDynamicOrder", _currentSetupOrder ).Should().Be( _currentSetupOrder - SetupOrder );
-                context.Memory["TeardownDynamicOrder"] = _currentSetupOrder - SetupOrder - 1;
+                _dynamicTeardownCount++;
+                context.Monitor.Trace( $"TeardownDynamic {GetType().Name} ({SetupOrder})." );
+                int revertOrder = _currentSetupOrder - SetupOrder - 1;
+                context.Memory.GetValueOrDefault( "DynamicTeardownOrder", 0 ).Should().Be( revertOrder );
+                // Next expected value.
+                context.Memory["DynamicTeardownOrder"] = revertOrder + 1;
                 return Task.CompletedTask;
             }
 
             protected override Task TeardownAsync( FeatureLifetimeContext context )
             {
                 _teardownCount++;
-                context.Memory.GetValueOrDefault( "TeardownOrder", _currentSetupOrder ).Should().Be( _currentSetupOrder - SetupOrder );
-                context.Memory["TeardownOrder"] = _currentSetupOrder - SetupOrder - 1;
+                context.Monitor.Trace( $"Teardown {GetType().Name} ({SetupOrder})." );
+                int revertOrder = _currentSetupOrder - SetupOrder - 1;
+                context.Memory.GetValueOrDefault( "TeardownOrder", 0 ).Should().Be( revertOrder );
+                // Next expected value.
+                context.Memory["TeardownOrder"] = revertOrder + 1;
                 return Task.CompletedTask;
             }
         }
@@ -180,10 +187,9 @@ namespace CK.AppIdentity.Tests
             foreach( var t in builderTypes )
             {
                 serviceBuilder.AddSingleton( t );
-                serviceBuilder.AddSingleton( sp => (ApplicationIdentityFeatureDriver)sp.GetRequiredService( t ) );
+                serviceBuilder.AddSingleton( sp => (IApplicationIdentityFeatureDriver)sp.GetRequiredService( t ) );
             }
             var services = serviceBuilder.BuildServiceProvider();
-
             var s = services.GetRequiredService<ApplicationIdentityService>();
 
             _ = ((IHostedService)s).StartAsync( default );
@@ -219,11 +225,11 @@ namespace CK.AppIdentity.Tests
                 c["Name"] = "SomeDynamicRemote";
             } );
             Debug.Assert( r != null );
-            CheckOrderFeatureDriver._setupDynamicCount.Should().Be( 7 );
-            CheckOrderFeatureDriver._teardownDynamicCount.Should().Be( 0 );
+            CheckOrderFeatureDriver._dynamicSetupCount.Should().Be( 7 );
+            CheckOrderFeatureDriver._dynamicTeardownCount.Should().Be( 0 );
 
             await r.DestroyAsync();
-            CheckOrderFeatureDriver._teardownDynamicCount.Should().Be( 7 );
+            CheckOrderFeatureDriver._dynamicTeardownCount.Should().Be( 7 );
             CheckOrderFeatureDriver._teardownCount.Should().Be( 0 );
 
             await s.DisposeAsync();

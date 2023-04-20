@@ -53,9 +53,9 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Gets the <see cref="IActivityLogger"/> to use.
+        /// Gets the <see cref="IParallelLogger"/> to use.
         /// </summary>
-        protected IActivityLogger Logger => _transportManager.Logger;
+        protected IParallelLogger Logger => _transportManager.Logger;
 
         /// <summary>
         /// Must be called when a new <see cref="Transport"/> is connected.

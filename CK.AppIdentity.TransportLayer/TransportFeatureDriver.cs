@@ -220,7 +220,7 @@ namespace CK.AppIdentity.TransportLayer
             return true;
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
             if( party.DomainName != CoreApplicationIdentity.DefaultDomainName )
             {
@@ -229,28 +229,27 @@ namespace CK.AppIdentity.TransportLayer
                     foreach( var rSub in party.DomainApplicationIdentity.Remotes )
                     {
                         var t = rSub.GetFeature<TransportFeature>();
-                        t?.Teardown( context.Monitor );
+                        if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
                     }
                 }
                 else 
                 {
                     var t = party.GetFeature<TransportFeature>();
-                    t?.Teardown( context.Monitor );
+                    if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
                 }
             }
-            return Task.CompletedTask;
         }
 
-        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        protected override async Task TeardownAsync( FeatureLifetimeContext context )
         {
             Debug.Assert( _transportManager != null );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
                 var t = r.GetFeature<TransportFeature>();
-                t?.Teardown( context.Monitor );
+                if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
             }
             _transportManager.SendStop();
-            return _transportManager.RunningTask;
+            await _transportManager.RunningTask.ConfigureAwait( false );
         }
     }
 }

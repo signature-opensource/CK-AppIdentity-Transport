@@ -9,6 +9,7 @@ using System.Threading.Channels;
 
 namespace CK.AppIdentity.TransportLayer
 {
+
     /// <summary>
     /// A Transport is able to send and receive <see cref="TransportMessage"/>.
     /// <para>
@@ -29,6 +30,9 @@ namespace CK.AppIdentity.TransportLayer
         // as soon as the Transport has been created.
         [AllowNull]
         CancellationTokenSource _cts;
+        // Settable at any time: this is a soft condemned that doesn't signal the
+        // LifeTime token.
+        ByeByeMessage? _byeByeMessage;
         // Set when this transport has been accepted.
         TransportController? _controller;
 
@@ -104,9 +108,14 @@ namespace CK.AppIdentity.TransportLayer
         public string RemoteEndPointDescription => _remoteEndPointDescription;
 
         /// <summary>
-        /// Gets whether this transport is condemned.
+        /// Gets whether this transport is condemned, either the soft way with a 
         /// </summary>
-        public bool IsCondemned => _cts.IsCancellationRequested;
+        public bool IsCondemned => _byeByeMessage != null || _cts.IsCancellationRequested;
+
+        /// <summary>
+        /// Gets the bye-bye message if it has set.
+        /// </summary>
+        public ByeByeMessage? ByeByeMessage => _byeByeMessage;
 
         /// <summary>
         /// Gets the alive token for this transport.
@@ -118,15 +127,23 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public DateTime LastReceived => _receiveFactory.LastReceived;
 
-        internal void SetCondemned( IActivityMonitor monitor )
+        internal void SetHardCondemned()
         {
             if( !_cts.IsCancellationRequested )
             {
                 _cts.Cancel();
                 // Signals the send loop with a null message: this ensures that even when no
                 // message are waiting, the send loop ends without relying on cancellation exception.
-                _controller?.OnTransportCondemned( monitor );
+                _controller?.OnTransportCondemned();
             }
+        }
+
+        internal void SetSoftCondemned( ByeByeMessage m )
+        {
+            Debug.Assert( m != null );
+            var done = IsCondemned;
+            _byeByeMessage = m;
+            if( !done ) _controller?.OnTransportCondemned();
         }
 
         /// <summary>

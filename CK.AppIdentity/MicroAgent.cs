@@ -35,8 +35,8 @@ namespace CK.AppIdentity
         protected MicroAgent( string name )
         {
             Throw.CheckNotNullArgument( name );
-            _monitor = new ActivityMonitor( name, new DateTimeStampProvider() );
-            Debug.Assert( _monitor.ThreadSafeLogger != null );
+            _monitor = new ActivityMonitor( name, ActivityMonitorOptions.WithParallel );
+            Debug.Assert( _monitor.ParallelLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _name = name;
         }
@@ -70,7 +70,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets this micro agent logger.
         /// </summary>
-        public IActivityLogger Logger => _monitor.ThreadSafeLogger!;
+        public IParallelLogger Logger => _monitor.ParallelLogger!;
 
         /// <summary>
         /// Executes a synchronous action on the agent loop. The goal is to avoid any closure in the action: the <paramref name="arg"/>
@@ -214,7 +214,7 @@ namespace CK.AppIdentity
                     {
                         if( o == _stopSignal )
                         {
-                            using( _monitor.OpenInfo( $"Stopping '{ToString()}'." ) )
+                            using( _monitor.OpenInfo( $"Stopping {ToString()}." ) )
                             {
                                 await OnStopAsync( _monitor );
                                 if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
@@ -248,7 +248,7 @@ namespace CK.AppIdentity
             {
                 if( o is ActivityMonitorExternalLogData data ) data.Release();
             }
-            _monitor.MonitorEnd( $"Stopping micro agent." );
+            _monitor.MonitorEnd();
         }
 
         protected virtual ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )

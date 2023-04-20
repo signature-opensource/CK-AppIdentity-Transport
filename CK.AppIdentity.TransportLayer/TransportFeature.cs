@@ -267,11 +267,13 @@ namespace CK.AppIdentity.TransportLayer
             _transportManager.TryConnectTo( this, target );
         }
 
+        internal TransportController? TransportController => _controller;
+
         /// <summary>
         /// We don't want to expose any DisposeAsync or Dispose on this public TransportFeature.
         /// This is called when tearing down the remote party.
         /// </summary>
-        internal void Teardown( IActivityMonitor monitor )
+        internal ValueTask TeardownAsync( IActivityMonitor monitor )
         {
             // If we are not connected:
             //   - If the party is a caller, we don't have anything to do: the OutgoingConnectionBackTask
@@ -282,12 +284,9 @@ namespace CK.AppIdentity.TransportLayer
             var e = _controller;
             if( e != null )
             {
-                e.ClearPendingOutgoingMessages( monitor );
-                if( !e.CurrentTransport.IsCondemned )
-                {
-                    _transportManager.CondemnTransport( e.CurrentTransport );
-                }
+                return e.TeardownAsync( monitor );
             }
+            return default;
         }
 
     }

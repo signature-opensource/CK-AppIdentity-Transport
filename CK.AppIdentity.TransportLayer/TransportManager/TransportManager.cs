@@ -96,21 +96,21 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap ) );
         }
 
-        internal void TransportErrorSendMessage( Transport transport, Exception ex )
+        internal void KillTransport( Transport transport )
         {
-            PushTypedJob( new CondemnTransportJob( transport, ex ) );
+            PushTypedJob( new KillTransportJob( transport, TimeSpan.Zero ) );
         }
 
-        internal void CondemnTransport( Transport transport )
+        internal void KillTransport( Transport transport, TimeSpan shutUp )
         {
-            PushTypedJob( new CondemnTransportJob( transport, null ) );
+            PushTypedJob( new KillTransportJob( transport, shutUp ) );
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
-        sealed record class CondemnTransportJob( Transport Transport, Exception? Exception );
+        sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
@@ -142,30 +142,28 @@ namespace CK.AppIdentity.TransportLayer
                     return HandleUnknownIncomingRemote( monitor, m );
                 case NewValidTransportJob j:
                     return HandleNewValidTransport( monitor, j );
-                case CondemnTransportJob j:
-                    return HandleCondemnTransport( monitor, j );
+                case KillTransportJob j:
+                    return HandleKillTransport( monitor, j );
             }
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
-        async ValueTask HandleCondemnTransport( IActivityMonitor monitor, CondemnTransportJob j )
+        async ValueTask HandleKillTransport( IActivityMonitor monitor, KillTransportJob j )
         {
             var t = j.Transport;
-            using( monitor.OpenGroup( j.Exception != null ? LogLevel.Error : LogLevel.Trace, $"Condemning transport '{t}'.", j.Exception ) )
+            t.SetHardCondemned();
+            // Starts by disposing the current transport before attempting to reconnect.
+            await SafeDestroyTransportAsync( monitor, t );
+            // If the transport is an outgoing connection and has been activated, launch the
+            // reconnection back task.
+            if( t.TargetAddress != null && t.Controller != null && !t.Controller.Feature.Party.IsDestroyed )
             {
-                t.SetCondemned( monitor );
-                // Starts by disposing the current transport before attempting to reconnect.
-                await SafeDestroyTransportAsync( monitor, t );
-                // If the transport is an outgoing connection and has been activated, launch the
-                // reconnection back task.
-                if( t.TargetAddress != null && t.Controller != null && !t.Controller.Feature.Party.IsDestroyed )
+                var f = t.Controller.Feature;
+                if( !f.Party.IsDestroyed )
                 {
-                    var f = t.Controller.Feature;
-                    if( !f.Party.IsDestroyed )
-                    {
-                        monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}'." );
-                        _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), 1 );
-                    }
+                    var seconds = (int)Math.Floor( j.ShutUp.TotalSeconds );
+                    monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}' in {seconds} seconds." );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), seconds + 1 );
                 }
             }
         }
@@ -200,7 +198,6 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
-                    remoteTransport.Transport.SetCondemned( monitor );
                     if( remote.IsDestroyed )
                     {
                         monitor.Info( $"Remote '{remote.FullName}' has been destroyed. Destroying the new transport." );
@@ -209,6 +206,7 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
                     }
+                    remoteTransport.Transport.SetHardCondemned();
                     await SafeDestroyTransportAsync( monitor, remoteTransport.Transport );
                 }
             }

@@ -16,6 +16,7 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class TransportMessage : ITransportMessage, IDisposable
     {
         internal const int IsControlFlag = 0b00100000;
+        internal const int IsResponseFlag = 0b00010000;
 
         readonly MessageFactory? _messageFactory;
         readonly int _protocolNumber;
@@ -52,7 +53,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// The "0 Protocol" empty acknowledgment message singleton (2 bytes on the wire) with
-        /// <see cref="TransportMessage.IsControl"/> set.
+        /// <see cref="TransportMessage.IsResponse"/> set.
         /// It can be safely disposed and will remain valid and empty.
         /// </summary>
         public static readonly TransportMessage EmptyAck = new TransportMessage( 2 );
@@ -65,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
             if( emptyOrAck != 0 )
             {
                 _prefixLength = 2;
-                _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : 0b0010000), 0 } );
+                _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : IsResponseFlag), 0 } );
             }
         }
 
@@ -104,6 +105,9 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <inheritdoc />
         public bool IsData => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsControlFlag) == 0 : false;
+
+        /// <inheritdoc />
+        public bool IsResponse => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsResponseFlag) == 0 : false;
 
         /// <inheritdoc />
         public MessageProtocol Protocol => _protocol;

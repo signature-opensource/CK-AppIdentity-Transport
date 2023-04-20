@@ -4,7 +4,7 @@ namespace CK.AppIdentity.TransportLayer
 {
     public abstract class PeerProtocolHandler
     {
-        readonly TransportController _queue;
+        readonly TransportController _controller;
         readonly OutgoingMessageFactory _messageFactory;
         internal readonly PeerProtocolHandler? _nextHandler;
 
@@ -14,13 +14,13 @@ namespace CK.AppIdentity.TransportLayer
         public readonly ref struct CreateParameters
         {
             internal readonly PeerProtocolHandler? _nextHandler;
-            internal readonly TransportController _queue;
+            internal readonly TransportController _controller;
             internal readonly OutgoingMessageFactory _messageFactory;
 
             internal CreateParameters( PeerProtocolHandler? nextHandler, TransportController queue, OutgoingMessageFactory messageFactory )
             {
                 _nextHandler = nextHandler;
-                _queue = queue;
+                _controller = queue;
                 _messageFactory = messageFactory;
             }
 
@@ -36,7 +36,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="createParameters">Opaque (except <see cref="CreateParameters.Protocol"/>) required parameters.</param>
         protected PeerProtocolHandler( ref CreateParameters createParameters )
         {
-            _queue = createParameters._queue;
+            _controller = createParameters._controller;
             _messageFactory = createParameters._messageFactory;
             _nextHandler = createParameters._nextHandler;
         }
@@ -55,7 +55,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the current remote end point description.
         /// This doesn't identify a remote (different remotes can be exposed by the same external address on a network).
         /// </summary>
-        public string RemoteEndPointDescription => _queue.CurrentTransport.RemoteEndPointDescription;
+        public string RemoteEndPointDescription => _controller.CurrentTransport.RemoteEndPointDescription;
 
         /// <summary>
         /// Attempts to transfer the message to the transport queue.
@@ -65,7 +65,23 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="message">The message to enqueue.</param>
         /// <returns>true if the message has been enqueued.</returns>
-        public bool TryEnqueue( TransportMessage message ) => _queue.TryEnqueue( message );
+        public bool TryEnqueue( TransportMessage message ) => _controller.TryEnqueue( message );
+
+        /// <summary>
+        /// Attempts to transfer the message (that must have a true <see cref="TransportMessage.IsResponse"/>)
+        /// to the transport response queue.
+        /// <para>
+        /// This returns false if and only if the channel is closed (the remote is destroyed).
+        /// When false is returned, the <paramref name="message"/> should be disposed.
+        /// </para>
+        /// </summary>
+        /// <param name="message">The message to enqueue.</param>
+        /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
+        public bool TryEnqueueResponse( TransportMessage message )
+        {
+            Throw.CheckArgument( message.IsResponse );
+            return _controller.TryEnqueue( message );
+        }
 
         /// <summary>
         /// Asynchronously tries to enqueue a message, waiting for the message to be enqueued.
@@ -79,7 +95,7 @@ namespace CK.AppIdentity.TransportLayer
         /// True if the message has been be enqueued, false if the channel is closed (the remote is destroyed)
         /// or the <paramref name="cancellationToken"/> has been signaled.
         /// </returns>
-        public ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default ) => _queue.TryEnqueueAsync( message, cancellationToken );
+        public ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
 
         /// <summary>
         /// Called for each message received.
@@ -100,7 +116,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="message">The message that is about to be sent.</param>
         /// <param name="replacement">Optional message that will be sent instead of the queued <paramref name="message"/>.</param>
         /// <returns>True to send the message, false to skip it.</returns>
-        internal protected virtual bool OnSendMessage( IActivityLogger logger, ITransportMessage message, out TransportMessage? replacement )
+        internal protected virtual bool OnSendMessage( IParallelLogger logger, ITransportMessage message, out TransportMessage? replacement )
         {
             replacement = null;
             return true;

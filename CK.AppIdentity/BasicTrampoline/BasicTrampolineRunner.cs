@@ -223,7 +223,7 @@ namespace CK.Core
         async Task ExecuteOnError( IActivityMonitor monitor, List<object> actions, int doneCount )
         {
             _result |= TrampolineResult.Error;
-            using( monitor.OpenError( $"Leaving {actions.Count - doneCount - 1} not executed actions." ) )
+            using( monitor.OpenError( $"Leaving {actions.Count - doneCount} not executed actions." ) )
             {
                 if( _reg._onError == null ) monitor.Trace( "There is no registered error handler." );
                 else

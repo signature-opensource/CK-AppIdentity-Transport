@@ -20,7 +20,7 @@ namespace CK.AppIdentity.TransportLayer
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
             Debug.Assert( _incoming != null && _result != null );
-            transportManager.CondemnTransport( _incoming );
+            transportManager.KillTransport( _incoming );
         }
 
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
@@ -29,7 +29,7 @@ namespace CK.AppIdentity.TransportLayer
             if( !_result.IsCompleted  )
             {
                 monitor.Warn( $"Incoming connection timeout for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
-                transportManager.CondemnTransport( _incoming );
+                transportManager.KillTransport( _incoming );
             }
         }
 
@@ -101,17 +101,19 @@ namespace CK.AppIdentity.TransportLayer
                 await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, missing );
                 return;
             }
-            //// This Transport is now valid (up to us). However, our remote may not accept "eviction".
-            //if( remote.DisallowEviction )
-            //{
-            //    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming );
-            //    return;
-            //}
-            //if( remote.ConnectionAvailabitity != ConnectionAvailabitity.None )
-            //{
-            //    remote.
-            //}
-
+            // This Transport is now valid (up to us).
+            // But our remote may not accept "eviction". 
+            var current = remote.TransportController;
+            if( current != null && !current.CurrentTransport.IsCondemned )
+            {
+                if( remote.DisallowEviction )
+                {
+                    transportManager.Logger.Warn( $"Remote '{remote.Party.FullName}' while already connected to '{current.CurrentTransport}'. DisallowEviction is true: sending EvictionDisallowedMessage and closing." );
+                    // If this message cannot be sent, we don't care.
+                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming );
+                    return;
+                }
+            }
             // We could check here that we cannot honor protocols of the other party but we let him decide:
             // we send the AcceptedMessage with the best protocols and it's on him. 
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
@@ -124,6 +126,9 @@ namespace CK.AppIdentity.TransportLayer
                 using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 1 );
                 if( finalMessage.IsValid && finalMessage.Protocol == MessageProtocol.ZeroProtocol && finalMessage.Message.FirstSpan[0] == 1 )
                 {
+                    // Final message is received: we condemn the current transport if there is one.
+                    var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 5 ) );
+                    current?.CurrentTransport.SetSoftCondemned( m );
                     // By providing the party here instead of the transport feature, we'll check
                     // that the RemoteParty is not destroyed and the existence of the TransportFeature.
                     transportManager.NewValidTransport( remote.Party, incoming, protocolMap );
@@ -152,7 +157,7 @@ namespace CK.AppIdentity.TransportLayer
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
-                bool success = InitialMessage.TryParse( incoming.Listener.EndPointDescription, message, out initialMessage, out var otherVersion );
+                bool success = InitialMessage.TryParse( incoming.Listener.EndPointDescription, incoming.RemoteEndPointDescription, message, out initialMessage, out var otherVersion );
                 if( !success )
                 {
                     if( otherVersion == -1 )

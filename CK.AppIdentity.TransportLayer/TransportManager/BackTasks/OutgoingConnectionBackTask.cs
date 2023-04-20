@@ -14,7 +14,8 @@ namespace CK.AppIdentity.TransportLayer
     {
         TransportFeature? _remote;
         TransportTypeAddress? _target;
-        private int _setupTick;
+        int _setupTick;
+        int _retryTickCount;
         CancellationTokenSource? _cts;
         Task<Transport?>? _result;
         int _tryCancelCount;
@@ -22,65 +23,75 @@ namespace CK.AppIdentity.TransportLayer
 
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remote != null && _result != null && _cts != null );
-            CancelOperation( monitor, transportManager );
+            Debug.Assert( _remote != null );
+            if( _result != null ) CancelOperation( monitor, transportManager );
         }
 
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remote != null && _target != null && _result != null && _cts != null );
+            Debug.Assert( _remote != null && _target != null && _cts != null );
             if( _remote.Party.IsDestroyed )
             {
-                if( _tryCancelCount++ == 0 )
+                // If we have not started, there's nothing to do.
+                if( _result != null )
                 {
-                    monitor.Trace( $"Remote '{_remote.Party.FullName}' destroyed. Stopping its OutgoingConnectionBackTask." );
+                    if( _tryCancelCount++ == 0 )
+                    {
+                        monitor.Trace( $"Remote '{_remote.Party.FullName}' destroyed. Stopping its OutgoingConnectionBackTask." );
+                    }
+                    if( !CancelOperation( monitor, transportManager ) )
+                    {
+                        Retry( 1 );
+                    }
+                    // If the CancelOperation succeeded, let this BackTask be reset.
                 }
-                if( !CancelOperation( monitor, transportManager ) )
-                {
-                    Retry( 1 );
-                }
-                // If the CancelOperation succeeded, let this BackTask be reset.
+                return;
             }
-            else if( _result.IsCompleted )
+            // If we have not started yet, let's start.
+            if( _result == null )
+            {
+                _cts = new CancellationTokenSource();
+                _result = TryConnectToAsync( transportManager, _remote, _target, _cts );
+                Retry( 1 );
+                return;
+            }
+            if( _result.IsCompleted )
             {
                 if( !_result.IsCompletedSuccessfully || _result.Result == null )
                 {
                     // We have an error or have been canceled... (cancellation is not by us and that is weird!, but this is the same: we must retry).
-                    monitor.Warn( $"Failed to connect to '{_remote.Party.FullName}' (try n°{++_tryCount}). Retrying.", _result.Exception );
+                    monitor.Warn( $"Failed to connect to '{_remote.Party.FullName}' (try n°{++_tryCount}). Retrying in {_retryTickCount} ticks.", _result.Exception );
                     Setup( transportManager, _remote, _target );
-                    Retry( 1 );
+                    Retry( _retryTickCount );
                 }
                 // Else the new transport has been provided to the TransportFeature
                 // by TransportTypeService.TryConnectToAsync.
                 // We are done, let this BackTask be reset.
+                return;
             }
-            else
+            // The attempt is still running. If it takes more than 2 ticks, this is weird.
+            int howLong = FromSetupTick;
+            // First, try to cancel the task thanks to the cts, and if it's really blocking, forget this blocked operation.
+            // We always retry here (no Transport and the RemoteParty is not destroyed: we MUST continue).
+            if( howLong == 2 && !_cts.IsCancellationRequested )
             {
-                // The attempt is still running. If it takes more that 2 ticks, this is weird.
-                // First, try to cancel the task thanks to the cts, and if it's really blocking, forget this blocked operation.
-                // We always retry here (no Transport and the RemoteParty is not destroyed: we MUST continue).
-                int howLong = FromSetupTick;
-                if( howLong > 1 )
-                {
-                    if( !_cts.IsCancellationRequested )
-                    {
-                        // This avoids the UnobservedTaskException on it.
-                        _result.ContinueWith( Util.ActionVoid, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
-                        _cts.Cancel();
-                        // The only reason why the task will not be canceled is because of a serious bug: the cancellation token is
-                        // ignored by at least one blocking step. This should not happen but we handle this pathological case anyway below.
-                    }
-                    else
-                    {
-                        if( howLong > 4 )
-                        {
-                            monitor.Error( $"Connection to '{_remote.Party.FullName}' is blocking and the operation cannot be canceled! Forgetting it and retrying." );
-                            Setup( transportManager, _remote, _target );
-                        }
-                    }
-                }
+                // This avoids the UnobservedTaskException on it.
+                _result.ContinueWith( Util.ActionVoid, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
+                _cts.Cancel();
+                // The only reason why the task will not be canceled is because of a serious bug: the cancellation token is
+                // ignored by at least one blocking step. This should not happen but we handle this pathological case anyway below.
                 Retry( 1 );
+                return;
             }
+            if( howLong > 4 )
+            {
+                monitor.Error( $"Connection to '{_remote.Party.FullName}' is blocking and the operation cannot be canceled! Forgetting it and retrying." );
+                // Sets the CurrentTick before calling Setup again.
+                Retry( _retryTickCount );
+                Setup( transportManager, _remote, _target );
+                return;
+            }
+            Retry( 1 );
         }
 
         bool CancelOperation( IActivityMonitor monitor, TransportManager transportManager )
@@ -107,7 +118,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     if( result.IsCompletedSuccessfully && result.Result != null )
                     {
-                        transportManager.CondemnTransport( result.Result );
+                        transportManager.KillTransport( result.Result );
                     }
                     return true;
                 }
@@ -120,11 +131,17 @@ namespace CK.AppIdentity.TransportLayer
         public void Setup( TransportManager transportManager, TransportFeature remote, TransportTypeAddress target )
         {
             Debug.Assert( remote != null && target != null && remote != null );
-            _cts = new CancellationTokenSource();
-            _result = TryConnectToAsync( transportManager, remote, target, _cts );
             _remote = remote;
             _target = target;
+            Debug.Assert( CurrentTick >= 1 );
             _setupTick = CurrentTick;
+            _retryTickCount = CurrentTick;
+            if( _setupTick == 1 )
+            {
+                // Immediate start.
+                _cts = new CancellationTokenSource();
+                _result = TryConnectToAsync( transportManager, remote, target, _cts );
+            }
         }
 
         public override void Reset()
@@ -145,6 +162,7 @@ namespace CK.AppIdentity.TransportLayer
             var transport = await typedAddress.Type.TryConnectAsync( transportManager.Logger, typedAddress, cancellation.Token );
             if( transport != null )
             {
+                TransportMessage? firstAnswer = null;
                 transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
                 try
@@ -157,7 +175,7 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     bool retriedDowngrade = false;
                     retry:
-                    var firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
+                    firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
                     if( !firstAnswer.IsValid || firstAnswer == TransportMessage.Empty )
                     {
                         transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );
@@ -167,10 +185,10 @@ namespace CK.AppIdentity.TransportLayer
                     Debug.Assert( head.Length > 0, "The message is not empty (handled above)." );
                     switch( head.Span[0] )
                     {
-                        case ZeroProtocol.DiscrimnatorUnknownRemote: 
+                        case ZeroProtocol.DNegoUnknownRemote: 
                             {
 
-                                string? userAcceptUri = ZeroProtocol.ReadUnknownRemoteReplyMessageAsync( firstAnswer );
+                                string? userAcceptUri = ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer );
                                 transportManager.Logger.Warn( $"The remote '{remote.Party.FullName}' doesn't know us. UserAcceptUri='{userAcceptUri}'." );
                                 if( userAcceptUri != null )
                                 {
@@ -179,7 +197,7 @@ namespace CK.AppIdentity.TransportLayer
                                 }
                                 return null;
                             }
-                        case ZeroProtocol.DiscriminatorDowngradeProtocol: 
+                        case ZeroProtocol.DNegoDowngradeProtocol: 
                             {
                                 int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                                 if( !retriedDowngrade )
@@ -199,7 +217,7 @@ namespace CK.AppIdentity.TransportLayer
                                 transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' sent 2 downgrade protocol request." );
                                 return null;
                             }
-                        case ZeroProtocol.DiscriminatorAcceptedProtocolsMessage: 
+                        case ZeroProtocol.DNegoAcceptedProtocolsMessage: 
                             {
                                 var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger, firstAnswer, remote );
                                 if( !protocolMap.IsValid )
@@ -216,7 +234,12 @@ namespace CK.AppIdentity.TransportLayer
                                 }
                                 break;
                             }
-                        case ZeroProtocol.DiscriminatorMissingProtocols: 
+                        case ZeroProtocol.DNegoEvictionDisallowed: 
+                            {
+                                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' is already connected and its ." );
+                                return null;
+                            }
+                        case ZeroProtocol.DNegoMissingProtocols: 
                             {
                                 var missingProtocols = ZeroProtocol.ReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
                                 if( missingProtocols == null )
@@ -233,9 +256,10 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 finally
                 {
+                    firstAnswer?.Dispose();
                     if( disposeTransport )
                     {
-                        transportManager.CondemnTransport( transport );
+                        transportManager.KillTransport( transport );
                         transport = null;
                     }
                 }

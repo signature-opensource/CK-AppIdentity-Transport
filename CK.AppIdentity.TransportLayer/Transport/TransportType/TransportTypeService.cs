@@ -73,7 +73,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="typedAddress">The target end point (necessarily an address that has been parsed by this service).</param>
         /// <param name="cancellation">Cancellation token that will be signaled if the connection attempt timeout is reached.</param>
         /// <returns>A Transport or null.</returns>
-        internal protected abstract Task<Transport?> TryConnectAsync( IActivityLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation );
+        internal protected abstract Task<Transport?> TryConnectAsync( IParallelLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation );
 
     }
 }

@@ -8,10 +8,9 @@ using System.Security.Cryptography.X509Certificates;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Internal immutable initial message that implements the public <see cref="IUnknownRemote"/>:
-    /// by keeping this message we can discover new remotes that want to enter the system.
+    /// Internal immutable initial message.
     /// </summary>
-    sealed class InitialMessage : IUnknownRemote
+    sealed class InitialMessage
     {
         // The maximum number of possible versions per protocol.
         const int MaxVersionPerProtocolCount = 4;
@@ -37,6 +36,7 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly string _incomingFullName;
         readonly string _endPointDescription;
+        readonly string _remoteEndPointDescription;
         readonly string _instanceId;
         readonly int _version;
 
@@ -66,21 +66,29 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Outgoing message constructor. 
         /// </summary>
-        /// <param name="p">The remote party.</param>
+        /// <param name="f">The remote party.</param>
         public InitialMessage( TransportFeature f )
         {
             Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
             _incomingFullName = f.Party.ApplicationIdentity.Local.FullName;
             _instanceId = CoreApplicationIdentity.InstanceId;
             _endPointDescription = string.Empty;
+            _remoteEndPointDescription = string.Empty;
             _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
             // TODO: f.Party.GetPublicKeys();
             _publicKeys = Array.Empty<PublicKey>();
         }
 
-        InitialMessage( string endPointDescription, int version, string instanceId, string incomingFullName, string[] protocols, PublicKey[] publicKeys )
+        InitialMessage( string endPointDescription,
+                        string remoteEndPointDescription,
+                        int version,
+                        string instanceId,
+                        string incomingFullName,
+                        string[] protocols,
+                        PublicKey[] publicKeys )
         {
             _endPointDescription = endPointDescription;
+            _remoteEndPointDescription = remoteEndPointDescription;
             _version = version;
             _instanceId = instanceId;
             _incomingFullName = incomingFullName;
@@ -90,17 +98,22 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Incoming message parse: the end point that received it must provide its
-        /// description (<see cref="TransportListener.EndPointDescription"/>).
+        /// description (<see cref="TransportListener.EndPointDescription"/>) and the transport description (<see cref="Transport.RemoteEndPointDescription"/>).
         /// <para>
         /// False is returned only if <paramref name="otherVersion"/> is -1 (the "CK-AppId" ASCII characters prefix is missing)
         /// or if the version is above our, otherwise this always throw on bad data.
         /// </para>
         /// </summary>
         /// <param name="endPointDescription">The endpoint description.</param>
+        /// <param name="remoteEndPointDescription">The remote end point description.</param>
         /// <param name="m">The incoming transport message.</param>
         /// <param name="initialMessage">The parsed message on success.</param>
         /// <param name="otherVersion">The other version or -1 if prefix is missing.</param>
-        public static bool TryParse( string endPointDescription, TransportMessage m, [NotNullWhen(true)]out InitialMessage? initialMessage, out int otherVersion )
+        public static bool TryParse( string endPointDescription,
+                                     string remoteEndPointDescription,
+                                     TransportMessage m,
+                                     [NotNullWhen(true)]out InitialMessage? initialMessage,
+                                     out int otherVersion )
         {
             initialMessage = null;
             var r = new FastByteReader( m.Message );
@@ -134,7 +147,7 @@ namespace CK.AppIdentity.TransportLayer
                 keys[i] = PublicKey.CreateFromSubjectPublicKeyInfo( bytes, out int bytesRead );
                 Throw.CheckData( bytesRead == bytes.Length );
             }
-            initialMessage = new InitialMessage( endPointDescription, otherVersion, instanceId, fullName, protocols, keys );
+            initialMessage = new InitialMessage( endPointDescription, remoteEndPointDescription, otherVersion, instanceId, fullName, protocols, keys );
             return true;
         }
 
@@ -170,6 +183,18 @@ namespace CK.AppIdentity.TransportLayer
         public string IncomingEndPointDescription => _endPointDescription;
 
         /// <summary>
+        /// Gets the <see cref="Transport.RemoteEndPointDescription"/> of the transport.
+        /// It's the empty string for an outgoing message.
+        /// </summary>
+        public string RemoteEndPointDescription => _remoteEndPointDescription;
+
+        /// <summary>
+        /// Gets the instance identifier of the calling process.
+        /// It's this <see cref="Core.CoreApplicationIdentity.InstanceId"/> for an outgoing message.
+        /// </summary>
+        public string InstanceId => _instanceId;
+
+        /// <summary>
         /// Gets the incoming party name: it is the <see cref="ILocalParty.Name"/> of the 
         /// <see cref="ApplicationIdentityBase.Local"/> that sends the message.
         /// <para>
@@ -187,5 +212,6 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the list of public keys that identify the incoming remote.
         /// </summary>
         public IReadOnlyList<PublicKey> PublicKeys => _publicKeys;
+
     }
 }
