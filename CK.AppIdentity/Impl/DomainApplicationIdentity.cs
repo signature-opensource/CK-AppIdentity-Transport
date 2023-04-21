@@ -43,7 +43,7 @@ namespace CK.AppIdentity
         public IRemoteParty Host => _host;
 
         /// <inheritdoc />
-        public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        public Task<IRemoteParty?> AddDynamicRemoteAsync( IAM monitor, Action<MutableConfigurationSection> configuration )
         {
             return AddDynamicRemotePartyAsync( monitor,
                                                configuration,

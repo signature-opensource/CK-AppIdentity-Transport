@@ -45,6 +45,6 @@ namespace CK.AppIdentity
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="configuration">The configuration to apply.</param>
         /// <returns>The newly created remote party or null if it cannot be created and initialized.</returns>
-        Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration );
+        Task<IRemoteParty?> AddDynamicRemoteAsync( IAM monitor, Action<MutableConfigurationSection> configuration );
     }
 }
