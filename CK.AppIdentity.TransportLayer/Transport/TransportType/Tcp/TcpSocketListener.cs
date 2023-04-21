@@ -46,9 +46,10 @@ namespace CK.AppIdentity.TransportLayer
             return ipEndPoint.Equals( Address ) || ipEndPoint.Equals( ActualListeningAddress );
         }
 
-        public void Dispose()
+        internal protected override ValueTask DisposeAsync( IActivityMonitor monitor )
         {
             _listenSocket.Dispose();
+            return default;
         }
 
         async Task RunAcceptAsync()
@@ -65,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 catch( ObjectDisposedException )
                 {
-                    // Dispose called: we're done
+                    // Dispose called: we're done.
                     break;
                 }
                 catch( SocketException e ) when( e.SocketErrorCode == SocketError.OperationAborted )

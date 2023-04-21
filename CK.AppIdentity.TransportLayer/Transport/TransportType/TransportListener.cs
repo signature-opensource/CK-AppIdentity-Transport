@@ -91,5 +91,17 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="typedAddress">The typed address to test.</param>
         /// <returns>True if this listener listens to this address, false otherwise.</returns>
         internal protected abstract bool IsListeningAddress( object typedAddress );
+
+        /// <summary>
+        /// Disposes this listener: any resources must be released.
+        /// </summary>
+        internal protected abstract ValueTask DisposeAsync( IActivityMonitor monitor );
+
+        /// <summary>
+        /// Overridden to return this type, the <see cref="EndPointDescription"/> and the number
+        /// of parties.
+        /// </summary>
+        /// <returns></returns>
+        public sealed override string ToString() => $"{GetType().Name} - {EndPointDescription} ({_parties.Length} parties)";
     }
 }

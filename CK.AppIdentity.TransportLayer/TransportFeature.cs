@@ -78,7 +78,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             // The protocols are available.
             // We start receiving messages from this new transport (this sets the protocol map and handlers on the transport)
-            // and starts sending the messages in the controller queue.
+            // and starts sending the messages in the controller queues.
             await _controller.ActivateAsync( monitor, protocols, protocolHandlers );
             // Always signals the ready task.
             _readyTask.TrySetResult();

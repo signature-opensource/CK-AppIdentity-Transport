@@ -11,14 +11,12 @@ namespace CK.AppIdentity.TransportLayer
     [CKTypeDefiner]
     public abstract class TransportTypeService : ITransportTypeService
     {
-        readonly List<TransportListener> _listeners;
 
         /// <summary>
         /// Initializes a new <see cref="TransportTypeService"/>.
         /// </summary>
         protected TransportTypeService()
         {
-            _listeners = new List<TransportListener>();
         }
 
         /// <inheritdoc/>
@@ -33,36 +31,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="typedAddress">The listening end point (necessarily a compatible address that has been parsed by this service).</param>
         /// <returns>The transport listener or null if it cannot be created.</returns>
-        protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress );
-
-        /// <summary>
-        /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
-        /// The listener should be as ready as possible to handle incoming connections.
-        /// </summary>
-        /// <param name="monitor">The monitor to signal errors.</param>
-        /// <param name="transportManager">The transport manager.</param>
-        /// <param name="endPoint">The listening address.</param>
-        /// <returns>The listener on success, null otherwise.</returns>
-        internal TransportListener? TryEnsureListener( IActivityMonitor monitor, TransportManager transportManager, TransportTypeAddress endPoint )
-        {
-            Debug.Assert( endPoint.Type == this );
-            Debug.Assert( transportManager.IsInApplicationIdentityLoop( monitor ) );
-
-            foreach( var exists in _listeners )
-            {
-                if( exists.IsListeningAddress( endPoint.TypedAddress ) )
-                {
-                    return exists;
-                }
-            }
-            var l = TryCreateListener( monitor, endPoint.TypedAddress );
-            if( l != null )
-            {
-                l._transportManager = transportManager;
-                _listeners.Add( l );
-            }
-            return l;
-        }
+        internal protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress );
 
         /// <summary>
         /// Attempts a connection to the provided <paramref name="typedAddress"/>.

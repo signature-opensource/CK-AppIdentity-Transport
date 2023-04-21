@@ -51,7 +51,7 @@ namespace CK.AppIdentity.TransportLayer
         internal protected virtual IEnumerable<ushort> Versions => Array.Empty<ushort>();
 
         /// <summary>
-        /// Gets the <see cref="TransportFeature"/>.
+        /// Gets the underlying <see cref="TransportFeature"/>.
         /// </summary>
         public TransportFeature Transport => _transportFeature;
 

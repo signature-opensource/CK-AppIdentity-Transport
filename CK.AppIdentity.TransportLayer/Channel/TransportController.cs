@@ -136,6 +136,8 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
             CurrentTransport.SetSoftCondemned( new ByeByeMessage( reason.Length == 0 ? "Disposed" : reason, TimeSpan.FromSeconds( 5 ) ) );
+            _responseChannel.Writer.Complete();
+            _senderChannel.Writer.Complete();
             // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels.
             var t = _sendTask;
             if( t != null ) await t.ConfigureAwait( false );

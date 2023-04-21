@@ -19,6 +19,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly AppIdentityAgent _agent;
         readonly MessageProtocolDirectoryService _protocolDirectory;
+        readonly List<TransportListener> _listeners;
 
         // Heart beats handles the BackTask list.
         readonly Timer _heartbeat;
@@ -36,13 +37,15 @@ namespace CK.AppIdentity.TransportLayer
         {
             _agent = agent;
             _protocolDirectory = protocolDirectory;
-            _waitingList = new List<InitialMessage>();
-            _waitingListChanged = new PerfectEventSender<InitialMessage>();
+            _listeners = new List<TransportListener>();
+
             _backTasks = new BackTask.List( this );
             _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
             _headOutgoingConnection = BackTask.Head.Create<OutgoingConnectionBackTask>();
             _heartbeat = new Timer( OnTimer, this, 1000, 1000 );
 
+            _waitingList = new List<InitialMessage>();
+            _waitingListChanged = new PerfectEventSender<InitialMessage>();
         }
 
         static void OnTimer( object? state ) => Unsafe.As<TransportManager>( state! ).PushTypedJob( DBNull.Value );
@@ -54,6 +57,9 @@ namespace CK.AppIdentity.TransportLayer
         /// the tear down of the components uses the loop. Instead of introducing
         /// yet another end task in the system, it is easier to use a dedicated stop message.
         /// Let's use this instance as the stop message.
+        /// <para>
+        /// This is called once all TransportFeature have been torn down.
+        /// </para>
         /// </summary>
         internal void Stop() => PushTypedJob( this );
 
@@ -191,12 +197,18 @@ namespace CK.AppIdentity.TransportLayer
             }
             if( job == this )
             {
-                _heartbeat.Dispose();
-                _backTasks.Destroy( monitor );
-                SendStop();
-                return default;
+                return HandleStopAsync( monitor );
             }
             return base.ExecuteTypedJobAsync( monitor, job );
+        }
+
+        async ValueTask HandleStopAsync( IActivityMonitor monitor )
+        {
+            _heartbeat.Dispose();
+            _backTasks.Destroy( monitor );
+            await DisposeListenersAsync( monitor );
+            // Sends the MicroAgent stop marker.
+            SendStop();
         }
 
         async ValueTask HandleKillTransport( IActivityMonitor monitor, KillTransportJob j )

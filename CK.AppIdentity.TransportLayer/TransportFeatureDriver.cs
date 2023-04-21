@@ -79,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
                 bool disallowEviction = false;
                 if( listen != null )
                 {
-                    if( (listener = listen.Type.TryEnsureListener( context.Monitor, _transportManager, listen )) == null )
+                    if( (listener = _transportManager.TryEnsureListener( context.Monitor, listen )) == null )
                     {
                         return false;
                     }

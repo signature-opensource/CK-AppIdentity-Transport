@@ -63,7 +63,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress )
+        internal protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress )
         {
             var ipEndPoint = (IPEndPoint)typedAddress;
             try
