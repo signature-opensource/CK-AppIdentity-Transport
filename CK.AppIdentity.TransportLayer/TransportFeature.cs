@@ -14,8 +14,9 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class TransportFeature
     {
         readonly TransportManager _transportManager;
-        readonly IRemoteParty _remote;
+        readonly IRemoteParty _party;
         readonly TransportListener? _listener;
+        readonly TransportTypeAddress? _target;
         readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
         // Channels are ordered like bestRegisteredProtocols.
         readonly List<ChannelFeature> _channels;
@@ -26,16 +27,19 @@ namespace CK.AppIdentity.TransportLayer
 
         InitialMessage? _outgoingInitialMessage;
 
+        string? _switchOffReason;
         TransportController? _controller;
         TaskCompletionSource _readyTask;
         ConnectionAvailabitity _connectionAvailabitity;
         bool _disallowEviction;
 
-        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, bool disallowEviction )
+        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, TransportTypeAddress? target, bool disallowEviction )
         {
+            Debug.Assert( (listener == null) != (target == null) );
             _transportManager = transportManager;
-            _remote = remote;
+            _party = remote;
             _listener = listener;
+            _target = target;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
             _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
             _registeredProtocols = new HashSet<MessageProtocol>();
@@ -54,12 +58,12 @@ namespace CK.AppIdentity.TransportLayer
             // provided to the protocol handlers.
             if( _controller == null )
             {
-                monitor.Trace( $"Creating TransportController for '{_remote.FullName}'." );
+                monitor.Trace( $"Creating TransportController for '{_party.FullName}'." );
                 _controller = new TransportController( _transportManager, this, transport );
             }
             else
             {
-                monitor.Trace( $"Rebinding TransportController for '{_remote.FullName}'." );
+                monitor.Trace( $"Rebinding TransportController for '{_party.FullName}'." );
                 _controller.Rebind( monitor, transport );
             }
             Debug.Assert( _controller.Feature == this );
@@ -95,6 +99,55 @@ namespace CK.AppIdentity.TransportLayer
             }
             return Task.CompletedTask;
         }
+
+        /// <summary>
+        /// Gets whether this party is off line.
+        /// Defaults to false: by default a remote always tries to establish a connection.
+        /// </summary>
+        public bool IsOff => _switchOffReason != null;
+
+        /// <summary>
+        /// Gets a non null string if this remote is off.
+        /// </summary>
+        public string? SwitchOffReason => ReferenceEquals( _switchOffReason, string.Empty ) ? "Torn down." : _switchOffReason;
+
+        /// <summary>
+        /// Switch this remote off.
+        /// </summary>
+        /// <param name="reason">A required non empty reason string.</param>
+        /// <returns>True if this call switched this off, false if it was already off.</returns>
+        public bool SwitchOff( string reason )
+        {
+            // The reason cannot be the empty string.
+            Throw.CheckNotNullOrEmptyArgument( reason );
+            if( Interlocked.CompareExchange( ref _switchOffReason, reason, null ) == null )
+            {
+                // We transitioned from null to this reason.
+                // We don't rely on the _switchOffReason state:
+                // the reason will flow to the DoSwitchOff method.
+                _transportManager.SwitchOff( this, reason );
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Switch this remote on.
+        /// </summary>
+        /// <returns>False if this is definitely off.</returns>
+        public bool SwitchOn()
+        {
+            // We never transition from the empty string reason to null: this is the definite off reason.
+            var reason = _switchOffReason;
+            if( reason == String.Empty ) return false;
+            // Clear the off reason.
+            // DoSwitchOn we'll do nothing if SwitchOff has been called.
+            _switchOffReason = null;
+            _transportManager.SwitchOn( this );
+            return true;
+        }
+
+        internal void SetTornDownSwitchOff() => Interlocked.Exchange( ref _switchOffReason, string.Empty );
 
         /// <summary>
         /// Gets the last received time (<see cref="DateTimeKind.Utc"/>).
@@ -146,7 +199,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
             if( _bestRegisteredProtocols.Count == MessageProtocolMap.MaxCount )
             {
-                monitor.Error( $"Unable to register '{channelFeatureName}'. There is already {MessageProtocolMap.MaxCount} channels registered for remote '{_remote.FullName}'." );
+                monitor.Error( $"Unable to register '{channelFeatureName}'. There is already {MessageProtocolMap.MaxCount} channels registered for remote '{_party.FullName}'." );
                 return false;
             }
             int idxSorted;
@@ -188,7 +241,7 @@ namespace CK.AppIdentity.TransportLayer
                     int cmp = StringComparer.OrdinalIgnoreCase.Compare( messageProtocol.Name, _bestRegisteredProtocols[i].Name );
                     if( cmp == 0 )
                     {
-                        monitor.Error( $"Channel '{channelFeatureName}' for remote '{_remote.FullName}': protocol '{messageProtocol.FullName}' is already managed by another channel." );
+                        monitor.Error( $"Channel '{channelFeatureName}' for remote '{_party.FullName}': protocol '{messageProtocol.FullName}' is already managed by another channel." );
                         return -1;
                     }
                     if( cmp > 0 ) break;
@@ -218,7 +271,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _channels.Skip( _bestRegisteredProtocols.Count ).All( c => c == null ) );
             if( _bestRegisteredProtocols.Count == 0 )
             {
-                monitor.Warn( $"No message protocol registered for '{_remote.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
+                monitor.Warn( $"No message protocol registered for '{_party.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
             }
             else
             {
@@ -237,12 +290,17 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the party.
         /// </summary>
-        public IRemoteParty Party => _remote;
+        public IRemoteParty Party => _party;
 
         /// <summary>
         /// Gets whether we are listening or calling the remote.
         /// </summary>
         public bool IsListening => _listener != null;
+
+        /// <summary>
+        /// Gets the non null target address if <see cref="IsListening"/> is false.
+        /// </summary>
+        public TransportTypeAddress? TargetAddress => _target;
 
         /// <summary>
         /// Gets or sets whether this remote disallows a new remote incoming transport
@@ -261,33 +319,67 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal InitialMessage? OutgoingInitialMessage => _outgoingInitialMessage;
 
-        internal void InitializeOutgoing( TransportTypeAddress target )
+        internal void InitializeOutgoing()
         {
+            Debug.Assert( _target != null );
             _outgoingInitialMessage = new InitialMessage( this );
-            _transportManager.TryConnectTo( this, target );
+            _transportManager.TryConnectTo( this );
         }
 
         internal TransportController? TransportController => _controller;
 
+
         /// <summary>
-        /// We don't want to expose any DisposeAsync or Dispose on this public TransportFeature.
-        /// This is called when tearing down the remote party.
+        /// Calls to SwitchOn/SwitchOff are serialized (by the TransportManager).
+        /// We skip a SwitchOn here that has been "canceled" by a call to SwitchOff:
+        /// either this new SwitchOff state is the definite one (empty string) and we are done
+        /// or a subsequent call to DoSwitchOn will be serialized.
         /// </summary>
-        internal ValueTask TeardownAsync( IActivityMonitor monitor )
+        internal ValueTask DoSwitchOnAsync( IActivityMonitor monitor )
         {
-            // If we are not connected:
-            //   - If the party is a caller, we don't have anything to do: the OutgoingConnectionBackTask
-            //     tests the party.IsDestroyed and dies.
-            //   - If we are listening we must remove this party from the listener.
-            _listener?.RemoveParty( this );
-            // Closing the transport is done from the transport manager loop.
-            var e = _controller;
-            if( e != null )
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            var offReason = SwitchOffReason;
+            if( _switchOffReason != null )
             {
-                return e.TeardownAsync( monitor );
+                monitor.Trace( $"Remote '{Party.FullName}' is off (reason: '{offReason}'). Skipping its activation." );
+            }
+            else
+            {
+                monitor.Trace( $"Switching remote '{Party.FullName}' on." );
+                if( _listener != null )
+                {
+                    _listener.AddParty( this );
+                }
+                else
+                {
+                    _transportManager.TryConnectTo( this );
+                }
             }
             return default;
         }
+
+        /// <summary>
+        /// Do not challenge the switch off reason here, applies the originating offReason.
+        /// We can safely miss a SwitchOn (above) because:
+        ///  - _listener.RemoveParty is idempotent.
+        ///  - If the controller is null, we do nothing.
+        /// => This whole function is idempotent.
+        /// </summary>
+        internal ValueTask DoSwitchOffAsync( IActivityMonitor monitor, string offReason )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            monitor.Trace( $"Switching remote '{Party.FullName}' off (reason: '{offReason}')." );
+            _listener?.RemoveParty( this );
+            var c = _controller;
+            _controller = null;
+            if( c != null )
+            {
+                return c.CloseAsync( monitor, offReason );
+            }
+            return default;
+        }
+
+        public override string ToString() => $"TransportFeature for '{_party.FullName}'";
 
     }
 

@@ -59,9 +59,12 @@ namespace CK.AppIdentity.TransportLayer
 
             public void Destroy( IActivityMonitor monitor )
             {
-                while( _queue.Count > 0 )
+                using( monitor.OpenInfo( $"Destroying {_queue.Count} back tasks." ) )
                 {
-                    _queue.Dequeue().OnDestroy( monitor, _transportManager );
+                    while( _queue.Count > 0 )
+                    {
+                        _queue.Dequeue().OnDestroy( monitor, _transportManager );
+                    }
                 }
             }
 

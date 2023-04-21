@@ -32,17 +32,17 @@ namespace CK.AppIdentity.TransportLayer
             ApplicationIdentityService.AddFeature( _transportManager );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                success &= SetupDynamicRemote( context, r );
+                success &= SetupRemote( context, r );
             }
             return Task.FromResult( true );
         }
 
         protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
         {
-            return Task.FromResult( SetupDynamicRemote( context, remoteParty ) );
+            return Task.FromResult( SetupRemote( context, remoteParty ) );
         }
 
-        bool SetupDynamicRemote( FeatureLifetimeContext context, IRemoteParty r )
+        bool SetupRemote( FeatureLifetimeContext context, IRemoteParty r )
         {
             bool success = true;
             if( r.DomainApplicationIdentity != null )
@@ -91,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
                 // listener and if the party is the initiator it must start to try to connect.
                 // However, to be able to start exchanging with others, we must know the message protocols
                 // that are supported.
-                var t = new TransportFeature( _transportManager, r, listener, disallowEviction );
+                var t = new TransportFeature( _transportManager, r, listener, target, disallowEviction );
                 r.AddFeature( t );
                 if( listener != null )
                 {
@@ -107,7 +107,7 @@ namespace CK.AppIdentity.TransportLayer
                     context.Trampoline.OnSuccess( () =>
                     {
                         t.CloseChannelRegistration( context.Monitor );
-                        t.InitializeOutgoing( target );
+                        t.InitializeOutgoing();
                     } );
                 }
             }
@@ -220,8 +220,15 @@ namespace CK.AppIdentity.TransportLayer
             return true;
         }
 
-        protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
+            TearDownRemote( party );
+            return Task.CompletedTask;
+        }
+
+        void TearDownRemote( IRemoteParty party )
+        {
+            Debug.Assert( _transportManager != null );
             if( party.DomainName != CoreApplicationIdentity.DefaultDomainName )
             {
                 if( party.DomainApplicationIdentity != null )
@@ -229,27 +236,26 @@ namespace CK.AppIdentity.TransportLayer
                     foreach( var rSub in party.DomainApplicationIdentity.Remotes )
                     {
                         var t = rSub.GetFeature<TransportFeature>();
-                        if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
+                        if( t != null ) _transportManager.TearDown( t );
                     }
                 }
-                else 
+                else
                 {
                     var t = party.GetFeature<TransportFeature>();
-                    if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
+                    if( t != null ) _transportManager.TearDown( t );
                 }
             }
         }
 
-        protected override async Task TeardownAsync( FeatureLifetimeContext context )
+        protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
             Debug.Assert( _transportManager != null );
             foreach( var r in ApplicationIdentityService.Remotes )
             {
-                var t = r.GetFeature<TransportFeature>();
-                if( t != null ) await t.TeardownAsync( context.Monitor ).ConfigureAwait( false );
+                TearDownRemote( r );
             }
-            _transportManager.SendStop();
-            await _transportManager.RunningTask.ConfigureAwait( false );
+            _transportManager.Stop();
+            return _transportManager.RunningTask;
         }
     }
 }

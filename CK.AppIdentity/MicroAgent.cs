@@ -142,7 +142,7 @@ namespace CK.AppIdentity
 
         interface IJob
         {
-            ValueTask ExecuteAsync( IActivityMonitor monitor );
+            Task ExecuteAsync( IActivityMonitor monitor );
         }
 
         sealed class Job<T> : IJob
@@ -171,17 +171,17 @@ namespace CK.AppIdentity
                 _type = 2;
             }
 
-            ValueTask IJob.ExecuteAsync( IActivityMonitor monitor )
+            Task IJob.ExecuteAsync( IActivityMonitor monitor )
             {
                 switch( _type )
                 {
                     case 0:
                         Unsafe.As<Action<IActivityMonitor, T>>( _action )( monitor, _arg );
-                        return default;
+                        return Task.CompletedTask;
                     case 1:
-                        return new ValueTask( Unsafe.As<Func<IActivityMonitor, T, Task>>( _action )( monitor, _arg ) );
+                        return Unsafe.As<Func<IActivityMonitor, T, Task>>( _action )( monitor, _arg );
                     default:
-                        return Unsafe.As<Func<IActivityMonitor, T, ValueTask>>( _action )( monitor, _arg );
+                        return Unsafe.As<Func<IActivityMonitor, T, ValueTask>>( _action )( monitor, _arg ).AsTask();
                 }
             }
         }
@@ -200,60 +200,44 @@ namespace CK.AppIdentity
             object? o;
             while( (o = await _channel.Reader.ReadAsync()) != null )
             {
-                if( o is ActivityMonitorExternalLogData data )
+                try
                 {
-                    var d = new ActivityMonitorLogData( data );
-                    _monitor.UnfilteredLog( ref d );
-                    // If the data has been acquired again by Clients, it will
-                    // live longer, but for us, we are done with it.
-                    data.Release();
-                }
-                else 
-                {
-                    try
+                    if( o == _stopSignal )
                     {
-                        if( o == _stopSignal )
+                        using( _monitor.OpenInfo( $"Stopping {ToString()}." ) )
                         {
-                            using( _monitor.OpenInfo( $"Stopping {ToString()}." ) )
-                            {
-                                await OnStopAsync( _monitor );
-                                if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
-                            }
-                        }
-                        else if( o is IJob job )
-                        {
-                            await job.ExecuteAsync( _monitor );
-                        }
-                        else
-                        {
-                            await ExecuteTypedJobAsync( _monitor, o );
+                            await OnStopAsync( _monitor );
+                            if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
                         }
                     }
-                    catch( Exception ex )
+                    else if( o is IJob job )
                     {
-                        if( o == _stopSignal )
-                        {
-                            _monitor.Error( "Unhandled exception while stopping.", ex );
-                            if( _channel.Writer.TryWrite( null ) )  _channel.Writer.TryComplete();
-                        }
-                        else
-                        {
-                            _monitor.Error( "Unhandled exception while executing Job.", ex );
-                        }
+                        await job.ExecuteAsync( _monitor );
+                    }
+                    else
+                    {
+                        await ExecuteTypedJobAsync( _monitor, o );
                     }
                 }
-            }
-            // Securing the race condition that MAY happen.
-            while( _channel.Reader.TryRead( out o ) )
-            {
-                if( o is ActivityMonitorExternalLogData data ) data.Release();
+                catch( Exception ex )
+                {
+                    if( o == _stopSignal )
+                    {
+                        _monitor.Error( "Unhandled exception while stopping.", ex );
+                        if( _channel.Writer.TryWrite( null ) )  _channel.Writer.TryComplete();
+                    }
+                    else
+                    {
+                        _monitor.Error( "Unhandled exception while executing Job.", ex );
+                    }
+                }
             }
             _monitor.MonitorEnd();
         }
 
         protected virtual ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
-            Throw.ArgumentException( nameof(job), $"Unhandled job type '{job.GetType()}'." );
+            monitor.Error( $"Unhandled job type '{job.GetType()}'." );
             return default;
         }
 

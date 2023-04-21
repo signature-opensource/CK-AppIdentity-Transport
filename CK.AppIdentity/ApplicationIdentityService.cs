@@ -88,10 +88,10 @@ namespace CK.AppIdentity
         /// Disposes this application identity service: this stops the micro agent.
         /// </summary>
         /// <returns>The awaitable.</returns>
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             _agent.SendStop();
-            return new ValueTask( _agent.RunningTask );
+            await _agent.RunningTask.ConfigureAwait( false );
         }
 
         public override string ToString() => $"Application: {_local.FullName}";

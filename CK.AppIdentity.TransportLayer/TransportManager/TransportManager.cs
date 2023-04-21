@@ -25,12 +25,14 @@ namespace CK.AppIdentity.TransportLayer
         readonly BackTask.List _backTasks;
         readonly BackTask.Head _headIncomingConnection;
         readonly BackTask.Head _headOutgoingConnection;
+        bool _inHeartBeat;
+        int _heartBeatReentrantCount;
 
         readonly List<InitialMessage> _waitingList;
         readonly PerfectEventSender<InitialMessage> _waitingListChanged;
 
         internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
-            : base( $"TransportManager for '{agent.ApplicationIdentityService}'." )
+            : base( $"TransportManager for {agent.ApplicationIdentityService}" )
         {
             _agent = agent;
             _protocolDirectory = protocolDirectory;
@@ -47,14 +49,13 @@ namespace CK.AppIdentity.TransportLayer
 
         internal bool Start() => TryStart() == RunningStatus.Running;
 
-        internal new void SendStop() => base.SendStop();
-
-        protected override ValueTask OnStopAsync( IActivityMonitor monitor )
-        {
-            _heartbeat.Dispose();
-            _backTasks.Destroy( monitor );
-            return base.OnStopAsync( monitor );
-        }
+        /// <summary>
+        /// We cannot use the base SendStop() to stop this agent because
+        /// the tear down of the components uses the loop. Instead of introducing
+        /// yet another end task in the system, it is easier to use a dedicated stop message.
+        /// Let's use this instance as the stop message.
+        /// </summary>
+        internal void Stop() => PushTypedJob( this );
 
         /// <summary>
         /// Gets whether the provided monitor is the one if the <see cref="AppIdentityAgent"/>.
@@ -76,9 +77,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
 
-        internal void TryConnectTo( TransportFeature remote, TransportTypeAddress target )
+        internal void TryConnectTo( TransportFeature remote )
         {
-            PushTypedJob( new TryConnectToJob( remote, target ) );
+            PushTypedJob( new TryConnectToJob( remote ) );
         }
 
         internal void IncomingTransport( Transport t )
@@ -106,44 +107,94 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new KillTransportJob( transport, shutUp ) );
         }
 
+        internal void SwitchOff( TransportFeature feature, string reason )
+        {
+            PushTypedJob( new SwitchOffJob( feature, reason ) );
+        }
+
+        internal void SwitchOn( TransportFeature feature )
+        {
+            PushTypedJob( feature );
+        }
+
+        internal void TearDown( TransportFeature feature )
+        {
+            // The empty string is the "Torn down" marker:
+            // it is unconditionally set here so that no SwitchOn is now possible.
+            feature.SetTornDownSwitchOff();
+            PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
+        }
+
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
-        sealed record class TryConnectToJob( TransportFeature Remote, TransportTypeAddress Target );
+        // The heart beat (timer) is DBNull.Value instance.
+        // SwitchOn of a TransportFeature is the transport feature itself.
+        sealed record class TryConnectToJob( TransportFeature Remote );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
+        sealed record class SwitchOffJob( TransportFeature Feature, string Reason );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
             switch( job )
             {
-                case DBNull:
+                case DBNull: // Heartbeat.
                     {
-                        int c = _backTasks.AliveCount;
-                        if( c > 0 )
+                        // This is mainly when debugging. In practice, no back tasks check
+                        // should be longer than 1 second.
+                        if( _inHeartBeat )
                         {
-                            using( monitor.OpenTrace( $"TransportManager heartbeat ({c} active background tasks out of {_backTasks.TotalCount})." ) )
+                            ++_heartBeatReentrantCount;
+                            if( !Debugger.IsAttached )
                             {
-                                var (handled, done) = _backTasks.OnHeartBeat( monitor );
-                                monitor.CloseGroup( $"{done} completed out of {handled} handled." );
+                                monitor.Warn( $"Heartbeat blocked for {_heartBeatReentrantCount} count." );
                             }
+                        }
+                        else 
+                        {
+                            _heartBeatReentrantCount = 0;
+                            _inHeartBeat = true;
+                            int c = _backTasks.AliveCount;
+                            if( c > 0 )
+                            {
+                                using( monitor.OpenTrace( $"TransportManager heartbeat ({c} active background tasks out of {_backTasks.TotalCount})." ) )
+                                {
+                                    var (handled, done) = _backTasks.OnHeartBeat( monitor );
+                                    monitor.CloseGroup( $"{done} completed out of {handled} handled." );
+                                }
+                            }
+                            _inHeartBeat = false;
                         }
                         return default;
                     }
+                case KillTransportJob j:
+                    return HandleKillTransport( monitor, j );
                 case TryConnectToJob c:
-                    monitor.Trace( $"Initiating connection to '{c.Target}' for '{c.Remote.Party.FullName}'." );
-                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, c.Remote, c.Target ), 1 );
+                    var f = c.Remote;
+                    Debug.Assert( f.TargetAddress != null );
+                    monitor.Trace( $"Initiating connection to '{f.TargetAddress}' for '{f.Party.FullName}' immediately." );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f ), 1 );
                     return default;
                 case Transport t:
                     Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
-                    monitor.Trace( $"Received connection '{t.RemoteEndPointDescription}' from listener '{t.Listener.EndPointDescription}'." );
+                    monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
                 case InitialMessage m:
                     return HandleUnknownIncomingRemote( monitor, m );
                 case NewValidTransportJob j:
                     return HandleNewValidTransport( monitor, j );
-                case KillTransportJob j:
-                    return HandleKillTransport( monitor, j );
+                case TransportFeature switchOn:
+                    return switchOn.DoSwitchOnAsync( monitor );
+                case SwitchOffJob off:
+                    return off.Feature.DoSwitchOffAsync( monitor, off.Reason );
+            }
+            if( job == this )
+            {
+                _heartbeat.Dispose();
+                _backTasks.Destroy( monitor );
+                SendStop();
+                return default;
             }
             return base.ExecuteTypedJobAsync( monitor, job );
         }
@@ -151,19 +202,25 @@ namespace CK.AppIdentity.TransportLayer
         async ValueTask HandleKillTransport( IActivityMonitor monitor, KillTransportJob j )
         {
             var t = j.Transport;
-            t.SetHardCondemned();
-            // Starts by disposing the current transport before attempting to reconnect.
-            await SafeDestroyTransportAsync( monitor, t );
-            // If the transport is an outgoing connection and has been activated, launch the
-            // reconnection back task.
-            if( t.TargetAddress != null && t.Controller != null && !t.Controller.Feature.Party.IsDestroyed )
+            if( t.SetHardCondemned() )
             {
-                var f = t.Controller.Feature;
-                if( !f.Party.IsDestroyed )
+                // Starts by disposing the current transport before attempting to reconnect.
+                await SafeDestroyTransportAsync( monitor, t );
+                // If the transport is an outgoing connection and has been activated, launch the
+                // reconnection back task.
+                if( t.Controller != null )
                 {
-                    var seconds = (int)Math.Floor( j.ShutUp.TotalSeconds );
-                    monitor.Trace( $"Initiating reconnection attempt to '{t.TargetAddress}' for '{f.Party.FullName}' in {seconds} seconds." );
-                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f, t.TargetAddress ), seconds + 1 );
+                    monitor.Trace( $"Killing validated transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()})." );
+                    if( t.TargetAddress != null )
+                    {
+                        var f = t.Controller.Feature;
+                        if( !f.IsOff )
+                        {
+                            var seconds = (int)Math.Floor( j.ShutUp.TotalSeconds );
+                            monitor.Trace( $"Initiating reconnection attempt to '{f.TargetAddress}' for '{f.Party.FullName}' in {seconds} seconds." );
+                            _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f ), seconds + 1 );
+                        }
+                    }
                 }
             }
         }
@@ -188,26 +245,32 @@ namespace CK.AppIdentity.TransportLayer
 
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
-            using( monitor.OpenInfo( $"New transport '{remoteTransport.Transport}' for '{remoteTransport.Remote.FullName}'." ) )
+            Transport t = remoteTransport.Transport;
+            using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote.FullName}'." ) )
             {
                 IRemoteParty remote = remoteTransport.Remote;
                 var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
-                if( feature != null )
+                if( feature != null && !feature.IsOff )
                 {
-                    await feature.OnTransportAppearAsync( monitor, remoteTransport.Transport, remoteTransport.Protocols );
+                    await feature.OnTransportAppearAsync( monitor, t, remoteTransport.Protocols );
                 }
                 else
                 {
                     if( remote.IsDestroyed )
                     {
-                        monitor.Info( $"Remote '{remote.FullName}' has been destroyed. Destroying the new transport." );
+                        monitor.Info( $"Remote '{remote.FullName}' has been destroyed." );
+                    }
+                    else if( feature != null && feature.IsOff )
+                    {
+                        monitor.Info( $"Transport feature for '{remote.FullName}' is off line." );
                     }
                     else
                     {
-                        monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party. Destroying the new transport." );
+                        monitor.Error( $"Transport feature has been removed from '{remote.FullName}' party." );
                     }
-                    remoteTransport.Transport.SetHardCondemned();
-                    await SafeDestroyTransportAsync( monitor, remoteTransport.Transport );
+                    monitor.Info( "Destroying the new valid transport." );
+                    t.SetHardCondemned();
+                    await SafeDestroyTransportAsync( monitor, t );
                 }
             }
         }

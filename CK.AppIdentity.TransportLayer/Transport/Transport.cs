@@ -26,6 +26,8 @@ namespace CK.AppIdentity.TransportLayer
         // Set by StartReceive: the protocol handlers have been resolved from the
         // negotiated ones.
         PeerProtocolHandler[]? _handlers;
+        // Set when this transport has been accepted.
+        TransportController? _controller;
         // Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
         // as soon as the Transport has been created.
         [AllowNull]
@@ -33,8 +35,6 @@ namespace CK.AppIdentity.TransportLayer
         // Settable at any time: this is a soft condemned that doesn't signal the
         // LifeTime token.
         ByeByeMessage? _byeByeMessage;
-        // Set when this transport has been accepted.
-        TransportController? _controller;
 
         /// <summary>
         /// Initializes a new Transport from a <see cref="TransportListener"/>.
@@ -127,22 +127,24 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public DateTime LastReceived => _receiveFactory.LastReceived;
 
-        internal void SetHardCondemned()
+        internal bool SetHardCondemned()
         {
             if( !_cts.IsCancellationRequested )
             {
                 _cts.Cancel();
                 // Signals the send loop with a null message: this ensures that even when no
                 // message are waiting, the send loop ends without relying on cancellation exception.
-                _controller?.OnTransportCondemned();
+                if( _byeByeMessage == null ) _controller?.OnTransportCondemned();
+                return true;
             }
+            return false;
         }
 
-        internal void SetSoftCondemned( ByeByeMessage m )
+        internal void SetSoftCondemned( ByeByeMessage m, bool overrideCurrentMessage = false )
         {
             Debug.Assert( m != null );
             var done = IsCondemned;
-            _byeByeMessage = m;
+            if( overrideCurrentMessage || _byeByeMessage == null ) _byeByeMessage = m;
             if( !done ) _controller?.OnTransportCondemned();
         }
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -20,17 +21,21 @@ namespace CK.AppIdentity.TransportLayer
         // Run discriminators:
         internal const byte DRunByeBye = 255;
 
-        public static TransportMessage CreateByeByeMessage( ByeByeMessage m )
+        public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
-            Debug.Assert( m != null );
-            return OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            Debug.Assert( message != null );
+            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DRunByeBye );
-                w.WriteString( m.Reason );
-                w.WriteTimeSpan( m.ShutUp );
+                w.WriteString( message.Reason );
+                w.WriteTimeSpan( message.ShutUp );
                 w.Commit();
             } );
+            bool r = await transport.SendAsync( m ).ConfigureAwait( false );
+            m.Dispose();
+            return r;
+
         }
 
         public static ByeByeMessage ReadByeByeMessage( TransportMessage message )

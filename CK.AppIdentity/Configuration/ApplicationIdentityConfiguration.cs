@@ -277,26 +277,27 @@ namespace CK.AppIdentity
                                       bool isDomainName = false )
         {
             value = configuration[propertyName];
-            if( !ValidateName( monitor, propertyName, ref value, isRequired, isDomainName ) )
+            if( !ValidateName( monitor, configuration, propertyName, ref value, isRequired, isDomainName ) )
             {
                 return false;
             }
+            // Validates the default value if any.
             if( value == null && defaultValue != null )
             {
-                if( !ValidateName( monitor, $"default value for '{propertyName}'", ref defaultValue, true, isDomainName ) ) return false;
+                if( !ValidateName( monitor, configuration, propertyName, ref defaultValue, true, isDomainName ) ) return false;
                 value = defaultValue;
             }
             Debug.Assert( value != null );
             return true;
         }
 
-        static bool ValidateName( IActivityMonitor monitor, string propertyName, ref string? value, bool isRequired, bool isDomainName )
+        static bool ValidateName( IActivityMonitor monitor, IConfigurationSection configuration, string propertyName, ref string? value, bool isRequired, bool isDomainName )
         {
             if( string.IsNullOrWhiteSpace( value ) )
             {
                 if( isRequired )
                 {
-                    monitor.Error( $"{propertyName} is required and{_nameSuffix}" );
+                    monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' is required and{_nameSuffix}" );
                     return false;
                 }
                 value = null;
@@ -307,7 +308,7 @@ namespace CK.AppIdentity
                             : CoreApplicationIdentity.IsValidIdentifier( value );
             if( !isValid )
             {
-                monitor.Error( $"{propertyName}: '{value}'{(isDomainName ? _pathSuffix : _nameSuffix)}." );
+                monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' = '{value}'{(isDomainName ? _pathSuffix : _nameSuffix)}." );
                 return false;
             }
             return true;

@@ -132,18 +132,15 @@ namespace CK.AppIdentity.TransportLayer
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _responseChannel.Reader ) );
         }
 
-        internal async ValueTask TeardownAsync( IActivityMonitor monitor )
+        internal async ValueTask CloseAsync( IActivityMonitor monitor, string reason )
         {
-            Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
-            CurrentTransport.SetSoftCondemned( new ByeByeMessage( "Tearing down.", TimeSpan.FromSeconds( 5 ) ) );
-            // We must wait for the send task to end otherwise we'll have 2 readers activities on single reader channels.
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            CurrentTransport.SetSoftCondemned( new ByeByeMessage( reason.Length == 0 ? "Disposed" : reason, TimeSpan.FromSeconds( 5 ) ) );
+            // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels.
             var t = _sendTask;
             if( t != null ) await t.ConfigureAwait( false );
             ClearPendingOutgoingMessages( monitor );
-            if( !CurrentTransport.IsCondemned )
-            {
-                _transportManager.KillTransport( CurrentTransport );
-            }
+            _transportManager.KillTransport( CurrentTransport );
         }
 
         static async Task RunSendAsync( TransportManager transportManager,
@@ -201,9 +198,7 @@ namespace CK.AppIdentity.TransportLayer
                 var byeBye = transport.ByeByeMessage;
                 if( byeBye != null )
                 {
-                    var m = ZeroProtocol.CreateByeByeMessage( byeBye );
-                    await transport.SendAsync( m ).ConfigureAwait( false );
-                    m.Dispose();
+                    await ZeroProtocol.SendCreateByeByeMessageAsync( transport, byeBye );
                 }
                 transportManager.Logger.Trace( $"Stopped sending loop for '{transport.RemoteEndPointDescription}'." );
             }
@@ -254,11 +249,11 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
         {
-            int count = Flush( action, _responseChannel.Reader! );
-            count += Flush( action, _senderChannel.Reader );
+            int count = FlushAndClose( action, _responseChannel.Reader! );
+            count += FlushAndClose( action, _senderChannel.Reader );
             monitor.Trace( $"Cleanup {count} unsent messages for '{_transport.RemoteEndPointDescription}'." );
 
-            static int Flush( Action<TransportMessage>? action, ChannelReader<TransportMessage?> r )
+            static int FlushAndClose( Action<TransportMessage>? action, ChannelReader<TransportMessage?> r )
             {
                 int count = 0;
                 while( r.TryRead( out var m ) )

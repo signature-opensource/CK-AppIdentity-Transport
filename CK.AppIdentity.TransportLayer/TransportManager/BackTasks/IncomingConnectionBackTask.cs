@@ -68,7 +68,7 @@ namespace CK.AppIdentity.TransportLayer
                 if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
-                    // this potential new IUnknownRemote party.
+                    // this potential new UnknownRemote party.
                     transportManager.UnknownIncomingRemote( initialMessage );
                 }
                 return;
@@ -76,6 +76,12 @@ namespace CK.AppIdentity.TransportLayer
             // We know the remote full name. We first verify the signature.
             // TODO.
 
+            // If the remote is off, sends a bye-bye message.
+            if( remote.IsOff )
+            {
+                await ZeroProtocol.SendCreateByeByeMessageAsync( incoming, new ByeByeMessage( "IsOff", TimeSpan.FromSeconds( 2 ) ) );
+                return;
+            }
             // The remote is who it pretends to be, let's check the full protocol list we received by intersecting it
             // with our declared protocol (and selecting the highest common version for each of them).
             MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )

@@ -19,7 +19,7 @@ namespace CK.AppIdentity
         readonly IServiceProvider _serviceProvider;
 
         internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider )
-            : base( $"ApplicationIdentityService Agent for '{service}'." )
+            : base( $"ApplicationIdentityService Agent for {service}" )
         {
             _service = service;
             _serviceProvider = serviceProvider;
@@ -69,10 +69,10 @@ namespace CK.AppIdentity
             }
         }
 
-        protected override ValueTask OnStopAsync( IActivityMonitor monitor )
+        protected override async ValueTask OnStopAsync( IActivityMonitor monitor )
         {
             var context = new FeatureLifetimeContext( monitor, this, _service._builders );
-            return new ValueTask( context.ExecuteTeardownAsync() );
+            await context.ExecuteTeardownAsync().ConfigureAwait( false );
         }
 
         record class InitializeDynamicRemoteJob( RemoteParty RemoteParty, TaskCompletionSource<bool> Result );
