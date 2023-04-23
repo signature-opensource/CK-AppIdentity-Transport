@@ -86,12 +86,10 @@
   <Class Name="CK.AppIdentity.TransportLayer.TcpSocketTransportTypeService">
     <Position X="0.5" Y="4.75" Width="2.5" />
     <Members>
-      <Field Name="_defaultListeningAddress" Hidden="true" />
       <Field Name="DefaultPort" Hidden="true" />
-      <Method Name="TcpSocketTransportTypeService" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAABAAAACAAAAAAAgAAAAAAAAAEgAAAAAAgAAAAIAAA=</HashCode>
+      <HashCode>CAAAAAAAAAAAAAAAgAAAAAAAAAEgAAAAAAgAAAAIAAA=</HashCode>
       <FileName>Transport\TransportType\Tcp\TcpSocketTransportTypeService.cs</FileName>
     </TypeIdentifier>
   </Class>

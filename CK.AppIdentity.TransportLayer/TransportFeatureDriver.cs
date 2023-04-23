@@ -128,7 +128,7 @@ namespace CK.AppIdentity.TransportLayer
             return true;
         }
 
-        TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, string configurationPath, string? configurationKey )
+        TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, ImmutableConfigurationSection section )
         {
             ITransportTypeService? transport = null;
             ReadOnlySpan<char> typed = s.AsSpan();
@@ -147,7 +147,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 if( transport == null )
                 {
-                    monitor.Error( $"Transport type '{p}' not found for '{string.Join( ':', configurationPath, configurationKey )}', address: '{s}'.");
+                    monitor.Error( $"Transport type '{p}' not found for '{section.Path}', address: '{s}'.");
                     return null;
                 }
             }
@@ -155,35 +155,48 @@ namespace CK.AppIdentity.TransportLayer
             {
                 transport = _tcp;
             }
-            return transport.ParseAddress( monitor, typed, configurationPath, configurationKey );
+            return transport.ParseAddress( monitor, typed, section );
         }
 
         bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
         {
             listen = null;
             target = null;
+            // If the Address is set, it must be parseable.
             var a = r.Address;
             if( a != null )
             {
-                target = ParseTypedAddress( monitor, a, r.Configuration.Configuration.Path, "Address" );
+                var section = r.Configuration.Configuration.TryGetSection( "Address" );
+                Debug.Assert( section != null );
+                target = ParseTypedAddress( monitor, a, section );
                 return target != null;
             }
+            // No Address: lookup for the ListeningAddress.
+            // ReadListeningAddresses returns true if no error occurred but the address map can be null.
             if( !ReadListeningAddresses( monitor,r, out var available ) )
             {
                 return false;
             }
-            if( available == null )
-            {
-                listen = _tcp.DefaultListeningAddress;
-                return true;
-            }
-            available.TryAdd( _tcp, _tcp.DefaultListeningAddress );
-            if( available.Count == 1 )
+            Debug.Assert( available == null || available.Count > 0, "If there is a map, it is not empty." );
+            // If there is a single listening address, we are done: there is no ambiguity.
+            if( available != null && available.Count == 1 )
             {
                 listen = available.Values.First();
                 return true;
             }
-            // More than one type of Transport: "UseTransport" decides or we use the 'tcp' if "UseTransport" is missing.
+            // If there is no "ListeningAddress" at all, consider the default tcp listening address
+            // bound to the ApplicationIdentity.Local configuration that can be the root or a domain.
+            // Note: currently only tcp has this "DefaultListeningAddress" (other transports cannot define such
+            // a default address). This may be changed in the future if needed.
+            var defaultTcpListening = _tcp.GetDefaultListeningAddress( r.ApplicationIdentity.Configuration.Local.Configuration );
+            if( available == null )
+            {
+                listen = defaultTcpListening;
+                return true;
+            }
+            // If there is more than one type of Transport, inject the tcp default if no tcp address exists
+            // and let "UseTransport" decides or use the 'tcp' if "UseTransport" is missing.
+            available.TryAdd( _tcp, defaultTcpListening );
             var useTransportSection = r.Configuration.Configuration.TryLookupSection( "UseTransport" );
             var useTransport = useTransportSection?.Value;
             if( useTransport == null )
@@ -219,7 +232,7 @@ namespace CK.AppIdentity.TransportLayer
                     else locally.Clear();
                     foreach( var raw in onLevel )
                     {
-                        var parsed = ParseTypedAddress( monitor, raw, config.Path, null );
+                        var parsed = ParseTypedAddress( monitor, raw, config );
                         if( parsed == null ) return false;
                         if( locally.Contains( parsed.Type ) )
                         {

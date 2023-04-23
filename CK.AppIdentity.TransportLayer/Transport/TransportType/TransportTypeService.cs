@@ -23,7 +23,7 @@ namespace CK.AppIdentity.TransportLayer
         public abstract string AddressProtocolName { get; }
 
         /// <inheritdoc/>
-        public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string configurationPath, string? configurationKey );
+        public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
 
         /// <summary>
         /// Creates a new listener: the <paramref name="typedAddress"/> is not currently listening.

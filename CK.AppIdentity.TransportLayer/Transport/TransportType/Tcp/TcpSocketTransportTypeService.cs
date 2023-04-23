@@ -13,32 +13,25 @@ namespace CK.AppIdentity.TransportLayer
     {
         const int DefaultPort = 37120;
 
-        readonly TransportTypeAddress _defaultListeningAddress;
-
-        public TcpSocketTransportTypeService()
-        {
-            _defaultListeningAddress = new TransportTypeAddress( this, new IPEndPoint( IPAddress.Any, DefaultPort ) );
-        }
-
         /// <summary>
-        /// Gets "tcp".
+        /// Gets "tcp" string.
         /// </summary>
         public override string AddressProtocolName => "tcp";
 
-        /// <summary>
-        /// Gets the default listening address.
-        /// </summary>
-        public TransportTypeAddress DefaultListeningAddress => _defaultListeningAddress;
+        internal TransportTypeAddress GetDefaultListeningAddress( ImmutableConfigurationSection section )
+        {
+            return new TransportTypeAddress( this, section, new IPEndPoint( IPAddress.Any, DefaultPort ) );
+        }
 
         /// <inheritdoc />
-        public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string configurationPath, string? configurationKey )
+        public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )
         {
             if( IPEndPoint.TryParse( typed, out var endPoint ) )
             {
                 if( endPoint.Port == 0 ) endPoint.Port = DefaultPort;
-                return new TransportTypeAddress( this, endPoint );
+                return new TransportTypeAddress( this, section, endPoint );
             }
-            monitor.Error( $"Invalid '{string.Join( ':', configurationPath, configurationKey )}' = '{typed}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
+            monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
             return null;
         }
 

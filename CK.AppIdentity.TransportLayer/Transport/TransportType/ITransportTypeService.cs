@@ -25,10 +25,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="monitor">The monitor to signal errors.</param>
         /// <param name="typed">The portion to parse.</param>
-        /// <param name="configurationPath">Configuration path for errors.</param>
-        /// <param name="configurationKey">Optional key configuration to be combined with <see cref="string.Join(char, string?[])"/> for errors.</param>
+        /// <param name="section">Configuration section: <see cref="ImmutableConfigurationSection.Key"/> is either "ListeningAddress" or "Address".</param>
         /// <returns>A typed address on success, false otherwise.</returns>
-        TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string configurationPath, string? configurationKey );
+        TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
 
     }
 
