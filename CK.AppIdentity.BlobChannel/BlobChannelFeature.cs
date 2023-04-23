@@ -3,6 +3,7 @@ using CK.Core;
 using CK.PerfectEvent;
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.BlobChannel
 {
@@ -16,6 +17,8 @@ namespace CK.AppIdentity.BlobChannel
             _received = new PerfectEventSender<BlobChannelFeature, byte[]>();
         }
 
+        new Protocol? CurrentHandler => Unsafe.As<Protocol?>( base.CurrentHandler );
+
         public PerfectEvent<BlobChannelFeature, byte[]> Received => _received.PerfectEvent;
 
         public bool TrySend( byte[] data )
@@ -24,9 +27,21 @@ namespace CK.AppIdentity.BlobChannel
             var h = CurrentHandler;
             if( h != null )
             {
-                var message = h.MessageFactory.Create( bytes => bytes.Write( data ) );
-                message.Source = data;
+                var message = h.CreateMessage( data );
                 if( h.TryEnqueue( message ) ) return true;
+                message.Dispose();
+            }
+            return false;
+        }
+
+        public async ValueTask<bool> TrySendAsync( byte[] data )
+        {
+            Throw.CheckArgument( data.Length > 0 );
+            var h = CurrentHandler;
+            if( h != null )
+            {
+                var message = h.CreateMessage( data );
+                if( await h.TryEnqueueAsync( message ) ) return true;
                 message.Dispose();
             }
             return false;
@@ -38,6 +53,10 @@ namespace CK.AppIdentity.BlobChannel
             return new Protocol( this, ref c );
         }
 
+        protected override void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current )
+        {
+        }
+
         sealed class Protocol : PeerProtocolHandler
         {
             readonly BlobChannelFeature _feature;
@@ -46,6 +65,13 @@ namespace CK.AppIdentity.BlobChannel
                 : base( ref createParameters )
             {
                 _feature = feature;
+            }
+
+            public TransportMessage CreateMessage( byte[] data )
+            {
+                var message = MessageFactory.Create( bytes => bytes.Write( data ) );
+                message.Source = data;
+                return message;
             }
 
             protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message )

@@ -42,7 +42,9 @@ namespace CK.AppIdentity
         /// <param name="hostEnvironment">The hosting environment from which defaults local and environment names are used.</param>
         /// <param name="configuration">The configuration section (typically named "CK-AppIdentity").</param>
         /// <returns>A valid instance on success, null on configuration error.</returns>
-        public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor, IHostEnvironment hostEnvironment, IConfigurationSection configuration )
+        public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor,
+                                                                IHostEnvironment hostEnvironment,
+                                                                IConfigurationSection configuration )
         {
             return Create( monitor, configuration, hostEnvironment.ApplicationName, hostEnvironment.EnvironmentName );
         }

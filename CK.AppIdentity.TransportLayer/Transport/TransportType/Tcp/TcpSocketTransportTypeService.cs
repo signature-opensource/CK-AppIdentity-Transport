@@ -1,12 +1,10 @@
 using CK.Core;
-using System.Net.Sockets;
-using System.Net;
 using System.Diagnostics;
-using Microsoft.Extensions.Configuration;
+using System.Net;
+using System.Net.Sockets;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// This is the default type of transport. When a <see cref="IRemoteParty.Address"/> has no prefix,
     /// it is assumed to be "tcp".

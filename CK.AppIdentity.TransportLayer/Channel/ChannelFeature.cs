@@ -64,21 +64,42 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( protocol.Name == _baseProtocolName );
             Debug.Assert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
-            if( _currentHandler != null && _currentHandler.Protocol == protocol ) return _currentHandler;
+            // Fast path: no change.
+            if( _currentHandler != null && _currentHandler.Protocol == protocol )
+            {
+                return _currentHandler;
+            }
+            // Finds an existing handler.
             var h = _firstHandler;
             while( h != null )
             {
                 if( h.Protocol == protocol ) break;
                 h = h._nextHandler;
             }
+            // Creates a new handler.
             if( h == null )
             {
                 var factory = new OutgoingMessageFactory( _protocolNumber, protocol );
                 var c = new PeerProtocolHandler.CreateParameters( _firstHandler, endPoint, factory );
                 _firstHandler = h = CreateHandler( monitor, ref c );
             }
-            _currentHandler = h;
+            SetCurrentHandler( monitor, h );
             return h;
+        }
+
+        internal void OnConnectionLost( IActivityMonitor monitor )
+        {
+            SetCurrentHandler( monitor, null );
+        }
+
+        void SetCurrentHandler( IActivityMonitor monitor, PeerProtocolHandler? h )
+        {
+            var prev = _currentHandler;
+            if( prev != h )
+            {
+                _currentHandler = h;
+                OnCurrentHandlerChanged( monitor, prev, h );
+            }
         }
 
         /// <summary>
@@ -97,6 +118,14 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="c">The opaque creation parameters.</param>
         /// <returns>A handler for the protocol.</returns>
         protected abstract PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c );
+
+        /// <summary>
+        /// Called whenever the <see cref="CurrentHandler"/> changed.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="previous">The previous handler.</param>
+        /// <param name="current">The current handler.</param>
+        protected abstract void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current );
 
     }
 

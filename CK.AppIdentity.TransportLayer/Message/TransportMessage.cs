@@ -16,7 +16,6 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class TransportMessage : ITransportMessage, IDisposable
     {
         internal const int IsControlFlag = 0b00100000;
-        internal const int IsResponseFlag = 0b00010000;
 
         readonly MessageFactory? _messageFactory;
         readonly int _protocolNumber;
@@ -66,18 +65,18 @@ namespace CK.AppIdentity.TransportLayer
             if( emptyOrAck != 0 )
             {
                 _prefixLength = 2;
-                _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : IsResponseFlag), 0 } );
+                _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : IsControlFlag), 0 } );
             }
         }
 
         // Constructor for regular, disposable messages.
         // offset skips the reserved bytes at the start that are unused by the prefixed length (short messages). 
-        internal TransportMessage( MessageFactory messageFactory, int protocolNumber, MessageProtocol protocol, MutableSequence<byte> buffer, int offset, int prefixLength )
+        internal TransportMessage( MessageFactory messageFactory, uint protocolNumber, MessageProtocol protocol, MutableSequence<byte> buffer, int offset, int prefixLength )
         {
             Debug.Assert( messageFactory != null && prefixLength > 0 && buffer.Length > 0 );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
             _messageFactory = messageFactory;
-            _protocolNumber = protocolNumber;
+            _protocolNumber = (int)protocolNumber;
             _buffer = buffer;
             _prefixLength = prefixLength;
             _protocol = protocol;
@@ -87,11 +86,11 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         // Constructor for static, non disposable, snapshot messages.
-        internal TransportMessage( int protocolNumber, MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
+        internal TransportMessage( uint protocolNumber, MessageProtocol protocol, ReadOnlySequence<byte> prefixedMessage, int prefixLength )
         {
             Debug.Assert( prefixedMessage.IsSingleSegment );
             Debug.Assert( prefixLength >= 2 && prefixLength <= MessageFactory._maxPrefixLength );
-            _protocolNumber = protocolNumber;
+            _protocolNumber = (int)protocolNumber;
             _protocol = protocol;
             _prefixLength = prefixLength;
             _wireMessage = prefixedMessage;
@@ -105,9 +104,6 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <inheritdoc />
         public bool IsData => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsControlFlag) == 0 : false;
-
-        /// <inheritdoc />
-        public bool IsResponse => _prefixLength != 0 ? (_wireMessage.FirstSpan[0] & IsResponseFlag) == 0 : false;
 
         /// <inheritdoc />
         public MessageProtocol Protocol => _protocol;

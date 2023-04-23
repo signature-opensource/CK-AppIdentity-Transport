@@ -81,7 +81,7 @@ namespace CK.AppIdentity
 
         bool DoSetDestroyed( bool isTop )
         {
-            if( Interlocked.CompareExchange( ref _isDestroyed, 0, 1 ) == 0 )
+            if( Interlocked.CompareExchange( ref _isDestroyed, 1, 0 ) == 0 )
             {
                 _destroyTCS = new TaskCompletionSource();
                 // We set the destroy flag and tcs on subordinates but we

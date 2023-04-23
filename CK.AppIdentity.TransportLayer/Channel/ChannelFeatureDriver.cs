@@ -31,63 +31,63 @@ namespace CK.AppIdentity.BlobChannel
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             bool success = true;
-            foreach( var r in ApplicationIdentityService.Remotes )
+            foreach( var r in context.GetAllLeafRemotes()
+                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
             {
-                success &= SetupDynamicRemote( context, r );
+                success &= PlugFeature( context, r );
             }
             return Task.FromResult( success );
-
         }
 
         protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
-            return Task.FromResult( SetupDynamicRemote( context, party ) );
-        }
-
-        bool SetupDynamicRemote( FeatureLifetimeContext context, IRemoteParty r )
-        {
             bool success = true;
-            if( r.DomainApplicationIdentity != null )
-            {
-                foreach( var rSub in r.DomainApplicationIdentity.Remotes )
-                {
-                    if( IsAllowedFeature( rSub ) )
-                    {
-                        success &= PlugFeature( context, rSub );
-                    }
-                }
-            }
-            else if( IsAllowedFeature( r ) )
+            foreach( var r in context.GetAllLeafRemotes()
+                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
             {
                 success &= PlugFeature( context, r );
             }
-            return success;
+            return Task.FromResult( success );
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        bool PlugFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
-            if( party.DomainName != CoreApplicationIdentity.DefaultDomainName )
+            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
+            var transport = r.GetFeature<TransportFeature>();
+            // No Transport implies no communication.
+            if( transport == null )
             {
-                if( party.DomainApplicationIdentity != null )
-                {
-                    foreach( var rSub in party.DomainApplicationIdentity.Remotes )
-                    {
-                        var t = rSub.GetFeature<T>();
-                        t?.Teardown( context );
-                    }
-                }
-                else
-                {
-                    var t = party.GetFeature<T>();
-                    t?.Teardown( context );
-                }
+                context.Monitor.Warn( $"No Transport feature available on '{r.FullName}'. Feature '{FeatureName}' cannot be setup." );
+                return true;
             }
-            return Task.CompletedTask;
+            if( transport.Party != r )
+            {
+                context.Monitor.Fatal( $"Transport feature mismatch on '{r.FullName}': its transport is bound to '{transport.Party.FullName}'. Feature '{FeatureName}' cannot be setup." );
+                return false;
+            }
+            // If TryCreateChannel returns false, this is an error.
+            if( !TryCreateChannel( context, transport, out var channel ) ) return false;
+            // But there may be no error and no channel.
+            if( channel != null )
+            {
+                // RegisterChannel on the TransportFeature allocates the protocol number
+                // for the channel.
+                if( !transport.RegisterChannel( context.Monitor,
+                                                channel,
+                                                FeatureName,
+                                                channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
+                                                channel.Versions ) )
+                {
+                    return false;
+                }
+                r.AddFeature( channel );
+            }
+            return true;
         }
 
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
-            foreach( var r in ApplicationIdentityService.Remotes )
+            foreach( var r in context.GetAllLeafRemotes() )
             {
                 var t = r.GetFeature<T>();
                 t?.Teardown( context );
@@ -95,41 +95,14 @@ namespace CK.AppIdentity.BlobChannel
             return Task.CompletedTask;
         }
 
-        bool PlugFeature( FeatureLifetimeContext context, IRemoteParty r )
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
         {
-            if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
+            foreach( var r in context.GetAllLeafRemotes() )
             {
-                var transport = r.GetFeature<TransportFeature>();
-                // No Transport implies no communication.
-                if( transport == null )
-                {
-                    context.Monitor.Warn( $"No Transport feature available on '{r.FullName}'. {FeatureName} cannot be setup." );
-                    return true;
-                }
-                if( transport.Party != r )
-                {
-                    context.Monitor.Fatal( $"Transport feature mismatch on '{r.FullName}': its transport is bound to '{transport.Party.FullName}'. {FeatureName} cannot be setup." );
-                    return false;
-                }
-                // If TryCreateChannel returns false, this is an error.
-                if( !TryCreateChannel( context, transport, out var channel ) ) return false;
-                // But there may be no error and no channel.
-                if( channel != null )
-                {
-                    // RegisterChannel on the TransportFeature allocates the protocol number
-                    // for the channel.
-                    if( !transport.RegisterChannel( context.Monitor,
-                                                    channel,
-                                                    FeatureName,
-                                                    channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
-                                                    channel.Versions ) )
-                    {
-                        return false;
-                    }
-                    r.AddFeature( channel );
-                }
+                var t = r.GetFeature<T>();
+                t?.Teardown( context );
             }
-            return true;
+            return Task.CompletedTask;
         }
 
         /// <summary>

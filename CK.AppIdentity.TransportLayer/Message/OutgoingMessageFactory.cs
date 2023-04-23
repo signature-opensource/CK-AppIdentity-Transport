@@ -22,7 +22,7 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class OutgoingMessageFactory : MessageFactory
     {
         readonly MessageProtocol _protocol;
-        readonly int _protocolNumber;
+        readonly uint _protocolNumber;
 
         OutgoingMessageFactory()
         {
@@ -43,7 +43,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Throw.CheckArgument( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
             Throw.CheckArgument( protocol != null && protocol != MessageProtocol.ZeroProtocol );
-            _protocolNumber = protocolNumber;
+            _protocolNumber = (uint)protocolNumber;
             _protocol = protocol;
         }
 
@@ -58,11 +58,22 @@ namespace CK.AppIdentity.TransportLayer
         /// is allowed to send empty messages.
         /// </summary>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
+        /// <param name="isControl">True to set the <see cref="TransportMessage.IsControl"/> bit.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A transport message.</returns>
-        public TransportMessage Create( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public TransportMessage Create( Action<IBufferWriter<byte>> writer,
+                                        bool isControl = false,
+                                        int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( this, writer, minSequenceBufferSize );
+            return DoCreate( this, writer, null, isControl, minSequenceBufferSize );
+        }
+
+        /// <inheritdoc cref="Create(Action{IBufferWriter{byte}}, bool, int)"/>
+        public TransportMessage Create( Action<MutableSequence<byte>> writer,
+                                        bool isControl = false,
+                                        int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        {
+            return DoCreate( this, null, writer, isControl, minSequenceBufferSize );
         }
 
         /// <summary>
@@ -70,15 +81,31 @@ namespace CK.AppIdentity.TransportLayer
         /// <see cref="TransportMessage.Dispose()"/> on a static message does nothing.
         /// </summary>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
+        /// <param name="isControl">True to set the <see cref="TransportMessage.IsControl"/> bit.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A static transport message.</returns>
-        public TransportMessage CreateStatic( Action<IBufferWriter<byte>> writer, int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public TransportMessage CreateStatic( Action<IBufferWriter<byte>> writer,
+                                              bool isControl = false,
+                                              int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( null, writer, minSequenceBufferSize );
+            return DoCreate( null, writer, null, isControl, minSequenceBufferSize );
         }
 
-        TransportMessage DoCreate( MessageFactory? factory, Action<IBufferWriter<byte>> writer, int minSequenceBufferSize )
+        /// <inheritdoc cref="CreateStatic(Action{IBufferWriter{byte}}, bool, int)"/>
+        public TransportMessage CreateStatic( Action<MutableSequence<byte>> writer,
+                                              bool isControl = false,
+                                              int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
+            return DoCreate( null, null, writer, isControl, minSequenceBufferSize );
+        }
+
+        TransportMessage DoCreate( MessageFactory? factory,
+                                   Action<IBufferWriter<byte>>? bufferwriter,
+                                   Action<MutableSequence<byte>>? sequenceWriter,
+                                   bool isControl,
+                                   int minSequenceBufferSize )
+        {
+            Debug.Assert( (bufferwriter == null) != (sequenceWriter == null) );
             bool releaseBuffer = true;
             var buffer = GetBuffer();
             buffer.MinimumBufferSize = minSequenceBufferSize;
@@ -90,7 +117,10 @@ namespace CK.AppIdentity.TransportLayer
                 // It is up to the caller to specify this thanks to minSequenceBufferSize if she wants.
                 var header = buffer.GetMemory( _maxPrefixLength );
                 buffer.Advance( _maxPrefixLength );
-                writer( buffer );
+
+                if( bufferwriter != null ) bufferwriter( buffer );
+                else sequenceWriter!( buffer );
+
                 if( buffer.Length > int.MaxValue ) Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum TransportMessage size." );
                 var messageLength = (uint)buffer.Length - _maxPrefixLength;
                 if( messageLength == 0 )
@@ -100,7 +130,7 @@ namespace CK.AppIdentity.TransportLayer
                     return TransportMessage.Empty;
                 }
                 Span<byte> prefix = stackalloc byte[_maxPrefixLength];
-                prefixLength = WritePrefix( _protocolNumber, messageLength, prefix );
+                prefixLength = WritePrefix( _protocolNumber, isControl, messageLength, prefix );
                 Debug.Assert( prefixLength <= _maxPrefixLength );
                 int offset = _maxPrefixLength - prefixLength;
                 prefix.Slice( 0, prefixLength ).CopyTo( header.Span.Slice( offset, prefixLength ) );
@@ -118,13 +148,16 @@ namespace CK.AppIdentity.TransportLayer
             }
 
 
-            static int WritePrefix( int protocol, uint messageLength, Span<byte> memory )
+            static int WritePrefix( uint protocol, bool isControl, uint messageLength, Span<byte> memory )
             {
                 Debug.Assert( memory.Length >= _maxPrefixLength );
                 Debug.Assert( messageLength >= 0 && protocol < 64 );
                 uint len = (uint)BitOperations.Log2( messageLength ) / 8;
                 Debug.Assert( len >= 0 && len <= 3 );
-                memory[0] = (byte)((len << 6) | (byte)protocol);
+                var b = (len << 6) | protocol;
+                if( isControl ) b |= TransportMessage.IsControlFlag;
+                Debug.Assert( b >= 0 && b <= 255 );
+                memory[0] = (byte)b;
                 if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );
                 Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( memory ), 1 ), messageLength );
                 return (int)len + 2;

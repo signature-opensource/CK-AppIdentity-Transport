@@ -1,0 +1,73 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="CK.AppIdentity.TransportLayer.IncomingMessageFactory">
+    <Position X="0.5" Y="4.5" Width="2" />
+    <Members>
+      <Field Name="_lastReceived" Hidden="true" />
+      <Field Name="_protocols" Hidden="true" />
+      <Method Name="DoReadAsync" Hidden="true" />
+      <Field Name="FirstSegmentLength" Hidden="true" />
+      <Method Name="IncomingMessageFactory" Hidden="true" />
+      <Method Name="SetAllowedProtocols" Hidden="true" />
+    </Members>
+    <AssociationLine Name="AllowedProtocols" Type="CK.AppIdentity.TransportLayer.MessageProtocolMap" FixedFromPoint="true">
+      <Path>
+        <Point X="0.938" Y="4.5" />
+        <Point X="0.938" Y="4.055" />
+      </Path>
+      <MemberNameLabel ManuallyPlaced="true" ManuallySized="true">
+        <Position X="-1.482" Y="0.085" Height="0.182" Width="1.353" />
+      </MemberNameLabel>
+    </AssociationLine>
+    <TypeIdentifier>
+      <HashCode>AAAgAAAAAAAAIAAAAAAAAAAABAgAAAAAAABAAAACAAI=</HashCode>
+      <FileName>Message\IncomingMessageFactory.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="AllowedProtocols" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="CK.AppIdentity.TransportLayer.MessageProtocol">
+    <Position X="0.5" Y="0.5" Width="1.5" />
+    <Members>
+      <Field Name="_fullName" Hidden="true" />
+      <Field Name="_name" Hidden="true" />
+      <Field Name="_version" Hidden="true" />
+      <Field Name="FullNameMaxLength" Hidden="true" />
+      <Method Name="MessageProtocol" Hidden="true" />
+      <Method Name="ToString" Hidden="true" />
+      <Field Name="ZeroProtocol" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>IAAAIAAACAAAIIAEAAAAAAYIAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>MessageProtocol.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Struct Name="CK.AppIdentity.TransportLayer.MessageProtocolMap">
+    <Position X="0.5" Y="2.5" Width="1.75" />
+    <Members>
+      <Field Name="_protocols" Hidden="true" />
+      <Method Name="Get" Hidden="true" />
+      <Method Name="GetProtocolNumber" Hidden="true" />
+      <Method Name="InternalGet" Hidden="true" />
+      <Method Name="MessageProtocolMap" Hidden="true" />
+    </Members>
+    <AssociationLine Name="Protocols" Type="CK.AppIdentity.TransportLayer.MessageProtocol" FixedFromPoint="true">
+      <Path>
+        <Point X="1.125" Y="2.5" />
+        <Point X="1.125" Y="1.988" />
+      </Path>
+      <MemberNameLabel ManuallyPlaced="true" ManuallySized="true">
+        <Position X="-0.948" Y="0.06" Height="0.182" Width="0.887" />
+      </MemberNameLabel>
+    </AssociationLine>
+    <TypeIdentifier>
+      <HashCode>AQAgAAAAAAAAAABAAAgAgABAAAAAQAAAAAAAAAAAAAA=</HashCode>
+      <FileName>MessageProtocolMap.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsCollectionAssociation>
+      <Property Name="Protocols" />
+    </ShowAsCollectionAssociation>
+  </Struct>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

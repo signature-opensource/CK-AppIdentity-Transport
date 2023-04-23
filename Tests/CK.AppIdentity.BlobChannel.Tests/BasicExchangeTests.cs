@@ -159,6 +159,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 senderReceived.Add( bytes );
             };
             // Listener => Sender.
+            // Before sending, ReadyTask can be awaited.
             await listenerChannel.Transport.ReadyTask;
             listenerChannel.TrySend( new byte[] { 1 } ).Should().BeTrue();
             listenerChannel.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();

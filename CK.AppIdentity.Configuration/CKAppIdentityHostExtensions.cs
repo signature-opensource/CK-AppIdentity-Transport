@@ -35,7 +35,7 @@ namespace Microsoft.Extensions.Hosting
                 if( appIdentity != null )
                 {
 
-                    if( !CoreApplicationIdentity.TryConfigure( identity =>
+                    if( CoreApplicationIdentity.TryConfigure( identity =>
                     {
                         identity.PartyName = appIdentity.Local.Name;
                         identity.EnvironmentName = appIdentity.EnvironmentName;
@@ -43,11 +43,11 @@ namespace Microsoft.Extensions.Hosting
                         identity.ContextDescriptor = contextDescriptor ?? Environment.CommandLine;
                     } ) )
                     {
-                        monitor.Warn( "Unable to configure CoreApplicationIdentity since it is already initialized." );
+                        CoreApplicationIdentity.Initialize();
                     }
                     else
                     {
-                        CoreApplicationIdentity.Initialize();
+                        monitor.Warn( "Unable to configure CoreApplicationIdentity since it is already initialized." );
                     }
                     services.AddSingleton( appIdentity );
                 }

@@ -68,8 +68,7 @@ namespace CK.AppIdentity.TransportLayer
         public bool TryEnqueue( TransportMessage message ) => _controller.TryEnqueue( message );
 
         /// <summary>
-        /// Attempts to transfer the message (that must have a true <see cref="TransportMessage.IsResponse"/>)
-        /// to the transport response queue.
+        /// Attempts to transfer the message to the transport response queue.
         /// <para>
         /// This returns false if and only if the channel is closed (the remote is destroyed).
         /// When false is returned, the <paramref name="message"/> should be disposed.
@@ -79,7 +78,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
         public bool TryEnqueueResponse( TransportMessage message )
         {
-            Throw.CheckArgument( message.IsResponse );
             return _controller.TryEnqueue( message );
         }
 

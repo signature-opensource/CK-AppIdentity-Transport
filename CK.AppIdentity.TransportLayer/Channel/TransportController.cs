@@ -54,11 +54,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public bool TryEnqueue( TransportMessage message ) => _senderChannel.Writer.TryWrite( message );
 
-        public bool TryEnqueueResponse( TransportMessage message )
-        {
-            Debug.Assert( message.IsResponse );
-            return _responseChannel.Writer.TryWrite( message );
-        }
+        public bool TryEnqueueResponse( TransportMessage message ) => _responseChannel.Writer.TryWrite( message );
 
         /// <summary>
         /// Waits for a space to enqueue a message.
@@ -195,8 +191,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                     }
                 }
-                // Always consume the bye-bye message.
-                // If it's not for us, it will be lost but we don't care.
+                // Sends the bye-bye message if any.
                 var byeBye = transport.ByeByeMessage;
                 if( byeBye != null )
                 {

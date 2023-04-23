@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="CK.AppIdentity.TransportLayer.TransportFeature">
+    <Position X="3" Y="0.5" Width="2.5" />
+    <Members>
+      <Field Name="_bestRegisteredProtocols" Hidden="true" />
+      <Field Name="_channels" Hidden="true" />
+      <Field Name="_connectionAvailabilityChanged" Hidden="true" />
+      <Field Name="_connectionAvailabitity" Hidden="true" />
+      <Field Name="_controller" Hidden="true" />
+      <Field Name="_disallowEviction" Hidden="true" />
+      <Field Name="_listener" Hidden="true" />
+      <Field Name="_outgoingInitialMessage" Hidden="true" />
+      <Field Name="_party" Hidden="true" />
+      <Field Name="_readyTask" Hidden="true" />
+      <Field Name="_registeredProtocols" Hidden="true" />
+      <Field Name="_switchOffReason" Hidden="true" />
+      <Field Name="_target" Hidden="true" />
+      <Field Name="_transportManager" Hidden="true" />
+      <Property Name="BestRegisteredProtocols" Hidden="true" />
+      <Method Name="CloseChannelRegistration" Hidden="true" />
+      <Method Name="DoSwitchOffAsync" Hidden="true" />
+      <Method Name="DoSwitchOnAsync" Hidden="true" />
+      <Method Name="InitializeOutgoingAndInitiateConnection" Hidden="true" />
+      <Method Name="OnTransportAppearAsync" Hidden="true" />
+      <Property Name="OutgoingInitialMessage" Hidden="true" />
+      <Method Name="RegisterBestProtocol" Hidden="true" />
+      <Method Name="RegisterChannel" Hidden="true" />
+      <Method Name="SetTornDownSwitchOff" Hidden="true" />
+      <Method Name="ToString" Hidden="true" />
+      <Property Name="TransportController" Hidden="true" />
+      <Method Name="TransportFeature" Hidden="true" />
+      <Method Name="UpdateConnectionAvailabitityAsync" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>CkQAAAgDAABDBAwMAAAABBAkRKCAIQAAEARAMEABAEA=</HashCode>
+      <FileName>TransportFeature.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="Party" />
+    </ShowAsAssociation>
+  </Class>
+  <Class Name="CK.AppIdentity.TransportLayer.TransportFeatureDriver" Collapsed="true">
+    <Position X="0.5" Y="0.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAIRAAQAIACAAQAAAAABAEAAAAAAAAgAAAAKAAAAAA=</HashCode>
+      <FileName>TransportFeatureDriver.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Interface Name="CK.AppIdentity.IRemoteParty" Collapsed="true">
+    <Position X="0.5" Y="3.25" Width="1.5" />
+    <TypeIdentifier />
+  </Interface>
+  <Enum Name="CK.AppIdentity.TransportLayer.ConnectionAvailabitity">
+    <Position X="0.5" Y="1.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAQAAAAAAAAAAAAAgAAACAAAAAAAEAAAA=</HashCode>
+      <FileName>ConnectionAvailabitity.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

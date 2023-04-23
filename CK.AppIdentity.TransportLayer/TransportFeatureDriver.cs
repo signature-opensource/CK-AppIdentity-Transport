@@ -4,7 +4,10 @@ using System.IO;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
+    /// <summary>
+    /// Drives the <see cref="TransportFeature"/> remote's lifetime.
+    /// The <see cref="TransportManager"/> is added in the <see cref="ApplicationIdentityService"/>'s features.
+    /// </summary>
     public class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
         readonly ITransportTypeService[] _transportTypes;
@@ -30,86 +33,97 @@ namespace CK.AppIdentity.TransportLayer
             }
             // Even if initialization fails, register the features: it may be required by others.
             ApplicationIdentityService.AddFeature( _transportManager );
-            foreach( var r in ApplicationIdentityService.Remotes )
+            // Domains named "Undefined" have no Transport.
+            foreach( var r in context.GetAllLeafRemotes()
+                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
             {
-                success &= SetupRemote( context, r );
+                success &= PlugTransportFeature( context, r );
             }
             return Task.FromResult( true );
         }
 
         protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
         {
-            return Task.FromResult( SetupRemote( context, remoteParty ) );
-        }
-
-        bool SetupRemote( FeatureLifetimeContext context, IRemoteParty r )
-        {
             bool success = true;
-            if( r.DomainApplicationIdentity != null )
-            {
-                foreach( var rSub in r.DomainApplicationIdentity.Remotes )
-                {
-                    if( IsAllowedFeature( rSub ) )
-                    {
-                        success &= PlugTransportFeature( context, rSub );
-                    }
-                }
-            }
-            else if( IsAllowedFeature( r ) )
+            // Domains named "Undefined" have no Transport.
+            foreach( var r in context.GetAllLeafRemotes()
+                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
             }
-            return success;
+            return Task.FromResult( success );
+        }
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        {
+            Debug.Assert( _transportManager != null );
+            foreach( var r in context.GetAllLeafRemotes() )
+            {
+                var t = r.GetFeature<TransportFeature>();
+                if( t != null ) _transportManager.TearDown( t );
+            }
+            return Task.CompletedTask;
+        }
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        {
+            Debug.Assert( _transportManager != null );
+            foreach( var r in context.GetAllLeafRemotes() )
+            {
+                var t = r.GetFeature<TransportFeature>();
+                if( t != null ) _transportManager.TearDown( t );
+            }
+            // Sends the stop signal and wait for the resolution of the running task
+            // before returning to the ApplicationIdentity service's agent activity. 
+            _transportManager.Stop();
+            return _transportManager.RunningTask;
         }
 
         bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
             Debug.Assert( _transportManager != null );
-            // Skip "Undefined" but this is not an error.
-            if( r.DomainName != CoreApplicationIdentity.DefaultDomainName )
+            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
+            // If we cannot resolve the listening or target address, it's an error.
+            if( !ResolveAdresses( context.Monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
             {
-                // If we cannot resolve the listening or target address, it's an error.
-                if( !ResolveAdresses( context.Monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
+                return false;
+            }
+            Debug.Assert( (listen == null) != (target == null) );
+            // If we are listening and cannot setup a listener on the local address, it's an error.
+            TransportListener? listener = null;
+            bool disallowEviction = false;
+            if( listen != null )
+            {
+                if( (listener = _transportManager.TryEnsureListener( context.Monitor, listen )) == null )
                 {
                     return false;
                 }
-                Debug.Assert( (listen == null) != (target == null) );
-                // If we are listening and cannot setup a listener on the local address, it's an error.
-                TransportListener? listener = null;
-                bool disallowEviction = false;
-                if( listen != null )
+                var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
+                disallowEviction = a != null && a.Equals( "True", StringComparison.OrdinalIgnoreCase );
+            }
+            // No direct initialization error: add the TransportFeature to the party.
+            // The initialization is not finished: if the party is listening it must be registered in its
+            // listener and if the party is the initiator it must start to try to connect.
+            // However, to be able to start exchanging with others, we must know the message protocols
+            // that are supported.
+            var t = new TransportFeature( _transportManager, r, listener, target, disallowEviction );
+            r.AddFeature( t );
+            if( listener != null )
+            {
+                context.Trampoline.OnSuccess( () =>
                 {
-                    if( (listener = _transportManager.TryEnsureListener( context.Monitor, listen )) == null )
-                    {
-                        return false;
-                    }
-                    var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
-                    disallowEviction = a != null && a.Equals( "True", StringComparison.OrdinalIgnoreCase );
-                }
-                // No direct initialization error: add the TransportFeature to the party.
-                // The initialization is not finished: if the party is listening it must be registered in its
-                // listener and if the party is the initiator it must start to try to connect.
-                // However, to be able to start exchanging with others, we must know the message protocols
-                // that are supported.
-                var t = new TransportFeature( _transportManager, r, listener, target, disallowEviction );
-                r.AddFeature( t );
-                if( listener != null )
+                    t.CloseChannelRegistration( context.Monitor );
+                    listener.AddParty( t );
+                } );
+            }
+            else
+            {
+                Debug.Assert( target != null );
+                context.Trampoline.OnSuccess( () =>
                 {
-                    context.Trampoline.OnSuccess( () =>
-                    {
-                        t.CloseChannelRegistration( context.Monitor );
-                        listener.AddParty( t );
-                    } );
-                }
-                else
-                {
-                    Debug.Assert( target != null );
-                    context.Trampoline.OnSuccess( () =>
-                    {
-                        t.CloseChannelRegistration( context.Monitor );
-                        t.InitializeOutgoing();
-                    } );
-                }
+                    t.CloseChannelRegistration( context.Monitor );
+                    t.InitializeOutgoingAndInitiateConnection();
+                } );
             }
             return true;
         }
@@ -124,7 +138,7 @@ namespace CK.AppIdentity.TransportLayer
                 var p = s.AsSpan( 0, idx );
                 foreach( var t in _transportTypes )
                 {
-                    if( p.Equals(t.AddressProtocolName, StringComparison.OrdinalIgnoreCase) )
+                    if( p.Equals( t.AddressProtocolName, StringComparison.OrdinalIgnoreCase) )
                     {
                         typed = s.AsSpan( idx + 1 );
                         transport = t;
@@ -154,7 +168,7 @@ namespace CK.AppIdentity.TransportLayer
                 target = ParseTypedAddress( monitor, a, r.Configuration.Configuration.Path, "Address" );
                 return target != null;
             }
-            if( !ReadListeningAddresses(monitor,r, out var available ) )
+            if( !ReadListeningAddresses( monitor,r, out var available ) )
             {
                 return false;
             }
@@ -218,44 +232,6 @@ namespace CK.AppIdentity.TransportLayer
                 }
             }
             return true;
-        }
-
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
-        {
-            TearDownRemote( party );
-            return Task.CompletedTask;
-        }
-
-        void TearDownRemote( IRemoteParty party )
-        {
-            Debug.Assert( _transportManager != null );
-            if( party.DomainName != CoreApplicationIdentity.DefaultDomainName )
-            {
-                if( party.DomainApplicationIdentity != null )
-                {
-                    foreach( var rSub in party.DomainApplicationIdentity.Remotes )
-                    {
-                        var t = rSub.GetFeature<TransportFeature>();
-                        if( t != null ) _transportManager.TearDown( t );
-                    }
-                }
-                else
-                {
-                    var t = party.GetFeature<TransportFeature>();
-                    if( t != null ) _transportManager.TearDown( t );
-                }
-            }
-        }
-
-        protected override Task TeardownAsync( FeatureLifetimeContext context )
-        {
-            Debug.Assert( _transportManager != null );
-            foreach( var r in ApplicationIdentityService.Remotes )
-            {
-                TearDownRemote( r );
-            }
-            _transportManager.Stop();
-            return _transportManager.RunningTask;
         }
     }
 }

@@ -8,11 +8,12 @@ namespace CK.AppIdentity.BlobChannel
     /// </summary>
     public sealed class BlobChannelFeatureDriver : ChannelFeatureDriver<BlobChannelFeature>
     {
-        public BlobChannelFeatureDriver( ApplicationIdentityService s, MessageProtocolDirectoryService messageProtocolDirectory )
-            : base( s, false )
+        public BlobChannelFeatureDriver( ApplicationIdentityService s )
+            : base( s, isAllowedByDefault: false )
         {
         }
 
+        /// <inheritdoc/>
         protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out BlobChannelFeature? channel )
         {
             channel = new BlobChannelFeature( transport );

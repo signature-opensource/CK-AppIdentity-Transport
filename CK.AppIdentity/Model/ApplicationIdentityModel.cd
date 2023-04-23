@@ -1,12 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ApplicationIdentityService">
-    <Position X="8.75" Y="7" Width="2.25" />
+    <Position X="0.5" Y="1" Width="2.25" />
     <Members>
       <Field Name="_agent" Hidden="true" />
       <Field Name="_builders" Hidden="true" />
-      <Field Name="_featureBuilderInitialization" Hidden="true" />
       <Field Name="_features" Hidden="true" />
+      <Field Name="_initialization" Hidden="true" />
       <Property Name="Agent" Hidden="true" />
       <Method Name="ApplicationIdentityService" Hidden="true" />
       <Method Name="DisposeAsync" Hidden="true" />
@@ -15,31 +15,31 @@
       <Method Name="IHostedService.StopAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AIAAQAAABAgAAIAEAAEBAAAIAABABAABAACAIIAACAA=</HashCode>
+      <HashCode>AIAAQAAAAAgAAIAEAAEBAAAIAABABAABAACAKAgACAA=</HashCode>
       <FileName>ApplicationIdentityService.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.917" />
   </Class>
   <Interface Name="CK.AppIdentity.IApplicationIdentity">
-    <Position X="1" Y="4.25" Width="2" />
+    <Position X="0.5" Y="4.25" Width="2" />
     <AssociationLine Name="Local" Type="CK.AppIdentity.ILocalParty" FixedToPoint="true">
       <Path>
-        <Point X="3" Y="5.812" />
-        <Point X="4" Y="5.812" />
+        <Point X="2.5" Y="5.562" />
+        <Point X="3.25" Y="5.562" />
       </Path>
-      <MemberNameLabel ManuallyPlaced="true">
-        <Position X="0.368" Y="0.035" />
+      <MemberNameLabel ManuallyPlaced="true" ManuallySized="true">
+        <Position X="-0.04" Y="0.06" Height="0.162" Width="0.744" />
       </MemberNameLabel>
     </AssociationLine>
     <AssociationLine Name="Remotes" Type="CK.AppIdentity.IRemoteParty" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="3" Y="6.25" />
-        <Point X="3.873" Y="6.25" />
-        <Point X="3.873" Y="7.121" />
-        <Point X="5.75" Y="7.121" />
+        <Point X="2.5" Y="6.25" />
+        <Point X="3.035" Y="6.25" />
+        <Point X="3.035" Y="6.752" />
+        <Point X="5" Y="6.752" />
       </Path>
       <MemberNameLabel ManuallyPlaced="true">
-        <Position X="2.01" Y="0.835" />
+        <Position X="0.277" Y="0.052" />
       </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
@@ -54,25 +54,28 @@
     </ShowAsCollectionAssociation>
   </Interface>
   <Interface Name="CK.AppIdentity.ILocalParty">
-    <Position X="4" Y="5.25" Width="1.5" />
+    <Position X="3.25" Y="5" Width="1.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAgAAAAAAAAAA=</HashCode>
       <FileName>Model\ILocalParty.cs</FileName>
     </TypeIdentifier>
   </Interface>
   <Interface Name="CK.AppIdentity.IRemoteParty">
-    <Position X="5.75" Y="5.25" Width="2" />
+    <Position X="5" Y="5" Width="2" />
     <TypeIdentifier>
       <HashCode>ACAABAAAAABAAAAAAAAAAIQIAAAAAAACgACAAAAAAAA=</HashCode>
       <FileName>Model\IRemoteParty.cs</FileName>
     </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="DomainApplicationIdentity" />
+    </ShowAsAssociation>
   </Interface>
   <Interface Name="CK.AppIdentity.IParty">
-    <Position X="4.75" Y="2.75" Width="1.5" />
+    <Position X="3.75" Y="2.75" Width="1.5" />
     <InheritanceLine Type="CK.AppIdentity.IAppIdentityObject" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="5.562" Y="2.055" />
-        <Point X="5.562" Y="2.75" />
+        <Point X="4.562" Y="2.055" />
+        <Point X="4.562" Y="2.75" />
       </Path>
     </InheritanceLine>
     <TypeIdentifier>
@@ -81,11 +84,13 @@
     </TypeIdentifier>
   </Interface>
   <Interface Name="CK.AppIdentity.IDomainApplicationIdentity">
-    <Position X="1" Y="7.5" Width="2.5" />
+    <Position X="0.5" Y="7" Width="2.5" />
     <InheritanceLine Type="CK.AppIdentity.IApplicationIdentity" ManuallyRouted="true" FixedFromPoint="true">
       <Path>
-        <Point X="2.25" Y="6.382" />
-        <Point X="2.25" Y="7.5" />
+        <Point X="1.75" Y="6.382" />
+        <Point X="1.75" Y="6.941" />
+        <Point X="1.75" Y="6.941" />
+        <Point X="1.75" Y="7" />
       </Path>
     </InheritanceLine>
     <TypeIdentifier>
@@ -94,7 +99,7 @@
     </TypeIdentifier>
   </Interface>
   <Interface Name="CK.AppIdentity.IAppIdentityObject">
-    <Position X="4.75" Y="0.5" Width="1.75" />
+    <Position X="3.75" Y="0.5" Width="1.75" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAABAAAAAAAAAAABAAAAAAAAAAA=</HashCode>
       <FileName>Model\IAppIdentityObject.cs</FileName>

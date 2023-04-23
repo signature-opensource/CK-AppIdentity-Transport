@@ -9,7 +9,9 @@ using System.Threading;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// 
+    /// Centralizes communication between a party and its remote.
+    /// This feature is available only on a leaf <see cref="IRemoteParty"/>: locals
+    /// and remote that define 
     /// </summary>
     public sealed class TransportFeature
     {
@@ -87,13 +89,33 @@ namespace CK.AppIdentity.TransportLayer
 
         Task UpdateConnectionAvailabitityAsync( IActivityMonitor monitor )
         {
+            Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
             Debug.Assert( _readyTask.Task.IsCompleted );
 
             // TODO: Consider _controller queue load.
-            var a = ConnectionAvailabitity.Connected;
+            // Currently we are connected if no off reason exists and a controller has been created and its lifetime has not been signaled.
+            // Eviction is transparent (the previous transport ends its receive works) but errors followed by a successful reconnection can be observed.
+            // But since this is currently called by OnTransportAppearAsync (reconnection case) and DoSwithOff (explicit disconnection case),
+            // no intermediate state will be emitted.
+            // We definitely need a more complex code with:
+            //  - controller sender channel load.
+            //  - disconnection time (based on LastReceived and may be a LastSent - when the remote is passive).
+            // This may be coupled to the KeepAlive implementation and rely on one (or more) back tasks.
+            var a = IsOff || _controller?.CurrentTransport?.Lifetime.IsCancellationRequested is true
+                        ? ConnectionAvailabitity.None
+                        : ConnectionAvailabitity.Connected;
 
             if( _connectionAvailabitity != a )
             {
+                // If we are "strongly" disconnected, we tell the channels that their CurrentHandler is
+                // no more available.
+                if( a == ConnectionAvailabitity.None )
+                {
+                    foreach( var c in _channels )
+                    {
+                        c.OnConnectionLost( monitor );
+                    }
+                }
                 _connectionAvailabitity = a;
                 return _connectionAvailabilityChanged.SafeRaiseAsync( monitor, this );
             }
@@ -319,7 +341,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal InitialMessage? OutgoingInitialMessage => _outgoingInitialMessage;
 
-        internal void InitializeOutgoing()
+        internal void InitializeOutgoingAndInitiateConnection()
         {
             Debug.Assert( _target != null );
             _outgoingInitialMessage = new InitialMessage( this );
@@ -365,7 +387,7 @@ namespace CK.AppIdentity.TransportLayer
         ///  - If the controller is null, we do nothing.
         /// => This whole function is idempotent.
         /// </summary>
-        internal ValueTask DoSwitchOffAsync( IActivityMonitor monitor, string offReason )
+        internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, string offReason )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
             monitor.Trace( $"Switching remote '{Party.FullName}' off (reason: '{offReason}')." );
@@ -374,9 +396,9 @@ namespace CK.AppIdentity.TransportLayer
             _controller = null;
             if( c != null )
             {
-                return c.CloseAsync( monitor, offReason );
+                await c.CloseAsync( monitor, offReason );
             }
-            return default;
+            await UpdateConnectionAvailabitityAsync( monitor );
         }
 
         public override string ToString() => $"TransportFeature for '{_party.FullName}'";

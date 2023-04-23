@@ -49,5 +49,40 @@ namespace CK.AppIdentity
             if( p == null ) Throw.InvalidOperationException( $"Unable to find remote named '{name}'." );
             return p;
         }
+
+        /// <summary>
+        /// Gets all the remotes of this service recursively across remotes that define a domain.
+        /// Remotes that define a domain don't appear in this list.
+        /// </summary>
+        /// <param name="s">This identity service.</param>
+        /// <returns>All the remotes that are not domains.</returns>
+        public static IEnumerable<IRemoteParty> GetAllLeafRemotes( this ApplicationIdentityService s )
+        {
+            foreach( var r in s.Remotes )
+            {
+                foreach( var rSub in r.GetAllLeafRemotes() )
+                {
+                    yield return rSub;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the remotes that don't define a domain, including this one.
+        /// </summary>
+        /// <param name="p">This remote.</param>
+        /// <returns>This party or the <see cref="IRemoteParty.DomainApplicationIdentity"/>'s remotes if this defines a domain.</returns>
+        public static IEnumerable<IRemoteParty> GetAllLeafRemotes( this IRemoteParty p )
+        {
+            var d = p.DomainApplicationIdentity;
+            if( d == null ) yield return p;
+            else
+            {
+                foreach( var r in d.Remotes )
+                {
+                    yield return r;
+                }
+            }
+        }
     }
 }

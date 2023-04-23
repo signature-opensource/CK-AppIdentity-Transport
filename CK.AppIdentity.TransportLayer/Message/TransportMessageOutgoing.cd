@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="CK.AppIdentity.TransportLayer.MessageProtocol">
+    <Position X="3.5" Y="0.5" Width="1.5" />
+    <Members>
+      <Field Name="_fullName" Hidden="true" />
+      <Field Name="_name" Hidden="true" />
+      <Field Name="_version" Hidden="true" />
+      <Field Name="FullNameMaxLength" Hidden="true" />
+      <Method Name="MessageProtocol" Hidden="true" />
+      <Method Name="ToString" Hidden="true" />
+      <Field Name="ZeroProtocol" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>IAAAIAAACAAAIIAEAAAAAAYIAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>MessageProtocol.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CK.AppIdentity.TransportLayer.OutgoingMessageFactory">
+    <Position X="0.5" Y="0.5" Width="2" />
+    <Members>
+      <Field Name="_protocol" Hidden="true" />
+      <Field Name="_protocolNumber" Hidden="true" />
+      <Method Name="DoCreate" Hidden="true" />
+      <Method Name="OutgoingMessageFactory" Hidden="true" />
+      <Field Name="ZeroProtocol" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>AABAAAAACAIAAAAQAAAAAABAAQAAAEAAAAAAAAAAAAA=</HashCode>
+      <FileName>Message\OutgoingMessageFactory.cs</FileName>
+    </TypeIdentifier>
+    <ShowAsAssociation>
+      <Property Name="Protocol" />
+    </ShowAsAssociation>
+  </Class>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

@@ -5,16 +5,9 @@ using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
-    public interface ITransportManager
-    {
-        /// <summary>
-        /// Gets the <see cref="ApplicationIdentityService"/> agent.
-        /// </summary>
-        AppIdentityAgent ApplicationIdentityAgent { get; }
-
-    }
-
+    /// <summary>
+    /// <see cref="MicroAgent"/> that manages the <see cref="Transport"/> remote's features.
+    /// </summary>
     public sealed partial class TransportManager : MicroAgent
     {
         readonly AppIdentityAgent _agent;
@@ -126,7 +119,7 @@ namespace CK.AppIdentity.TransportLayer
         internal void TearDown( TransportFeature feature )
         {
             // The empty string is the "Torn down" marker:
-            // it is unconditionally set here so that no SwitchOn is now possible.
+            // it is unconditionally set here so that no more transition to "on" is possible.
             feature.SetTornDownSwitchOff();
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }

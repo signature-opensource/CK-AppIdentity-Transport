@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -17,6 +18,7 @@ namespace CK.AppIdentity
         readonly AppIdentityAgent _agent;
         readonly IReadOnlyList<ApplicationIdentityFeatureDriver> _drivers;
         readonly BasicTrampolineRunner _trampoline;
+        IRemoteParty? _targetParty;
 
         internal FeatureLifetimeContext( IActivityMonitor monitor, AppIdentityAgent agent, IReadOnlyList<ApplicationIdentityFeatureDriver> drivers )
         {
@@ -26,6 +28,14 @@ namespace CK.AppIdentity
             _drivers = drivers;
         }
 
+        /// <summary>
+        /// Gets the remotes that are concerned by the current operation (either the <see cref="ApplicationIdentityService"/>
+        /// one's for <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
+        /// or the <see cref="IRemoteParty"/> one's for <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>) and
+        /// <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>).
+        /// </summary>
+        /// <returns>The set of leaf remotes for the current operation.</returns>
+        public IEnumerable<IRemoteParty> GetAllLeafRemotes() => _targetParty?.GetAllLeafRemotes() ?? _agent.ApplicationIdentityService.GetAllLeafRemotes();
 
         /// <summary>
         /// Gets the <see cref="ApplicationIdentityService"/>'s agent.
@@ -49,6 +59,7 @@ namespace CK.AppIdentity
 
         internal async Task<Exception?> ExecuteSetupAsync()
         {
+            _targetParty = null;
             foreach( var d in _drivers )
             {
                 _trampoline.Trampoline.Add( () => d.SetupAsync( this ) );
@@ -60,6 +71,7 @@ namespace CK.AppIdentity
 
         internal async Task<TrampolineResult> ExecuteSetupDynamicRemoteAsync( IRemoteParty party )
         {
+            _targetParty = party;
             foreach( var d in _drivers )
             {
                 _trampoline.Trampoline.Add( () => d.SetupDynamicRemoteAsync( this, party ) );
@@ -70,6 +82,7 @@ namespace CK.AppIdentity
 
         internal Task ExecuteTeardownDynamicRemoteAsync( IRemoteParty party )
         {
+            _targetParty = party;
             // Calls the drivers in reverse order for the destruction.
             foreach( var d in _drivers.Reverse() )
             {
@@ -80,6 +93,7 @@ namespace CK.AppIdentity
 
         internal Task ExecuteTeardownAsync()
         {
+            _targetParty = null;
             // Calls the drivers in reverse order for the destruction.
             foreach( var d in _drivers.Reverse() )
             {

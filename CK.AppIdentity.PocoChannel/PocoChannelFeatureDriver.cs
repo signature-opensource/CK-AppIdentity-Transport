@@ -12,14 +12,18 @@ namespace CK.AppIdentity.PocoChannel
     /// </summary>
     public sealed class PocoChannelFeatureDriver : ChannelFeatureDriver<PocoChannelFeature>
     {
-        public PocoChannelFeatureDriver( ApplicationIdentityService s, MessageProtocolDirectoryService messageProtocolDirectory )
-            : base( s, true )
+        readonly PocoDirectory _pocoDirectory;
+
+        public PocoChannelFeatureDriver( ApplicationIdentityService s, PocoDirectory pocoDirectory )
+            : base( s, isAllowedByDefault: true )
         {
+            _pocoDirectory = pocoDirectory;
         }
 
+        /// <inheritdoc/>
         protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out PocoChannelFeature? channel )
         {
-            channel = new PocoChannelFeature( transport );
+            channel = new PocoChannelFeature( transport, _pocoDirectory );
             return true;
         }
     }

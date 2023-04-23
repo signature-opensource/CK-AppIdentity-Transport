@@ -90,8 +90,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
         public Task<TransportMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
-                                                 int maxMessageLength = int.MaxValue,
-                                                 CancellationToken cancellation = default )
+                                                    int maxMessageLength = int.MaxValue,
+                                                    CancellationToken cancellation = default )
         {
             Throw.CheckNotNullArgument( exactReader );
             Throw.CheckOutOfRangeArgument( maxMessageLength > 0 );
@@ -109,7 +109,7 @@ namespace CK.AppIdentity.TransportLayer
                 // We first read exactly 2 bytes. 
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
-                int protocolNumber = (byte)(firstByte & 0b00000111);
+                uint protocolNumber = (byte)(firstByte & 0b00000111);
                 // If the protocol is not allowed, this is a serious error.
                 MessageProtocol? protocol = null;
                 if( protocolNumber == 0 ) protocol = MessageProtocol.ZeroProtocol;
@@ -119,7 +119,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
-                    protocol = _protocols.Protocols[protocolNumber - 1];
+                    protocol = _protocols.Protocols[(int)protocolNumber - 1];
                 }
                 _lastReceived = DateTime.UtcNow;
                 int messageLength;

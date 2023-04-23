@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ApplicationIdentityConfiguration">
-    <Position X="0.5" Y="0.5" Width="2.5" />
+    <Position X="0.5" Y="2.25" Width="2.5" />
     <Members>
       <Field Name="_identifierSyntax" Hidden="true" />
       <Field Name="_nameSuffix" Hidden="true" />
@@ -15,11 +15,12 @@
       <Method Name="ReadUniqueStringSet" Hidden="true" />
       <Method Name="ValidateName" Hidden="true" />
     </Members>
-    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
+    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="1.75" Y="3.017" />
-        <Point X="1.75" Y="4" />
-        <Point X="8" Y="4" />
+        <Point X="3" Y="4.5" />
+        <Point X="5.5" Y="4.5" />
+        <Point X="5.5" Y="4.5" />
+        <Point X="8" Y="4.5" />
       </Path>
     </AssociationLine>
     <TypeIdentifier>
@@ -32,7 +33,7 @@
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
-    <Position X="8" Y="1.5" Width="3.25" />
+    <Position X="8" Y="1" Width="3.25" />
     <Members>
       <Field Name="_children" Hidden="true" />
       <Field Name="_key" Hidden="true" />
@@ -51,7 +52,7 @@
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.LocalPartyConfiguration">
-    <Position X="3.25" Y="0.5" Width="2" />
+    <Position X="3.25" Y="2" Width="2" />
     <Members>
       <Field Name="_allowFeatures" Hidden="true" />
       <Field Name="_disallowFeatures" Hidden="true" />
@@ -60,11 +61,11 @@
       <Method Name="CreateDomainLocal" Hidden="true" />
       <Method Name="LocalPartyConfiguration" Hidden="true" />
     </Members>
-    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
+    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" ManuallyRouted="true" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="4.25" Y="1.988" />
-        <Point X="4.25" Y="3.625" />
-        <Point X="8" Y="3.625" />
+        <Point X="4.5" Y="3.488" />
+        <Point X="4.5" Y="4.188" />
+        <Point X="8" Y="4.188" />
       </Path>
     </AssociationLine>
     <TypeIdentifier>
@@ -77,7 +78,7 @@
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
-    <Position X="5.5" Y="0.5" Width="2.25" />
+    <Position X="5.5" Y="1.25" Width="2.25" />
     <Members>
       <Field Name="_address" Hidden="true" />
       <Field Name="_allowFeatures" Hidden="true" />
@@ -92,10 +93,13 @@
     </Members>
     <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="6.625" Y="2.757" />
-        <Point X="6.625" Y="3.312" />
-        <Point X="8" Y="3.312" />
+        <Point X="6.625" Y="3.507" />
+        <Point X="6.625" Y="3.812" />
+        <Point X="8" Y="3.812" />
       </Path>
+      <MemberNameLabel ManuallyPlaced="true" ManuallySized="true">
+        <Position X="0.11" Y="0.06" Height="0.182" Width="1.07" />
+      </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
       <HashCode>AAAgIABCAAABAAAAAQABAAQIgAAAAEACgAmAAEAAAAA=</HashCode>
@@ -106,5 +110,12 @@
     </ShowAsAssociation>
     <Lollipop Position="0.2" />
   </Class>
+  <Interface Name="CK.AppIdentity.IAppIdentityObjectConfiguration">
+    <Position X="0.5" Y="0.5" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAQAAAAAAgAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Configuration\IAppIdentityObjectConfiguration.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>

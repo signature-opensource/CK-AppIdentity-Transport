@@ -35,11 +35,6 @@ namespace CK.AppIdentity.TransportLayer
         bool IsData { get; }
 
         /// <summary>
-        /// Gets whether this message is a valid response message.
-        /// </summary>
-        bool IsResponse { get; }
-
-        /// <summary>
         /// Gets the message.
         /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
         /// </summary>

@@ -11,7 +11,7 @@ namespace CK.AppIdentity
 {
 
     /// <summary>
-    /// Application identity agent.
+    /// Application identity micro agent.
     /// </summary>
     public sealed class AppIdentityAgent : MicroAgent
     {

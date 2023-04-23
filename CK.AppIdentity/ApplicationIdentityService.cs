@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-
     /// <summary>
     /// The application identity singleton service. This is the root of the application identity model.
     /// </summary>

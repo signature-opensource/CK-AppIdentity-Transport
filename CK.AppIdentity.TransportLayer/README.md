@@ -31,16 +31,15 @@ by methods of the [`IncomingMessageFactory`](Message/IncomingMessageFactory.cs) 
 ## Message Prefix: Protocol and Length
 
 All messages exchanged by the Transport layer are prefixed by the message's protocol and length.
-- The prefix starts with a first byte: `|L0|L1|CD|R|R1|P0|P1|P2|`.
+- The prefix starts with a first byte: `|L0|L1|CD|R0|R1|P0|P1|P2|`.
   - The 2 MSB (L0-L1) gives us the number of bytes of the message length:
     - `00` 1 byte, the message length is between 0 and 255 bytes.
     - `01` 2 bytes, the message length is between 256 and 65535 bytes.
     - `10` 3 bytes, the message length is between 65536 and 16 777 215 bytes.
     - `11` 4 bytes, the message length is between 16 777 216 and 2 147 483 648 bytes (2 Gib).
-  - The `CD` bit is the "Control/Data" bit. This is a convenient bit that can be used by protocols
+  - The `CD` bit is the "Control vs. Data" bit. This is a convenient bit that can be used by protocols
     as a one bit discriminator, typically between a regular data message and one (or more) control message.
-  - The `R` bit is the "Response" bit: a message can be a response to another message (that is a "query" or a request).
-  - The `x` bit is reserved for future use.
+  - `R0` and `R1` bit are reserved for future use.
   - P0-P2 bits is the Protocol, a number between 0 and 7. This number defines the "type" of the
   message: the writer or serializer that has been used to write the payload and the reader or "deserializer"
   that must be used to read it back.
