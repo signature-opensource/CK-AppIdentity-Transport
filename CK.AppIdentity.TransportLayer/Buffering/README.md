@@ -4,6 +4,31 @@
 This is disposable `IBufferWriter<T>` (where T is constrained to struct) that manages its buffers
 and memory segments.
 
+It supports adding pre-allocated segments in the form of array of `T` or of `IMemoryOwner<T>`:
+```csharp
+/// <summary>
+/// Adds an array of <typeparamref name="T"/>.
+/// The content of the array should not be mutated once added.
+/// Note that if this is an empty array, nothing is done.
+/// </summary>
+/// <param name="data">A non empty array.</param>
+public void AddSegment( T[] data );
+
+/// <summary>
+/// Adds a non empty data managed by another memory pool. The ownership is transfered to
+/// this sequence: the memory will be disposed by this <see cref="Clear()"/>.
+/// <para>
+/// If the <see cref="Memory{T}.Length"/> is 0 (data is empty) this throws an <see cref="ArgumentException"/>
+/// because we don't allow an empty segment and there is an ambiguity on whether Dispose() should
+/// be called or not on an empty buffer.
+/// </para>
+/// <para>
+/// The memory should not be mutated once added.
+/// </para>
+/// </summary>
+/// <param name="data">The non empty memory to add.</param>
+public void AddSegment( IMemoryOwner<T> data );
+```
 ## FastByteReader and FastByteWriter
 
 The FastByteReader/Writer are heavily inspired by the Orleans reader/writer.
