@@ -5,7 +5,8 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// Defines a type of transport.
-    /// Implementations must specialize the abstract <see cref="TransportTypeService"/>.
+    /// Implementations must specialize the abstract <see cref="TransportTypeService"/> (this
+    /// interface cannot be implemented by any other types).
     /// </summary>
     [IsMultiple]
     public interface ITransportTypeService : ISingletonAutoService
@@ -29,6 +30,10 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>A typed address on success, false otherwise.</returns>
         TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
 
+        /// <summary>
+        /// Gets a default typed address if this type of transport supports it or null.
+        /// </summary>
+        object? DefaultListeningAddress { get; }
     }
 
 }

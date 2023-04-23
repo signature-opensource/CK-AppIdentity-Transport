@@ -12,16 +12,23 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class TcpSocketTransportTypeService : TransportTypeService
     {
         const int DefaultPort = 37120;
+        readonly IPEndPoint _defaultEndPoint;
+
+        public TcpSocketTransportTypeService()
+        {
+            _defaultEndPoint = new IPEndPoint( IPAddress.Any, DefaultPort );
+        }
 
         /// <summary>
         /// Gets "tcp" string.
         /// </summary>
         public override string AddressProtocolName => "tcp";
 
-        internal TransportTypeAddress GetDefaultListeningAddress( ImmutableConfigurationSection section )
-        {
-            return new TransportTypeAddress( this, section, new IPEndPoint( IPAddress.Any, DefaultPort ) );
-        }
+        /// <summary>
+        /// Gets the default listening address on any interface, port 37120.
+        /// </summary>
+        /// <returns>The default 'tcp' listening address.</returns>
+        public override object? DefaultListeningAddress => _defaultEndPoint;
 
         /// <inheritdoc />
         public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )

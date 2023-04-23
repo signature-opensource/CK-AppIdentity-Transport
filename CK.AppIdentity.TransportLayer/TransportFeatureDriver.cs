@@ -10,7 +10,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        readonly ITransportTypeService[] _transportTypes;
+        readonly TransportTypeService[] _transportTypes;
         readonly TcpSocketTransportTypeService _tcp;
         readonly MessageProtocolDirectoryService _protocolDirectory;
         TransportManager? _transportManager;
@@ -18,7 +18,7 @@ namespace CK.AppIdentity.TransportLayer
         public TransportFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )
         {
-            _transportTypes = transportTypes.ToArray();
+            _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
             _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
             _protocolDirectory = protocolDirectory;
         }
@@ -185,18 +185,28 @@ namespace CK.AppIdentity.TransportLayer
                 return true;
             }
             // If there is no "ListeningAddress" at all, consider the default tcp listening address
-            // bound to the ApplicationIdentity.Local configuration that can be the root or a domain.
-            // Note: currently only tcp has this "DefaultListeningAddress" (other transports cannot define such
-            // a default address). This may be changed in the future if needed.
-            var defaultTcpListening = _tcp.GetDefaultListeningAddress( r.ApplicationIdentity.Configuration.Local.Configuration );
+            // bound to the root ApplicationIdentityService.Local configuration.
+            var rootLocalConfiguration = r.ApplicationIdentity.ApplicationIdentityService.Configuration.Local.Configuration;
             if( available == null )
             {
-                listen = defaultTcpListening;
+                var tcpDef = _tcp.DefaultListeningAddress;
+                Debug.Assert( tcpDef != null );
+                listen = new TransportTypeAddress( _tcp, rootLocalConfiguration, tcpDef );
                 return true;
             }
-            // If there is more than one type of Transport, inject the tcp default if no tcp address exists
-            // and let "UseTransport" decides or use the 'tcp' if "UseTransport" is missing.
-            available.TryAdd( _tcp, defaultTcpListening );
+            // If there is more than one type of Transport, inject the defaults of all transport type (if supported and
+            // if no address exist for them) and let "UseTransport" decides or use the 'tcp' if "UseTransport" is missing.
+            foreach( var t in _transportTypes )
+            {
+                if( !available.ContainsKey( t ) )
+                {
+                    var def = t.DefaultListeningAddress;
+                    if( def != null )
+                    {
+                        available.Add( t, new TransportTypeAddress( t, rootLocalConfiguration, def ) );
+                    }
+                }
+            }
             var useTransportSection = r.Configuration.Configuration.TryLookupSection( "UseTransport" );
             var useTransport = useTransportSection?.Value;
             if( useTransport == null )

@@ -11,7 +11,6 @@ namespace CK.AppIdentity.TransportLayer
     [CKTypeDefiner]
     public abstract class TransportTypeService : ITransportTypeService
     {
-
         /// <summary>
         /// Initializes a new <see cref="TransportTypeService"/>.
         /// </summary>
@@ -24,6 +23,12 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <inheritdoc/>
         public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
+
+        /// <summary>
+        /// Gets a default typed address if this type of transport supports it.
+        /// Returns null by default.
+        /// </summary>
+        public virtual object? DefaultListeningAddress => null;
 
         /// <summary>
         /// Creates a new listener: the <paramref name="typedAddress"/> is not currently listening.
@@ -43,6 +48,5 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="cancellation">Cancellation token that will be signaled if the connection attempt timeout is reached.</param>
         /// <returns>A Transport or null.</returns>
         internal protected abstract Task<Transport?> TryConnectAsync( IParallelLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation );
-
     }
 }
