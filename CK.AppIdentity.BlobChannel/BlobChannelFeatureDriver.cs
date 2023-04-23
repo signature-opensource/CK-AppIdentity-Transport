@@ -5,9 +5,17 @@ namespace CK.AppIdentity.BlobChannel
 {
     /// <summary>
     /// Blob channels is a opt-in feature: to activate it, "AllowFeatures" of the remote must contain "BlobChannel".
+    /// <para>
+    /// The protocol name is inferred from this type name that must be suffixed by "ChannelFeatureDriver": the
+    /// <see cref="ChannelFeature.BaseProtocolName"/> is automatically "Blob".
+    /// </para>
     /// </summary>
     public sealed class BlobChannelFeatureDriver : ChannelFeatureDriver<BlobChannelFeature>
     {
+        /// <summary>
+        /// Initializes a new singleton service that manages the <see cref="BlobChannelFeature"/> of <see cref="IRemoteParty"/>.
+        /// </summary>
+        /// <param name="s">The root application identity service.</param>
         public BlobChannelFeatureDriver( ApplicationIdentityService s )
             : base( s, isAllowedByDefault: false )
         {

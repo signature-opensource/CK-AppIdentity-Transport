@@ -6,9 +6,11 @@ using CK.Core;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Reusable <see cref="ReadOnlySequence{T}"/>.
+    /// Reusable and mutable <see cref="ReadOnlySequence{T}"/>.
     /// <see cref="Clear"/> must be called to free its resources and use it again.
+    /// This is a low level implementation: it must be used with care otherwise kitten will die.
     /// </summary>
+    /// <typeparam name="T">The type (in practice, this is a byte).</typeparam>
     public sealed partial class MutableSequence<T> : IBufferWriter<T>, IDisposable where T : struct
     {
         /// <summary>
@@ -104,6 +106,51 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        sealed class FakeArrayOwner : IMemoryOwner<T>
+        {
+            readonly Memory<T> _memory;
+
+            public FakeArrayOwner( T[] memory ) => _memory = memory;
+
+            public Memory<T> Memory => _memory;
+
+            public void Dispose() { }
+        }
+
+        /// <summary>
+        /// Adds an array of <typeparamref name="T"/>.
+        /// The content of the array should not be mutated once added.
+        /// Note that if this is an empty array, nothing is done.
+        /// </summary>
+        /// <param name="data">A non empty array.</param>
+        public void AddSegment( T[] data )
+        {
+            Throw.CheckNotNullArgument( data );
+            if( data.Length > 0 )
+            {
+                AddExternalMemory( new FakeArrayOwner( data ) );
+            }
+        }
+
+        /// <summary>
+        /// Adds a non empty data managed by another memory pool. The ownership is transfered to
+        /// this sequence: the memory will be disposed by this <see cref="Clear()"/>.
+        /// <para>
+        /// If the <see cref="Memory{T}.Length"/> is 0 (data is empty) this throws an <see cref="ArgumentException"/>
+        /// because we don't allow an empty segment and there is an ambiguity on whether Dispose() should
+        /// be called or not on an empty buffer.
+        /// </para>
+        /// <para>
+        /// The memory should not be mutated once added.
+        /// </para>
+        /// </summary>
+        /// <param name="data">The non empty memory to add.</param>
+        public void AddSegment( IMemoryOwner<T> data )
+        {
+            Throw.CheckNotNullArgument( data );
+            Throw.CheckArgument( data.Memory.Length > 0 );
+            AddExternalMemory( data );
+        }
 
         /// <summary>
         /// Gets the free length available in the current sequence.
@@ -178,6 +225,35 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        void AddExternalMemory( IMemoryOwner<T> external )
+        {
+            Debug.Assert( external.Memory.Length > 0 );
+            // Obtains a segment dedicated to the external memory.
+            var newSegment = GetCachedSegmentOrCreateOne();
+            // Enlists this new segment in the current sequence and computes
+            // its RunningIndex.
+            // If this is the very first segment, we have no _head nor _tail.
+            long runningIndex;
+            if( _head == null )
+            {
+                Debug.Assert( _tail == null && _bytesBuffered == 0 );
+                _head = _tail = newSegment;
+                runningIndex = 0;
+            }
+            else
+            {
+                Debug.Assert( _tail != null );
+                runningIndex = _tail.RunningIndex + _tail.Length;
+                _tail.Next = newSegment;
+                _tail = newSegment;
+            }
+            // The running index is known: initialize the segment on the external memory.
+            newSegment.InitializeExternal( runningIndex, external );
+            // This leaves this sequence in "full" state (a new segment will be required).
+            _tailMemory = Memory<T>.Empty;
+            _bytesBuffered += external.Memory.Length;
+        }
+
         void AllocateMemory( int sizeHint )
         {
             if( _head == null )
@@ -204,20 +280,13 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        /// <summary>
+        /// Only called by <see cref="AllocateMemory(int)"/>
+        /// </summary>
         Segment AllocateSegment( long runningIndex, int sizeHint )
         {
             Debug.Assert( sizeHint >= 0 );
-            Segment? newSegment = _freeSegmentHead;
-            if( newSegment != null )
-            {
-                _freeSegmentHead = newSegment.Next;
-                newSegment.Next = null;
-                --_freeSegmentSize;
-            }
-            else
-            {
-                newSegment = new Segment();
-            }
+            var newSegment = GetCachedSegmentOrCreateOne();
             int maxSize = _maxPooledBufferSize;
             if( sizeHint <= maxSize )
             {
@@ -233,6 +302,23 @@ namespace CK.AppIdentity.TransportLayer
             return newSegment;
         }
 
+        private MutableSequence<T>.Segment GetCachedSegmentOrCreateOne()
+        {
+            Segment? newSegment = _freeSegmentHead;
+            if( newSegment != null )
+            {
+                _freeSegmentHead = newSegment.Next;
+                newSegment.Next = null;
+                --_freeSegmentSize;
+            }
+            else
+            {
+                newSegment = new Segment();
+            }
+
+            return newSegment;
+        }
+
         int GetSegmentSize( int sizeHint, int maxBufferSize = int.MaxValue )
         {
             // First we need to handle case where hint is smaller than minimum segment size.
@@ -244,6 +330,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void ReleaseSegment( Segment segment )
         {
+            Debug.Assert( segment.IsFree );
             if( _freeSegmentSize < _freeSegmentMaxSize )
             {
                 segment.Next = _freeSegmentHead;
@@ -254,6 +341,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void ReleaseSegments( Segment head, Segment tail, int count )
         {
+            Debug.Assert( head.IsFree && tail.IsFree );
             int newPoolSize = _freeSegmentSize + count;
             if( newPoolSize <= _freeSegmentMaxSize )
             {
@@ -273,7 +361,7 @@ namespace CK.AppIdentity.TransportLayer
             for( int i = 0; i < keep; ++i )
             {
                 var n = head.Next;
-                Debug.Assert( n != null );
+                Debug.Assert( n != null && n.IsFree );
                 head.Next = _freeSegmentHead;
                 _freeSegmentHead = head;
                 head = n;

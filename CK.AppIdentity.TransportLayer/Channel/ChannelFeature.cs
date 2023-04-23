@@ -121,11 +121,14 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Called whenever the <see cref="CurrentHandler"/> changed.
+        /// Does nothing by default.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="previous">The previous handler.</param>
         /// <param name="current">The current handler.</param>
-        protected abstract void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current );
+        protected virtual void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current )
+        {
+        }
 
     }
 

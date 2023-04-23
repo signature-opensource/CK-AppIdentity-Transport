@@ -1,49 +1,36 @@
-using System.Buffers;
+﻿using System.Buffers;
 
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Read only view of a <see cref="TransportMessage"/>.
+    /// Read only view of a <see cref="TransportMessage"/> that can be retained or disposed.
+    /// <para>
+    /// This doesn't extend <see cref="IDisposable"/> and this is intended.
+    /// </para>
     /// </summary>
-    public interface ITransportMessage
+    public interface ITransportMessage : ITransportMessageData
     {
         /// <summary>
-        /// Gets the message protocol.
+        /// Retains this message, preventing a <see cref="Dispose()"/> to release the resources.
+        /// Dispose must be called as many times as Retain has been called for the resources to be released.
+        /// Calling this on the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
+        /// <see cref="TransportMessage.Empty"/> and <see cref="TransportMessage.EmptyAck"/>
+        /// or a static message (see <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
+        /// has no effect and returns false.
         /// </summary>
-        MessageProtocol Protocol { get; }
+        /// <returns>
+        /// True if the message has been retained and <see cref="Dispose()"/> must be called.
+        /// False if it is already Disposed, if this is one of the special messages or is a static message.
+        /// </returns>
+        bool Retain();
 
         /// <summary>
-        /// Gets an optional source object associated to this <see cref="TransportMessage"/>.
-        /// For an outgoing message, this typically references a data object that is serialized in the message.
+        /// Disposes this message.
+        /// The <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>, <see cref="TransportMessage.Empty"/>
+        /// and <see cref="TransportMessage.EmptyAck"/> messages ignore this,
+        /// as well as messages created by the static <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/>
+        /// method.
         /// </summary>
-        object? Source { get; }
-
-        /// <summary>
-        /// Gets whether this message is valid: it is not the <see cref="TransportMessage.Invalid"/> nor the <see cref="TransportMessage.Canceled"/> message
-        /// and has not been disposed yet.
-        /// </summary>
-        bool IsValid { get; }
-
-        /// <summary>
-        /// Gets whether this message is a valid control message.
-        /// </summary>
-        bool IsControl { get; }
-
-        /// <summary>
-        /// Gets whether this message is a valid data message.
-        /// </summary>
-        bool IsData { get; }
-
-        /// <summary>
-        /// Gets the message.
-        /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
-        /// </summary>
-        ReadOnlySequence<byte> Message { get; }
-
-        /// <summary>
-        /// Gets the full message including its prefix.
-        /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
-        /// </summary>
-        ReadOnlySequence<byte> WireMessage { get; }
+        void Dispose();
     }
 }

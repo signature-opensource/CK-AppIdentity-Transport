@@ -38,15 +38,15 @@ namespace CK.AppIdentity.PocoChannel
                 }
             }
 
-            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message )
+            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
             {
-                var poco = Deserialize( _feature._pocoDirectory, message );
+                var poco = Deserialize( _feature._pocoDirectory, message.Message );
                 message.Dispose();
                 await _feature._received.SafeRaiseAsync( monitor, _feature, poco );
 
-                static IPoco? Deserialize( PocoDirectory pocoDirectory, TransportMessage message )
+                static IPoco? Deserialize( PocoDirectory pocoDirectory, ReadOnlySequence<byte> message )
                 {
-                    var r = new Utf8JsonReader( message.Message );
+                    var r = new Utf8JsonReader( message );
                     return pocoDirectory.Read( ref r );
                 }
             }

@@ -1,13 +1,16 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.PerfectEvent;
-using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.BlobChannel
 {
-    public sealed class BlobChannelFeature : ChannelFeature
+    /// <summary>
+    /// Simple channel. This is more a sample than a useful channel.
+    /// Received bytes are exposed by <see cref="Received"/> event.
+    /// </summary>
+    public sealed partial class BlobChannelFeature : ChannelFeature
     {
         readonly PerfectEventSender<BlobChannelFeature, byte[]> _received;
 
@@ -19,11 +22,18 @@ namespace CK.AppIdentity.BlobChannel
 
         new Protocol? CurrentHandler => Unsafe.As<Protocol?>( base.CurrentHandler );
 
+        /// <summary>
+        /// Gets an event for the bytes received.
+        /// </summary>
         public PerfectEvent<BlobChannelFeature, byte[]> Received => _received.PerfectEvent;
 
+        /// <summary>
+        /// Tries to send the data to the remote.
+        /// </summary>
+        /// <param name="data">The data.</param>
+        /// <returns>True if data has been successfully sent.</returns>
         public bool TrySend( byte[] data )
         {
-            Throw.CheckArgument( data.Length > 0 );
             var h = CurrentHandler;
             if( h != null )
             {
@@ -34,6 +44,11 @@ namespace CK.AppIdentity.BlobChannel
             return false;
         }
 
+        /// <summary>
+        /// Tries to send the data to the remote.
+        /// </summary>
+        /// <param name="data">The data.</param>
+        /// <returns>True if data has been successfully sent.</returns>
         public async ValueTask<bool> TrySendAsync( byte[] data )
         {
             Throw.CheckArgument( data.Length > 0 );
@@ -51,35 +66,6 @@ namespace CK.AppIdentity.BlobChannel
         {
             Debug.Assert( c.Protocol.Version == 0 );
             return new Protocol( this, ref c );
-        }
-
-        protected override void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current )
-        {
-        }
-
-        sealed class Protocol : PeerProtocolHandler
-        {
-            readonly BlobChannelFeature _feature;
-
-            public Protocol( BlobChannelFeature feature, ref CreateParameters createParameters )
-                : base( ref createParameters )
-            {
-                _feature = feature;
-            }
-
-            public TransportMessage CreateMessage( byte[] data )
-            {
-                var message = MessageFactory.Create( bytes => bytes.Write( data ) );
-                message.Source = data;
-                return message;
-            }
-
-            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message )
-            {
-                var payload = message.Message.ToArray();
-                message.Dispose();
-                await _feature._received.SafeRaiseAsync( monitor, _feature, payload );
-            }
         }
     }
 

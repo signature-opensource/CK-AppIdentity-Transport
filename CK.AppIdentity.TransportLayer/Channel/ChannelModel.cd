@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.BlobChannel.ChannelFeatureDriver&lt;T&gt;">
-    <Position X="0.5" Y="4.25" Width="2" />
+    <Position X="0.5" Y="0.5" Width="2" />
     <Members>
       <Method Name="ChannelFeatureDriver" Hidden="true" />
       <Method Name="PlugFeature" Hidden="true" />
@@ -16,7 +16,7 @@
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.TransportLayer.ChannelFeature">
-    <Position X="0.5" Y="1.5" Width="2.25" />
+    <Position X="0.5" Y="2" Width="2.25" />
     <Members>
       <Field Name="_baseProtocolName" Hidden="true" />
       <Field Name="_currentHandler" Hidden="true" />
@@ -29,11 +29,18 @@
       <Method Name="SetCurrentHandler" Hidden="true" />
       <Method Name="Teardown" Hidden="true" />
     </Members>
-    <AssociationLine Name="SupportedProtocols" Type="CK.AppIdentity.TransportLayer.MessageProtocol" FixedToPoint="true">
+    <AssociationLine Name="SupportedProtocols" Type="CK.AppIdentity.TransportLayer.MessageProtocol" FixedFromPoint="true" FixedToPoint="true">
       <Path>
-        <Point X="2.75" Y="2.5" />
-        <Point X="4.5" Y="2.5" />
+        <Point X="2.75" Y="2.812" />
+        <Point X="3.125" Y="2.812" />
+        <Point X="3.125" Y="1.75" />
+        <Point X="4.5" Y="1.75" />
       </Path>
+    </AssociationLine>
+    <AssociationLine Name="CurrentHandler" Type="CK.AppIdentity.TransportLayer.PeerProtocolHandler">
+      <MemberNameLabel ManuallyPlaced="true">
+        <Position X="0.043" Y="0.085" />
+      </MemberNameLabel>
     </AssociationLine>
     <TypeIdentifier>
       <HashCode>AAACBAAAAAAAAACCAAACAAZAAQAECAFAAMABAAAAAAA=</HashCode>
@@ -47,7 +54,7 @@
     </ShowAsCollectionAssociation>
   </Class>
   <Class Name="CK.AppIdentity.TransportLayer.PeerProtocolHandler">
-    <Position X="4" Y="3" Width="2.25" />
+    <Position X="4" Y="2.25" Width="2.25" />
     <Members>
       <Field Name="_controller" Hidden="true" />
       <Field Name="_messageFactory" Hidden="true" />
@@ -66,7 +73,7 @@
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.TransportLayer.MessageProtocol">
-    <Position X="4.5" Y="1.25" Width="1.5" />
+    <Position X="4.5" Y="0.5" Width="1.5" />
     <Members>
       <Field Name="_fullName" Hidden="true" />
       <Field Name="_name" Hidden="true" />

@@ -90,8 +90,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
         public Task<TransportMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
-                                                    int maxMessageLength = int.MaxValue,
-                                                    CancellationToken cancellation = default )
+                                                 int maxMessageLength = int.MaxValue,
+                                                 CancellationToken cancellation = default )
         {
             Throw.CheckNotNullArgument( exactReader );
             Throw.CheckOutOfRangeArgument( maxMessageLength > 0 );

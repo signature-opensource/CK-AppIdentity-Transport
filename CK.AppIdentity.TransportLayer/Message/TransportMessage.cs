@@ -126,7 +126,10 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the full message including its prefix.
+        /// <see cref="IsValid"/> must be true otherwise an <see cref="InvalidOperationException"/> is thrown.
+        /// </summary>
         public ReadOnlySequence<byte> WireMessage
         {
             get

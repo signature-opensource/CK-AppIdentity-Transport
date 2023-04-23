@@ -101,7 +101,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="monitor">The receiving monitor.</param>
         /// <param name="message">The message that must be disposed once done with it.</param>
         /// <returns>The awaitable.</returns>
-        internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, TransportMessage message );
+        internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message );
 
         /// <summary>
         /// Called right before a message is sent to the remote. Does nothing by default (always returns true).
@@ -114,7 +114,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="message">The message that is about to be sent.</param>
         /// <param name="replacement">Optional message that will be sent instead of the queued <paramref name="message"/>.</param>
         /// <returns>True to send the message, false to skip it.</returns>
-        internal protected virtual bool OnSendMessage( IParallelLogger logger, ITransportMessage message, out TransportMessage? replacement )
+        internal protected virtual bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
         {
             replacement = null;
             return true;

@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -32,7 +32,7 @@ namespace CK.AppIdentity.TransportLayer
             /// <summary>
             /// Masked to be a Segment rather than ReadOnlySequenceSegment of bytes.
             /// </summary>
-            public new Segment? Next
+            internal new Segment? Next
             {
                 get => Unsafe.As<Segment?>( base.Next );
                 set => base.Next = value;
@@ -43,7 +43,7 @@ namespace CK.AppIdentity.TransportLayer
             /// </summary>
             /// <param name="runningIndex">The running index to initialize.</param>
             /// <param name="memoryOwner">This buffer memory's owner.</param>
-            public void Initialize( long runningIndex, IMemoryOwner<T> memoryOwner )
+            internal void Initialize( long runningIndex, IMemoryOwner<T> memoryOwner )
             {
                 RunningIndex = runningIndex;
                 _memoryOwner = memoryOwner;
@@ -51,11 +51,24 @@ namespace CK.AppIdentity.TransportLayer
             }
 
             /// <summary>
+            /// Initializes this buffer with a memory from an external pool: the memory is filled.
+            /// </summary>
+            /// <param name="runningIndex">The running index to initialize.</param>
+            /// <param name="memoryOwner">This buffer memory's owner.</param>
+            internal void InitializeExternal( long runningIndex, IMemoryOwner<T> memoryOwner )
+            {
+                RunningIndex = runningIndex;
+                _memoryOwner = memoryOwner;
+                Memory = memoryOwner.Memory;
+                _availableMemory = default;
+            }
+
+            /// <summary>
             /// Initializes this buffer with an array from the shared pool.
             /// </summary>
             /// <param name="runningIndex">The running index to initialize.</param>
             /// <param name="arrayPoolBuffer">This buffer memory.</param>
-            public void Initialize( long runningIndex, T[] arrayPoolBuffer )
+            internal void Initialize( long runningIndex, T[] arrayPoolBuffer )
             {
                 RunningIndex = runningIndex;
                 _array = arrayPoolBuffer;
@@ -66,13 +79,13 @@ namespace CK.AppIdentity.TransportLayer
             /// Gets whether this buffer has been freed.
             /// It may be back in the allocator's pool or lost (if the pool is full).
             /// </summary>
-            public bool IsFree => _availableMemory.Length == 0;
+            internal bool IsFree => _availableMemory.Length == 0;
 
             /// <summary>
             /// Resets the memory by freeing the buffer.
             /// Next and RunningIndex are untouched (these are under control of the allocator).
             /// </summary>
-            public void Free()
+            internal void Free()
             {
                 IMemoryOwner<T>? memoryOwner = _memoryOwner;
                 if( memoryOwner != null )
@@ -90,12 +103,12 @@ namespace CK.AppIdentity.TransportLayer
                 _availableMemory = default;
             }
 
-            public Memory<T> AvailableMemory => _availableMemory;
+            internal Memory<T> AvailableMemory => _availableMemory;
 
             /// <summary>
             /// Gets the number of bytes available in this segment.
             /// </summary>
-            public int WritableBytes
+            internal int WritableBytes
             {
                 [MethodImpl( MethodImplOptions.AggressiveInlining )]
                 get => _availableMemory.Length - Memory.Length;
