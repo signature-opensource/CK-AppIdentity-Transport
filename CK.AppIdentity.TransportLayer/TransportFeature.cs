@@ -32,7 +32,7 @@ namespace CK.AppIdentity.TransportLayer
         string? _switchOffReason;
         TransportController? _controller;
         TaskCompletionSource _readyTask;
-        ConnectionAvailabitity _connectionAvailabitity;
+        ConnectionAvailability _connectionAvailabilty;
         bool _disallowEviction;
 
         internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, TransportTypeAddress? target, bool disallowEviction )
@@ -102,21 +102,21 @@ namespace CK.AppIdentity.TransportLayer
             //  - disconnection time (based on LastReceived and may be a LastSent - when the remote is passive).
             // This may be coupled to the KeepAlive implementation and rely on one (or more) back tasks.
             var a = IsOff || _controller?.CurrentTransport?.Lifetime.IsCancellationRequested is true
-                        ? ConnectionAvailabitity.None
-                        : ConnectionAvailabitity.Connected;
+                        ? ConnectionAvailability.None
+                        : ConnectionAvailability.Connected;
 
-            if( _connectionAvailabitity != a )
+            if( _connectionAvailabilty != a )
             {
                 // If we are "strongly" disconnected, we tell the channels that their CurrentHandler is
                 // no more available.
-                if( a == ConnectionAvailabitity.None )
+                if( a == ConnectionAvailability.None )
                 {
                     foreach( var c in _channels )
                     {
                         c.OnConnectionLost( monitor );
                     }
                 }
-                _connectionAvailabitity = a;
+                _connectionAvailabilty = a;
                 return _connectionAvailabilityChanged.SafeRaiseAsync( monitor, this );
             }
             return Task.CompletedTask;
@@ -179,7 +179,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the current connection availability.
         /// </summary>
-        public ConnectionAvailabitity ConnectionAvailabitity => _connectionAvailabitity;
+        public ConnectionAvailability ConnectionAvailabitity => _connectionAvailabilty;
 
         /// <summary>
         /// Raised whenever this <see cref="ConnectionAvailabitity"/> changed.

@@ -3,7 +3,7 @@
     /// <summary>
     /// Simple connection availability model.
     /// </summary>
-    public enum ConnectionAvailabitity
+    public enum ConnectionAvailability
     {
         /// <summary>
         /// Not connected. No data can be send to the remote.
