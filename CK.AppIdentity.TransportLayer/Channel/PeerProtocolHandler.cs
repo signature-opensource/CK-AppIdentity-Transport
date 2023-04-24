@@ -49,7 +49,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the message factory to use.
         /// </summary>
-        public OutgoingMessageFactory MessageFactory => _messageFactory;
+        protected OutgoingMessageFactory MessageFactory => _messageFactory;
 
         /// <summary>
         /// Gets the current remote end point description.
@@ -78,7 +78,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
         public bool TryEnqueueResponse( TransportMessage message )
         {
-            return _controller.TryEnqueue( message );
+            return _controller.TryEnqueueResponse( message );
         }
 
         /// <summary>

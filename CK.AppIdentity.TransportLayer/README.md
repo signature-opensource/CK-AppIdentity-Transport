@@ -81,7 +81,7 @@ established with the remote. This task can be awaited (or its [`Task.IsCompleted
 status can be checked) before sending any data to the remote.
 If the connection is lost, queued data are transmitted as soon as a new connection is available.
 Obviously, pending messages cannot be collected _ad infitum_. The transport feature exposes a simplified "level of pressure"
-with the ConnectionAvailabitity enumeration. This should be used before sending any data to a remote.
+with the ConnectionAvailability enumeration. This should be used before sending any data to a remote.
 
 | Value | Name       | Description  |
 |-------|------------|--------------|

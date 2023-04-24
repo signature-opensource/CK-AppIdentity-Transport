@@ -17,9 +17,14 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
+        // Either listener or target is not null.
         readonly TransportListener? _listener;
         readonly TransportTypeAddress? _target;
         readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
+        // This relays our ConnectionAvailabilityChanged event to the TransportManagerFeature one.
+        // We must dispose it when tearing down this feature.
+        readonly IBridge _connectionEventBridge;
+
         // Channels are ordered like bestRegisteredProtocols.
         readonly List<ChannelFeature> _channels;
         // All available protocols with their versions.
@@ -35,7 +40,11 @@ namespace CK.AppIdentity.TransportLayer
         ConnectionAvailability _connectionAvailabilty;
         bool _disallowEviction;
 
-        internal TransportFeature( TransportManager transportManager, IRemoteParty remote, TransportListener? listener, TransportTypeAddress? target, bool disallowEviction )
+        internal TransportFeature( TransportManager transportManager,
+                                   IRemoteParty remote,
+                                   TransportListener? listener,
+                                   TransportTypeAddress? target,
+                                   bool disallowEviction )
         {
             Debug.Assert( (listener == null) != (target == null) );
             _transportManager = transportManager;
@@ -43,7 +52,10 @@ namespace CK.AppIdentity.TransportLayer
             _listener = listener;
             _target = target;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
+
             _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
+            _connectionEventBridge = _connectionAvailabilityChanged.CreateRelay( _transportManager.Feature._connectionAvailabilityChanged );
+
             _registeredProtocols = new HashSet<MessageProtocol>();
             _bestRegisteredProtocols = new List<MessageProtocol>( MessageProtocolMap.MaxCount );
             _readyTask = new TaskCompletionSource();
@@ -84,10 +96,10 @@ namespace CK.AppIdentity.TransportLayer
             await _controller.ActivateAsync( monitor, protocols, protocolHandlers );
             // Always signals the ready task.
             _readyTask.TrySetResult();
-            await UpdateConnectionAvailabitityAsync( monitor );
+            await UpdateConnectionAvailabilityAsync( monitor );
         }
 
-        Task UpdateConnectionAvailabitityAsync( IActivityMonitor monitor )
+        Task UpdateConnectionAvailabilityAsync( IActivityMonitor monitor )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
             Debug.Assert( _readyTask.Task.IsCompleted );
@@ -179,12 +191,12 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the current connection availability.
         /// </summary>
-        public ConnectionAvailability ConnectionAvailabitity => _connectionAvailabilty;
+        public ConnectionAvailability ConnectionAvailability => _connectionAvailabilty;
 
         /// <summary>
-        /// Raised whenever this <see cref="ConnectionAvailabitity"/> changed.
+        /// Raised whenever this <see cref="ConnectionAvailability"/> changed.
         /// </summary>
-        public PerfectEvent<TransportFeature> ConnectionAvailabitityChanged => _connectionAvailabilityChanged.PerfectEvent;
+        public PerfectEvent<TransportFeature> ConnectionAvailabilityChanged => _connectionAvailabilityChanged.PerfectEvent;
 
 
         /// <summary>
@@ -398,7 +410,13 @@ namespace CK.AppIdentity.TransportLayer
             {
                 await c.CloseAsync( monitor, offReason );
             }
-            await UpdateConnectionAvailabitityAsync( monitor );
+            await UpdateConnectionAvailabilityAsync( monitor );
+            // When tearing down, raises the TransportManagerFeature event.
+            if( offReason.Length == 0 )
+            {
+                Debug.Assert( _switchOffReason != null && _switchOffReason.Length == 0 );
+                await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, new TransportFeatureChangedEvent(this, Destroyed: true) );
+            }
         }
 
         public override string ToString() => $"TransportFeature for '{_party.FullName}'";

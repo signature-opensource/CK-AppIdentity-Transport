@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.PerfectEvent;
+using Microsoft.VisualBasic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -7,12 +8,16 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// <see cref="MicroAgent"/> that manages the <see cref="Transport"/> remote's features.
+    /// <para>
+    /// This class is internal but exposes the public <see cref="TransportManagerFeature"/>.
+    /// </para>
     /// </summary>
-    public sealed partial class TransportManager : MicroAgent
+    sealed partial class TransportManager : MicroAgent
     {
         readonly AppIdentityAgent _agent;
         readonly MessageProtocolDirectoryService _protocolDirectory;
         readonly List<TransportListener> _listeners;
+        readonly TransportManagerFeature _exposedFeature;
 
         // Heart beats handles the BackTask list.
         readonly Timer _heartbeat;
@@ -31,6 +36,8 @@ namespace CK.AppIdentity.TransportLayer
             _agent = agent;
             _protocolDirectory = protocolDirectory;
             _listeners = new List<TransportListener>();
+            _exposedFeature = new TransportManagerFeature();
+            agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
             _backTasks = new BackTask.List( this );
             _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
@@ -40,6 +47,8 @@ namespace CK.AppIdentity.TransportLayer
             _waitingList = new List<InitialMessage>();
             _waitingListChanged = new PerfectEventSender<InitialMessage>();
         }
+
+        public TransportManagerFeature Feature => _exposedFeature;
 
         static void OnTimer( object? state ) => Unsafe.As<TransportManager>( state! ).PushTypedJob( DBNull.Value );
 
@@ -75,6 +84,11 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the message protocol directory.
         /// </summary>
         public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
+
+        internal void FeatureAppears( TransportFeature t )
+        {
+            PushTypedJob( new TransportFeatureChangedEvent( t, false ) );
+        }
 
         internal void TryConnectTo( TransportFeature remote )
         {
@@ -124,6 +138,7 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
+        // A new transport feature is the TransportFeatureChangedEvent.
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         // The heart beat (timer) is DBNull.Value instance.
@@ -149,7 +164,7 @@ namespace CK.AppIdentity.TransportLayer
                                 monitor.Warn( $"Heartbeat blocked for {_heartBeatReentrantCount} count." );
                             }
                         }
-                        else 
+                        else
                         {
                             _heartBeatReentrantCount = 0;
                             _inHeartBeat = true;
@@ -187,12 +202,19 @@ namespace CK.AppIdentity.TransportLayer
                     return switchOn.DoSwitchOnAsync( monitor );
                 case SwitchOffJob off:
                     return off.Feature.DoSwitchOffAsync( monitor, off.Reason );
+                case TransportFeatureChangedEvent appear:
+                    return HandleTransportAppearAsync( monitor, appear );
             }
             if( job == this )
             {
                 return HandleStopAsync( monitor );
             }
             return base.ExecuteTypedJobAsync( monitor, job );
+        }
+
+        async ValueTask HandleTransportAppearAsync( IActivityMonitor monitor, TransportFeatureChangedEvent appear )
+        {
+            await _exposedFeature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, appear );
         }
 
         async ValueTask HandleStopAsync( IActivityMonitor monitor )
