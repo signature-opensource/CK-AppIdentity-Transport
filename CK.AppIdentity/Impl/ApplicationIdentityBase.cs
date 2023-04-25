@@ -1,9 +1,11 @@
 using CK.Core;
+using CK.PerfectEvent;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
@@ -16,12 +18,14 @@ namespace CK.AppIdentity
         internal readonly LocalParty _local;
         readonly ApplicationIdentityConfiguration _configuration;
         internal RemoteParty[] _remotes;
+        internal readonly PerfectEventSender<IRemoteParty> _remotesChanged;
 
         private protected ApplicationIdentityBase( ApplicationIdentityConfiguration configuration, RemoteParty? domainHost )
         {
             Debug.Assert( configuration != null );
             _configuration = configuration;
             _local = new LocalParty( (IApplicationIdentity)this, configuration.Local, domainHost );
+            _remotesChanged = new PerfectEventSender<IRemoteParty>();
             _remotes = configuration.Remotes.Select( c => new RemoteParty( (IApplicationIdentity)this, c ) ).ToArray();
         }
 
@@ -30,6 +34,9 @@ namespace CK.AppIdentity
 
         /// <inheritdoc cref="IApplicationIdentity.Remotes" />
         public IReadOnlyCollection<IRemoteParty> Remotes => _remotes;
+
+        /// <inheritdoc cref="IApplicationIdentity.RemotesChanged" />
+        public PerfectEvent<IRemoteParty> RemotesChanged => _remotesChanged.PerfectEvent;
 
         /// <inheritdoc cref="IApplicationIdentity.Configuration" />
         public ApplicationIdentityConfiguration Configuration => _configuration;
@@ -47,8 +54,32 @@ namespace CK.AppIdentity
             Debug.Assert( c.Configuration.Key == "Dynamic" );
             var r = new RemoteParty( (IApplicationIdentity)this, c );
             if( !await agent.InitializeDynamicRemoteAsync( r ) ) return null;
-            Util.InterlockedAdd( ref _remotes, r );
+            // The remote is InterlockedAdded to the _remotes only on success (and in the second
+            // round of OnSuccess trampoline) by OnSuccessAddRemote below.
             return r;
+        }
+
+        internal Task OnSuccessAddRemoteAsync( IActivityMonitor monitor, RemoteParty r )
+        {
+            Util.InterlockedAdd( ref _remotes, r );
+            if( r.DomainApplicationIdentity != null && r.DomainApplicationIdentity.Remotes.Count > 0 )
+            {
+                // This is to publish "new remotes" events in the root ApplicationIndentityService.RemotesChanged event
+                // so that by subscribing to this event, the whole structure change can be tracked.
+                return OnSuccessAddRemoteWithSubRemotesAsync( monitor, (ApplicationIdentityBase)r.DomainApplicationIdentity, r );
+            }
+            return _remotesChanged.RaiseAsync( monitor, r );
+        }
+
+        async Task OnSuccessAddRemoteWithSubRemotesAsync( IActivityMonitor monitor, ApplicationIdentityBase domain, RemoteParty r )
+        {
+            Debug.Assert( r.DomainApplicationIdentity != null && r.DomainApplicationIdentity.Remotes.Count > 0 );
+            // Makes the root appear before its children.
+            await _remotesChanged.RaiseAsync( monitor, r );
+            foreach( var sub in domain.Remotes )
+            {
+                await domain._remotesChanged.SafeRaiseAsync( monitor, sub );
+            }
         }
 
         RemotePartyConfiguration? CreateDynamicRemoteConfiguration( IActivityMonitor monitor,
@@ -83,5 +114,6 @@ namespace CK.AppIdentity
         {
             Util.InterlockedRemove( ref _remotes, remoteParty );
         }
+
     }
 }

@@ -18,11 +18,5 @@ namespace CK.AppIdentity
         /// <param name="feature">The feature to add.</param>
         void AddFeature( object feature );
 
-        /// <summary>
-        /// Atomically (thread safe) removes a feature if it exists.
-        /// Does nothing otherwise.
-        /// </summary>
-        /// <param name="feature">The feature to remove.</param>
-        void RemoveFeature( object feature );
     }
 }

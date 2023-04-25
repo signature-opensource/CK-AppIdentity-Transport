@@ -107,10 +107,16 @@ namespace CK.AppIdentity
 
         async ValueTask HandleDynamicRemoteAsync( IActivityMonitor monitor, InitializeDynamicRemoteJob init )
         {
-            using( monitor.OpenInfo( $"Initializing dynamic Remote '{init.RemoteParty.FullName}' ({_service._builders.Count} feature builders)." ) )
+            var r = init.RemoteParty;
+            using( monitor.OpenInfo( $"Initializing dynamic Remote '{r.FullName}' ({_service._builders.Count} feature builders)." ) )
             {
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
-                bool success = await context.ExecuteSetupDynamicRemoteAsync( init.RemoteParty ) == TrampolineResult.TotalSuccess;
+                // The new configured remote is published on the second round of the OnSuccess trampoline.
+                context.Trampoline.OnSuccess( () =>
+                {
+                    context.Trampoline.OnSuccess( () => ((ApplicationIdentityBase)r.ApplicationIdentity).OnSuccessAddRemoteAsync( context.Monitor, r ) );
+                } );
+                bool success = await context.ExecuteSetupDynamicRemoteAsync( r ) == TrampolineResult.TotalSuccess;
                 if( !success )
                 {
                     monitor.CloseGroup( "Failed." );
@@ -122,30 +128,30 @@ namespace CK.AppIdentity
         async ValueTask HandleDestroyAsync( IActivityMonitor monitor, RemoteParty destroyed )
         {
             Debug.Assert( destroyed._destroyTCS != null );
-            using( monitor.OpenInfo( $"Destroying Remote '{destroyed.FullName}'." ) )
+            var domainDefinition = destroyed.DomainApplicationIdentity as DomainApplicationIdentity;
+            using( monitor.OpenInfo( $"Destroying Remote '{destroyed.FullName}'{(domainDefinition != null ? $" (domain with {domainDefinition.Remotes.Count} remotes)": "")}." ) )
             {
-                // Enables the feature drivers to cleanup any existing features. 
+                // Enables the feature drivers to tear down any existing features, including the
+                // subordinates remotes ones if this remote defines a domain.
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
                 await context.ExecuteTeardownDynamicRemoteAsync( destroyed );
+
                 // Removes the destroyed from its host's Remotes array.
-                if( destroyed.ApplicationIdentity is DomainApplicationIdentity hosted )
-                {
-                    // It is useless to cleanup the remote list of a domain that is being destroyed. 
-                    if( !hosted.Host.IsDestroyed )
-                    {
-                        hosted.RemoveDestroyed( destroyed );
-                    }
-                }
-                else destroyed.ApplicationIdentity.ApplicationIdentityService.RemoveDestroyed( destroyed );
-                // Signals the destruction completion.
-                if( destroyed.DomainApplicationIdentity is DomainApplicationIdentity internalDomain )
-                {
-                    foreach( var r in internalDomain._remotes )
-                    {
-                        Debug.Assert( r._destroyTCS != null );
-                        r._destroyTCS.SetResult();
-                    }
-                }
+                var host = ((ApplicationIdentityBase)destroyed.ApplicationIdentity);
+                host.RemoveDestroyed( destroyed );
+
+                // Should we raise the RemotesChanged event after the Destroy task completion?
+                // It seems safer to raise the RemotesChanged after the task completion but the
+                // event handling is part of the destroy activity: we raise the destroy events
+                // before signaling the end.
+
+                // If we are on a domain definition, destroys it: it will
+                // clear its Remotes array, raise the destroy event and complete the destroy tasks
+                // for each of the remote and eventually dispose its event bridge. 
+                if( domainDefinition != null ) await domainDefinition.DestroyAsync( monitor );
+
+                // Eventually signal the remote's destroy completion and raises the event.
+                await host._remotesChanged.SafeRaiseAsync( monitor, destroyed );
                 destroyed._destroyTCS.SetResult();
             }
         }

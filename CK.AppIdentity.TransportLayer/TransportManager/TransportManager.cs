@@ -85,9 +85,10 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
 
-        internal void FeatureAppears( TransportFeature t )
+        internal Task RaiseFeatureAppearsEventAsync( IActivityMonitor monitor, TransportFeature t )
         {
-            PushTypedJob( new TransportFeatureChangedEvent( t, false ) );
+            Debug.Assert( IsInApplicationIdentityLoop( monitor ) );
+            return _exposedFeature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, t );
         }
 
         internal void TryConnectTo( TransportFeature remote )
@@ -138,7 +139,6 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
-        // A new transport feature is the TransportFeatureChangedEvent.
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // An unknown incoming connection is directly the InitialMessage.
         // The heart beat (timer) is DBNull.Value instance.
@@ -202,19 +202,12 @@ namespace CK.AppIdentity.TransportLayer
                     return switchOn.DoSwitchOnAsync( monitor );
                 case SwitchOffJob off:
                     return off.Feature.DoSwitchOffAsync( monitor, off.Reason );
-                case TransportFeatureChangedEvent appear:
-                    return HandleTransportAppearAsync( monitor, appear );
             }
             if( job == this )
             {
                 return HandleStopAsync( monitor );
             }
             return base.ExecuteTypedJobAsync( monitor, job );
-        }
-
-        async ValueTask HandleTransportAppearAsync( IActivityMonitor monitor, TransportFeatureChangedEvent appear )
-        {
-            await _exposedFeature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, appear );
         }
 
         async ValueTask HandleStopAsync( IActivityMonitor monitor )

@@ -1,4 +1,5 @@
 using CK.Core;
+using CK.PerfectEvent;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -37,6 +38,16 @@ namespace CK.AppIdentity
         /// Gets the remote parties.
         /// </summary>
         IReadOnlyCollection<IRemoteParty> Remotes { get; }
+
+        /// <summary>
+        /// Raised whenever a new remote appears or disappears in this <see cref="Remotes"/> or in
+        /// a <see cref="IRemoteParty.DomainApplicationIdentity"/> if this is the root <see cref="ApplicationIdentityService"/>.
+        /// <para>
+        /// By subscribing to this event on the root <see cref="ApplicationIdentityService"/>, one can track any structural
+        /// change of the whole identity system.
+        /// </para>
+        /// </summary>
+        PerfectEvent<IRemoteParty> RemotesChanged { get; }
 
         /// <summary>
         /// Tries to create and initialize a new remote.

@@ -411,11 +411,14 @@ namespace CK.AppIdentity.TransportLayer
                 await c.CloseAsync( monitor, offReason );
             }
             await UpdateConnectionAvailabilityAsync( monitor );
-            // When tearing down, raises the TransportManagerFeature event.
+            // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed
+            // and/or this is destroyed.
+            await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this );
+            // When tearing down, dispose the connection availability event bridge.
             if( offReason.Length == 0 )
             {
                 Debug.Assert( _switchOffReason != null && _switchOffReason.Length == 0 );
-                await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, new TransportFeatureChangedEvent(this, Destroyed: true) );
+                _connectionEventBridge.Dispose();
             }
         }
 

@@ -107,19 +107,18 @@ namespace CK.AppIdentity.TransportLayer
             // However, to be able to start exchanging with others, we must know the message protocols
             // that are supported.
             var t = new TransportFeature( _transportManager, r, listener, target, disallowEviction );
-            // We add the feature here to the remote so that channels can use it but if the initialization
-            // eventually fails we must remove it.
+            // We add the feature here to the remote so that channels can use it.
             // And we wait a successful initialization to "publish" the new TransportFeature to the
-            // public TransportManagerFeature.
+            // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature
+            // "appears" after the ApplicationIdentity.RemotesChanged event.
             r.AddFeature( t );
-            context.Trampoline.OnError( () => r.RemoveFeature( t ) );
             if( listener != null )
             {
                 context.Trampoline.OnSuccess( () =>
                 {
                     t.CloseChannelRegistration( context.Monitor );
                     listener.AddParty( t );
-                    _transportManager.FeatureAppears( t );
+                    context.Trampoline.OnSuccess( () => _transportManager.RaiseFeatureAppearsEventAsync( context.Monitor, t ) );
                 } );
             }
             else
@@ -129,7 +128,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     t.CloseChannelRegistration( context.Monitor );
                     t.InitializeOutgoingAndInitiateConnection();
-                    _transportManager.FeatureAppears( t );
+                    context.Trampoline.OnSuccess( () => _transportManager.RaiseFeatureAppearsEventAsync( context.Monitor, t ) );
                 } );
             }
             return true;

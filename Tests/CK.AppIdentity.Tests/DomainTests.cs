@@ -103,7 +103,7 @@ namespace CK.AppIdentity.Tests
                 // also in the given environment.
                 c["Remotes:0:EnvironmentName"] = "SpecialEnvForDomain";
                 c["Remotes:0:Domain:SomeKey"] = "This makes the Domain configuration section exists: the 'AllInOneInc' remote holds a Domain.";
-                // This is useless... but this checked as soon as a 'Domain' configuration is here!
+                // This is useless... but this checked as soon as a "Domain" configuration key is here!
                 c["Remotes:0:DomainName"] = "SaaSProduct";
                 c["Remotes:0:Domain:DomainName"] = "AllInOneInc";
                 c["Remotes:0:Domain:Local:Name"] = "AllInOneInc";

@@ -60,12 +60,6 @@ namespace CK.AppIdentity
         }
 
         /// <inheritdoc />
-        public void RemoveFeature( object feature )
-        {
-            Util.InterlockedRemove( ref _features, feature );
-        }
-
-        /// <inheritdoc />
         public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
         {
             return AddDynamicRemotePartyAsync( monitor, configuration, true, _agent, Configuration.DomainName, Configuration.EnvironmentName );

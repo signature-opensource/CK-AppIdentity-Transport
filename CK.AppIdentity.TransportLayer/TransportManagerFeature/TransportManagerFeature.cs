@@ -9,20 +9,21 @@ namespace CK.AppIdentity.TransportLayer
     {
         // This relay events of all the TransportFeatures.
         internal readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
-        // This is raised by the TransportManager.
-        internal readonly PerfectEventSender<TransportFeatureChangedEvent> _transportFeatureChangedEvent;
+        // This is raised first by the ApplicationIdentityAgent when creating a feature
+        // and then by the TransportManager on SwitchOff/SwitchOn. 
+        internal readonly PerfectEventSender<TransportFeature> _transportFeatureChangedEvent;
 
         internal TransportManagerFeature()
         {
             _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
-            _transportFeatureChangedEvent = new PerfectEventSender<TransportFeatureChangedEvent>();
+            _transportFeatureChangedEvent = new PerfectEventSender<TransportFeature>();
         }
 
         /// <summary>
         /// Raised when a <see cref="TransportFeature"/> appears, disappears or
         /// its <see cref="TransportFeature.IsOff"/> changes. 
         /// </summary>
-        public PerfectEvent<TransportFeatureChangedEvent> TransportChanged => _transportFeatureChangedEvent.PerfectEvent;
+        public PerfectEvent<TransportFeature> TransportChanged => _transportFeatureChangedEvent.PerfectEvent;
 
         /// <summary>
         /// Raised when a <see cref="TransportFeature.ConnectionAvailability"/> changes. 

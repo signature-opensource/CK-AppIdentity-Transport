@@ -61,12 +61,6 @@ namespace CK.AppIdentity
         }
 
         /// <inheritdoc />
-        public void RemoveFeature( object feature )
-        {
-            Util.InterlockedRemove( ref _features, feature );
-        }
-
-        /// <inheritdoc />
         public LocalPartyConfiguration Configuration => _configuration;
 
         /// <inheritdoc />
