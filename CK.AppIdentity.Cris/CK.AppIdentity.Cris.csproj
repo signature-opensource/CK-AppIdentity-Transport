@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.Auth.Cris" Version="0.18.1--0011-develop" />
+    <PackageReference Include="CK.Cris.Executor" Version="0.18.1--0026-develop" />
   </ItemGroup>
 
   <ItemGroup>

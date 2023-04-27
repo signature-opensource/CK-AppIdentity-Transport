@@ -521,7 +521,7 @@ namespace CK.AppIdentity.TransportLayer
         public DateTimeOffset ReadDateTimeOffset() => new DateTimeOffset( ReadDateTime(), TimeSpan.FromMinutes( ReadInt16() ) );
 
         /// <summary>
-        /// Reads a DateTimeOffset written by <see cref="FastByteWriter.WriteDateTimeOffset(DateTimeOffset)"/>.
+        /// Reads a Guid written by <see cref="FastByteWriter.WriteGuid(in Guid)"/>.
         /// </summary>
         /// <returns>The value.</returns>
         public Guid ReadGuid()

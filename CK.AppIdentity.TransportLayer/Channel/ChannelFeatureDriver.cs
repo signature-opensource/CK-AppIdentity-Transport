@@ -15,12 +15,11 @@ namespace CK.AppIdentity.BlobChannel
         /// <summary>
         /// Initializes a new <see cref="ChannelFeatureDriver{T}"/>.
         /// </summary>
-        /// <param name="s">The application identity service.</param>
+        /// <param name="transport">The transport feature.</param>
         /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
-        /// 
-        protected ChannelFeatureDriver( ApplicationIdentityService s,
+        protected ChannelFeatureDriver( TransportFeatureDriver transport,
                                         bool isAllowedByDefault )
-            : base( s, isAllowedByDefault )
+            : base( transport.ApplicationIdentityService, isAllowedByDefault )
         {
             if( FeatureName.Length <= 7 || !FeatureName.EndsWith( "Channel" ) )
             {

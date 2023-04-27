@@ -41,7 +41,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the application identity service.
         /// </summary>
-        protected ApplicationIdentityService ApplicationIdentityService => _s;
+        public ApplicationIdentityService ApplicationIdentityService => _s;
 
         /// <summary>
         /// Gets whether this feature is allowed or disabled at the root <see cref="ApplicationIdentityService"/>.

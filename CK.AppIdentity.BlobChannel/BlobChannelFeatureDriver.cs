@@ -16,9 +16,9 @@ namespace CK.AppIdentity.BlobChannel
         /// <summary>
         /// Initializes a new singleton service that manages the <see cref="BlobChannelFeature"/> of <see cref="IRemoteParty"/>.
         /// </summary>
-        /// <param name="s">The root application identity service.</param>
-        public BlobChannelFeatureDriver( ApplicationIdentityService s )
-            : base( s, isAllowedByDefault: false )
+        /// <param name="transport">The transport feature.</param>
+        public BlobChannelFeatureDriver( TransportFeatureDriver transport )
+            : base( transport, isAllowedByDefault: false )
         {
         }
 

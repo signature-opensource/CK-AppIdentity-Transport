@@ -14,8 +14,8 @@ namespace CK.AppIdentity.PocoChannel
     {
         readonly PocoDirectory _pocoDirectory;
 
-        public PocoChannelFeatureDriver( ApplicationIdentityService s, PocoDirectory pocoDirectory )
-            : base( s, isAllowedByDefault: true )
+        public PocoChannelFeatureDriver( TransportFeatureDriver transport, PocoDirectory pocoDirectory )
+            : base( transport, isAllowedByDefault: true )
         {
             _pocoDirectory = pocoDirectory;
         }
