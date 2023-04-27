@@ -1,4 +1,3 @@
-using CK.AppIdentity.PocoChannel;
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System.Buffers;

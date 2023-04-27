@@ -35,8 +35,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris", "CK.A
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris.Tests", "Tests\CK.AppIdentity.Cris.Tests\CK.AppIdentity.Cris.Tests.csproj", "{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.PocoChannel", "CK.AppIdentity.PocoChannel\CK.AppIdentity.PocoChannel.csproj", "{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.PocoChannelTests", "Tests\CK.AppIdentity.PocoChannelTests\CK.AppIdentity.PocoChannelTests.csproj", "{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.TransportLayer", "CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj", "{A74169D1-AE1F-42BB-B05D-27BD1FF94692}"
@@ -45,7 +43,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.TransportLay
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.BlobChannel", "CK.AppIdentity.BlobChannel\CK.AppIdentity.BlobChannel.csproj", "{F1E1D2F7-4573-47D8-AD20-EBC9637D57E7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.BlobChannel.Tests", "Tests\CK.AppIdentity.BlobChannel.Tests\CK.AppIdentity.BlobChannel.Tests.csproj", "{10311192-BE3A-483B-82AB-B8E6878A04E2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.BlobChannel.Tests", "Tests\CK.AppIdentity.BlobChannel.Tests\CK.AppIdentity.BlobChannel.Tests.csproj", "{10311192-BE3A-483B-82AB-B8E6878A04E2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -81,10 +79,6 @@ Global
 		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2F3089BB-33F6-42BD-A0CB-9904BABB64F7}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A4B63F88-D32D-4131-9A0A-B162C00F0FB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
