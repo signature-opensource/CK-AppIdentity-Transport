@@ -9,21 +9,21 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
-    public sealed class CrisEndPointChannelFeatureDriver : ChannelFeatureDriver<CrisEndPointFeature>
+    public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
     {
         readonly PocoDirectory _pocoDirectory;
         readonly IServiceProvider _serviceProvider;
 
-        public CrisEndPointChannelFeatureDriver( TransportFeatureDriver transport, PocoDirectory pocoDirectory, IServiceProvider serviceProvider )
+        public CrisChannelFeatureDriver( TransportFeatureDriver transport, PocoDirectory pocoDirectory, IServiceProvider serviceProvider )
             : base( transport, isAllowedByDefault: true )
         {
             _pocoDirectory = pocoDirectory;
             _serviceProvider = serviceProvider;
         }
 
-        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisEndPointFeature? channel )
+        protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
         {
-            channel = new CrisEndPointFeature( transport, _pocoDirectory, _serviceProvider );
+            channel = new CrisChannelFeature( transport, _pocoDirectory, _serviceProvider );
             return true;
         }
     }

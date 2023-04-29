@@ -1,0 +1,145 @@
+using CK.Core;
+using CK.Cris;
+using System;
+using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
+
+namespace CK.AppIdentity.Cris
+{
+    sealed class CommandRequest<T> : Request, ICommandRequest<T> where T : class, IAbstractCommand
+    {
+        readonly Collector<IRequest, IEvent> _events;
+        readonly TaskCompletionSource<CommandValidationResult> _validation;
+
+        public CommandRequest( T command, ActivityMonitor.DependentToken depToken, string? authToken )
+            : base( command, depToken, authToken )
+        {
+            _events = new Collector<IRequest, IEvent>();
+            _validation = new TaskCompletionSource<CommandValidationResult>();
+        }
+
+        public T Command => Unsafe.As<T>( Payload );
+
+        public ICollector<IRequest, IEvent> Events => _events;
+
+        public Task<CommandValidationResult> ValidationResult => _validation.Task;
+
+        sealed class ResultAdapter<TResult> : ICommandRequest<T>.WithResult<TResult>
+        {
+            readonly CommandRequest<T> _command;
+            readonly TaskCompletionSource<TResult> _result;
+
+            public ResultAdapter( CommandRequest<T> command )
+            {
+                _command = command;
+                _result = new TaskCompletionSource<TResult>();
+                _command.RequestCompletion.ContinueWith( OnRequestCompletion!, _result );
+            }
+
+            static void OnRequestCompletion( Task<object?> c, object target )
+            {
+                var result = (TaskCompletionSource<TResult>)target;
+                // Don't take any risk: even if there should not be Faulted or Canceled state
+                // on the RequestCompletion, transfers it if it happens.
+                if( c.Exception != null ) result.SetException( c.Exception );
+                else if( c.IsCanceled ) result.SetCanceled();
+                else
+                {
+                    // If the completion is a ICrisResultError, resolves the result task with an exception.
+                    var r = c.Result;
+                    if( r is ICrisResultError error )
+                    {
+                        var ex = new CKException( $"Request failed with {error.Errors.Count} errors." );
+                        result.SetException( ex );
+                    }
+                    else
+                    {
+                        // No error, the completion is null or an instance of some type (the most precise type among
+                        // the different ICommand<TResult> TResult types.
+                        // Fast path is that the result type is fine.
+                        if( r is TResult typedResult )
+                        {
+                            result.SetResult( typedResult );                            
+                        }
+                        else
+                        {
+                            // What's this type?
+                            // If TResult allows it, it's fine (the trick is to use the default(T) here).
+                            if( r == null )
+                            {
+                                if( default( TResult ) == null )
+                                {
+                                    result.SetResult( default( TResult )! );
+                                }
+                                else
+                                {
+                                    var ex = new CKException( $"Request result is null. This is not compatible with '{typeof(TResult).ToCSharpName()}'." );
+                                    result.SetException( ex );
+                                }
+                            }
+                            else
+                            {
+                                var ex = new CKException( $"Request result is a '{r.GetType().ToCSharpName()}'. This is not compatible with '{typeof( TResult ).ToCSharpName()}'." );
+                                result.SetException( ex );
+                            }
+                        }
+                    }
+                }
+            }
+
+            public Task<TResult> Result => _result.Task;
+
+            public T Command => _command.Command;
+
+            public Task<CommandValidationResult> ValidationResult => _command.ValidationResult;
+
+            public ICollector<IRequest, IEvent> Events => _command.Events;
+
+            public ICrisPoco Payload => _command.Payload;
+
+            public ActivityMonitor.DependentToken IssuerToken => _command.IssuerToken;
+
+            public DateTime CreationDate => _command.CreationDate;
+
+            public bool HasAuthenticationToken => _command.HasAuthenticationToken;
+
+            public Task<DateTime> SentDate => _command.SentDate;
+
+            public Task<object?> RequestCompletion => _command.RequestCompletion;
+        }
+
+        public ICommandRequest<T>.WithResult<TResult> WithResult<TResult>()
+        {
+            // Building a strongly typed result: we check that the actual result type that is
+            // the most precise type among the different ICommand<TResult> TResult types is
+            // compatible with the requested TResult.
+            var requestedType = typeof( TResult );
+            if( !requestedType.IsAssignableFrom( Payload.CrisPocoModel.ResultType ) )
+            {
+                if( Payload.CrisPocoModel.ResultType == typeof( void ) )
+                {
+                    Throw.ArgumentException( $"Command '{Payload.CrisPocoModel.PocoName}' is a ICommand (without any result)." );
+                }
+                Throw.ArgumentException( $"Command '{Payload.CrisPocoModel.PocoName}' is a 'ICommand<{Payload.CrisPocoModel.ResultType.ToCSharpName()}>'." +
+                                         $" This type of result is not compatible with '{requestedType.ToCSharpName()}'." );
+            }
+            return new ResultAdapter<TResult>( this );
+        }
+
+        internal void SetValidationResult( IPocoFactory<ICrisResultError> errorFactory, CommandValidationResult v, bool successfulComplete )
+        {
+            _validation.SetResult( v );
+            if( !v.Success )
+            {
+                SetResult( errorFactory.Create( e => e.Errors.AddRange( v.Errors ) ) );
+            }
+            else if( successfulComplete )
+            {
+                SetResult( null );
+            }
+        }
+
+
+    }
+
+}

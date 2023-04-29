@@ -20,7 +20,8 @@ namespace CK.AppIdentity
     public abstract class MicroAgent
     {
         readonly ActivityMonitor _monitor;
-        // We use null as the close signal (no need for a cancellation token source).
+        // We use null as the final close signal (after the _stopSignal instance).
+        // No need for a cancellation token source.
         // We use the channel object as the lock (it is the single private object).
         readonly Channel<object?> _channel;
         readonly string _name;
@@ -35,7 +36,7 @@ namespace CK.AppIdentity
         protected MicroAgent( string name )
         {
             Throw.CheckNotNullArgument( name );
-            _monitor = new ActivityMonitor( name, ActivityMonitorOptions.WithParallel );
+            _monitor = new ActivityMonitor( name );
             Debug.Assert( _monitor.ParallelLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _name = name;
@@ -235,6 +236,11 @@ namespace CK.AppIdentity
             _monitor.MonitorEnd();
         }
 
+        /// <summary>
+        /// Emits "Unhandled job type" error.
+        /// </summary>
+        /// <param name="monitor">The monitor.</param>
+        /// <param name="job">The unknown job.</param>
         protected virtual ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
             monitor.Error( $"Unhandled job type '{job.GetType()}'." );

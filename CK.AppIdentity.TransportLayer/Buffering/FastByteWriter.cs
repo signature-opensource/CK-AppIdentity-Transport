@@ -20,7 +20,6 @@ namespace CK.AppIdentity.TransportLayer
         Span<byte> _currentSpan;
         int _bufferPos;
         Encoder? _utf8Encoder;
-
         // This writer will not allocate contiguous buffers bigger than 64 KiB
         // if it can, but if EnsureContiguous or Allocate are called with a bigger
         // requested size, it will of course satisfy the demand (this is why this

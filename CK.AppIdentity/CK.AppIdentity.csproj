@@ -6,10 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="6.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0-preview.3.23174.8" />
     <!-- Temporary for DefaultDomainName. -->
-    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0022-develop" />
-    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0013-develop" />
+    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0025-develop" />
+    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0017-develop" />
   </ItemGroup>
 
 </Project>

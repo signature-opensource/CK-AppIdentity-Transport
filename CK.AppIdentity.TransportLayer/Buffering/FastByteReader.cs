@@ -26,6 +26,16 @@ namespace CK.AppIdentity.TransportLayer
             _sequence = sequence;
         }
 
+        /// <summary>
+        /// Gets the current remainder of the sequence.
+        /// </summary>
+        /// <returns>The remainder.</returns>
+        public ReadOnlySequence<byte> GetRemainder()
+        {
+            var start = _sequence.GetPosition( _bufferPos, _nextSequencePosition );
+            return _sequence.Slice( start );
+        }
+
         [MethodImpl( MethodImplOptions.NoInlining )]
         void MoveNext()
         {
