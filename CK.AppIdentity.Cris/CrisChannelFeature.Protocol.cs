@@ -53,7 +53,7 @@ namespace CK.AppIdentity.Cris
 
             protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
             {
-                if( message.Source is Request r ) r.SetSentDate( DateTime.UtcNow );
+                if( message.Source is RequestBase r ) r.SetSentDate( DateTime.UtcNow );
                 replacement = null;
                 return true;
             }

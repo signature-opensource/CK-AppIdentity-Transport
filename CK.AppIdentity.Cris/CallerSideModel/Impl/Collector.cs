@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.PerfectEvent;
+using Newtonsoft.Json.Linq;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -7,6 +8,7 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
+
     sealed class Collector<TEmitter, T> : ICollector<TEmitter, T> where T : class
     {
         Node? _first;

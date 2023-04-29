@@ -55,7 +55,11 @@ namespace CK.AppIdentity.Cris
 
         void EndpointSendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CommandValidationResult validationResult )
         {
-            throw new NotImplementedException();
+            var h = CurrentHandler;
+            if( h != null )
+            {
+                
+            }
         }
 
         void EndpointSendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, object? result )

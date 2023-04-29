@@ -6,21 +6,21 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
-    sealed class CommandRequest<T> : Request, ICommandRequest<T> where T : class, IAbstractCommand
+    sealed class CommandRequest<T> : RequestBase, ICommandRequest<T> where T : class, IAbstractCommand
     {
-        readonly Collector<IRequest, IEvent> _events;
+        readonly Collector<IOutgoingRequest, IEvent> _events;
         readonly TaskCompletionSource<CommandValidationResult> _validation;
 
-        public CommandRequest( T command, ActivityMonitor.DependentToken depToken, string? authToken )
-            : base( command, depToken, authToken )
+        public CommandRequest( T command, ActivityMonitor.DependentToken depToken )
+            : base( command, depToken )
         {
-            _events = new Collector<IRequest, IEvent>();
+            _events = new Collector<IOutgoingRequest, IEvent>();
             _validation = new TaskCompletionSource<CommandValidationResult>();
         }
 
         public T Command => Unsafe.As<T>( Payload );
 
-        public ICollector<IRequest, IEvent> Events => _events;
+        public ICollector<IOutgoingRequest, IEvent> Events => _events;
 
         public Task<CommandValidationResult> ValidationResult => _validation.Task;
 
@@ -93,15 +93,13 @@ namespace CK.AppIdentity.Cris
 
             public Task<CommandValidationResult> ValidationResult => _command.ValidationResult;
 
-            public ICollector<IRequest, IEvent> Events => _command.Events;
+            public ICollector<IOutgoingRequest, IEvent> Events => _command.Events;
 
             public ICrisPoco Payload => _command.Payload;
 
             public ActivityMonitor.DependentToken IssuerToken => _command.IssuerToken;
 
             public DateTime CreationDate => _command.CreationDate;
-
-            public bool HasAuthenticationToken => _command.HasAuthenticationToken;
 
             public Task<DateTime> SentDate => _command.SentDate;
 

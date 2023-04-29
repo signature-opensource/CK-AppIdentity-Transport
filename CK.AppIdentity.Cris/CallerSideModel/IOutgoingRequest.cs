@@ -6,10 +6,13 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris
 {
     /// <summary>
-    /// A command request carries the <see cref="Payload"/> and the eventual <see cref="RequestCompletion"/>
-    /// of a <see cref="ICrisEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
+    /// A command request carries the <see cref="Payload"/> and the eventual <see cref="RequestCompletion"/>.
+    /// of a <see cref="IEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
+    /// <para>
+    /// This non generic interface generalizes <see cref="IEventRequest{T}"/> and <see cref="ICommandRequest{T}"/>.
+    /// </para>
     /// </summary>
-    public interface IRequest
+    public interface IOutgoingRequest
     {
         /// <summary>
         /// Gets the <see cref="ICrisEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
@@ -25,12 +28,6 @@ namespace CK.AppIdentity.Cris
         /// Gets the UTC date and time creation of this request.
         /// </summary>
         DateTime CreationDate { get; }
-
-        /// <summary>
-        /// Gets whether this request has an authentication token that
-        /// identifies a User or an Actor of the callee.
-        /// </summary>
-        bool HasAuthenticationToken { get; }
 
         /// <summary>
         /// Gets a task that is completed when this request has been sent.
