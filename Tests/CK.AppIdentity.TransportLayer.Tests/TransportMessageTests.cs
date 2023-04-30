@@ -3,6 +3,7 @@ using NUnit.Framework;
 using System;
 using System.Buffers;
 using System.Threading.Tasks;
+using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests
 {
@@ -20,9 +21,9 @@ namespace CK.AppIdentity.TransportLayer.Tests
             public Context()
             {
                 ProtocolDirectory = new MessageProtocolDirectoryService();
-                TestProtocol = ProtocolDirectory.Register( "Test" );
+                ProtocolDirectory.TryRegister( TestHelper.Monitor, "Test", 0, out TestProtocol! ).Should().BeTrue();
                 TestMap = MessageProtocolMap.Get( TestProtocol );
-                Outgoing = new OutgoingMessageFactory( 1, TestProtocol );
+                Outgoing = new OutgoingMessageFactory( TestProtocol );
                 Incoming = new IncomingMessageFactory( TestMap );
             }
 
@@ -57,7 +58,8 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.Protocol.Should().Be( m.Protocol );
+                mBack.Protocol.FullName.Should().Be( MessageProtocol.ZeroProtocol.FullName, "The OutgoingMessageFactory does not set the protocol number. " +
+                                                                                            "This is done internally by the TransportController." );
                 mBack.WireMessage.Length.Should().Be( m.WireMessage.Length );
                 mBack.Message.Length.Should().Be( m.Message.Length );
                 mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
@@ -96,7 +98,8 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync ).ConfigureAwait( false );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.Protocol.Should().Be( m.Protocol );
+                mBack.Protocol.FullName.Should().Be( MessageProtocol.ZeroProtocol.FullName, "The OutgoingMessageFactory does not set the protocol number. " +
+                                                                                            "This is done internally by the TransportController." );
                 mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
             }
         }

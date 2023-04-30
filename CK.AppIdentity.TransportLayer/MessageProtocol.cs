@@ -14,24 +14,43 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public const int FullNameMaxLength = 255;
 
+        readonly OutgoingMessageFactory _messageFactory;
         readonly string _fullName;
         readonly string _name;
         readonly ushort _version;
+        readonly bool _isZeroProtocol;
+
+        /// <summary>
+        /// Th" "0 Protocol" name.
+        /// </summary>
+        public static readonly string ZeroProtocolName = "0 Protocol";
 
         /// <summary>
         /// Gets the "0 Protocol" singleton.
         /// </summary>
-        public static readonly MessageProtocol ZeroProtocol = new MessageProtocol( MessageProtocolDirectoryService.FormatFullName( "0 Protocol", TransportLayer.ZeroProtocol.CurrentVersion ),
-                                                                                   "0 Protocol",
-                                                                                   TransportLayer.ZeroProtocol.CurrentVersion );
+        public static readonly MessageProtocol ZeroProtocol = new MessageProtocol( MessageProtocolDirectoryService.FormatFullName( ZeroProtocolName, TransportLayer.ZeroProtocol.CurrentVersion ),
+                                                                                   ZeroProtocolName,
+                                                                                   TransportLayer.ZeroProtocol.CurrentVersion,
+                                                                                   true );
 
-        internal MessageProtocol( string fullName, string name, ushort version, bool isPartySpecific = false )
+        internal MessageProtocol( string fullName, string name, ushort version, bool isZeroProtocol )
         {
             Debug.Assert( fullName.Length <= FullNameMaxLength );
             _fullName = fullName;
             _name = name;
             _version = version;
+            _isZeroProtocol = isZeroProtocol;
+            // If the concurrent MessageProtocolDirectoryService.TryRegister loses an instance, we don't care
+            // to dispose this since the lost instance will never be used and no message can be pooled.
+            _messageFactory = new OutgoingMessageFactory( this );
         }
+
+        /// <summary>
+        /// Gets the message factory for this protocol.
+        /// This is referenced internally and exposed by the ChannelFeature: the fact that it is
+        /// centralized here is an implementation detail.
+        /// </summary>
+        internal OutgoingMessageFactory MessageFactory => _messageFactory;
 
         /// <summary>
         /// Gets this protocol name without version.
@@ -47,6 +66,11 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets this protocol version.
         /// </summary>
         public ushort Version => _version;
+
+        /// <summary>
+        /// Gets whether this is the "0 Protocol".
+        /// </summary>
+        public bool IsZeroProtocol => _isZeroProtocol;
 
         /// <summary>
         /// Overridden to return the <see cref="FullName"/>.

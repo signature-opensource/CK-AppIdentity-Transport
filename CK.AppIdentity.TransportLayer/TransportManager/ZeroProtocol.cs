@@ -21,10 +21,12 @@ namespace CK.AppIdentity.TransportLayer
         // Run discriminators:
         internal const byte DRunByeBye = 255;
 
+        internal static readonly OutgoingMessageFactory _zeroFactory = MessageProtocol.ZeroProtocol.MessageFactory;
+
         public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
             Debug.Assert( message != null );
-            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DRunByeBye );

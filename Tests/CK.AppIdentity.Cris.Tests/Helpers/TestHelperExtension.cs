@@ -1,4 +1,4 @@
-﻿using CK.Core;
+using CK.Core;
 using CK.Cris;
 using CK.Setup;
 using CK.Testing;
@@ -8,6 +8,8 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using CK.AppIdentity.TransportLayer;
+using FluentAssertions.Common;
 
 namespace CK.AppIdentity.Cris.Tests
 {
@@ -45,13 +47,21 @@ namespace CK.AppIdentity.Cris.Tests
                                                                                                  params Type[] types )
         {
             StObjCollector collector = @this.CreateStObjCollector();
+            collector.SetAutoServiceKind( typeof( ApplicationIdentityConfiguration ), AutoServiceKind.IsSingleton );
             collector.RegisterTypes( new Type[]
             {
                 typeof( CommandDirectory ),
                 typeof( CommandValidator ),
                 typeof( RawCommandExecutor ),
                 typeof( ICrisResultError ),
-                typeof( CK.Cris.AmbientValues.IAmbientValues )
+                typeof( CK.Cris.AmbientValues.IAmbientValues ),
+                // The ApplicationIdentityConfiguration is declared as a AutoServiceKind.IsSingleton above.
+                typeof( ApplicationIdentityService ),
+                typeof( MessageProtocolDirectoryService ),
+                typeof( TransportFeatureDriver ),
+                typeof( CrisChannelFeatureDriver ),
+                typeof( CrisChannelExecutor ),
+                typeof( TcpSocketTransportTypeService ),
             } );
             collector.RegisterTypes( types );
 

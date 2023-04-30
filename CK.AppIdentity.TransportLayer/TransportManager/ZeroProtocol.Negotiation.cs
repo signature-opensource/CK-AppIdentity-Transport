@@ -29,7 +29,7 @@ namespace CK.AppIdentity.TransportLayer
         public static async ValueTask<bool> SendInitialMessageAsync( TransportFeature remote, Transport transport, int version )
         {
             Debug.Assert( remote.OutgoingInitialMessage != null );
-            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 // There is currently only one version.
@@ -44,7 +44,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendUnknownRemoteReplyMessageAsync( Transport transport, string? userAcceptUri )
         {
-            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DNegoUnknownRemote );
@@ -66,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static ValueTask<bool> SendDowngradeProtocolReplyAsync( Transport transport )
         {
-            _downgradeProtocolReplyMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
+            _downgradeProtocolReplyMessage ??= _zeroFactory.CreateStatic( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DNegoDowngradeProtocol );
@@ -86,7 +86,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( TransportFeature remote, Transport transport, MessageProtocolMap protocolMap )
         {
-            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DNegoAcceptedProtocolsMessage );
@@ -144,7 +144,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The awaitable.</returns>
         public static ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming )
         {
-            var m = _evictionDisallowedMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
+            var m = _evictionDisallowedMessage ??= _zeroFactory.CreateStatic( bytes =>
             {
                 var b = bytes.GetSpan( 1 );
                 b[0] = DNegoEvictionDisallowed;
@@ -161,7 +161,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The awaitable.</returns>
         public static async ValueTask<bool> SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
         {
-            var m = OutgoingMessageFactory.ZeroProtocol.Create( bytes =>
+            var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DNegoMissingProtocols );
@@ -199,14 +199,14 @@ namespace CK.AppIdentity.TransportLayer
         public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
         {
             TransportMessage m = value
-                    ? _finalSuccessMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
+                    ? _finalSuccessMessage ??= _zeroFactory.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 2 );
                         m[0] = DNegoFinalMessage;
                         m[1] = 1;
                         bytes.Advance( 1 );
                     } )
-                    : _finalFailureMessage ??= OutgoingMessageFactory.ZeroProtocol.CreateStatic( bytes =>
+                    : _finalFailureMessage ??= _zeroFactory.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 2 );
                         m[0] = DNegoFinalMessage;

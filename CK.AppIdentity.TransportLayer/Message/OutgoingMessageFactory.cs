@@ -22,28 +22,14 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class OutgoingMessageFactory : MessageFactory
     {
         readonly MessageProtocol _protocol;
-        readonly uint _protocolNumber;
-
-        OutgoingMessageFactory()
-        {
-            _protocol = MessageProtocol.ZeroProtocol;
-        }
-
-        /// <summary>
-        /// Gets the factory for the TransportManager.
-        /// </summary>
-        internal static readonly OutgoingMessageFactory ZeroProtocol = new OutgoingMessageFactory();
 
         /// <summary>
         /// Initializes a new message factory for a protocol and its protocol number.
         /// </summary>
-        /// <param name="protocolNumber">Must be between 1 and <see cref="MessageProtocolMap.MaxCount"/>.</param>
         /// <param name="protocol">The protocol. Must not be the "0 Protocol".</param>
-        public OutgoingMessageFactory( int protocolNumber, MessageProtocol protocol )
+        public OutgoingMessageFactory( MessageProtocol protocol )
         {
-            Throw.CheckArgument( protocolNumber > 0 && protocolNumber <= MessageProtocolMap.MaxCount );
             Throw.CheckArgument( protocol != null && protocol != MessageProtocol.ZeroProtocol );
-            _protocolNumber = (uint)protocolNumber;
             _protocol = protocol;
         }
 
@@ -125,22 +111,20 @@ namespace CK.AppIdentity.TransportLayer
                 var messageLength = (uint)buffer.Length - _maxPrefixLength;
                 if( messageLength == 0 )
                 {
-                    if( _protocolNumber != 0 ) Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{_protocol.FullName}')." );
-                    else if( factory == null ) Throw.InvalidOperationException( "A static TransportMessage cannot be empty." );
-                    return TransportMessage.Empty;
+                    Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{_protocol.FullName}')." );
                 }
                 Span<byte> prefix = stackalloc byte[_maxPrefixLength];
-                prefixLength = WritePrefix( _protocolNumber, isControl, messageLength, prefix );
+                prefixLength = WritePrefix( isControl, messageLength, prefix );
                 Debug.Assert( prefixLength <= _maxPrefixLength );
                 int offset = _maxPrefixLength - prefixLength;
                 prefix.Slice( 0, prefixLength ).CopyTo( header.Span.Slice( offset, prefixLength ) );
                 if( factory == null )
                 {
                     var content = new ReadOnlySequence<byte>( buffer.GetReadOnlySequence( offset ).ToArray() );
-                    return new TransportMessage( _protocolNumber, _protocol, content, prefixLength );
+                    return new TransportMessage( _protocol, content, prefixLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( factory, _protocolNumber, _protocol, buffer, offset, prefixLength );
+                return new TransportMessage( factory, _protocol, buffer, offset, prefixLength );
             }
             finally
             {
@@ -148,13 +132,13 @@ namespace CK.AppIdentity.TransportLayer
             }
 
 
-            static int WritePrefix( uint protocol, bool isControl, uint messageLength, Span<byte> memory )
+            static int WritePrefix( bool isControl, uint messageLength, Span<byte> memory )
             {
                 Debug.Assert( memory.Length >= _maxPrefixLength );
-                Debug.Assert( messageLength >= 0 && protocol < 64 );
+                Debug.Assert( messageLength >= 0 );
                 uint len = (uint)BitOperations.Log2( messageLength ) / 8;
                 Debug.Assert( len >= 0 && len <= 3 );
-                var b = (len << 6) | protocol;
+                var b = (len << 6);
                 if( isControl ) b |= TransportMessage.IsControlFlag;
                 Debug.Assert( b >= 0 && b <= 255 );
                 memory[0] = (byte)b;

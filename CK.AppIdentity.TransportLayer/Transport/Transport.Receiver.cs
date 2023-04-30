@@ -91,8 +91,9 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     else
                     {
-                        Debug.Assert( m.ProtocolNumber > 0 && m.ProtocolNumber <= handlers.Length );
-                        await handlers[m.ProtocolNumber - 1].ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
+                        int n = m.GetProtocolNumber();
+                        Debug.Assert( n > 0 && n <= handlers.Length );
+                        await handlers[n - 1].ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
                     }
                 }
             }

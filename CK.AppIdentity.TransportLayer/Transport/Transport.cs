@@ -174,11 +174,34 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
         internal ValueTask<bool> SendAsync( TransportMessage message )
         {
-            Throw.CheckArgument( message != null && message.IsValid );
+            Debug.Assert( message != null );
+            Debug.Assert( message.IsValid );
+            DebugCheckMessageProtocolNumber( message );
             if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
             return message.WireMessage.IsSingleSegment
                     ? SendSingleBufferAsync( message.WireMessage.First, _cts.Token )
                     : SendAsync( message.WireMessage, _cts.Token );
+        }
+
+        [Conditional("DEBUG")]
+        internal void DebugCheckMessageProtocolNumber( TransportMessage message )
+        {
+            var protocol = message.Protocol;
+            int protocolNumber = 0;
+            if( !protocol.IsZeroProtocol )
+            {
+                protocolNumber = _receiveFactory.AllowedProtocols.GetProtocolIndex( protocol ) + 1;
+                if( protocolNumber == 0 )
+                {
+                    Throw.ArgumentException( $"Message Protocol is '{protocol}' but NegotiatedProtocols are '{_receiveFactory.AllowedProtocols}'." );
+                }
+
+                int num = message.GetProtocolNumber();
+                if( num != protocolNumber )
+                {
+                    Throw.ArgumentException( $"Message ProtocolNumber is '{num}' but number from NegotiatedProtocols is '{protocolNumber}' in NegotiatedProtocols '{_receiveFactory.AllowedProtocols}'." );
+                }
+            }
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using CK.Core;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
 namespace CK.AppIdentity.TransportLayer
@@ -64,22 +65,63 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsValid => _protocols != null;
 
         /// <summary>
-        /// Gets the ordered list of protocols.
+        /// Gets the ordered list of protocols. This "0 Protocol" is not in this list. 
         /// </summary>
         public IReadOnlyList<MessageProtocol> Protocols => _protocols ?? Array.Empty<MessageProtocol>();
 
         /// <summary>
-        /// Gets the protocol number for a given message protocol.
+        /// Gets the index of the protocol in the <see cref="Protocols"/>. 
         /// </summary>
         /// <param name="protocol">The protocol.</param>
-        /// <returns>The protocol number or -1 if not found.</returns>
-        public int GetProtocolNumber( MessageProtocol protocol )
+        /// <returns>The protocol index or -1 if not found.</returns>
+        public int GetProtocolIndex( MessageProtocol protocol ) => Array.IndexOf( _protocols, protocol );
+
+        /// <summary>
+        /// Tries to find a protocol and its number from its <see cref="MessageProtocol.Name"/>.
+        /// </summary>
+        /// <param name="name">The protocol name.</param>
+        /// <param name="protocol">The protocol or null.</param>
+        /// <param name="protocolNumber">The protocol number if found.</param>
+        /// <returns>True on success, false otherwise.</returns>
+        public bool TryFindVersionedProtocol( string name, [NotNullWhen(true)]out MessageProtocol? protocol, out int protocolNumber )
         {
-            return protocol == MessageProtocol.ZeroProtocol
-                    ? 0
-                    : Array.IndexOf( _protocols, protocol ) + 1;
+            if( name == MessageProtocol.ZeroProtocolName )
+            {
+                protocol = MessageProtocol.ZeroProtocol;
+                protocolNumber = 0;
+                return true;
+            }
+            for( int i = 0; i < _protocols.Length; i++ )
+            {
+                var p = _protocols[i];
+                if( p.Name == name )
+                {
+                    protocol = p;
+                    protocolNumber = i + 1;
+                    return true;
+                }
+            }
+            protocol = null;
+            protocolNumber = -1;
+            return false;
         }
 
+        internal int GetProtocolIndexByName( string name )
+        {
+            Debug.Assert( name != MessageProtocol.ZeroProtocolName );
+            for( int i = 0; i < _protocols.Length; i++ )
+            {
+                var p = _protocols[i];
+                if( p.Name == name ) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// Overridden to return "Invalid" or the protocols' full name.
+        /// </summary>
+        /// <returns>The protocols.</returns>
+        public override string ToString() => _protocols == null ? "Invalid" : _protocols.Select( p => p.FullName ).Concatenate();
     }
 
 }

@@ -39,8 +39,6 @@ namespace CK.Cris
         {
         }
 
-
-
         /// <summary>
         /// Gets the <see cref="ICrisEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
         /// </summary>

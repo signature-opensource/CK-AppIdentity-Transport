@@ -163,7 +163,7 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     if( responseReader.TryPeek( out var m ) )
                     {
-                        if( !await SendMessageAsync( transportManager, transport, m, handlers ) )
+                        if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
                         {
                             // Breaks the send loop. The unsent message is let in the queue.
                             break;
@@ -212,7 +212,7 @@ namespace CK.AppIdentity.TransportLayer
                                                        TransportMessage m,
                                                        IReadOnlyList<PeerProtocolHandler> handlers )
         {
-            if( m.ProtocolNumber == 0 )
+            if( m.Protocol.IsZeroProtocol )
             {
                 // Even if the send is canceled in "0 Protocol", always consume the message:
                 // the "0 Protocol" has no interest to interact with different transports.
@@ -220,25 +220,34 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                PeerProtocolHandler currentHandler = handlers[m.ProtocolNumber - 1];
-                if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
+                int protocolIndex = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
+                if( protocolIndex == -1 )
                 {
-                    var toSend = replacement ?? m;
-                    if( toSend.Protocol != currentHandler.Protocol )
+                    transportManager.Logger.Error( $"Got a '{m.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
+                }
+                else
+                {
+                    m.SetProtocolNumber( protocolIndex + 1 );
+                    PeerProtocolHandler currentHandler = handlers[protocolIndex];
+                    if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
                     {
-                        transportManager.Logger.Warn( $"{currentHandler.GetType():C}.OnSendMessage has not converted a message from '{toSend.ProtocolNumber}' to '{currentHandler.Protocol}'). Message is dropped." );
-                    }
-                    else
-                    {
-                        // If the send is canceled, ends this loop without consuming the message.
-                        if( !await transport.SendAsync( toSend ).ConfigureAwait( false ) )
+                        var toSend = replacement ?? m;
+                        if( toSend.Protocol != currentHandler.Protocol )
                         {
-                            replacement?.Dispose();
-                            return false;
+                            transportManager.Logger.Warn( $"{currentHandler.GetType():C}.OnSendMessage has not converted a message from '{toSend.Protocol}' to '{currentHandler.Protocol}'). Message is dropped." );
+                        }
+                        else
+                        {
+                            // If the send is canceled, ends this loop without consuming the message.
+                            if( !await transport.SendAsync( toSend ).ConfigureAwait( false ) )
+                            {
+                                replacement?.Dispose();
+                                return false;
+                            }
                         }
                     }
+                    replacement?.Dispose();
                 }
-                replacement?.Dispose();
             }
             m.Dispose();
             return true;

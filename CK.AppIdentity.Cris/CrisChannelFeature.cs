@@ -39,9 +39,8 @@ namespace CK.AppIdentity.Cris
             var h = CurrentHandler;
             if( h != null )
             {
-                var depToken = monitor.CreateDependentToken( e.CrisPocoModel.PocoName );
-                var request = new EventRequest<T>( e, depToken, authToken );
-                var message = h.CreateRequestMessage( depToken, e, authToken );
+                var request = OutgoingRequest.CreateEvent<T>( monitor, e );
+                var message = h.CreateRequestMessage( request.IssuerToken, e, authToken );
                 message.Source = request;
                 if( h.TryEnqueue( message ) )
                 {
@@ -57,9 +56,8 @@ namespace CK.AppIdentity.Cris
             var h = CurrentHandler;
             if( h != null )
             {
-                var depToken = monitor.CreateDependentToken( command.CrisPocoModel.PocoName );
-                var request = new CommandRequest<T>( command, depToken, authToken );
-                var message = h.CreateRequestMessage( depToken, command, authToken );
+                var request = OutgoingRequest.CreateCommand( monitor, command );
+                var message = h.CreateRequestMessage( request.IssuerToken, command, authToken );
                 if( h.TryEnqueue( message ) )
                 {
                     return request;

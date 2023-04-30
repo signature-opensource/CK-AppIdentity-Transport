@@ -12,18 +12,23 @@ namespace CK.AppIdentity.Cris
     public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
     {
         readonly PocoDirectory _pocoDirectory;
-        readonly IServiceProvider _serviceProvider;
+        readonly CrisChannelExecutor _executor;
+        readonly IAuthenticationInfoTokenService _tokenService;
 
-        public CrisChannelFeatureDriver( TransportFeatureDriver transport, PocoDirectory pocoDirectory, IServiceProvider serviceProvider )
+        public CrisChannelFeatureDriver( TransportFeatureDriver transport,
+                                         PocoDirectory pocoDirectory,
+                                         CrisChannelExecutor executor,
+                                         IAuthenticationInfoTokenService tokenService )
             : base( transport, isAllowedByDefault: true )
         {
             _pocoDirectory = pocoDirectory;
-            _serviceProvider = serviceProvider;
+            _executor = executor;
+            _tokenService = tokenService;
         }
 
         protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
         {
-            channel = new CrisChannelFeature( transport, _pocoDirectory, _serviceProvider );
+            channel = new CrisChannelFeature( transport, _pocoDirectory, _executor, _tokenService );
             return true;
         }
     }

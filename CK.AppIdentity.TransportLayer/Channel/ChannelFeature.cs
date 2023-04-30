@@ -79,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
             // Creates a new handler.
             if( h == null )
             {
-                var factory = new OutgoingMessageFactory( _protocolNumber, protocol );
+                var factory = new OutgoingMessageFactory( protocol );
                 var c = new PeerProtocolHandler.CreateParameters( _firstHandler, endPoint, factory );
                 _firstHandler = h = CreateHandler( monitor, ref c );
             }

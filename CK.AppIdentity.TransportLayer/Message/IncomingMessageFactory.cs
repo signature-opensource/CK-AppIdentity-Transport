@@ -139,7 +139,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( header.Slice( 2, messageLength ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( 2 + messageLength );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: 2 );
+                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: 2 );
                 }
                 // The length is on more than one byte. There must be at least 256 bytes
                 // and we can fully handle the maximal 5 bytes prefix: we must now use the lenSize
@@ -164,7 +164,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( header, cancellation ).ConfigureAwait( false );
                     buffer.Advance( header.Length );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
                 }
                 // There is more than the initial buffer. Fills it.
                 await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -184,7 +184,7 @@ namespace CK.AppIdentity.TransportLayer
                     buffer.Advance( messageLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( this, protocolNumber, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
             }
             catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
             {

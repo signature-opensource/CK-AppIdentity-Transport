@@ -8,7 +8,7 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// Central registration for <see cref="MessageProtocol"/>.
     /// </summary>
-    public sealed class MessageProtocolDirectoryService : ISingletonAutoService
+    public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDisposable
     {
         readonly ConcurrentDictionary<string, MessageProtocol> _protocols;
 
@@ -21,46 +21,16 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Registers a protocol. 
+        /// Tries to register a protocol. Fails it the name is invalid or if it is the <see cref="MessageProtocol.ZeroProtocolName"/>.
         /// </summary>
-        /// <param name="fullName">Protocol name. Must not be null, empty or white space.</param>
-        /// <param name="isPartySpecific">True if this protocol is specific to the parties.</param>
-        /// <returns>The unique registration.</returns>
-        public MessageProtocol Register( string fullName, bool isPartySpecific = false )
-        {
-            Throw.CheckNotNullOrWhiteSpaceArgument( fullName );
-            Throw.CheckArgument( fullName.Length <= MessageProtocol.FullNameMaxLength );
-            if( fullName.Equals( MessageProtocol.ZeroProtocol.Name, StringComparison.OrdinalIgnoreCase ) )
-            {
-                return MessageProtocol.ZeroProtocol;
-            }
-            if( !TryParse( ref fullName, out var name, out var version ) )
-            {
-                Throw.ArgumentException( $"Invalid '{fullName}' protocol name." );
-            }
-            return _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, isPartySpecific ), ( n, exist ) => exist );
-        }
-
-        /// <summary>
-        /// Tries to register a protocol: the name must be valid and not "0 Protocol".
-        /// </summary>
-        /// <param name="fullName">Protocol name. Must not be null, empty or white space.</param>
-        /// <param name="registered">The registered message protocol on success.</param>
+        /// <param name="monitor">Required monitor.</param>
+        /// <param name="name">Base protocol name.</param>
+        /// <param name="version">Protocol version.</param>
+        /// <param name="registered">The unique registration.</param>
         /// <returns>True on success, false otherwise.</returns>
-        public bool TryRegister( string fullName, [NotNullWhen(true)]out MessageProtocol? registered )
+        public bool TryRegister( IActivityMonitor monitor, string name, ushort version, [NotNullWhen(true)]out MessageProtocol? registered )
         {
-            if( !string.IsNullOrWhiteSpace( fullName )
-                && TryParse( ref fullName, out var name, out var version )
-                && name != MessageProtocol.ZeroProtocol.Name )
-            {
-                registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version ), ( n, exist ) => exist );
-            }
-            registered = null;
-            return false;
-        }
-
-        internal bool TryRegister( IActivityMonitor monitor, string name, ushort version, [NotNullWhen(true)]out MessageProtocol? registered )
-        {
+            Throw.CheckNotNullArgument( name );
             name = name.Trim();
             if( name.Length == 0 || name.Contains( '.' ) || name.Equals( MessageProtocol.ZeroProtocol.Name, StringComparison.OrdinalIgnoreCase ) )
             {
@@ -69,7 +39,7 @@ namespace CK.AppIdentity.TransportLayer
             else
             {
                 var fullName = FormatFullName( name, version );
-                registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version ), ( n, exist ) => exist );
+                registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, false ), ( n, exist ) => exist );
                 return true;
             }
             registered = null;
@@ -100,5 +70,14 @@ namespace CK.AppIdentity.TransportLayer
 
         internal static string FormatFullName( string name, int version ) => $"{name}.{version}";
 
+        void IDisposable.Dispose()
+        {
+            // Ensures that in tests contexts when disposing a root ServiceProvider, the
+            // pooled messages (currently only one) is released.
+            foreach( var protocol in _protocols.Values )
+            {
+                protocol.MessageFactory.Dispose();
+            }
+        }
     }
 }
