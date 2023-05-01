@@ -3,16 +3,19 @@ using CK.Core;
 using CK.Cris;
 using System;
 using System.Buffers;
-using System.Diagnostics;
-using System.Security.Cryptography;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Threading.Tasks;
+using static CK.Core.CheckedWriteStream;
 
 namespace CK.AppIdentity.Cris
 {
     public sealed partial class CrisChannelFeature
     {
         const byte DSendRequest = 1;
+        const byte DValidationResult = 2;
+        const byte DRequestResult = 3;
+        const byte DEvent = 4;
 
         /// <summary>
         /// Implements the byte[] protocol.
@@ -27,20 +30,85 @@ namespace CK.AppIdentity.Cris
                 _feature = feature;
             }
 
-            public TransportMessage CreateRequestMessage( ActivityMonitor.DependentToken token,
-                                                          IPoco? poco,
-                                                          string? authToken )
+            internal bool TrySendRequest( OutgoingRequest request, bool highPriority )
             {
                 var message = MessageFactory.Create( bytes =>
                 {
                     FastByteWriter w = new FastByteWriter( bytes );
                     w.WriteByte( DSendRequest );
-                    w.WriteString( token.ToString() );
-                    w.WriteNullableString( authToken );
+                    w.WriteString( request.IssuerToken.ToString() );
+                    w.WriteNullableString( (string?)request.ExtraData );
                     w.Commit();
-                    Write( poco, bytes );
+                    Write( request.Payload, bytes );
                 } );
-                return message;
+                message.Source = request;
+                if( highPriority ? TryEnqueueHighPriority( message ) : TryEnqueue( message ) )
+                {
+                    return true;
+                }
+                message.Dispose();
+                return false;
+            }
+
+            protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
+            {
+                if( message.Source is OutgoingRequest r ) r.SetSentDate( logger, DateTime.UtcNow );
+                replacement = null;
+                return true;
+            }
+
+            internal bool TrySendValidationMessage( ActivityMonitor.LogKey id, CrisValidationResult validationResult )
+            {
+                var message = MessageFactory.Create( bytes =>
+                {
+                    FastByteWriter w = new FastByteWriter( bytes );
+                    w.WriteByte( DValidationResult );
+                    w.WriteReadLogKey( id );
+                    w.WriteReadCrisValidationResult( validationResult );
+                    w.Commit();
+                } );
+                if( TryEnqueueHighPriority( message ) )
+                {
+                    return true;
+                }
+                message.Dispose();
+                return false;
+            }
+
+            internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutor.ICrisExecutorPayload? result )
+            {
+                var message = MessageFactory.Create( bytes =>
+                {
+                    FastByteWriter w = new FastByteWriter( bytes );
+                    w.WriteByte( DRequestResult );
+                    w.WriteReadLogKey( id );
+                    w.Commit();
+                    Write( result, bytes );
+                } );
+                if( TryEnqueueHighPriority( message ) )
+                {
+                    return true;
+                }
+                message.Dispose();
+                return false;
+            }
+
+            internal bool TrySendCommandEvent( ActivityMonitor.LogKey id, IEvent e )
+            {
+                var message = MessageFactory.Create( bytes =>
+                {
+                    FastByteWriter w = new FastByteWriter( bytes );
+                    w.WriteByte( DEvent );
+                    w.WriteReadLogKey( id );
+                    w.Commit();
+                    Write( e, bytes );
+                } );
+                if( TryEnqueueHighPriority( message ) )
+                {
+                    return true;
+                }
+                message.Dispose();
+                return false;
             }
 
             static void Write( IPoco? poco, IBufferWriter<byte> bytes )
@@ -49,13 +117,6 @@ namespace CK.AppIdentity.Cris
                 {
                     poco.Write( w );
                 }
-            }
-
-            protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
-            {
-                if( message.Source is RequestBase r ) r.SetSentDate( DateTime.UtcNow );
-                replacement = null;
-                return true;
             }
 
             protected override ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
@@ -74,16 +135,42 @@ namespace CK.AppIdentity.Cris
                     {
                         case DSendRequest:
                             {
-                                var token = ActivityMonitor.DependentToken.Parse( r.ReadString() );
+                                monitor.Debug( $"Handling incoming Cris request." );
+                                var token = ActivityMonitor.Token.Parse( r.ReadString() );
                                 var authToken = r.ReadNullableString();
                                 var rPoco = new Utf8JsonReader( r.GetRemainder() );
                                 var payload = (ICrisPoco)feature._pocoDirectory.Read( ref rPoco )!;
                                 feature._executor.Execute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
                                 break;
                             }
+                        case DValidationResult:
+                            {
+                                monitor.Debug( $"Handling Cris validation message." );
+                                feature._outgoingRequestCache.SetValidationResult( monitor.ParallelLogger, r.ReadLogKey(), r.ReadCrisValidationResult() );
+                                break;
+                            }
+                        case DEvent:
+                            {
+                                monitor.Debug( $"Handling Cris event message." );
+                                var id = r.ReadLogKey();
+                                var rPoco = new Utf8JsonReader( r.GetRemainder() );
+                                var e = (IEvent)feature._pocoDirectory.Read( ref rPoco )!;
+                                feature._outgoingRequestCache.CollectCommandEvent( monitor, id, e );
+                                break;
+                            }
+                        case DRequestResult:
+                            {
+                                monitor.Debug( $"Handling Cris request result." );
+                                var id = r.ReadLogKey();
+                                var rPoco = new Utf8JsonReader( r.GetRemainder() );
+                                var result = (CrisExecutor.ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
+                                feature._outgoingRequestCache.SetResult( monitor.ParallelLogger, id, result );
+                                break;
+                            }
                     }
                 }
             }
+
         }
     }
 

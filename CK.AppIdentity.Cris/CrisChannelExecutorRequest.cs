@@ -10,7 +10,7 @@ namespace CK.AppIdentity.Cris
     public sealed class CrisChannelExecutorRequest : CrisExecutorRequest
     {
         internal CrisChannelExecutorRequest( ICrisPoco payload,
-                                             ActivityMonitor.DependentToken issuerToken,
+                                             ActivityMonitor.Token issuerToken,
                                              string? authToken )
             : base( payload, issuerToken )
         {

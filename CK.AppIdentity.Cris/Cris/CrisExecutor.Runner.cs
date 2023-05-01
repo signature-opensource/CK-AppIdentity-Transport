@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 namespace CK.Cris
 {
 
-    public abstract partial class CrisExecutor<T>
+    public abstract partial class CrisExecutor
     {
 
         ValueTask HandleSetRunnerCountAsync( IActivityMonitor monitor, int count )
@@ -89,14 +89,14 @@ namespace CK.Cris
 
         sealed class Runner
         {
-            readonly CrisExecutor<T> _executor;
+            readonly CrisExecutor _executor;
             readonly IActivityMonitor _monitor;
             readonly Task _runningTask;
             readonly ChannelReader<object?> _reader;
             internal Runner? _prev;
             internal Runner? _next;
 
-            public Runner( CrisExecutor<T> executor, int runnerNumber, Runner? previous )
+            public Runner( CrisExecutor executor, int runnerNumber, Runner? previous )
             {
                 _executor = executor;
                 _prev = previous;

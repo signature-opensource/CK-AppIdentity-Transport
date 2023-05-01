@@ -49,7 +49,7 @@ namespace CK.AppIdentity.TransportLayer
             receiveMonitor ??= new ActivityMonitor( $"Receive loop for '{transport.Controller.Feature.Party.FullName}'." );
             var receiveFactory = transport._receiveFactory;
             var reader = transport._reader;
-            using var log = receiveMonitor.OpenInfo( $"Receiving messages from '{transport}'." );
+            using var log = receiveMonitor.OpenInfo( $"Start receiving messages from '{transport}'." );
             try
             {
                 for(; ; )

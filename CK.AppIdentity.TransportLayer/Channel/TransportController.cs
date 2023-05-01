@@ -18,7 +18,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly TransportManager _transportManager;
         readonly TransportFeature _feature;
         readonly Channel<TransportMessage?> _senderChannel;
-        readonly Channel<TransportMessage> _responseChannel;
+        readonly Channel<TransportMessage> _highPriorityChannel;
         Transport _transport;
         Task<IActivityMonitor>? _receiveTask;
         Task? _sendTask;
@@ -27,7 +27,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             _transportManager = transportManager;
             _feature = feature;
-            _responseChannel = Channel.CreateUnbounded<TransportMessage>( _unboundOptions );
+            _highPriorityChannel = Channel.CreateUnbounded<TransportMessage>( _unboundOptions );
             // This channel should be bounded.
             _senderChannel = Channel.CreateUnbounded<TransportMessage?>( _unboundOptions );
             _transport = transport;
@@ -54,7 +54,15 @@ namespace CK.AppIdentity.TransportLayer
 
         public bool TryEnqueue( TransportMessage message ) => _senderChannel.Writer.TryWrite( message );
 
-        public bool TryEnqueueResponse( TransportMessage message ) => _responseChannel.Writer.TryWrite( message );
+        public bool TryEnqueueHighPriority( TransportMessage message )
+        {
+            if( _highPriorityChannel.Writer.TryWrite( message ) )
+            {
+                _senderChannel.Writer.TryWrite( null );
+                return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// Waits for a space to enqueue a message.
@@ -116,7 +124,7 @@ namespace CK.AppIdentity.TransportLayer
                 // This is rather improbable.
                 return WaitToStartSendAsync( monitor );
             }
-            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _responseChannel.Reader ) );
+            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
             return default;
         }
 
@@ -125,14 +133,14 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( _sendTask != null );
             monitor.Warn( $"Current send task for '{_feature.Party.FullName}' is pending. Waiting for its completion." );
             await _sendTask.ConfigureAwait( false );
-            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _responseChannel.Reader ) );
+            _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
         }
 
         internal async ValueTask CloseAsync( IActivityMonitor monitor, string reason )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
             CurrentTransport.SetSoftCondemned( new ByeByeMessage( reason.Length == 0 ? "Disposed" : reason, TimeSpan.FromSeconds( 5 ) ) );
-            _responseChannel.Writer.Complete();
+            _highPriorityChannel.Writer.Complete();
             _senderChannel.Writer.Complete();
             // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels.
             var t = _sendTask;
@@ -145,7 +153,7 @@ namespace CK.AppIdentity.TransportLayer
                                         TransportController transportController,
                                         Transport transport,
                                         ChannelReader<TransportMessage?> reader,
-                                        ChannelReader<TransportMessage> responseReader )
+                                        ChannelReader<TransportMessage> highPriorityReader )
         {
             try
             {
@@ -161,14 +169,14 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         break;
                     }
-                    if( responseReader.TryPeek( out var m ) )
+                    if( highPriorityReader.TryPeek( out var m ) )
                     {
                         if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
                         {
                             // Breaks the send loop. The unsent message is let in the queue.
                             break;
                         }
-                        responseReader.TryRead( out m );
+                        highPriorityReader.TryRead( out m );
                         goto responseHandling;
                     }
                     // Handle regular message.
@@ -177,7 +185,7 @@ namespace CK.AppIdentity.TransportLayer
                         if( m == null )
                         {
                             // Null marker is here to react to a condemned transport or StopSending.
-                            // or signals a response.
+                            // or signals a high priority message.
                             reader.TryRead( out m );
                         }
                         else
@@ -202,7 +210,7 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 Debug.Assert( ex is not ChannelClosedException, "The way we use it avoids to rely on the ChannelClosedException." );
-                transportManager.Logger.Error( $"While sending message for '{transportController.Feature.Party.FullName}' to '{transport.RemoteEndPointDescription}'." );
+                transportManager.Logger.Error( $"While sending message for '{transportController.Feature.Party.FullName}' to '{transport.RemoteEndPointDescription}'.", ex );
                 transportManager.KillTransport( transport );
             }
         }
@@ -255,7 +263,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
         {
-            int count = FlushAndClose( action, _responseChannel.Reader! );
+            int count = FlushAndClose( action, _highPriorityChannel.Reader! );
             count += FlushAndClose( action, _senderChannel.Reader );
             monitor.Trace( $"Cleanup {count} unsent messages for '{_transport.RemoteEndPointDescription}'." );
 

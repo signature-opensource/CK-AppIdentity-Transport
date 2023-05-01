@@ -102,7 +102,6 @@ namespace CK.AppIdentity.TransportLayer
         Task UpdateConnectionAvailabilityAsync( IActivityMonitor monitor )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
-            Debug.Assert( _readyTask.Task.IsCompleted );
 
             // TODO: Consider _controller queue load.
             // Currently we are connected if no off reason exists and a controller has been created and its lifetime has not been signaled.
@@ -408,6 +407,8 @@ namespace CK.AppIdentity.TransportLayer
             _controller = null;
             if( c != null )
             {
+                // Setup a new ready task only if necessary.
+                if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
                 await c.CloseAsync( monitor, offReason );
             }
             await UpdateConnectionAvailabilityAsync( monitor );

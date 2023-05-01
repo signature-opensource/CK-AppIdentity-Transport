@@ -1,6 +1,7 @@
 using CK.Core;
 using CK.PerfectEvent;
 using Newtonsoft.Json.Linq;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,19 +14,27 @@ namespace CK.AppIdentity.Cris
     {
         Node? _first;
         Node? _last;
-        PerfectEventSender<TEmitter, T> _added;
+        readonly PerfectEventSender<TEmitter, T> _added;
+        IBridge? _eventBridge;
         int _count;
 
-        internal Collector()
+        internal Collector( PerfectEventSender<TEmitter, T>? onEventRelay )
         {
             _added = new PerfectEventSender<TEmitter, T>();
+            if( onEventRelay != null )
+            {
+                _eventBridge = _added.CreateRelay( onEventRelay );
+            }
         }
 
+        public void Close() => _eventBridge?.Dispose();
+
         /// <summary>
-        /// Non thread safe but the collection is safe: the enumerator
-        /// traverse the linked list that can only grow at the end.
+        /// Non thread safe: this must NOT be called concurrently,
+        /// but the collection is safe: the enumerator traverse the linked list that can
+        /// only grow at the end.
         /// </summary>
-        internal void Add( T v )
+        internal Task AddAsync( IActivityMonitor monitor, TEmitter c, T v )
         {
             var n = new Node( v );
             if( _first == null )
@@ -39,9 +48,8 @@ namespace CK.AppIdentity.Cris
                 _last.Next = n;
             }
             ++_count;
+            return _added.SafeRaiseAsync( monitor, c, v );
         }
-
-        internal Task RaiseAdded( IActivityMonitor monitor, TEmitter c, T v ) => _added.SafeRaiseAsync( monitor, c, v );
 
         public PerfectEvent<TEmitter, T> Added => _added.PerfectEvent;
 

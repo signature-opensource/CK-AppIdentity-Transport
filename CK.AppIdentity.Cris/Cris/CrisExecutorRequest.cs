@@ -7,12 +7,8 @@ namespace CK.Cris
     /// <summary>
     /// Base class for any Cris request that can be specialized for specific end point.
     /// <para>
-    /// This is used on the sender side (new requests or deserialized requests from a persistent store) and
-    /// on the receiver side (by deserializing the incoming message payload). Specializations typically add
+    /// This is used on the receiver side (by deserializing the incoming message payload). Specializations typically add
     /// specific data and should keep them internal.
-    /// </para>
-    /// <para>
-    /// On the sender side, 
     /// </para>
     /// </summary>
     public abstract class CrisExecutorRequest
@@ -23,20 +19,11 @@ namespace CK.Cris
         /// </summary>
         /// <param name="payload">The event or command.</param>
         /// <param name="issuerToken">The issuer token.</param>
-        protected CrisExecutorRequest( ICrisPoco payload, ActivityMonitor.DependentToken issuerToken )
+        protected CrisExecutorRequest( ICrisPoco payload, ActivityMonitor.Token issuerToken )
         {
             Throw.CheckNotNullArgument( payload );
             Payload = payload;
             IssuerToken = issuerToken;
-        }
-
-        /// <summary>
-        /// Initializes a new <see cref="CrisExecutorRequest"/> for an outgoing request event.
-        /// </summary>
-        /// <param name="payload">The event or command.</param>
-        /// <param name="issuerToken">The issuer token.</param>
-        protected CrisExecutorRequest( IOutgoingRequest request )
-        {
         }
 
         /// <summary>
@@ -47,6 +34,6 @@ namespace CK.Cris
         /// <summary>
         /// Gets a token that identifies the initialization of this request.
         /// </summary>
-        public ActivityMonitor.DependentToken IssuerToken { get; }
+        public ActivityMonitor.Token IssuerToken { get; }
     }
 }

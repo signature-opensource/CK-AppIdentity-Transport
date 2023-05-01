@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris
 {
     /// <summary>
-    /// A command request carries the <see cref="Payload"/> and the eventual <see cref="RequestCompletion"/>.
+    /// A request carries the <see cref="Payload"/>, the <see cref="ValidationResult"/> and the eventual <see cref="RequestCompletion"/>.
     /// of a <see cref="IEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
     /// <para>
     /// This non generic interface generalizes <see cref="IEventRequest{T}"/> and <see cref="ICommandRequest{T}"/>.
@@ -22,7 +22,7 @@ namespace CK.AppIdentity.Cris
         /// <summary>
         /// Gets a token that identifies the initialization of this request.
         /// </summary>
-        ActivityMonitor.DependentToken IssuerToken { get; }
+        ActivityMonitor.Token IssuerToken { get; }
 
         /// <summary>
         /// Gets the UTC date and time creation of this request.
@@ -33,6 +33,14 @@ namespace CK.AppIdentity.Cris
         /// Gets a task that is completed when this request has been sent.
         /// </summary>
         Task<DateTime> SentDate { get; }
+
+        /// <summary>
+        /// Gets the validation result of the request computed by the callee.
+        /// When this <see cref="CrisValidationResult.Success"/> is false,
+        /// the <see cref="Completion"/> contains a <see cref="ICrisResultError"/> with the <see cref="CrisValidationResult.Errors"/>
+        /// lines. 
+        /// </summary>
+        Task<CrisValidationResult> ValidationResult { get; }
 
         /// <summary>
         /// Gets a task that is completed when the request is terminated.

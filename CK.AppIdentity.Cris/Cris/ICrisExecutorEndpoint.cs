@@ -13,7 +13,7 @@ namespace CK.Cris
         /// <summary>
         /// Must configure the interceptor. This is called before a request is handled.
         /// Errors and warnings must be emitted to the monitor: they will be mapped in
-        /// a <see cref="CommandValidationResult"/>.
+        /// a <see cref="CrisValidationResult"/>.
         /// </summary>
         /// <param name="monitor">The monitor into which errors and warnings must be emitted.</param>
         /// <param name="request">The request about to be handled.</param>
@@ -22,12 +22,12 @@ namespace CK.Cris
 
         /// <summary>
         /// Must send the validation result to the caller.
-        /// If <see cref="CommandValidationResult.Success"/> is false, the request handling is terminated.
+        /// If <see cref="CrisValidationResult.Success"/> is false, the request handling is terminated.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="request">The handled request.</param>
         /// <param name="validationResult">The validation result.</param>
-        void SendCrisValidationResult( IActivityMonitor monitor, T request, CommandValidationResult validationResult );
+        void SendCrisValidationResult( IActivityMonitor monitor, T request, CrisValidationResult validationResult );
 
         /// <summary>
         /// Must send the event to the caller (and may be to other parties).
@@ -43,14 +43,6 @@ namespace CK.Cris
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="request">The handled request.</param>
         /// <param name="result">The result.</param>
-        void SendCommandResult( IActivityMonitor monitor, T request, object? result );
-
-        /// <summary>
-        /// Must send the error to the caller.
-        /// </summary>
-        /// <param name="monitor">The monitor to use.</param>
-        /// <param name="request">The handled request.</param>
-        /// <param name="ex">The error.</param>
-        void SendCommandError( IActivityMonitor monitor, T request, Exception ex );
+        void SendCommandResult( IActivityMonitor monitor, T request, CrisExecutor.ICrisExecutorPayload? result );
     }
 }

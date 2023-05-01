@@ -1,28 +1,40 @@
 using CK.Core;
 using CK.Cris;
+using CK.PerfectEvent;
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
-    sealed class CommandRequest<T> : RequestBase, ICommandRequest<T> where T : class, IAbstractCommand
+    sealed class CommandRequest<T> : OutgoingRequest, ICommandRequest<T> where T : class, IAbstractCommand
     {
         readonly Collector<IOutgoingRequest, IEvent> _events;
-        readonly TaskCompletionSource<CommandValidationResult> _validation;
 
-        public CommandRequest( T command, ActivityMonitor.DependentToken depToken )
-            : base( command, depToken )
+        public CommandRequest( OutgoingRequestCache cache,
+                               T command,
+                               ActivityMonitor.Token issuerToken,
+                               object? extraData,
+                               PerfectEventSender<IOutgoingRequest, IEvent>? onEventRelay )
+            : base( cache, command, issuerToken, extraData )
         {
-            _events = new Collector<IOutgoingRequest, IEvent>();
-            _validation = new TaskCompletionSource<CommandValidationResult>();
+            _events = new Collector<IOutgoingRequest, IEvent>( onEventRelay );
         }
 
         public T Command => Unsafe.As<T>( Payload );
 
         public ICollector<IOutgoingRequest, IEvent> Events => _events;
 
-        public Task<CommandValidationResult> ValidationResult => _validation.Task;
+        internal override Task AddCommandEventAsync( IActivityMonitor monitor, IEvent e )
+        {
+            return _events.AddAsync( monitor, this, e );
+        }
+
+        internal override void SetResult( IParallelLogger logger, object? result )
+        {
+            base.SetResult( logger, result );
+            _events.Close();
+        }
 
         sealed class ResultAdapter<TResult> : ICommandRequest<T>.WithResult<TResult>
         {
@@ -91,13 +103,13 @@ namespace CK.AppIdentity.Cris
 
             public T Command => _command.Command;
 
-            public Task<CommandValidationResult> ValidationResult => _command.ValidationResult;
+            public Task<CrisValidationResult> ValidationResult => _command.ValidationResult;
 
             public ICollector<IOutgoingRequest, IEvent> Events => _command.Events;
 
             public ICrisPoco Payload => _command.Payload;
 
-            public ActivityMonitor.DependentToken IssuerToken => _command.IssuerToken;
+            public ActivityMonitor.Token IssuerToken => _command.IssuerToken;
 
             public DateTime CreationDate => _command.CreationDate;
 
@@ -123,20 +135,6 @@ namespace CK.AppIdentity.Cris
             }
             return new ResultAdapter<TResult>( this );
         }
-
-        internal void SetValidationResult( IPocoFactory<ICrisResultError> errorFactory, CommandValidationResult v, bool successfulComplete )
-        {
-            _validation.SetResult( v );
-            if( !v.Success )
-            {
-                SetResult( errorFactory.Create( e => e.Errors.AddRange( v.Errors ) ) );
-            }
-            else if( successfulComplete )
-            {
-                SetResult( null );
-            }
-        }
-
 
     }
 

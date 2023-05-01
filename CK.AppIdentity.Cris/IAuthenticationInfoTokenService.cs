@@ -1,14 +1,24 @@
 using CK.Auth;
 using CK.Core;
-using Microsoft.IO;
 using System;
-using System.IO;
-using System.Text;
 
 namespace CK.AppIdentity.Cris
 {
+    /// <summary>
+    /// This service must be able to generate an opaque string token from a <see cref="IAuthenticationInfo"/>
+    /// and parse it back.
+    /// <para>
+    /// Used on the executor/receiver/callee side. The caller obtains a string token by
+    /// any means and transmits it as-is: it doesn't have to access the authentication information.
+    /// </para>
+    /// </summary>
     public interface IAuthenticationInfoTokenService : ISingletonAutoService
     {
+        /// <summary>
+        /// Creates an opaque token.
+        /// </summary>
+        /// <param name="info">The authentication info.</param>
+        /// <returns>The token.</returns>
         string CreateAuthenticationToken( IAuthenticationInfo info );
 
         /// <summary>
@@ -17,32 +27,5 @@ namespace CK.AppIdentity.Cris
         /// <param name="token">The string to parse.</param>
         /// <returns>The authentication info or null if the token cannot be parsed.</returns>
         IAuthenticationInfo? TryParseAuthenticationToken( ReadOnlySpan<char> token );
-    }
-
-    public class AuthenticationInfoTokenService : IAuthenticationInfoTokenService
-    {
-        readonly IAuthenticationTypeSystem _typeSystem;
-
-        public AuthenticationInfoTokenService( IAuthenticationTypeSystem typeSystem )
-        {
-            _typeSystem = typeSystem;
-        }
-
-        public virtual string CreateAuthenticationToken( IAuthenticationInfo info )
-        {
-            using( var m = (RecyclableMemoryStream)Util.RecyclableStreamManager.GetStream() )
-            using( var w = new BinaryWriter( m ) )
-            {
-                _typeSystem.AuthenticationInfo.Write( w, info );
-                w.Flush();
-                return Encoding.UTF8.GetString( m.GetReadOnlySequence() );
-            }
-        }
-
-        public virtual IAuthenticationInfo? TryParseAuthenticationToken( ReadOnlySpan<char> token )
-        {
-            _typeSystem.AuthenticationInfo.Read()
-            throw new NotImplementedException();
-        }
     }
 }

@@ -29,7 +29,7 @@ namespace CK.AppIdentity.Cris.Tests
         {
             var c = ApplicationIdentityConfiguration.Create( @this.Monitor, configuration );
             Debug.Assert( c != null );
-            return CreateApplicationServiceAsync( @this, c, configureServices );
+            return CreateApplicationServiceAsync( @this, c, configureServices, types );
         }
 
         /// <summary>
@@ -50,11 +50,14 @@ namespace CK.AppIdentity.Cris.Tests
             collector.SetAutoServiceKind( typeof( ApplicationIdentityConfiguration ), AutoServiceKind.IsSingleton );
             collector.RegisterTypes( new Type[]
             {
+                // Cris bas types.
                 typeof( CommandDirectory ),
-                typeof( CommandValidator ),
-                typeof( RawCommandExecutor ),
+                typeof( RawCrisValidator ),
+                typeof( RawCrisExecutor ),
                 typeof( ICrisResultError ),
                 typeof( CK.Cris.AmbientValues.IAmbientValues ),
+                // Triggers code generation for Json serialization.
+                typeof( PocoJsonSerializer ),
                 // The ApplicationIdentityConfiguration is declared as a AutoServiceKind.IsSingleton above.
                 typeof( ApplicationIdentityService ),
                 typeof( MessageProtocolDirectoryService ),
@@ -62,6 +65,9 @@ namespace CK.AppIdentity.Cris.Tests
                 typeof( CrisChannelFeatureDriver ),
                 typeof( CrisChannelExecutor ),
                 typeof( TcpSocketTransportTypeService ),
+                // Authentication stuff.
+                typeof( AuthenticationInfoTokenService ),
+                typeof( Auth.StdAuthenticationTypeSystem ),
             } );
             collector.RegisterTypes( types );
 

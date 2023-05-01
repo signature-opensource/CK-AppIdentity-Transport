@@ -2,6 +2,7 @@ using CK.Auth;
 using CK.Core;
 using CK.Cris;
 using System;
+using static CK.Core.CheckedWriteStream;
 
 namespace CK.AppIdentity.Cris
 {
@@ -22,26 +23,22 @@ namespace CK.AppIdentity.Cris
             public void ConfigureServices( IActivityMonitor monitor, CrisChannelExecutorRequest request, SimpleServiceContainer services )
                 => _feature.EndpointConfigureServices( monitor, request, services );
 
-            public void SendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, object? result )
+            public void SendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
                 => _feature.EndpointSendCommandResult( monitor, request, result );
 
-            public void SendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CommandValidationResult validationResult )
+            public void SendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
                 => _feature.EndpointSendCrisValidationResult( monitor, request, validationResult );
 
             public void SendEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
                 => _feature.EndpointSendEvent( monitor, request, e );
 
-            public void SendCommandError( IActivityMonitor monitor, CrisChannelExecutorRequest request, Exception ex )
-                => _feature.EndpointSendCommandError( monitor, request, ex );
-
         }
 
         void EndpointConfigureServices( IActivityMonitor monitor, CrisChannelExecutorRequest request, SimpleServiceContainer services )
         {
-            IAuthenticationInfo? authInfo = null;
             if( request.AuthToken != null )
             {
-                authInfo = _tokenService.TryParseAuthenticationToken( request.AuthToken );
+                IAuthenticationInfo? authInfo = _tokenService.TryParseAuthenticationToken( request.AuthToken );
                 if( authInfo == null )
                 {
                     monitor.Error( "Unable to parse Authentication token." );
@@ -53,28 +50,43 @@ namespace CK.AppIdentity.Cris
             }
         }
 
-        void EndpointSendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CommandValidationResult validationResult )
+        void EndpointSendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
         {
             var h = CurrentHandler;
             if( h != null )
             {
-                
+                if( h.TrySendValidationMessage( request.IssuerToken.Key, validationResult ) )
+                {
+                    return;
+                }
             }
+            monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the validation result." );
         }
 
-        void EndpointSendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, object? result )
+        void EndpointSendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
         {
-            throw new NotImplementedException();
+            var h = CurrentHandler;
+            if( h != null )
+            {
+                if( h.TrySendResult( request.IssuerToken.Key, result ) )
+                {
+                    return;
+                }
+            }
+            monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the final result of the command." );
         }
 
         void EndpointSendEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
         {
-            throw new NotImplementedException();
-        }
-
-        void EndpointSendCommandError( IActivityMonitor monitor, CrisChannelExecutorRequest request, Exception ex )
-        {
-            throw new NotImplementedException();
+            var h = CurrentHandler;
+            if( h != null )
+            {
+                if( h.TrySendCommandEvent( request.IssuerToken.Key, e ) )
+                {
+                    return;
+                }
+            }
+            monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the event '{e.CrisPocoModel.PocoName}'." );
         }
 
     }
