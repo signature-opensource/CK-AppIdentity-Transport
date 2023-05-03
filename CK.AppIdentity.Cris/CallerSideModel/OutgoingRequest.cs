@@ -72,7 +72,7 @@ namespace CK.AppIdentity.Cris
                 SetResult( logger, errorFactory.Create( e => e.Errors.AddRange( v.Errors ) ) );
                 return true;
             }
-            if( _payload.CrisPocoModel.ResultType == typeof( void ) )
+            if( _payload.CrisPocoModel.IsEvent )
             {
                 SetResult( logger, null );
                 return true;

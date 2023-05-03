@@ -28,8 +28,8 @@ namespace CK.AppIdentity.Cris.Tests
             string Name { get; set; }
         }
 
-        [Test]
-        public async Task simple_exchange_Async()
+        [TestCase(false)]
+        public async Task simple_exchange_Async( bool withHandlers )
         {
             var types = new[] { typeof( ISimpleCommand ), typeof( ISimpleGet ) };
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
@@ -53,15 +53,20 @@ namespace CK.AppIdentity.Cris.Tests
 
             var listenerDirectory = listener.ServiceProvider.GetRequiredService<PocoDirectory>();
             var cmd1 = listenerDirectory.Create<ISimpleCommand>( c => c.Name = "Hello" );
-            var cmd2 = listenerDirectory.Create<ISimpleGet>( c => c.Name = "World" );
-            var senderDirectory = listener.ServiceProvider.GetRequiredService<PocoDirectory>();
 
-            await listenerChannel.Transport.ReadyTask;
             var r1 = listenerChannel.SendCommand( TestHelper.Monitor, cmd1 );
             Debug.Assert( r1 != null );
-            var result = (await r1.RequestCompletion) as ICrisResultError;
-            Debug.Assert( result != null );
-            result.Errors.Should().Contain( "No Command handler found." );
+            var result1 = (await r1.RequestCompletion) as ICrisResultError;
+            Debug.Assert( result1 != null );
+            result1.Errors.Should().Contain( "No Command handler found." );
+
+            var senderDirectory = listener.ServiceProvider.GetRequiredService<PocoDirectory>();
+            var cmd2 = senderDirectory.Create<ISimpleGet>( c => c.Name = "World" );
+            var r2 = senderChannel.SendCommand( TestHelper.Monitor, cmd1 );
+            Debug.Assert( r2 != null );
+            var result2 = (await r2.RequestCompletion) as ICrisResultError;
+            Debug.Assert( result2 != null );
+            result2.Errors.Should().Contain( "No Command handler found." );
         }
     }
 }

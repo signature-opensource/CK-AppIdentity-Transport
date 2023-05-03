@@ -9,7 +9,7 @@ namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
     /// This is a stable adapter between successive <see cref="Transport"/> instances and a a <see cref="TransportFeature"/>.
-    /// This hosts the outgoing message channel for all protocols supported by the feature.
+    /// This hosts the outgoing message channels for all protocols supported by the feature.
     /// </summary>
     sealed partial class TransportController
     {

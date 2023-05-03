@@ -211,7 +211,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="buffer">The buffer to send.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The awaitable.</returns>
-        protected abstract ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken );
+        internal protected abstract ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken );
 
         /// <summary>
         /// Sends a <see cref="ReadOnlySequence{T}"/> of bytes.

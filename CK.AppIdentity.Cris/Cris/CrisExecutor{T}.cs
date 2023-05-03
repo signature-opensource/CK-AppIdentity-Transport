@@ -77,14 +77,14 @@ namespace CK.Cris
                     {
                         // At least one error occurred while configuring the services.
                         // Send the faulted validation result and we are done.
-                        job.Endpoint.SendCrisValidationResult( monitor, job.Request, v );
+                        job.Endpoint.ReturnCrisValidationResult( monitor, job.Request, v );
                         return;
                     }
                 }
                 step = "validating";
                 var validation = await _commandValidator.ValidateCrisPocoAsync( monitor, services, job.Request.Payload );
                 // Always send the CrisValidationResult even if it is successful: this is the "execution started" signal.
-                job.Endpoint.SendCrisValidationResult( monitor, job.Request, validation );
+                job.Endpoint.ReturnCrisValidationResult( monitor, job.Request, validation );
                 // If validation fails, we are done.
                 if( !validation.Success ) return;
                 // Executing the command (handlers and post handlers).
@@ -93,7 +93,7 @@ namespace CK.Cris
                 // Send the result. We are done.
                 var r = _resultFactory.Create();
                 r.Result = result;
-                job.Endpoint.SendCommandResult( monitor, job.Request, r );
+                job.Endpoint.ReturnCommandResult( monitor, job.Request, r );
             }
             catch( Exception ex )
             {
@@ -107,7 +107,7 @@ namespace CK.Cris
                 // log by the Runner), we want to dispose the services.
                 var r = _resultFactory.Create();
                 r.Result = error;
-                job.Endpoint.SendCommandResult( monitor, job.Request, r );
+                job.Endpoint.ReturnCommandResult( monitor, job.Request, r );
             }
             finally
             {

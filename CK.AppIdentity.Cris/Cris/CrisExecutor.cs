@@ -5,28 +5,6 @@ using System.Threading.Tasks;
 
 namespace CK.Cris
 {
-    [CKTypeSuperDefiner]
-    public abstract partial class CrisExecutor : ICrisExecutor
-    {
-        readonly PerfectEventSender<ICrisExecutor> _parallelRunnerCountChanged;
-        // We use null as the close signal for runners.
-        // The _channel is used as the lock to manage runners.
-        readonly Channel<object?> _channel;
-        Runner? _last;
-        int _runnerCount;
-        int _plannedRunnerCount;
-        // Ever increasing number.
-        int _runnerNumber;
-
-        private protected CrisExecutor()
-        {
-            _channel = Channel.CreateUnbounded<object?>();
-            _parallelRunnerCountChanged = new PerfectEventSender<ICrisExecutor>();
-            _runnerCount = 1;
-            _plannedRunnerCount = 1;
-            _last = new Runner( this, 0, null );
-        }
-
         /// <summary>
         /// The executor returns this result wrapper for 2 reasons:
         /// <list type="bullet">
@@ -49,6 +27,32 @@ namespace CK.Cris
             /// Gets or sets the execution result.
             /// </summary>
             object? Result { get; set; }
+        }
+
+    /// <summary>
+    /// Non generic base class for <see cref="CrisExecutor{T}"/> that
+    /// implements <see cref="ICrisExecutor"/> interface.
+    /// </summary>
+    [CKTypeSuperDefiner]
+    public abstract partial class CrisExecutor : ICrisExecutor
+    {
+        readonly PerfectEventSender<ICrisExecutor> _parallelRunnerCountChanged;
+        // We use null as the close signal for runners.
+        // The _channel is used as the lock to manage runners.
+        readonly Channel<object?> _channel;
+        Runner? _last;
+        int _runnerCount;
+        int _plannedRunnerCount;
+        // Ever increasing number.
+        int _runnerNumber;
+
+        private protected CrisExecutor()
+        {
+            _channel = Channel.CreateUnbounded<object?>();
+            _parallelRunnerCountChanged = new PerfectEventSender<ICrisExecutor>();
+            _runnerCount = 1;
+            _plannedRunnerCount = 1;
+            _last = new Runner( this, 0, null );
         }
 
         /// <inheritdoc />

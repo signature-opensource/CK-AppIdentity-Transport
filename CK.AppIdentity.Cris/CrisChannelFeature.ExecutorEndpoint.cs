@@ -23,14 +23,14 @@ namespace CK.AppIdentity.Cris
             public void ConfigureServices( IActivityMonitor monitor, CrisChannelExecutorRequest request, SimpleServiceContainer services )
                 => _feature.EndpointConfigureServices( monitor, request, services );
 
-            public void SendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
-                => _feature.EndpointSendCommandResult( monitor, request, result );
+            public void ReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, ICrisExecutorPayload? result )
+                => _feature.EndpointReturnCommandResult( monitor, request, result );
 
-            public void SendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
-                => _feature.EndpointSendCrisValidationResult( monitor, request, validationResult );
+            public void ReturnCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
+                => _feature.EndpointReturnCrisValidationResult( monitor, request, validationResult );
 
-            public void SendEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
-                => _feature.EndpointSendEvent( monitor, request, e );
+            public void ReturnEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
+                => _feature.EndpointReturnEvent( monitor, request, e );
 
         }
 
@@ -50,7 +50,7 @@ namespace CK.AppIdentity.Cris
             }
         }
 
-        void EndpointSendCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
+        void EndpointReturnCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
         {
             var h = CurrentHandler;
             if( h != null )
@@ -63,7 +63,7 @@ namespace CK.AppIdentity.Cris
             monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the validation result." );
         }
 
-        void EndpointSendCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
+        void EndpointReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, ICrisExecutorPayload? result )
         {
             var h = CurrentHandler;
             if( h != null )
@@ -76,7 +76,7 @@ namespace CK.AppIdentity.Cris
             monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the final result of the command." );
         }
 
-        void EndpointSendEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
+        void EndpointReturnEvent( IActivityMonitor monitor, CrisChannelExecutorRequest request, IEvent e )
         {
             var h = CurrentHandler;
             if( h != null )

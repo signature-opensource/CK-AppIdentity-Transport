@@ -30,7 +30,7 @@ namespace CK.AppIdentity.TransportLayer
             return _socket.ReceiveAsync( buffer, SocketFlags.None, cancellationToken );
         }
 
-        protected override async ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default )
+        internal protected override async ValueTask SendAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default )
         {
             int len;
             while( (len = await _socket.SendAsync( buffer, SocketFlags.None, cancellationToken )) < buffer.Length )
