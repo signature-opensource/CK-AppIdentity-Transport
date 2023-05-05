@@ -166,7 +166,7 @@ namespace CK.AppIdentity.TransportLayer
             var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger, remote.TargetAddress, cancellation.Token );
             if( transport != null )
             {
-                TransportMessage? firstAnswer = null;
+                TransportMessageImpl? firstAnswer = null;
                 transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
                 try
@@ -186,7 +186,7 @@ namespace CK.AppIdentity.TransportLayer
                         transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'. Retrying in {_retryTickCount} seconds." );
                         return null;
                     }
-                    var head = firstAnswer.Message.First;
+                    var head = firstAnswer.Payload.First;
                     Debug.Assert( head.Length > 0, "The message is not empty (handled above)." );
                     switch( head.Span[0] )
                     {

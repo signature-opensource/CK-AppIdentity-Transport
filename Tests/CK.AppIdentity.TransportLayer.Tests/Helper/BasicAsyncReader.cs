@@ -10,7 +10,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
         readonly ReadOnlySequence<byte> _seq;
         SequencePosition _position;
 
-        public BasicAsyncReader( TransportMessage m )
+        public BasicAsyncReader( TransportMessageImpl m )
         {
             _seq = m.WireMessage;
             _position = _seq.Start;

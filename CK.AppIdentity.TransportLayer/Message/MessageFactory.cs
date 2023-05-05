@@ -8,8 +8,6 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public abstract class MessageFactory : IDisposable
     {
-        internal const int _maxPrefixLength = 5;
-
         MutableSequence<byte>? _oneBuffer;
 
         private protected MessageFactory()

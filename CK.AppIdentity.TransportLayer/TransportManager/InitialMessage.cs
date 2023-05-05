@@ -111,12 +111,12 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="otherVersion">The other version or -1 if prefix is missing.</param>
         public static bool TryParse( string endPointDescription,
                                      string remoteEndPointDescription,
-                                     TransportMessage m,
+                                     TransportMessageImpl m,
                                      [NotNullWhen(true)]out InitialMessage? initialMessage,
                                      out int otherVersion )
         {
             initialMessage = null;
-            var r = new FastByteReader( m.Message );
+            var r = new FastByteReader( m.Payload );
             Span<byte> header = stackalloc byte[8];
             r.ReadBytes( header );
             if( !header.SequenceEqual( _prefix ) )

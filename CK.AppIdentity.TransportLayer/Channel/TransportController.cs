@@ -1,3 +1,4 @@
+using CK.AppIdentity.TransportLayer.Message;
 using CK.Core;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -17,8 +18,8 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly TransportManager _transportManager;
         readonly TransportFeature _feature;
-        readonly Channel<TransportMessage?> _senderChannel;
-        readonly Channel<TransportMessage> _highPriorityChannel;
+        readonly Channel<WirePrefixedTransportMessage?> _senderChannel;
+        readonly Channel<WirePrefixedTransportMessage> _highPriorityChannel;
         Transport _transport;
         Task<IActivityMonitor>? _receiveTask;
         Task? _sendTask;
@@ -27,9 +28,9 @@ namespace CK.AppIdentity.TransportLayer
         {
             _transportManager = transportManager;
             _feature = feature;
-            _highPriorityChannel = Channel.CreateUnbounded<TransportMessage>( _unboundOptions );
+            _highPriorityChannel = Channel.CreateUnbounded<WirePrefixedTransportMessage>( _unboundOptions );
             // This channel should be bounded.
-            _senderChannel = Channel.CreateUnbounded<TransportMessage?>( _unboundOptions );
+            _senderChannel = Channel.CreateUnbounded<WirePrefixedTransportMessage?>( _unboundOptions );
             _transport = transport;
             _transport.SetController( this );
         }
@@ -52,9 +53,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public TransportFeature Feature => _feature;
 
-        public bool TryEnqueue( TransportMessage message ) => _senderChannel.Writer.TryWrite( message );
+        public bool TryEnqueue( IMessage message ) => _senderChannel.Writer.TryWrite( message );
 
-        public bool TryEnqueueHighPriority( TransportMessage message )
+        public bool TryEnqueueHighPriority( WirePrefixedTransportMessage message )
         {
             if( _highPriorityChannel.Writer.TryWrite( message ) )
             {
@@ -73,14 +74,14 @@ namespace CK.AppIdentity.TransportLayer
         /// </returns>
         public ValueTask<bool> WaitToEnqueueAsync( CancellationToken cancellationToken = default ) => _senderChannel.Writer.WaitToWriteAsync( cancellationToken );
 
-        public async ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default )
+        public async ValueTask<bool> TryEnqueueAsync( WirePrefixedTransportMessage message, CancellationToken cancellationToken = default )
         {
             try
             {
                 await _senderChannel.Writer.WriteAsync( message, cancellationToken ).ConfigureAwait( false );
                 return true;
             }
-            catch( OperationCanceledException ) when ( cancellationToken.IsCancellationRequested )
+            catch( OperationCanceledException ) when( cancellationToken.IsCancellationRequested )
             {
                 return false;
             }
@@ -152,50 +153,51 @@ namespace CK.AppIdentity.TransportLayer
         static async Task RunSendAsync( TransportManager transportManager,
                                         TransportController transportController,
                                         Transport transport,
-                                        ChannelReader<TransportMessage?> reader,
-                                        ChannelReader<TransportMessage> highPriorityReader )
+                                        ChannelReader<WirePrefixedTransportMessage?> reader,
+                                        ChannelReader<WirePrefixedTransportMessage> highPriorityReader )
         {
             try
             {
-                Debug.Assert( transportController._transport ==  transport && transport.Controller == transportController );
+                Debug.Assert( transportController._transport == transport && transport.Controller == transportController );
                 var handlers = transport.Handlers;
                 Debug.Assert( handlers != null );
                 transportManager.Logger.Trace( $"Starting sending loop for '{transport.RemoteEndPointDescription}'." );
                 while( await reader.WaitToReadAsync().ConfigureAwait( false ) )
                 {
-                    // Handle all response messages (use label/goto for code inlining: break is for the top send loop).
-                    responseHandling:
+                // Handle all response messages (use label/goto for code inlining: break is for the top send loop).
+                responseHandling:
                     if( transport.IsCondemned )
                     {
                         break;
                     }
-                    if( highPriorityReader.TryPeek( out var m ) )
+                    WirePrefixedTransportMessage message;
+                    if( highPriorityReader.TryPeek( out message ) )
                     {
-                        if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
+                        if( !await SendMessageAsync( transportManager, transport, message, handlers ).ConfigureAwait( false ) )
                         {
                             // Breaks the send loop. The unsent message is let in the queue.
                             break;
                         }
-                        highPriorityReader.TryRead( out m );
+                        highPriorityReader.TryRead( out message );
                         goto responseHandling;
                     }
                     // Handle regular message.
-                    if( reader.TryPeek( out m ) )
+                    if( reader.TryPeek( out var m ) )
                     {
-                        if( m == null )
+                        if( !m.HasValue )
                         {
                             // Null marker is here to react to a condemned transport or StopSending.
                             // or signals a high priority message.
-                            reader.TryRead( out m );
+                            reader.TryRead( out _ );
                         }
                         else
                         {
-                            if( !await SendMessageAsync( transportManager, transport, m, handlers).ConfigureAwait(false) )
+                            if( !await SendMessageAsync( transportManager, transport, m.Value, handlers ).ConfigureAwait( false ) )
                             {
                                 // Breaks the send loop. The unsent message is let in the queue.
                                 break;
                             }
-                            reader.TryRead( out m );
+                            reader.TryRead( out _ );
                         }
                     }
                 }
@@ -217,10 +219,10 @@ namespace CK.AppIdentity.TransportLayer
 
         static async ValueTask<bool> SendMessageAsync( TransportManager transportManager,
                                                        Transport transport,
-                                                       TransportMessage m,
+                                                       WirePrefixedTransportMessage m,
                                                        IReadOnlyList<PeerProtocolHandler> handlers )
         {
-            if( m.Protocol.IsZeroProtocol )
+            if( m.Message.Protocol.IsZeroProtocol )
             {
                 // Even if the send is canceled in "0 Protocol", always consume the message:
                 // the "0 Protocol" has no interest to interact with different transports.
@@ -228,10 +230,10 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                int protocolIndex = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
+                int protocolIndex = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Message.Protocol.Name );
                 if( protocolIndex == -1 )
                 {
-                    transportManager.Logger.Error( $"Got a '{m.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
+                    transportManager.Logger.Error( $"Got a '{m.Message.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
                 }
                 else
                 {
@@ -261,13 +263,13 @@ namespace CK.AppIdentity.TransportLayer
             return true;
         }
 
-        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
+        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessageImpl>? action = null )
         {
             int count = FlushAndClose( action, _highPriorityChannel.Reader! );
             count += FlushAndClose( action, _senderChannel.Reader );
             monitor.Trace( $"Cleanup {count} unsent messages for '{_transport.RemoteEndPointDescription}'." );
 
-            static int FlushAndClose( Action<TransportMessage>? action, ChannelReader<TransportMessage?> r )
+            static int FlushAndClose( Action<TransportMessageImpl>? action, ChannelReader<TransportMessageImpl?> r )
             {
                 int count = 0;
                 while( r.TryRead( out var m ) )
@@ -282,7 +284,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal bool Receive0Message( IActivityMonitor receiveMonitor, TransportMessage m )
+        internal bool Receive0Message( IActivityMonitor receiveMonitor, TransportMessageImpl m )
         {
             Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
             if( m == TransportMessage.Empty )
@@ -299,7 +301,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             try
             {
-                switch( m.Message.FirstSpan[0] )
+                switch( m.Payload.FirstSpan[0] )
                 {
                     case ZeroProtocol.DRunByeBye:
                         {
@@ -309,7 +311,7 @@ namespace CK.AppIdentity.TransportLayer
                             return false;
                         }
                     default:
-                        receiveMonitor.Warn( $"Received unknown '0 Protocol' message (Discriminator: '{m.Message.FirstSpan[0]}', Length: {m.Message.Length}). Ignoring it." );
+                        receiveMonitor.Warn( $"Received unknown '0 Protocol' message (Discriminator: '{m.Payload.FirstSpan[0]}', Length: {m.Payload.Length}). Ignoring it." );
                         break;
                 }
                 return true;

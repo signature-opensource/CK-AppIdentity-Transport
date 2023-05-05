@@ -130,7 +130,7 @@ namespace CK.AppIdentity.TransportLayer
                 // Wait for the final message.
                 // It must be a single "1" byte.
                 using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 1 );
-                if( finalMessage.IsValid && finalMessage.Protocol == MessageProtocol.ZeroProtocol && finalMessage.Message.FirstSpan[0] == 1 )
+                if( finalMessage.IsValid && finalMessage.Protocol == MessageProtocol.ZeroProtocol && finalMessage.Payload.FirstSpan[0] == 1 )
                 {
                     // Final message is received: we condemn the current transport if there is one.
                     var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 5 ) );
@@ -151,7 +151,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( incoming?.Listener != null );
             InitialMessage? initialMessage;
 
-            TransportMessage? message = null;
+            TransportMessageImpl? message = null;
             try
             {
                 bool downgradedVersion = false;

@@ -194,9 +194,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="startIndex">Optional start index in the buffer.</param>
         /// <returns>This sequence content.</returns>
-        public ReadOnlySequence<T> GetReadOnlySequence( int startIndex = 0 ) => _head == null
-                                                                                ? ReadOnlySequence<T>.Empty
-                                                                                : new ReadOnlySequence<T>( _head, startIndex, _tail!, _tail!.Length );
+        public ReadOnlySequence<T> GetReadOnlySequence() => _head == null
+                                                                ? ReadOnlySequence<T>.Empty
+                                                                : new ReadOnlySequence<T>( _head, 0, _tail!, _tail!.Length );
 
         /// <summary>
         /// Clears this buffer. It can be reused.

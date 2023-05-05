@@ -34,15 +34,16 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteTimeSpan( message.ShutUp );
                 w.Commit();
             } );
+            
             bool r = await transport.SendAsync( m ).ConfigureAwait( false );
             m.Dispose();
             return r;
 
         }
 
-        public static ByeByeMessage ReadByeByeMessage( TransportMessage message )
+        public static ByeByeMessage ReadByeByeMessage( TransportMessageImpl message )
         {
-            var r = new FastByteReader( message.Message );
+            var r = new FastByteReader( message.Payload );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DRunByeBye );
             return new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );

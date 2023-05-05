@@ -50,7 +50,7 @@ namespace CK.AppIdentity.Cris
                 return false;
             }
 
-            protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
+            protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessageImpl? replacement )
             {
                 if( message.Source is OutgoingRequest r ) r.SetSentDate( logger, DateTime.UtcNow );
                 replacement = null;
@@ -121,7 +121,7 @@ namespace CK.AppIdentity.Cris
 
             protected override ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
             {
-                HandleMessage( monitor, _feature, message.Message );
+                HandleMessage( monitor, _feature, message.Payload );
                 message.Dispose();
                 return default;
 

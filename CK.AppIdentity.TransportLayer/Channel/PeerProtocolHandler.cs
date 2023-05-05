@@ -65,7 +65,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="message">The message to enqueue.</param>
         /// <returns>true if the message has been enqueued.</returns>
-        public bool TryEnqueue( TransportMessage message ) => _controller.TryEnqueue( message );
+        public bool TryEnqueue( IMessage message ) => _controller.TryEnqueue( message );
 
         /// <summary>
         /// Attempts to transfer the message to the transport high priority queue.
@@ -76,7 +76,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="message">The message to enqueue.</param>
         /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
-        public bool TryEnqueueHighPriority( TransportMessage message )
+        public bool TryEnqueueHighPriority( TransportMessageImpl message )
         {
             return _controller.TryEnqueueHighPriority( message );
         }
@@ -93,7 +93,7 @@ namespace CK.AppIdentity.TransportLayer
         /// True if the message has been be enqueued, false if the channel is closed (the remote is destroyed)
         /// or the <paramref name="cancellationToken"/> has been signaled.
         /// </returns>
-        public ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
+        public ValueTask<bool> TryEnqueueAsync( TransportMessageImpl message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
 
         /// <summary>
         /// Called for each message received.
@@ -114,7 +114,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="message">The message that is about to be sent.</param>
         /// <param name="replacement">Optional message that will be sent instead of the queued <paramref name="message"/>.</param>
         /// <returns>True to send the message, false to skip it.</returns>
-        internal protected virtual bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
+        internal protected virtual bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out IIncomingMessage? replacement )
         {
             replacement = null;
             return true;

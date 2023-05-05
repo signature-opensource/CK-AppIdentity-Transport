@@ -6,11 +6,12 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using CK.AppIdentity.TransportLayer.Message;
 
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Factory for ingoing <see cref="TransportMessage"/>.
+    /// Factory for ingoing <see cref="TransportMessageImpl"/>.
     /// There is only 1 way to create an incoming transport message: reading it from an asynchronous buffer provider
     /// that reads an exact count of bytes.
     /// <para>
@@ -73,9 +74,9 @@ namespace CK.AppIdentity.TransportLayer
         public DateTime LastReceived => _lastReceived;
 
         /// <summary>
-        /// Creates a <see cref="TransportMessage"/> from an asynchronous buffer provider.
+        /// Creates a <see cref="TransportMessageImpl"/> from an asynchronous buffer provider.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
-        /// <paramref name="cancellation"/> token has been signaled, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// <paramref name="cancellation"/> token has been signaled, in such case <see cref="TransportMessageImpl.Canceled"/> is returned.
         /// When <see cref="TransportMessage.Invalid"/> is returned it means that an invalid length prefix has been read or it exceeds
         /// the <paramref name="maxMessageLength"/> parameter. 
         /// <para>
@@ -86,10 +87,10 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
         /// <param name="cancellation">Cancellation token.</param>
         /// <returns>
-        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
+        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessageImpl.Canceled"/>,
         /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
-        public Task<TransportMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
+        public Task<IIncomingMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
                                                  int maxMessageLength = int.MaxValue,
                                                  CancellationToken cancellation = default )
         {
@@ -98,7 +99,7 @@ namespace CK.AppIdentity.TransportLayer
             return DoReadAsync( exactReader, maxMessageLength, cancellation );
         }
 
-        internal async Task<TransportMessage> DoReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader, int maxMessageLength, CancellationToken cancellation )
+        internal async Task<IIncomingMessage> DoReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader, int maxMessageLength, CancellationToken cancellation )
         {
             bool releaseBuffer = true;
             var buffer = GetBuffer();
@@ -132,14 +133,14 @@ namespace CK.AppIdentity.TransportLayer
                     if( messageLength == 0 )
                     {
                         return protocolNumber == 0
-                                ? ((firstByte & TransportMessage.IsControlFlag) != 0 ? TransportMessage.EmptyAck : TransportMessage.Empty)
-                                : Throw.InvalidDataException<TransportMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
+                                ? ((firstByte & WirePrefixedTransportMessage.IsControlFlag) != 0 ? TransportMessage.EmptyAck : TransportMessage.Empty)
+                                : Throw.InvalidDataException<TransportMessageImpl>( $"Forbidden 0 length message received for protocol '{protocol}'." );
                     }
                     // The whole message (255 bytes max.) necessarily fits in the header.
                     await exactReader( header.Slice( 2, messageLength ), cancellation ).ConfigureAwait( false );
                     buffer.Advance( 2 + messageLength );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: 2 );
+                    return new TransportMessageImpl( this, protocol, buffer );
                 }
                 // The length is on more than one byte. There must be at least 256 bytes
                 // and we can fully handle the maximal 5 bytes prefix: we must now use the lenSize
@@ -164,7 +165,7 @@ namespace CK.AppIdentity.TransportLayer
                     await exactReader( header, cancellation ).ConfigureAwait( false );
                     buffer.Advance( header.Length );
                     releaseBuffer = false;
-                    return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                    return new TransportMessageImpl( this, protocol, buffer );
                 }
                 // There is more than the initial buffer. Fills it.
                 await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -184,7 +185,7 @@ namespace CK.AppIdentity.TransportLayer
                     buffer.Advance( messageLength );
                 }
                 releaseBuffer = false;
-                return new TransportMessage( this, protocol, buffer, offset: 0, prefixLength: lenSize + 2 );
+                return new TransportMessageImpl( this, protocol, buffer );
             }
             catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
             {

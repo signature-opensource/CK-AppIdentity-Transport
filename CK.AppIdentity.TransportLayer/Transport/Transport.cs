@@ -1,3 +1,4 @@
+using CK.AppIdentity.TransportLayer.Message;
 using CK.Core;
 using System;
 using System.Buffers;
@@ -11,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
 {
 
     /// <summary>
-    /// A Transport is able to send and receive <see cref="TransportMessage"/>.
+    /// A Transport is able to send and receive <see cref="TransportMessageImpl"/>.
     /// <para>
     /// It is instantiated by a <see cref="TransportListener"/> or by <see cref="TransportTypeService.TryConnectAsync(IActivityLogger, TransportTypeAddress, CancellationToken)"/>.
     /// </para>
@@ -151,14 +152,14 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Used during the initial negotiation.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
-        /// <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessageImpl.Canceled"/> is returned.
         /// </summary>
         /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
         /// <returns>
-        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
+        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessageImpl.Canceled"/>,
         /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
         /// </returns>
-        internal Task<TransportMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
+        internal Task<IIncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
             Debug.Assert( maxMessageLength > 0 );
             Debug.Assert( _controller == null, "Not started yet." );
@@ -166,31 +167,34 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// <see cref="TransportMessage.IsValid"/> must be true.
+        /// <see cref="TransportMessageImpl.IsValid"/> must be true.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/>
-        /// if <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// if <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessageImpl.Canceled"/> is returned.
         /// </summary>
         /// <param name="message">The valid message to send.</param>
         /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
-        internal ValueTask<bool> SendAsync( TransportMessage message )
+        internal async ValueTask<bool> SendAsync( WirePrefixedTransportMessage message )
         {
-            Debug.Assert( message != null );
-            Debug.Assert( message.IsValid );
             DebugCheckMessageProtocolNumber( message );
-            if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
-            return message.WireMessage.IsSingleSegment
-                    ? SendSingleBufferAsync( message.WireMessage.First, _cts.Token )
-                    : SendAsync( message.WireMessage, _cts.Token );
+            if( _cts.IsCancellationRequested ) return false;
+            await SendAsync( message.Prefix, _cts.Token );
+            if( message.Message.Payload.IsSingleSegment )
+            {
+                return await SendSingleBufferAsync( message.Message.Payload.First, _cts.Token );
+            }
+            else
+            {
+                return await SendAsync( message.Message.Payload, _cts.Token );
+            }
         }
 
-        [Conditional("DEBUG")]
-        internal void DebugCheckMessageProtocolNumber( TransportMessage message )
+        [Conditional( "DEBUG" )]
+        internal void DebugCheckMessageProtocolNumber( WirePrefixedTransportMessage message )
         {
-            var protocol = message.Protocol;
-            int protocolNumber = 0;
+            var protocol = message.Message.Protocol;
             if( !protocol.IsZeroProtocol )
             {
-                protocolNumber = _receiveFactory.AllowedProtocols.GetProtocolIndex( protocol ) + 1;
+                int protocolNumber = _receiveFactory.AllowedProtocols.GetProtocolIndex( protocol ) + 1;
                 if( protocolNumber == 0 )
                 {
                     Throw.ArgumentException( $"Message Protocol is '{protocol}' but NegotiatedProtocols are '{_receiveFactory.AllowedProtocols}'." );
@@ -280,11 +284,14 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async ValueTask<bool> SendSingleBufferAsync( ReadOnlyMemory<byte> single, CancellationToken cancellation )
+        /// <summary>
+        /// Proxy <see cref="SendAsync"/>: intercepts OperationCanceled and return false instead.
+        /// </summary>
+        async ValueTask<bool> SendSingleBufferAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellation )
         {
             try
             {
-                await SendAsync( single, cancellation ).ConfigureAwait( false );
+                await SendAsync( buffer, cancellation ).ConfigureAwait( false );
                 return true;
             }
             catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )

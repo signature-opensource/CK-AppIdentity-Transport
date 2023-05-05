@@ -11,13 +11,13 @@ namespace CK.AppIdentity.TransportLayer
 
         // Static messages use no initialization lock (we don't care of the rare case where 2 concurrent messages will be instantiated).
         // "1" followed by our version: it can be static.
-        static TransportMessage? _downgradeProtocolReplyMessage;
+        static IMessage? _downgradeProtocolReplyMessage;
         // The DiscriminatorFinalMessage with a single "1": it can be static.
-        static TransportMessage? _finalSuccessMessage;
+        static IMessage? _finalSuccessMessage;
         // The DiscriminatorFinalMessage with a single "0": it can be static.
-        static TransportMessage? _finalFailureMessage;
+        static IMessage? _finalFailureMessage;
         // The DiscriminatorEvictionDisallowed: it can be static.
-        static TransportMessage? _evictionDisallowedMessage;
+        static IMessage? _evictionDisallowedMessage;
 
         /// <summary>
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
@@ -56,9 +56,9 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static string? ReadUnknownRemoteReplyMessage( TransportMessage message )
+        public static string? ReadUnknownRemoteReplyMessage( TransportMessageImpl message )
         {
-            var r = new FastByteReader( message.Message );
+            var r = new FastByteReader( message.Payload );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoUnknownRemote );
             return r.ReadNullableString();
@@ -76,9 +76,9 @@ namespace CK.AppIdentity.TransportLayer
             return transport.SendAsync( _downgradeProtocolReplyMessage );
         }
 
-        public static int ReadDowngradeProtocolReplyMessage( TransportMessage message )
+        public static int ReadDowngradeProtocolReplyMessage( TransportMessageImpl message )
         {
-            var r = new FastByteReader( message.Message );
+            var r = new FastByteReader( message.Payload );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoDowngradeProtocol );
             return (int)r.ReadSmallUInt32();
@@ -102,9 +102,9 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, TransportMessage message, TransportFeature remote )
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, TransportMessageImpl message, TransportFeature remote )
         {
-            var r = new FastByteReader( message.Message );
+            var r = new FastByteReader( message.Payload );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
             uint count = r.ReadSmallUInt32();
@@ -177,9 +177,9 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static string[]? ReadMissingProtocolsMessage( IParallelLogger logger, TransportMessage message, TransportFeature remote )
+        public static string[]? ReadMissingProtocolsMessage( IParallelLogger logger, TransportMessageImpl message, TransportFeature remote )
         {
-            var r = new FastByteReader( message.Message );
+            var r = new FastByteReader( message.Payload );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoMissingProtocols );
             uint count = r.ReadSmallUInt32();
@@ -198,7 +198,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
         {
-            TransportMessage m = value
+            TransportMessageImpl m = value
                     ? _finalSuccessMessage ??= _zeroFactory.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 2 );
