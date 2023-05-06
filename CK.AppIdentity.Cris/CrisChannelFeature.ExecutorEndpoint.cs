@@ -23,7 +23,7 @@ namespace CK.AppIdentity.Cris
             public void ConfigureServices( IActivityMonitor monitor, CrisChannelExecutorRequest request, SimpleServiceContainer services )
                 => _feature.EndpointConfigureServices( monitor, request, services );
 
-            public void ReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, ICrisExecutorPayload? result )
+            public void ReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
                 => _feature.EndpointReturnCommandResult( monitor, request, result );
 
             public void ReturnCrisValidationResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisValidationResult validationResult )
@@ -63,7 +63,7 @@ namespace CK.AppIdentity.Cris
             monitor.Warn( $"Connection to the caller '{Transport.Party.FullName}' is lost: unable to notify the validation result." );
         }
 
-        void EndpointReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, ICrisExecutorPayload? result )
+        void EndpointReturnCommandResult( IActivityMonitor monitor, CrisChannelExecutorRequest request, CrisExecutor.ICrisExecutorPayload? result )
         {
             var h = CurrentHandler;
             if( h != null )

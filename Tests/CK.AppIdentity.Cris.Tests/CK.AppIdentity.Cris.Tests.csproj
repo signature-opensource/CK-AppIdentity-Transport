@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Executor.Engine" Version="0.18.1--0044-develop" />
-    <PackageReference Include="CK.Testing.StObjEngine" Version="23.0.1--0027-develop" />
+    <PackageReference Include="CK.Cris.Executor.Engine" Version="0.18.1--0047-develop" />
+    <PackageReference Include="CK.Testing.StObjEngine" Version="23.0.1--0028-develop" />
   </ItemGroup>
 
   <ItemGroup>

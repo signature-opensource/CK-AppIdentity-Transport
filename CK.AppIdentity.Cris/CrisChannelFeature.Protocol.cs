@@ -75,7 +75,7 @@ namespace CK.AppIdentity.Cris
                 return false;
             }
 
-            internal bool TrySendResult( ActivityMonitor.LogKey id, ICrisExecutorPayload? result )
+            internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutor.ICrisExecutorPayload? result )
             {
                 var message = MessageFactory.Create( bytes =>
                 {
@@ -163,7 +163,7 @@ namespace CK.AppIdentity.Cris
                                 monitor.Debug( $"Handling Cris request result." );
                                 var id = r.ReadLogKey();
                                 var rPoco = new Utf8JsonReader( r.GetRemainder() );
-                                var result = (ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
+                                var result = (CrisExecutor.ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
                                 feature._outgoingRequestCache.SetResult( monitor.ParallelLogger, id, result.Result );
                                 break;
                             }

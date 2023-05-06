@@ -56,8 +56,6 @@ namespace CK.AppIdentity.Cris.Tests
                 typeof( RawCrisExecutor ),
                 typeof( ICrisResultError ),
                 typeof( CK.Cris.AmbientValues.IAmbientValues ),
-                // Temporary
-                typeof( ICrisExecutorPayload ),
 
                 // Triggers code generation for Json serialization.
                 typeof( PocoJsonSerializer ),

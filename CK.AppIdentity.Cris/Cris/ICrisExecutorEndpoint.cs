@@ -43,6 +43,6 @@ namespace CK.Cris
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="request">The handled request.</param>
         /// <param name="result">The result.</param>
-        void ReturnCommandResult( IActivityMonitor monitor, T request, ICrisExecutorPayload? result );
+        void ReturnCommandResult( IActivityMonitor monitor, T request, CrisExecutor.ICrisExecutorPayload? result );
     }
 }
