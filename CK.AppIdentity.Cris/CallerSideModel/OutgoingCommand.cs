@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using CK.PerfectEvent;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -7,20 +8,22 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
-    public class OutgoingRequest : IOutgoingRequest
+    public class OutgoingCommand : IOutgoingCommand
     {
-        readonly ICrisPoco _payload;
+        readonly IAbstractCommand _payload;
         readonly ActivityMonitor.Token _issuerToken;
         readonly TaskCompletionSource<DateTime> _sentDate;
         readonly TaskCompletionSource<CrisValidationResult> _validation;
         readonly TaskCompletionSource<object?> _completion;
         readonly object? _extraData;
-        private protected readonly OutgoingRequestCache _cache;
+        readonly Collector<IOutgoingCommand, IEvent> _events;
+        private protected readonly OutgoingCommandCache _cache;
 
-        internal OutgoingRequest( OutgoingRequestCache cache,
-                                  ICrisPoco payload,
+        internal OutgoingCommand( OutgoingCommandCache cache,
+                                  IAbstractCommand payload,
                                   ActivityMonitor.Token issuerToken,
-                                  object? extraData )
+                                  object? extraData,
+                                  PerfectEventSender<IOutgoingCommand, IEvent>? onEventRelay )
         {
             _issuerToken = issuerToken;
             _extraData = extraData;
@@ -29,10 +32,11 @@ namespace CK.AppIdentity.Cris
             _sentDate = new TaskCompletionSource<DateTime>();
             _validation = new TaskCompletionSource<CrisValidationResult>();
             _completion = new TaskCompletionSource<object?>();
+            _events = new Collector<IOutgoingCommand, IEvent>( onEventRelay );
         }
 
         /// <inheritdoc />
-        public ICrisPoco Payload => _payload;
+        public IAbstractCommand Payload => _payload;
 
         /// <inheritdoc />
         public ActivityMonitor.Token IssuerToken => _issuerToken;
@@ -47,6 +51,9 @@ namespace CK.AppIdentity.Cris
 
         /// <inheritdoc />
         public Task<object?> RequestCompletion => _completion.Task;
+
+        /// <inheritdoc />
+        public ICollector<IOutgoingCommand, IEvent> Events => _events;
 
         /// <summary>
         /// Gets the extra data specific to the endpoint protocol.
@@ -80,16 +87,16 @@ namespace CK.AppIdentity.Cris
             return false;
         }
 
-        internal virtual Task AddCommandEventAsync( IActivityMonitor monitor, IEvent e )
+        internal Task AddCommandEventAsync( IActivityMonitor monitor, IEvent e )
         {
-            monitor.Error( $"Received event for a request '{IssuerToken.Key}' that is an event. This is ignored." );
-            return Task.CompletedTask;
+            return _events.AddAsync( monitor, this, e );
         }
 
-        internal virtual void SetResult( IParallelLogger logger, object? result )
+        internal void SetResult( IParallelLogger logger, object? result )
         {
             _completion.SetResult( result );
             _cache.OnRequestCompleted( logger, this );
+            _events.Close();
         }
 
     }

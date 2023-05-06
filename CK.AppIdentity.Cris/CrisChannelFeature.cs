@@ -15,9 +15,9 @@ namespace CK.AppIdentity.Cris
         readonly CrisChannelExecutor _executor;
         readonly IAuthenticationInfoTokenService _tokenService;
         readonly ICrisExecutorEndPoint<CrisChannelExecutorRequest> _executorEndpoint;
-        readonly OutgoingRequestCache _outgoingRequestCache;
-        readonly PerfectEventSender<IOutgoingRequest, IEvent> _onEvent;
-        readonly ConcurrentQueue<OutgoingRequest> _pendingRequest;
+        readonly OutgoingCommandCache _outgoingRequestCache;
+        readonly PerfectEventSender<IOutgoingCommand, IEvent> _onEvent;
+        readonly ConcurrentQueue<OutgoingCommand> _pendingRequest;
 
         public CrisChannelFeature( TransportFeature transportFeature,
                                    PocoDirectory pocoDirectory,
@@ -28,9 +28,9 @@ namespace CK.AppIdentity.Cris
             _pocoDirectory = pocoDirectory;
             _executor = executor;
             _tokenService = tokenService;
-            _onEvent = new PerfectEventSender<IOutgoingRequest, IEvent>();
-            _outgoingRequestCache = new OutgoingRequestCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
-            _pendingRequest = new ConcurrentQueue<OutgoingRequest>();
+            _onEvent = new PerfectEventSender<IOutgoingCommand, IEvent>();
+            _outgoingRequestCache = new OutgoingCommandCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
+            _pendingRequest = new ConcurrentQueue<OutgoingCommand>();
             _executorEndpoint = new CrisChannelEndpoint( this );
         }
 
@@ -64,29 +64,12 @@ namespace CK.AppIdentity.Cris
             if( count != 0 ) monitor.Info( $"Submitted {count} pending requests." );
         }
 
-        public IEventRequest<T> SendEvent<T>( IActivityMonitor monitor, T e, string? authToken = null ) where T : class, IEvent
-        {
-            var request = _outgoingRequestCache.CreateEvent( monitor, e, authToken );
-            var r = (OutgoingRequest)request;
-            var h = CurrentHandler;
-            if( h == null || !h.TrySendRequest( r, highPriority: true ) )
-            {
-                monitor.Warn( $"No connection to '{Transport.Party.FullName}'. Event '{e.CrisPocoModel.PocoName}' cannot be sent immediately." );
-                _pendingRequest.Enqueue( r );
-            }
-            else
-            {
-                SubmitPendingRequests( monitor );
-            }
-            return request;
-        }
-
-        public ICommandRequest<T> SendCommand<T>( IActivityMonitor monitor, T command, string? authToken = null ) where T : class, IAbstractCommand
+        public IOutgoingCommand<T> SendCommand<T>( IActivityMonitor monitor, T command, string? authToken = null ) where T : class, IAbstractCommand
         {
             var request = _outgoingRequestCache.CreateCommand( monitor, command, authToken );
-            var r = (OutgoingRequest)request;
+            var r = (OutgoingCommand)request;
             var h = CurrentHandler;
-            if( h == null || !h.TrySendRequest( (OutgoingRequest)request, true ) )
+            if( h == null || !h.TrySendRequest( (OutgoingCommand)request, true ) )
             {
                 monitor.Warn( $"No connection to '{Transport.Party.FullName}'. Command '{command.CrisPocoModel.PocoName}' cannot be sent immediately." );
                 _pendingRequest.Enqueue( r );

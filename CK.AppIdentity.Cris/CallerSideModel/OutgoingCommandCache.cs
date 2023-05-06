@@ -8,70 +8,41 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris
 {
     /// <summary>
-    /// Factory for outgoing <see cref="IEventRequest{T}"/> and <see cref="ICommandRequest{T}"/> requests.
+    /// Factory for outgoing <see cref="IEventRequest{T}"/> and <see cref="IOutgoingCommand{T}"/> requests.
     /// <para>
     /// This must be used by endpoint implementations.
     /// </para>
     /// </summary>
-    public class OutgoingRequestCache
+    public class OutgoingCommandCache
     {
         // Holds the created and not yet completed requests.
-        readonly ConcurrentDictionary<ActivityMonitor.LogKey, OutgoingRequest> _cache;
+        readonly ConcurrentDictionary<ActivityMonitor.LogKey, OutgoingCommand> _cache;
         readonly IPocoFactory<ICrisResultError> _errorFactory;
-        readonly PerfectEventSender<IOutgoingRequest, IEvent>? _onEventRelay;
+        readonly PerfectEventSender<IOutgoingCommand, IEvent>? _onEventRelay;
 
         /// <summary>
-        /// Initializes a new <see cref="OutgoingRequestCache"/>. This must be bound and used internally
+        /// Initializes a new <see cref="OutgoingCommandCache"/>. This must be bound and used internally
         /// by an endpoint.
         /// </summary>
-        /// <param name="errorFactory">Required error factory (to create an error for a failed <see cref="CrisValidationResult"/>).</param>
+        /// <param name="errorFactory">Required error factory (used to create an error for a failed <see cref="CrisValidationResult"/>).</param>
         /// <param name="onEventRelay">Optional event sender to which events emitted by commands will be relayed.</param>
-        public OutgoingRequestCache( IPocoFactory<ICrisResultError> errorFactory,
-                                     PerfectEventSender<IOutgoingRequest,IEvent>? onEventRelay = null )
+        public OutgoingCommandCache( IPocoFactory<ICrisResultError> errorFactory,
+                                     PerfectEventSender<IOutgoingCommand,IEvent>? onEventRelay = null )
         {
-            _cache = new ConcurrentDictionary<ActivityMonitor.LogKey, OutgoingRequest>();
+            _cache = new ConcurrentDictionary<ActivityMonitor.LogKey, OutgoingCommand>();
             _errorFactory = errorFactory;
             _onEventRelay = onEventRelay;
-        }
-
-        /// <summary>
-        /// Creates a new event request.
-        /// </summary>
-        /// <typeparam name="T">The type of the event.</typeparam>
-        /// <param name="monitor">The <see cref="IActivityMonitor"/> or <see cref="IParallelLogger"/> to use to generate the <see cref="IOutgoingRequest.IssuerToken"/>.</param>
-        /// <param name="e">The event payload.</param>
-        /// <param name="extraData">Request data specific to the endpoint (Authentication token for instance).</param>
-        /// <returns>A new event request.</returns>
-        public IEventRequest<T> CreateEvent<T>( IActivityDependentTokenFactory monitor, T e, object? extraData ) where T : class, IEvent
-        {
-            var issuerToken = monitor.CreateToken( null, dependentTopic: $"Handling '{e.CrisPocoModel.PocoName}' event." );
-            return CreateEvent( e, issuerToken, extraData );
-        }
-
-        /// <summary>
-        /// Creates a new event request.
-        /// </summary>
-        /// <typeparam name="T">The type of the event.</typeparam>
-        /// <param name="e">The event payload.</param>
-        /// <param name="issuerToken">The <see cref="IOutgoingRequest.IssuerToken"/>.</param>
-        /// <param name="extraData">Request data specific to the endpoint (Authentication token for instance).</param>
-        /// <returns>A new event request.</returns>
-        public IEventRequest<T> CreateEvent<T>( T e, ActivityMonitor.Token issuerToken, object? extraData ) where T : class, IEvent
-        {
-            var request = new EventRequest<T>( this, e, issuerToken, extraData );
-            Throw.CheckState( _cache.TryAdd( issuerToken.Key, request ) );
-            return request;
         }
 
         /// <summary>
         /// Creates a new command request.
         /// </summary>
         /// <typeparam name="T">The type of the command.</typeparam>
-        /// <param name="monitor">The <see cref="IActivityMonitor"/> or <see cref="IParallelLogger"/> to use to generate the <see cref="IOutgoingRequest.IssuerToken"/>.</param>
+        /// <param name="monitor">The <see cref="IActivityMonitor"/> or <see cref="IParallelLogger"/> to use to generate the <see cref="IOutgoingCommand.IssuerToken"/>.</param>
         /// <param name="c">The command payload.</param>
         /// <param name="extraData">Request data specific to the endpoint (Authentication token for instance).</param>
         /// <returns>A new command request.</returns>
-        public ICommandRequest<T> CreateCommand<T>( IActivityDependentTokenFactory monitor, T c, object? extraData ) where T : class, IAbstractCommand
+        public IOutgoingCommand<T> CreateCommand<T>( IActivityDependentTokenFactory monitor, T c, object? extraData ) where T : class, IAbstractCommand
         {
             var token = monitor.CreateToken( null, dependentTopic: $"Handling '{c.CrisPocoModel.PocoName}' command." );
             return CreateCommand( c, token, extraData );
@@ -82,12 +53,12 @@ namespace CK.AppIdentity.Cris
         /// </summary>
         /// <typeparam name="T">The type of the command.</typeparam>
         /// <param name="c">The command payload.</param>
-        /// <param name="issuerToken">The <see cref="IOutgoingRequest.IssuerToken"/>.</param>
+        /// <param name="issuerToken">The <see cref="IOutgoingCommand.IssuerToken"/>.</param>
         /// <param name="extraData">Request data specific to the endpoint (Authentication token for instance).</param>
         /// <returns>A new command request.</returns>
-        public ICommandRequest<T> CreateCommand<T>( T c, ActivityMonitor.Token issuerToken, object? extraData ) where T : class, IAbstractCommand
+        public IOutgoingCommand<T> CreateCommand<T>( T c, ActivityMonitor.Token issuerToken, object? extraData ) where T : class, IAbstractCommand
         {
-            var request = new CommandRequest<T>( this, c, issuerToken, extraData, _onEventRelay );
+            var request = new OutgoingCommand<T>( this, c, issuerToken, extraData, _onEventRelay );
             Throw.CheckState( _cache.TryAdd( issuerToken.Key, request ) );
             return request;
         }
@@ -97,7 +68,7 @@ namespace CK.AppIdentity.Cris
         /// If this is an event or a command without result, this immediately completes the request.
         /// </summary>
         /// <param name="logger">The logger.</param>
-        /// <param name="id">The <see cref="IOutgoingRequest.IssuerToken"/> key.</param>
+        /// <param name="id">The <see cref="IOutgoingCommand.IssuerToken"/> key.</param>
         /// <param name="v">The validation result received from the callee.</param>
         public void SetValidationResult( IParallelLogger logger, ActivityMonitor.LogKey id, CrisValidationResult v )
         {
@@ -118,7 +89,7 @@ namespace CK.AppIdentity.Cris
         /// Collects event emitted by command handling.
         /// </summary>
         /// <param name="monitor">The logger.</param>
-        /// <param name="id">The <see cref="IOutgoingRequest.IssuerToken"/> key.</param>
+        /// <param name="id">The <see cref="IOutgoingCommand.IssuerToken"/> key.</param>
         /// <param name="e">The event received from the callee.</param>
         public Task CollectCommandEvent( IActivityMonitor monitor, ActivityMonitor.LogKey id, IEvent e )
         {
@@ -145,15 +116,15 @@ namespace CK.AppIdentity.Cris
             }
         }
 
-        internal protected virtual void OnSetSentDate( IParallelLogger logger, OutgoingRequest outgoingRequest )
+        internal protected virtual void OnSetSentDate( IParallelLogger logger, OutgoingCommand outgoingRequest )
         {
         }
 
-        internal protected virtual void OnValidationReceived( IParallelLogger logger, OutgoingRequest r )
+        internal protected virtual void OnValidationReceived( IParallelLogger logger, OutgoingCommand r )
         {
         }
 
-        internal protected virtual void OnRequestCompleted( IParallelLogger logger, OutgoingRequest outgoingRequest )
+        internal protected virtual void OnRequestCompleted( IParallelLogger logger, OutgoingCommand outgoingRequest )
         {
         }
 

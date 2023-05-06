@@ -7,41 +7,25 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris
 {
-    sealed class CommandRequest<T> : OutgoingRequest, ICommandRequest<T> where T : class, IAbstractCommand
+    sealed class OutgoingCommand<T> : OutgoingCommand, IOutgoingCommand<T> where T : class, IAbstractCommand
     {
-        readonly Collector<IOutgoingRequest, IEvent> _events;
-
-        public CommandRequest( OutgoingRequestCache cache,
-                               T command,
-                               ActivityMonitor.Token issuerToken,
-                               object? extraData,
-                               PerfectEventSender<IOutgoingRequest, IEvent>? onEventRelay )
-            : base( cache, command, issuerToken, extraData )
+        public OutgoingCommand( OutgoingCommandCache cache,
+                                T command,
+                                ActivityMonitor.Token issuerToken,
+                                object? extraData,
+                                PerfectEventSender<IOutgoingCommand, IEvent>? onEventRelay )
+            : base( cache, command, issuerToken, extraData, onEventRelay )
         {
-            _events = new Collector<IOutgoingRequest, IEvent>( onEventRelay );
         }
 
         public T Command => Unsafe.As<T>( Payload );
 
-        public ICollector<IOutgoingRequest, IEvent> Events => _events;
-
-        internal override Task AddCommandEventAsync( IActivityMonitor monitor, IEvent e )
+        sealed class ResultAdapter<TResult> : IOutgoingCommand<T>.WithResult<TResult>
         {
-            return _events.AddAsync( monitor, this, e );
-        }
-
-        internal override void SetResult( IParallelLogger logger, object? result )
-        {
-            base.SetResult( logger, result );
-            _events.Close();
-        }
-
-        sealed class ResultAdapter<TResult> : ICommandRequest<T>.WithResult<TResult>
-        {
-            readonly CommandRequest<T> _command;
+            readonly OutgoingCommand<T> _command;
             readonly TaskCompletionSource<TResult> _result;
 
-            public ResultAdapter( CommandRequest<T> command )
+            public ResultAdapter( OutgoingCommand<T> command )
             {
                 _command = command;
                 _result = new TaskCompletionSource<TResult>();
@@ -105,9 +89,9 @@ namespace CK.AppIdentity.Cris
 
             public Task<CrisValidationResult> ValidationResult => _command.ValidationResult;
 
-            public ICollector<IOutgoingRequest, IEvent> Events => _command.Events;
+            public ICollector<IOutgoingCommand, IEvent> Events => _command.Events;
 
-            public ICrisPoco Payload => _command.Payload;
+            public IAbstractCommand Payload => _command.Payload;
 
             public ActivityMonitor.Token IssuerToken => _command.IssuerToken;
 
@@ -118,10 +102,10 @@ namespace CK.AppIdentity.Cris
             public Task<object?> RequestCompletion => _command.RequestCompletion;
         }
 
-        public ICommandRequest<T>.WithResult<TResult> WithResult<TResult>()
+        public IOutgoingCommand<T>.WithResult<TResult> WithResult<TResult>()
         {
-            // Building a strongly typed result: we check that the actual result type that is
-            // the most precise type among the different ICommand<TResult> TResult types is
+            // Building a strongly typed result: we check that the actual result type (that is
+            // the most precise type among the different ICommand<TResult> TResult types) is
             // compatible with the requested TResult.
             var requestedType = typeof( TResult );
             if( !requestedType.IsAssignableFrom( Payload.CrisPocoModel.ResultType ) )

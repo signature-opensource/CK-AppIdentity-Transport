@@ -17,9 +17,9 @@ namespace CK.Cris
         /// Initialize a new <see cref="CrisExecutorRequest"/> from its data (typically used when
         /// deserializing).
         /// </summary>
-        /// <param name="payload">The event or command.</param>
+        /// <param name="payload">The command.</param>
         /// <param name="issuerToken">The issuer token.</param>
-        protected CrisExecutorRequest( ICrisPoco payload, ActivityMonitor.Token issuerToken )
+        protected CrisExecutorRequest( IAbstractCommand payload, ActivityMonitor.Token issuerToken )
         {
             Throw.CheckNotNullArgument( payload );
             Payload = payload;
@@ -27,9 +27,9 @@ namespace CK.Cris
         }
 
         /// <summary>
-        /// Gets the <see cref="ICrisEvent"/>, <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
+        /// Gets the <see cref="ICommand"/> or <see cref="ICommand{TResult}"/>.
         /// </summary>
-        public ICrisPoco Payload { get; }
+        public IAbstractCommand Payload { get; }
 
         /// <summary>
         /// Gets a token that identifies the initialization of this request.

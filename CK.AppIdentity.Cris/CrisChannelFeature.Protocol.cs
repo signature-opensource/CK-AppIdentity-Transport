@@ -30,7 +30,7 @@ namespace CK.AppIdentity.Cris
                 _feature = feature;
             }
 
-            internal bool TrySendRequest( OutgoingRequest request, bool highPriority )
+            internal bool TrySendRequest( OutgoingCommand request, bool highPriority )
             {
                 var message = MessageFactory.Create( bytes =>
                 {
@@ -52,7 +52,7 @@ namespace CK.AppIdentity.Cris
 
             protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
             {
-                if( message.Source is OutgoingRequest r ) r.SetSentDate( logger, DateTime.UtcNow );
+                if( message.Source is OutgoingCommand r ) r.SetSentDate( logger, DateTime.UtcNow );
                 replacement = null;
                 return true;
             }
@@ -139,7 +139,7 @@ namespace CK.AppIdentity.Cris
                                 var token = ActivityMonitor.Token.Parse( r.ReadString() );
                                 var authToken = r.ReadNullableString();
                                 var rPoco = new Utf8JsonReader( r.GetRemainder() );
-                                var payload = (ICrisPoco)feature._pocoDirectory.Read( ref rPoco )!;
+                                var payload = (IAbstractCommand)feature._pocoDirectory.Read( ref rPoco )!;
                                 feature._executor.Execute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
                                 break;
                             }
