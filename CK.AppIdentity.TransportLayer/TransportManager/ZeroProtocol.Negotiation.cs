@@ -198,7 +198,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
         {
-            TransportMessageImpl m = value
+            IMessage m = value
                     ? _finalSuccessMessage ??= _zeroFactory.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 2 );

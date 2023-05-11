@@ -19,7 +19,7 @@ namespace CK.AppIdentity.BlobChannel
                 _feature = feature;
             }
 
-            public TransportMessageImpl CreateMessage( byte[] data )
+            public IMessage CreateMessage( byte[] data )
             {
                 // Here we are using the MutableSequence<byte>.AddSegment( byte[] ): there
                 // is no copy at all, the data is simply referenced by the sequence.

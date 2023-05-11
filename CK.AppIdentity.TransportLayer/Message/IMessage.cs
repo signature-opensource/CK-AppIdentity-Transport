@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -8,5 +8,6 @@ namespace CK.AppIdentity.TransportLayer
         bool IsData { get; }
         ReadOnlySequence<byte> Payload { get; }
         MessageProtocol Protocol { get; }
+        object? Source { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Diagnostics;
 
 namespace CK.AppIdentity.TransportLayer
@@ -15,7 +15,11 @@ namespace CK.AppIdentity.TransportLayer
 
         public MessageProtocol Protocol { get; }
 
-        public object? Source => null;
+        public object? Source
+        {
+            get => null;
+            set => throw new NotSupportedException();
+        }
 
         public bool IsValid => true;
 

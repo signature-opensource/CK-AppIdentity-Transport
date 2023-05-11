@@ -76,7 +76,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="message">The message to enqueue.</param>
         /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
-        public bool TryEnqueueHighPriority( TransportMessageImpl message )
+        public bool TryEnqueueHighPriority( IMessage message )
         {
             return _controller.TryEnqueueHighPriority( message );
         }
@@ -93,7 +93,7 @@ namespace CK.AppIdentity.TransportLayer
         /// True if the message has been be enqueued, false if the channel is closed (the remote is destroyed)
         /// or the <paramref name="cancellationToken"/> has been signaled.
         /// </returns>
-        public ValueTask<bool> TryEnqueueAsync( TransportMessageImpl message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
+        public ValueTask<bool> TryEnqueueAsync( IMessage message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
 
         /// <summary>
         /// Called for each message received.
