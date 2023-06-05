@@ -140,7 +140,7 @@ namespace CK.AppIdentity.Cris
                                 var authToken = r.ReadNullableString();
                                 var rPoco = new Utf8JsonReader( r.GetRemainder() );
                                 var payload = (IAbstractCommand)feature._pocoDirectory.Read( ref rPoco )!;
-                                feature._executor.Execute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
+                                feature._executor.BackgroundExecute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
                                 break;
                             }
                         case DValidationResult:

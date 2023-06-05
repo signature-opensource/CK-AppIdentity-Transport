@@ -7,7 +7,7 @@ namespace CK.AppIdentity.Cris
     /// Specialized to carry an optional authentication token that captures a <see cref="Auth.IAuthenticationInfo"/>
     /// thanks to the <see cref="IAuthenticationInfoTokenService"/> service.
     /// </summary>
-    public sealed class CrisChannelExecutorRequest : CrisExecutorRequest
+    public sealed class CrisChannelExecutorRequest : CrisExecutorCommand
     {
         internal CrisChannelExecutorRequest( IAbstractCommand payload,
                                              ActivityMonitor.Token issuerToken,

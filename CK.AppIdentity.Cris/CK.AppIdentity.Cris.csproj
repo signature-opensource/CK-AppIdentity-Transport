@@ -6,9 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.Auth.Abstractions" Version="4.0.1--0006-develop" />
-    <PackageReference Include="CK.Poco.Json" Version="23.0.1--0028-develop" />
-    <PackageReference Include="CK.Cris.Executor" Version="0.18.1--0047-develop" />
+    <PackageReference Include="CK.Auth.Abstractions" Version="4.0.1--0008-develop" />
+    <PackageReference Include="CK.Poco.Json" Version="23.0.1--0083-develop" />
+    <PackageReference Include="CK.Cris.Executor" Version="0.18.1--0071-develop" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />

@@ -16,6 +16,8 @@ namespace CK.Cris
         readonly PerfectEventSender<ICrisExecutor> _parallelRunnerCountChanged;
         // We use null as the close signal for runners.
         // The _channel is used as the lock to manage runners.
+        // This is a multi-writers/multi-readers channel: background execution
+        // can be requested concurrently and multiple parallel runners run.
         readonly Channel<object?> _channel;
         Runner? _last;
         int _runnerCount;
@@ -62,7 +64,7 @@ namespace CK.Cris
         public abstract string EndpointRequestTypeName { get; }
 
         /// <inheritdoc />
-        public int ParrallelRunnerCount
+        public int ParallelRunnerCount
         {
             get => _runnerCount;
             set
@@ -73,7 +75,7 @@ namespace CK.Cris
         }
 
         /// <inheritdoc />
-        public PerfectEvent<ICrisExecutor> ParrallelRunnerCountChanged => _parallelRunnerCountChanged.PerfectEvent;
+        public PerfectEvent<ICrisExecutor> ParallelRunnerCountChanged => _parallelRunnerCountChanged.PerfectEvent;
 
         private protected void Push( object job ) => _channel.Writer.TryWrite( job );
 

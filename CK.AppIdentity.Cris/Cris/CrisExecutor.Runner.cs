@@ -10,7 +10,6 @@ namespace CK.Cris
 
     public abstract partial class CrisExecutor
     {
-
         ValueTask HandleSetRunnerCountAsync( IActivityMonitor monitor, int count )
         {
             int delta;

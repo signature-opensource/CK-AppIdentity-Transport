@@ -1,17 +1,17 @@
-﻿using CK.Core;
+using CK.Core;
 using CK.PerfectEvent;
 
 namespace CK.Cris
 {
     /// <summary>
-    /// A Cris executor handles <see cref="CrisExecutorRequest"/> in the background in the context
+    /// A Cris executor handles <see cref="CrisExecutorCommand"/> in the background in the context
     /// of <see cref="ICrisExecutorEndPoint{T}"/>.
     /// </summary>
     [IsMultiple]
     public interface ICrisExecutor : ISingletonAutoService
     {
         /// <summary>
-        /// Gets the type name of the <see cref="CrisExecutorRequest"/> that this
+        /// Gets the type name of the <see cref="CrisExecutorCommand"/> that this
         /// <see cref="CrisExecutor{T}"/> handles.
         /// <para>
         /// Assuming that each end point provides a specific request type, this identifies
@@ -24,11 +24,11 @@ namespace CK.Cris
         /// Gets or sets the number of parallel runners that handles the requests.
         /// It must be between 1 and 1000.
         /// </summary>
-        int ParrallelRunnerCount { get; set; }
+        int ParallelRunnerCount { get; set; }
 
         /// <summary>
-        /// Raised whenever the <see cref="ParrallelRunnerCount"/> changes.
+        /// Raised whenever the <see cref="ParallelRunnerCount"/> changes.
         /// </summary>
-        PerfectEvent<ICrisExecutor> ParrallelRunnerCountChanged { get; }
+        PerfectEvent<ICrisExecutor> ParallelRunnerCountChanged { get; }
     }
 }

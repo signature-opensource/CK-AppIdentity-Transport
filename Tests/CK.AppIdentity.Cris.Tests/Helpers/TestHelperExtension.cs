@@ -50,12 +50,9 @@ namespace CK.AppIdentity.Cris.Tests
             collector.SetAutoServiceKind( typeof( ApplicationIdentityConfiguration ), AutoServiceKind.IsSingleton );
             collector.RegisterTypes( new Type[]
             {
-                // Cris bas types.
-                typeof( CommandDirectory ),
+                // Cris base types.
                 typeof( RawCrisValidator ),
                 typeof( RawCrisExecutor ),
-                typeof( ICrisResultError ),
-                typeof( CK.Cris.AmbientValues.IAmbientValues ),
 
                 // Triggers code generation for Json serialization.
                 typeof( PocoJsonSerializer ),

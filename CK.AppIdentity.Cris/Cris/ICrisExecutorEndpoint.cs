@@ -6,9 +6,11 @@ namespace CK.Cris
 {
     /// <summary>
     /// A endpoint viewed by a <see cref="CrisExecutor{T}"/>.
+    /// An instance of this class must be provided by the endpoint to the <see cref="CrisExecutor{T}.Execute(ICrisExecutorEndPoint{T}, T)"/>
+    /// method.
     /// </summary>
     /// <typeparam name="T">The request type for this endpoint.</typeparam>
-    public interface ICrisExecutorEndPoint<T> where T : CrisExecutorRequest
+    public interface ICrisExecutorEndPoint<T> where T : CrisExecutorCommand
     {
         /// <summary>
         /// Must configure the interceptor. This is called before a request is handled.

@@ -6,11 +6,11 @@ using System.Threading.Tasks;
 namespace CK.Cris
 {
     /// <summary>
-    /// Base class to specialize with a specific <see cref="CrisExecutorRequest"/> type parameter
+    /// Base class to specialize with a specific <see cref="CrisExecutorCommand"/> type parameter
     /// to implement a new <see cref="ICrisExecutor"/>.
     /// </summary>
     /// <typeparam name="T">The request type that this executor handles.</typeparam>
-    public abstract partial class CrisExecutor<T> : CrisExecutor where T : CrisExecutorRequest
+    public abstract partial class CrisExecutor<T> : CrisExecutor where T : CrisExecutorCommand
     {
         readonly IServiceProvider _serviceProvider;
         readonly IPocoFactory<ICrisExecutorPayload> _resultFactory;
@@ -38,7 +38,7 @@ namespace CK.Cris
         /// </summary>
         /// <param name="endpoint">The endpoint that submits the request.</param>
         /// <param name="request">The request to send and execute.</param>
-        public void Execute( ICrisExecutorEndPoint<T> endpoint, T request )
+        public void BackgroundExecute( ICrisExecutorEndPoint<T> endpoint, T request )
         {
             Push( new ExecuteJob( endpoint, request ) );
         }
@@ -65,7 +65,7 @@ namespace CK.Cris
 
             // TODO: This should be code generated for 2 reasons:
             // - The warnings of the ConfigureServices will appear in the validation result (currently they are lost).
-            // - The services can be resolved only once across the Validation and Execution methods.
+            // - The services would be resolved only once across the Validation and Execution methods.
             var step = "configuring services for";
             try
             {
