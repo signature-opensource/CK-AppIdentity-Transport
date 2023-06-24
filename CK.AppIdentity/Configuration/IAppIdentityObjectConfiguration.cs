@@ -4,6 +4,7 @@ using System.Xml.Linq;
 
 namespace CK.AppIdentity
 {
+
     /// <summary>
     /// Generalizes <see cref="ApplicationIdentityConfiguration"/>, <see cref="RemotePartyConfiguration"/> and <see cref="LocalPartyConfiguration"/>.
     /// </summary>

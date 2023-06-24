@@ -12,9 +12,9 @@ namespace CK.AppIdentity
 {
     public sealed class RemotePartyConfiguration : IAppIdentityObjectConfiguration
     {
-        readonly string _environmentName;
         readonly ImmutableConfigurationSection _configuration;
         readonly string _domainName;
+        readonly string _environmentName;
         readonly string _name;
         readonly string? _address;
         readonly IReadOnlySet<string> _disallowFeatures;

@@ -7,6 +7,8 @@ using System.Text;
 
 namespace CK.AppIdentity
 {
+
+
     /// <summary>
     /// Local identity is defined at least by the <see cref="Name"/>.
     /// </summary>
@@ -72,7 +74,7 @@ namespace CK.AppIdentity
             return success ? new LocalPartyConfiguration( configuration, remoteName, ref props ) : null;
         }
 
-        static bool CheckNotExist( IActivityMonitor monitor, ImmutableConfigurationSection configuration, string key, string reason )
+        internal static bool CheckNotExist( IActivityMonitor monitor, ImmutableConfigurationSection configuration, string key, string reason )
         {
             if( configuration[key] != null )
             {

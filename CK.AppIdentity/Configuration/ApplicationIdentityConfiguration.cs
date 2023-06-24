@@ -11,6 +11,8 @@ using System.Text.RegularExpressions;
 
 namespace CK.AppIdentity
 {
+
+
     /// <summary>
     /// Configuration that defines the identity of an application.
     /// This is designed to be available as a singleton service in the DI container (the package CK.AppIdentity.Configuration does that).

@@ -31,15 +31,15 @@ namespace Microsoft.Extensions.Hosting
             var monitor = builder.GetBuilderMonitor();
             builder.ConfigureServices( (ctx,services) =>
             {
-                var appIdentity = ApplicationIdentityConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
+                var appIdentity = V2ApplicationIdentityConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
                 if( appIdentity != null )
                 {
 
                     if( CoreApplicationIdentity.TryConfigure( identity =>
                     {
-                        identity.PartyName = appIdentity.Local.Name;
-                        identity.EnvironmentName = appIdentity.EnvironmentName;
                         identity.DomainName = appIdentity.DomainName;
+                        identity.PartyName = appIdentity.PartyName;
+                        identity.EnvironmentName = appIdentity.EnvironmentName;
                         identity.ContextDescriptor = contextDescriptor ?? Environment.CommandLine;
                     } ) )
                     {
