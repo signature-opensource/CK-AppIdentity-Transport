@@ -172,6 +172,10 @@ namespace CK.AppIdentity
         }
 
         /// <inheritdoc cref="IConfiguration.GetSection(string)"/>
+        /// <remarks>
+        /// This returns an empty section. Use <see cref="TryGetSection(string)"/>
+        /// to have a null section if it doesn't exist.
+        /// </remarks>
         public ImmutableConfigurationSection GetSection( string key )
         {
             var sKey = key.AsSpan();

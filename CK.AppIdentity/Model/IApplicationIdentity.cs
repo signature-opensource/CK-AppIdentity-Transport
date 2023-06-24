@@ -14,7 +14,7 @@ namespace CK.AppIdentity
     {
         /// <summary>
         /// Gets the root application identity.
-        /// This is this object is this is the root identity service.
+        /// This is this object if this is the root identity service.
         /// </summary>
         ApplicationIdentityService ApplicationIdentityService { get; }
 

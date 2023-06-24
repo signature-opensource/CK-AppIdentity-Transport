@@ -26,7 +26,7 @@ namespace CK.AppIdentity
             _domainAppIdentityService = configuration.DomainConfiguration != null
                                         ? new DomainApplicationIdentity( this )
                                         : null;
-            _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.EnvironmentName, configuration.Name );
+            _fullName = LocalParty.BuildFullName( configuration.DomainName, configuration.Name, configuration.EnvironmentName );
             _isDynamic = ReferenceEquals( configuration.Configuration.Key, "Dynamic" );
         }
 

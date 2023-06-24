@@ -101,24 +101,24 @@ namespace CK.AppIdentity.Tests
                 c["Remotes:0:Name"] = "AllInOneInc";
                 // A domain environment can be overridden: its remote, the "host" is by design
                 // also in the given environment.
-                c["Remotes:0:EnvironmentName"] = "SpecialEnvForDomain";
-                c["Remotes:0:Domain:SomeKey"] = "This makes the Domain configuration section exists: the 'AllInOneInc' remote holds a Domain.";
-                // This is useless... but this checked as soon as a "Domain" configuration key is here!
+                c["Remotes:0:EnvironmentName"] = "#SpecialEnvForDomain";
+                c["Remotes:0:Remotes:SomeKey"] = "This makes the Remotes configuration section exists: the 'AllInOneInc' remote holds a Domain.";
+                // This is useless... but this checked as soon as a "Remotes" configuration key is here!
                 c["Remotes:0:DomainName"] = "SaaSProduct";
                 c["Remotes:0:Domain:DomainName"] = "AllInOneInc";
                 c["Remotes:0:Domain:Local:Name"] = "AllInOneInc";
-                c["Remotes:0:Domain:EnvironmentName"] = "SpecialEnvForDomain";
+                c["Remotes:0:Domain:EnvironmentName"] = "#SpecialEnvForDomain";
             } );
             Debug.Assert( goodConfiguration != null );
             var good = new ApplicationIdentityService( goodConfiguration, new SimpleServiceContainer() );
             var rAllInOne = good.Remotes.Single();
             rAllInOne.Name.Should().Be( "AllInOneInc" );
-            rAllInOne.EnvironmentName.Should().Be( "SpecialEnvForDomain" );
+            rAllInOne.EnvironmentName.Should().Be( "#SpecialEnvForDomain" );
             rAllInOne.DomainName.Should().Be( "SaaSProduct" );
             var dAllInOne = rAllInOne.DomainApplicationIdentity;
             Debug.Assert( dAllInOne != null );
             dAllInOne.DomainName.Should().Be( "AllInOneInc" );
-            dAllInOne.EnvironmentName.Should().Be( "SpecialEnvForDomain" );
+            dAllInOne.EnvironmentName.Should().Be( "#SpecialEnvForDomain" );
             dAllInOne.Local.Name.Should().Be( "AllInOneInc" );
 
             using( TestHelper.Monitor.CollectTexts( out var logs ) )
@@ -128,7 +128,7 @@ namespace CK.AppIdentity.Tests
                     c["DomainName"] = "SaaSProduct";
                     c["Local:Name"] = "SaaS1";
                     c["Remotes:0:Name"] = "AllInOneInc";
-                    c["Remotes:0:EnvironmentName"] = "SpecialEnvForDomain";
+                    c["Remotes:0:EnvironmentName"] = "#SpecialEnvForDomain";
                     c["Remotes:0:Domain:SomeKey"] = "This makes the Domain configuration section exists: the 'AllInOneInc' remote holds a Domain.";
                     // No way.
                     c["Remotes:0:DomainName"] = "ShouldBeSaaSProduct";
@@ -144,5 +144,12 @@ namespace CK.AppIdentity.Tests
             }
 
         }
+
+        [Test]
+        public void SaaS_with_multiple_tenant_domains()
+        {
+
+        }
+
     }
 }

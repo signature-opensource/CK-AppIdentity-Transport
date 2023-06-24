@@ -69,29 +69,32 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="configuration">The configuration section (typically named "CK-AppIdentity").</param>
-        /// <param name="defaultLocalName">A valid local name to use if the <paramref name="configuration"/> doesn't specify the "Local:Name".</param>
+        /// <param name="defaultLocalName">A valid local name to use if the <paramref name="configuration"/> doesn't specify "Name" or the "Local:Name".</param>
         /// <param name="defaultEnvironmentName">A valid environment name to use if the <paramref name="configuration"/> doesn't specify it.</param>
         /// <returns>A valid instance on success, null on configuration error.</returns>
         public static ApplicationIdentityConfiguration? Create( IActivityMonitor monitor,
                                                                 IConfigurationSection configuration,
                                                                 string? defaultLocalName = null,
-                                                                string? defaultEnvironmentName = "Development" )
+                                                                string defaultEnvironmentName = CoreApplicationIdentity.DefaultEnvironmentName )
         {
+            Throw.CheckNotNullArgument( defaultEnvironmentName );
             using var gLog = monitor.OpenInfo( "Creating root AppIdentityConfiguration service." );
             var root = configuration as ImmutableConfigurationSection ?? new ImmutableConfigurationSection( configuration );
-            bool success = GetName( monitor, root, "DomainName", false, "Default", out var domainName, true );
+
+            defaultLocalName ??= "¤MayBeInLocal";
+            bool success = ReadNames( monitor, root, out var domainName, out var name, out var environmentName, null, defaultLocalName, defaultEnvironmentName );
+            if( name == "¤MayBeInLocal" ) name = null;
+
+            success &= InheritedConfigurationProps.TryCreate( monitor, root, out var inheritedProps );
+
+            var local = LocalPartyConfiguration.Create( monitor, root.GetSection( "Local" ), domainName, name, ref inheritedProps );
+            if( local == null ) success = false;
+
             if( domainName == CoreApplicationIdentity.DefaultDomainName )
             {
                 monitor.Error( $"Root domain name cannot be '{CoreApplicationIdentity.DefaultDomainName}'. This name denotes an external system." );
                 success = false;
             }
-            if( !GetName( monitor, root, "EnvironmentName", false, defaultEnvironmentName, out var environmentName ) ) success = false;
-
-            if( !InheritedConfigurationProps.TryCreate( monitor, root, out var inheritedProps ) ) success = false;
-
-            var local = LocalPartyConfiguration.Create( monitor, root.GetSection( "Local" ), defaultLocalName, ref inheritedProps );
-            if( local == null ) success = false;
-
             // Always try to create the remotes even if success is already false: this enables
             // configuration errors to be fixed at once.
             var c = CreateRemotes( monitor, root, domainName, environmentName, local, allowDomains: true, ref inheritedProps );
@@ -106,6 +109,7 @@ namespace CK.AppIdentity
                                                                         ImmutableConfigurationSection configuration,
                                                                         ref InheritedConfigurationProps inheritedProps )
         {
+            Debug.Assert( remoteName != null && remoteEnvironmentName != null );
             bool success = InheritedConfigurationProps.TryCreate( monitor, inheritedProps, configuration, out var domainProps );
             var local = LocalPartyConfiguration.CreateDomainLocal( monitor, configuration.GetSection( "Local" ), remoteName, ref domainProps );
             var c = CreateRemotes( monitor, configuration, remoteName, remoteEnvironmentName, local, allowDomains: false, ref domainProps );
@@ -114,22 +118,22 @@ namespace CK.AppIdentity
 
         private static ApplicationIdentityConfiguration? CreateRemotes( IActivityMonitor monitor,
                                                                         ImmutableConfigurationSection locked,
-                                                                        string? domainName,
-                                                                        string? environmentName,
+                                                                        string domainName,
+                                                                        string environmentName,
                                                                         LocalPartyConfiguration? local,
                                                                         bool allowDomains,
                                                                         ref InheritedConfigurationProps domainProps )
         {
-            bool success = domainName != null && environmentName!= null && local != null && domainProps.IsValid;
+            bool success = local != null && domainProps.IsValid;
             var remotes = new List<RemotePartyConfiguration>();
             foreach( var c in locked.GetSection( "Remotes" ).GetChildren() )
             {
-                var r = RemotePartyConfiguration.Create( monitor, c, domainName!, environmentName!, allowDomains, ref domainProps, local, remotes );
+                var r = RemotePartyConfiguration.Create( monitor, c, domainName, environmentName, allowDomains, ref domainProps, local, remotes );
                 if( r == null ) success = false;
                 else if( success ) remotes.Add( r );
             }
             return success
-                    ? new ApplicationIdentityConfiguration( locked, domainName!, environmentName!, local!, remotes.ToArray(), ref domainProps )
+                    ? new ApplicationIdentityConfiguration( locked, domainName, environmentName, local!, remotes.ToArray(), ref domainProps )
                     : null;
         }
 
@@ -248,6 +252,118 @@ namespace CK.AppIdentity
             return set;
         }
 
+        internal static bool ReadNames( IActivityMonitor monitor,
+                                        ImmutableConfigurationSection s,
+                                        out string domainName,
+                                        out string partyName,
+                                        out string environmentName,
+                                        string? defaultDomainName = null,
+                                        string? defaultPartyName = null,
+                                        string? defaultEnvironmentName = null )
+        {
+            var f = s["FullName"];
+            if( f != null )
+            {
+                return ReadFromFullName( monitor, s, f, out domainName, out partyName, out environmentName, defaultEnvironmentName );
+            }
+            return ReadNamesWithoutFullName( monitor, s, out domainName, out partyName, out environmentName, defaultDomainName, defaultPartyName, defaultEnvironmentName );
+
+            static bool ReadFromFullName( IActivityMonitor monitor,
+                                          ImmutableConfigurationSection s,
+                                          string fullName,
+                                          out string domainName,
+                                          out string partyName,
+                                          out string environmentName,
+                                          string? defaultEnvironmentName )
+            {
+                if( !CoreApplicationIdentity.TryParseFullName( fullName, out var d, out var p, out var e ) )
+                {
+                    monitor.Error( $"Invalid '{s.Path}:FullName'. '{fullName}' is not a valid party full name." );
+                    domainName = partyName = environmentName = "<error>";
+                    return false;
+                }
+                bool success = true;
+                if( p == null )
+                {
+                    monitor.Error( $"Configuration '{s.Path}:FullName' must contain a $PartyName segment." );
+                    p = "<error>";
+                    success = false;
+                }
+                if( s["DomainName"] != null )
+                {
+                    monitor.Error( $"'{s.Path}:DomainName' cannot be used when '{s.Path}:FullName' is defined." );
+                    success = false;
+                }
+                if( s["Name"] != null )
+                {
+                    monitor.Error( $"'{s.Path}:Name' cannot be used when '{s.Path}:FullName' is defined." );
+                    success = false;
+                }
+                if( e == null )
+                {
+                    success &= !ReadName( monitor, s, NameKind.Env, out e, defaultEnvironmentName );
+                }
+                else if( s["EnvironmentName"] != null )
+                {
+                    monitor.Error( $"'{s.Path}:EnvironmentName' cannot be used when '{s.Path}:FullName' defines it." );
+                    success = false;
+                }
+                domainName = d;
+                partyName = p;
+                environmentName = e;
+                return success;
+            }
+        }
+
+        internal static bool ReadNamesWithoutFullName( IActivityMonitor monitor,
+                                                       ImmutableConfigurationSection s,
+                                                       out string domainName,
+                                                       out string partyName,
+                                                       out string environmentName,
+                                                       string? defaultDomainName,
+                                                       string? defaultPartyName,
+                                                       string? defaultEnvironmentName )
+        {
+            // No shortcut operators here to collect all the errors.
+            return ReadName( monitor, s, NameKind.Domain, out domainName, defaultDomainName )
+                           & ReadName( monitor, s, NameKind.Party, out partyName, defaultPartyName )
+                           & ReadName( monitor, s, NameKind.Env, out environmentName, defaultEnvironmentName );
+        }
+
+        internal static bool ReadName( IActivityMonitor monitor, ImmutableConfigurationSection s, NameKind kind, out string name, string? defaultName )
+        {
+            var k = _names[(int)kind];
+            var n = s[k];
+            if( n != null )
+            {
+                bool isValid = kind switch
+                {
+                    NameKind.Domain => CoreApplicationIdentity.IsValidDomainName( n ),
+                    NameKind.Party => CoreApplicationIdentity.IsValidPartyName( n ),
+                    NameKind.Env => CoreApplicationIdentity.IsValidEnvironmentName( n ),
+                    _ => Throw.NotSupportedException<bool>()
+                };
+                if( !isValid )
+                {
+                    monitor.Error( $"Invalid '{s.Path}:{k}'. It {_nameSyntaxes[(int)NameKind.Env]}" );
+                    name = "<error>";
+                    return false;
+                }
+                name = n;
+            }
+            else
+            {
+                if( defaultName == null )
+                {
+                    monitor.Error( $"Configuration '{s.Path}:{k}' is required." );
+                    name = "<error>";
+                    return false;
+                }
+                name = defaultName;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Emits an error if the configuration key exists and returns true.
         /// </summary>
@@ -266,51 +382,89 @@ namespace CK.AppIdentity
             return false;
         }
 
-        const string _identifierSyntax = " must only contain 'A'-'Z', 'a'-'z', '0'-'9' and '_' characters and must not start with a digit nor a '_'";
-        const string _nameSuffix = $" must be an identifier: it{_identifierSyntax}.";
-        const string _pathSuffix = $" must be an identifier or a path of identifiers: each identifier{_identifierSyntax}, no leading or trailing '/' and no double '//' are allowed.";
+        internal enum NameKind
+        {
+            Domain,
+            Party,
+            Env
+        }
 
+        static readonly string[] _names = new[] { "DomainName", "Name", "EnvironmentName" };
+
+        static readonly string[] _nameSyntaxes = new[]
+        {
+            $"must be a case sensitive identifier or path of identifiers not longer than {CoreApplicationIdentity.DomainNameMaxLength}, "
+            + $"no leading or trailing '/' and no double '//' are allowed. Identifier should use PascalCase convention if possible and must "
+            + $"only contain 'A'-'Z', 'a'-'z', '0'-'9', '-' and '_' characters and must not start with a digit, and not start or end with '_' or '-'.",
+
+            $"should use PascalCase convention if possible and must only contain 'A'-'Z', 'a'-'z', '0'-'9', '-' and '_' characters and "
+            + $"must not start with a digit, and not start or end with '_' or '-' or be longer than {CoreApplicationIdentity.PartyNameMaxLength}.",
+
+            $"must start with a '#', should use PascalCase convention if possible and must only contain 'A'-'Z', 'a'-'z', '0'-'9', '-' and '_'  "
+            + $"or be longer than {CoreApplicationIdentity.EnvironmentNameMaxLength}."
+        };
+
+        /// <summary>
+        /// For <see cref="NameKind.Party"/>, the '$' pre
+        /// </summary>
+        /// <param name="monitor"></param>
+        /// <param name="configuration"></param>
+        /// <param name="propertyName"></param>
+        /// <param name="isRequired"></param>
+        /// <param name="defaultValue"></param>
+        /// <param name="value"></param>
+        /// <param name="kind"></param>
+        /// <returns></returns>
         internal static bool GetName( IActivityMonitor monitor,
                                       IConfigurationSection configuration,
                                       string propertyName,
                                       bool isRequired,
                                       string? defaultValue,
                                       [NotNullWhen( true )] out string? value,
-                                      bool isDomainName = false )
+                                      NameKind kind )
         {
             value = configuration[propertyName];
-            if( !ValidateName( monitor, configuration, propertyName, ref value, isRequired, isDomainName ) )
+            if( !ValidateName( monitor, configuration, propertyName, ref value, isRequired, kind ) )
             {
                 return false;
             }
             // Validates the default value if any.
             if( value == null && defaultValue != null )
             {
-                if( !ValidateName( monitor, configuration, propertyName, ref defaultValue, true, isDomainName ) ) return false;
+                if( !ValidateName( monitor, configuration, propertyName, ref defaultValue, true, kind ) ) return false;
                 value = defaultValue;
             }
             Debug.Assert( value != null );
             return true;
         }
 
-        static bool ValidateName( IActivityMonitor monitor, IConfigurationSection configuration, string propertyName, ref string? value, bool isRequired, bool isDomainName )
+        static bool ValidateName( IActivityMonitor monitor,
+                                  IConfigurationSection configuration,
+                                  string propertyName,
+                                  ref string? value,
+                                  bool isRequired,
+                                  NameKind kind )
         {
             if( string.IsNullOrWhiteSpace( value ) )
             {
                 if( isRequired )
                 {
-                    monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' is required and{_nameSuffix}" );
+                    monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' is required and {_nameSyntaxes[(int)kind]}" );
                     return false;
                 }
                 value = null;
                 return true;
             }
-            bool isValid = isDomainName
-                            ? CoreApplicationIdentity.IsValidDomainName( value )
-                            : CoreApplicationIdentity.IsValidIdentifier( value );
+            bool isValid = kind switch
+            {
+                NameKind.Domain => CoreApplicationIdentity.IsValidDomainName( value ),
+                NameKind.Party => CoreApplicationIdentity.IsValidPartyName( value ),
+                NameKind.Env => CoreApplicationIdentity.IsValidEnvironmentName( value ),
+                _ => Throw.NotSupportedException<bool>()
+            };
             if( !isValid )
             {
-                monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' = '{value}'{(isDomainName ? _pathSuffix : _nameSuffix)}." );
+                monitor.Error( $"Configuration '{configuration.Path}:{propertyName}' = '{value}' {_nameSyntaxes[(int)kind]}." );
                 return false;
             }
             return true;

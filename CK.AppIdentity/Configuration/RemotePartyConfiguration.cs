@@ -48,74 +48,88 @@ namespace CK.AppIdentity
                                                           LocalPartyConfiguration? localToCheckName,
                                                           IEnumerable<RemotePartyConfiguration> remotesToCheckHomonyms )
         {
-            // Refrain yourself to rewrite this differently: this ensures that all properties are handled even on error.
-            bool success = ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", true, null, out var name );
-            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "DomainName", false, appDomainName, out var domainName, true ) ) success = false;
-            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "EnvironmentName", false, appEnvironmentName, out var environmentName ) ) success = false;
-            if( !InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps ) ) success = false;
+            // "Remotes" configuration handling.
+            ApplicationIdentityConfiguration? domain = null;
+            var remotesSection = configuration.GetSection( "Remotes" );
+            bool isDomain = remotesSection.Exists();
 
-            if( name != null )
+            bool success;
+            string? domainName, name, environmentName;
+            if( !isDomain )
             {
-                if( localToCheckName != null && name.Equals( localToCheckName.Name, StringComparison.OrdinalIgnoreCase ) )
+                success = ApplicationIdentityConfiguration.ReadNamesWithoutFullName( monitor,
+                                                                                      configuration,
+                                                                                      out domainName,
+                                                                                      out name,
+                                                                                      out environmentName,
+                                                                                      appEnvironmentName,
+                                                                                      null,
+                                                                                      appDomainName );
+            }
+            else
+            {
+                if( configuration["FullName"] != null )
                 {
-                    monitor.Error( $"Invalid remote party name in '{configuration.Path}': '{name}' is this local name." );
+                    monitor.Error( $"Configuration '{configuration.Path}:FullName' cannot be used on a Domain (a Remote with Remotes). Only DomainName, Name or EnvironmentName can be defined." );
                     success = false;
                 }
-                else if( remotesToCheckHomonyms.Any( x => x.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) ) )
+                // For a domain (a Remote with Remotes), the default Name is the domain leaf.
+                // We use a fake (invalid) default here to detect the missing Name.
+                success = ApplicationIdentityConfiguration.ReadNamesWithoutFullName( monitor,
+                                                                                     configuration,
+                                                                                     out domainName,
+                                                                                     out name,
+                                                                                     out environmentName,
+                                                                                     appEnvironmentName,
+                                                                                     "¤Fake",
+                                                                                     appDomainName );
+                if( name == "¤Fake" )
                 {
-                    monitor.Error( $"Duplicate remote party name in '{configuration.Path}': '{name}' remote party must be unique." );
-                    success = false;
+                    int idx = domainName!.LastIndexOf( '/' );
+                    name = idx < 0 ? domainName : domainName.Substring( idx + 1 );
                 }
             }
-            // "Domain" configuration handling.
-            ApplicationIdentityConfiguration? domain = null;
-            var domainSection = configuration.GetSection( "Domain" );
-            if( domainSection.Exists() )
+
+            success &= InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps );
+
+            if( localToCheckName != null && name.Equals( localToCheckName.Name, StringComparison.OrdinalIgnoreCase ) )
             {
-                using var gLog = monitor.OpenInfo( $"Detected '{domainSection.Path}' for '{appDomainName}/{environmentName}/{name}': this remote hosts a Domain." );
+                monitor.Error( $"Invalid remote party name in '{configuration.Path}': '{name}' is this local name." );
+                success = false;
+            }
+            else if( remotesToCheckHomonyms.Any( x => x.Name.Equals( name, StringComparison.OrdinalIgnoreCase ) ) )
+            {
+                monitor.Error( $"Duplicate remote party name in '{configuration.Path}': '{name}' remote party must be unique." );
+                success = false;
+            }
+
+            if( isDomain )
+            {
+                using var gLog = monitor.OpenInfo( $"Detected '{remotesSection.Path}' for '{appDomainName}/{name}/{environmentName}': this remote hosts a Domain." );
                 if( !allowDomain )
                 {
-                    monitor.Error( $"Invalid configuration '{domainSection.Path}': domains can only be defined in root Remotes." );
+                    monitor.Error( $"Invalid configuration '{remotesSection.Path}': domains (Remote with Remotes) can only be defined in root Remotes." );
                     success = false;
                 }
                 else
                 {
-                    // A remote that is the host of a Domain MUST BE in the domain of the root application.
-                    if( domainName != appDomainName )
-                    {
-                        monitor.Error( $"Invalid '{configuration.Path}:DomainName': it can only be the root application's domain '{appDomainName}' (not '{domainName}')."
-                                       + $" A remote that hosts a Domain MUST BE in the domain of the root application." );
-                        success = false;
-                    }
                     // The "Undefined" domain name cannot host a domain. 
                     if( domainName == CoreApplicationIdentity.DefaultDomainName )
                     {
-                        monitor.Error( $"Invalid configuration '{domainSection.Path}': '{CoreApplicationIdentity.DefaultDomainName}' cannot host a domain. This name denotes an external system." );
+                        monitor.Error( $"Invalid configuration '{remotesSection.Path}': '{CoreApplicationIdentity.DefaultDomainName}' cannot host a domain. This name denotes an external system." );
                         success = false;
                     }
-                    if( name != null
-                        && environmentName != null
-                        && !DomainApplicationIdentity.CheckDomainConfigurationNames( monitor, name, environmentName, domainSection ) )
-                    {
-                        success = false;
-                    }
-                    // Full analysis error may become too fragile (the configuration is already invalid).
-                    // Process the domain configuration only on success.
-                    if( success )
-                    {
-                        Debug.Assert( name != null && environmentName != null );
-                        domain = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, domainSection, ref remoteProps );
-                        if( domain == null ) success = false;
-                    }
+                    domain = ApplicationIdentityConfiguration.CreateDomain( monitor, name, environmentName, remotesSection, ref remoteProps );
+                    if( domain == null ) success = false;
                 }
             }
             return success
-                    ? new RemotePartyConfiguration( configuration, name!, domainName!, environmentName!, configuration["Address"], domain, ref remoteProps )
+                    ? new RemotePartyConfiguration( configuration, name, domainName, environmentName, configuration["Address"], domain, ref remoteProps )
                     : null;
         }
 
         /// <summary>
-        /// Gets the required name of this party. See <see cref="CoreApplicationIdentity.IsValidIdentifier(ReadOnlySpan{char})"/>.
+        /// Gets the required name of this party. See <see cref="CoreApplicationIdentity.IsValidPartyName(ReadOnlySpan{char})"/>.
         /// </summary>
         public string Name => _name;
 

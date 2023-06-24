@@ -60,20 +60,20 @@ namespace CK.AppIdentity.Tests
             var domain = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["Name"] = "LaToulousaine";
-                c["EnvironmentName"] = "Debug";
+                c["EnvironmentName"] = "#Debug";
                 c["Domain:Remotes:0:Name"] = "SignatureBox";
             } );
             Debug.Assert( domain != null );
-            domain.FullName.Should().Be( "OneCS-SaaS/Debug/LaToulousaine" );
+            domain.FullName.Should().Be( "OneCS-SaaS/LaToulousaine/#Debug" );
             domain.IsDynamic.Should().BeTrue();
             domain.IsRooted.Should().BeTrue();
             // This remote has a non null DomainApplicationIdentity.
             var laToulousaine = domain.DomainApplicationIdentity;
             Debug.Assert( laToulousaine != null, "The remote hosts the domain." );
             // This new domain is in a "Debug" environment name.
-            laToulousaine.EnvironmentName.Should().Be( "Debug" );
+            laToulousaine.EnvironmentName.Should().Be( "#Debug" );
             var signatureBox = laToulousaine.Remotes.Single();
-            signatureBox.FullName.Should().Be( "LaToulousaine/Debug/SignatureBox" );
+            signatureBox.FullName.Should().Be( "LaToulousaine/$SignatureBox/#Debug" );
             signatureBox.IsRooted.Should().BeFalse( "The signatureBox is not rooted: it belongs to a DomainApplicationIdentity." );
             signatureBox.IsDynamic.Should().BeFalse( "The signatureBox is configured: it is not dynamic." );
             FluentActions.Invoking( () => signatureBox.SetDestroyed() )
@@ -85,7 +85,7 @@ namespace CK.AppIdentity.Tests
                 c["Name"] = "Trolley1";
             } );
             Debug.Assert( theTrolley != null );
-            theTrolley.FullName.Should().Be( "LaToulousaine/Debug/Trolley1" );
+            theTrolley.FullName.Should().Be( "LaToulousaine/$Trolley1/#Debug" );
             theTrolley.IsDynamic.Should().BeTrue();
             laToulousaine.Remotes.Should().HaveCount( 2 );
 
@@ -95,7 +95,7 @@ namespace CK.AppIdentity.Tests
                 c["Name"] = "Trolley2";
             } );
             Debug.Assert( theTrolley2 != null );
-            theTrolley2.FullName.Should().Be( "LaToulousaine/Debug/Trolley2" );
+            theTrolley2.FullName.Should().Be( "LaToulousaine/$Trolley2/#Debug" );
             theTrolley2.IsDynamic.Should().BeTrue();
             laToulousaine.Remotes.Should().HaveCount( 3 );
 
@@ -121,7 +121,7 @@ namespace CK.AppIdentity.Tests
 
             events.Should().BeEquivalentTo( new string[]
             {
-                "'OneCS-SaaS/Development/LogTower' appeared.",
+                "'OneCS-SaaS/$LogTower/#Development' appeared.",
 
                 // A remote that defines a domain appears and its initially defined
                 // remotes also appear in the events (as if it was dynamically added):

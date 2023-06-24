@@ -18,25 +18,43 @@ namespace CK.AppIdentity
 
         LocalPartyConfiguration( ImmutableConfigurationSection configuration, string name, ref InheritedConfigurationProps props )
         {
-            Debug.Assert( CoreApplicationIdentity.IsValidIdentifier( name ) );
+            Debug.Assert( CoreApplicationIdentity.IsValidPartyName( name ) );
             Debug.Assert( props.IsValid );
             Configuration = configuration;
-            _name = name;
+            _name = name[0] == '$' ? name.Substring( 1 ) : name;
             _allowFeatures = props.AllowFeatures;
             _disallowFeatures = props.DisallowFeatures;
         }
 
         internal static LocalPartyConfiguration? Create( IActivityMonitor monitor,
                                                          ImmutableConfigurationSection configuration,
+                                                         string domainName,
                                                          string? applicationName,
                                                          ref InheritedConfigurationProps inheritedProps )
         {
             // TryCreate handles the fact that inheritedProps may be invalid.
             bool success = InheritedConfigurationProps.TryCreate( monitor, inheritedProps, configuration, out var props );
 
-            if( !ApplicationIdentityConfiguration.GetName( monitor, configuration, "Name", false, applicationName, out var name ) ) success = false;
+            string name;
+            if( applicationName != null )
+            {
+                name = applicationName;
+                success &= CheckNotExist( monitor, configuration, "Name", $"the application name '{name}' is already defined above" );
+            }
+            else
+            {
+                int idx = domainName.IndexOf( "/" );
+                var defName = idx < 0 ? domainName : domainName.Substring( idx + 1 );
+                success &= ApplicationIdentityConfiguration.ReadName( monitor, configuration, ApplicationIdentityConfiguration.NameKind.Party, out name, defName );
+            }
 
-            return success ? new LocalPartyConfiguration( configuration, name!, ref props ) : null;
+            const string noKeyReason = "application 'Local' can only define the Name";
+            // Caution: we use non short-circuiting & here!
+            success &= CheckNotExist( monitor, configuration, "FullName", noKeyReason )
+                       & CheckNotExist( monitor, configuration, "DomainName", noKeyReason )
+                       & CheckNotExist( monitor, configuration, "EnvironmentName", noKeyReason );
+
+            return success ? new LocalPartyConfiguration( configuration, name, ref props ) : null;
         }
 
         internal static LocalPartyConfiguration? CreateDomainLocal( IActivityMonitor monitor,
@@ -44,8 +62,24 @@ namespace CK.AppIdentity
                                                                     string remoteName,
                                                                     ref InheritedConfigurationProps inheritedProps )
         {
-            bool success = InheritedConfigurationProps.TryCreate( monitor, inheritedProps, configuration, out var props );
+            const string noKeyReason = "all naming of a domain 'Local' is given by the Remote definition above";
+            // Caution: we use non short-circuiting & here!
+            bool success = InheritedConfigurationProps.TryCreate( monitor, inheritedProps, configuration, out var props )
+                           & CheckNotExist( monitor, configuration, "FullName", noKeyReason )
+                           & CheckNotExist( monitor, configuration, "DomainName", noKeyReason )
+                           & CheckNotExist( monitor, configuration, "Name", noKeyReason )
+                           & CheckNotExist( monitor, configuration, "EnvironmentName", noKeyReason );
             return success ? new LocalPartyConfiguration( configuration, remoteName, ref props ) : null;
+        }
+
+        static bool CheckNotExist( IActivityMonitor monitor, ImmutableConfigurationSection configuration, string key, string reason )
+        {
+            if( configuration[key] != null )
+            {
+                monitor.Error( $"Invalid '{configuration.Path}:{key}' key: {reason}." );
+                return false;
+            }
+            return true;
         }
 
         /// <summary>

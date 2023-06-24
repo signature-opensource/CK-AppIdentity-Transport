@@ -12,26 +12,25 @@ namespace CK.AppIdentity.Cris
     public sealed partial class CrisChannelFeature : ChannelFeature
     {
         readonly PocoDirectory _pocoDirectory;
-        readonly CrisChannelExecutor _executor;
+        readonly IncomingCommandExecutor _executor;
         readonly IAuthenticationInfoTokenService _tokenService;
-        readonly ICrisExecutorEndPoint<CrisChannelExecutorRequest> _executorEndpoint;
         readonly OutgoingCommandCache _outgoingRequestCache;
         readonly PerfectEventSender<IOutgoingCommand, IEvent> _onEvent;
         readonly ConcurrentQueue<OutgoingCommand> _pendingRequest;
 
         public CrisChannelFeature( TransportFeature transportFeature,
                                    PocoDirectory pocoDirectory,
-                                   CrisChannelExecutor executor,
+                                   IEndpointType<AppIdentityEndpointDefinition.Data> endpoint,
+                                   CrisExecutionHost executionHost,
                                    IAuthenticationInfoTokenService tokenService )
             : base( transportFeature )
         {
             _pocoDirectory = pocoDirectory;
-            _executor = executor;
+            _executor = new IncomingCommandExecutor( executionHost, endpoint );
             _tokenService = tokenService;
             _onEvent = new PerfectEventSender<IOutgoingCommand, IEvent>();
             _outgoingRequestCache = new OutgoingCommandCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
             _pendingRequest = new ConcurrentQueue<OutgoingCommand>();
-            _executorEndpoint = new CrisChannelEndpoint( this );
         }
 
         new Protocol? CurrentHandler => Unsafe.As<Protocol?>( base.CurrentHandler );

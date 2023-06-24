@@ -23,14 +23,14 @@ namespace CK.AppIdentity.Tests
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( without_feature_builders_Async ) );
             await using ApplicationIdentityService s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
-                c["EnvironmentName"] = "Production";
+                c["EnvironmentName"] = "#Production";
                 c["Local:Name"] = "MyApp";
                 c["Remotes:0:Name"] = "Remote1";
                 c["Remotes:1:Name"] = "Remote2";
             } );
 
             s.DomainName.Should().Be( "Default" );
-            s.EnvironmentName.Should().Be( "Production" );
+            s.EnvironmentName.Should().Be( "#Production" );
             s.Local.Name.Should().Be( "MyApp" );
             s.Local.Features.Should().BeEmpty();
 
@@ -39,14 +39,14 @@ namespace CK.AppIdentity.Tests
             r1.IsDynamic.Should().BeFalse();
             r1.Address.Should().BeNull();
             r1.DomainName.Should().Be( "Default" );
-            r1.EnvironmentName.Should().Be( "Production" );
+            r1.EnvironmentName.Should().Be( "#Production" );
             r1.Features.Should().BeEmpty();
 
             var r2 = s.Remotes.Single( r => r.Name == "Remote2" );
             r2.IsDynamic.Should().BeFalse();
             r2.Address.Should().BeNull();
             r2.DomainName.Should().Be( "Default" );
-            r2.EnvironmentName.Should().Be( "Production" );
+            r2.EnvironmentName.Should().Be( "#Production" );
             r2.Features.Should().BeEmpty();
 
         }
