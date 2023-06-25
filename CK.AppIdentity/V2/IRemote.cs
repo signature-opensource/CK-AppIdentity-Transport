@@ -5,15 +5,27 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
 
-    public interface V2IRemote : V2IAppIdentityObject
+    public interface IRemote : IApplicationIdentityObject
     {
+        /// <summary>
+        /// Gets this remote's domain.
+        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="RemoteDomain"/>.
+        /// </summary>
+        ApplicationIdentityDomain Domain { get; }
+
+        /// <summary>
+        /// Gets whether this remote is hosted by the root <see cref="ApplicationIdentityService"/>
+        /// or by a subordinated <see cref="RemoteDomain"/>.
+        /// </summary>
+        bool IsRooted { get; }
+
         /// <summary>
         /// Gets whether this is a dynamic remote.
         /// </summary>
         bool IsDynamic { get; }
 
         /// <summary>
-        /// Gets whether this remote has been removed from the root <see cref="V2ApplicationIdentityService"/>.
+        /// Gets whether this remote has been removed from the root <see cref="ApplicationIdentityService"/>.
         /// </summary>
         bool IsDestroyed { get; }
 

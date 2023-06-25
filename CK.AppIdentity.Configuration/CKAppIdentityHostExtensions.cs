@@ -31,7 +31,7 @@ namespace Microsoft.Extensions.Hosting
             var monitor = builder.GetBuilderMonitor();
             builder.ConfigureServices( (ctx,services) =>
             {
-                var appIdentity = V2ApplicationIdentityConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
+                var appIdentity = ApplicationIdentityServiceConfiguration.Create( monitor, ctx.HostingEnvironment, ctx.Configuration.GetSection( "CK-AppIdentity" ) );
                 if( appIdentity != null )
                 {
 

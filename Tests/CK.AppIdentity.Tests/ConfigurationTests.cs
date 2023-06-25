@@ -18,7 +18,7 @@ namespace CK.AppIdentity.Tests
         public void basic_agent_configuration()
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( basic_agent_configuration ) );
-            var config = V2ApplicationIdentityConfiguration.Create( TestHelper.Monitor, c =>
+            var config = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, c =>
             {
                 c["DomainName"] = "LaToulousaine/France/Albi";
                 c["PartyName"] = "SignatureBox";
@@ -45,22 +45,22 @@ namespace CK.AppIdentity.Tests
             Debug.Assert( logTower != null );
             logTower.DomainName.Should().Be( "Signature/SaaSCentral" );
             logTower.EnvironmentName.Should().Be( "#Prod" );
-            logTower.As<V2RemotePartyConfiguration>().PartyName.Should().Be( "LogTower" );
-            logTower.As<V2RemotePartyConfiguration>().Address.Should().Be( "148.54.11.18:3712" );
+            logTower.As<RemotePartyConfiguration>().PartyName.Should().Be( "LogTower" );
+            logTower.As<RemotePartyConfiguration>().Address.Should().Be( "148.54.11.18:3712" );
 
             var trolleyCentral = config.Remotes.Single( r => r.FullName == "LaToulousaine/London/$TrolleyCentral/#Development" );
             Debug.Assert( trolleyCentral != null );
             trolleyCentral.DomainName.Should().Be( "LaToulousaine/London" );
             trolleyCentral.EnvironmentName.Should().Be( "#Development" );
-            trolleyCentral.As<V2RemotePartyConfiguration>().PartyName.Should().Be( "TrolleyCentral" );
-            trolleyCentral.As<V2RemotePartyConfiguration>().Address.Should().BeNull();
+            trolleyCentral.As<RemotePartyConfiguration>().PartyName.Should().Be( "TrolleyCentral" );
+            trolleyCentral.As<RemotePartyConfiguration>().Address.Should().BeNull();
 
             var trolley1 = config.Remotes.Single( r => r.FullName == "LaToulousaine/France/Albi/$Trolley1/#Development" );
             Debug.Assert( trolley1 != null );
             trolley1.DomainName.Should().Be( "LaToulousaine/France/Albi" );
             trolley1.EnvironmentName.Should().Be( "#Development" );
-            trolley1.As<V2RemotePartyConfiguration>().PartyName.Should().Be( "Trolley1" );
-            trolley1.As<V2RemotePartyConfiguration>().Address.Should().BeNull();
+            trolley1.As<RemotePartyConfiguration>().PartyName.Should().Be( "Trolley1" );
+            trolley1.As<RemotePartyConfiguration>().Address.Should().BeNull();
         }
     }
 }

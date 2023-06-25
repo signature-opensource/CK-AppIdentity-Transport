@@ -4,11 +4,11 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
 
-    public sealed class V2RemoteParty : V2AppIdentityObject, V2IRemote, V2IParty
+    public sealed class RemoteParty : ApplicationIdentityObject, IRemote, IParty
     {
         RemoteImpl _remote;
 
-        internal V2RemoteParty( V2RemotePartyConfiguration configuration, V2AppIdentityDomain domain )
+        internal RemoteParty( RemotePartyConfiguration configuration, ApplicationIdentityDomain domain )
             : base( configuration )
         {
             _remote = new RemoteImpl( domain, configuration.Configuration );
@@ -17,7 +17,7 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the configuration object.
         /// </summary>
-        public V2RemotePartyConfiguration Configuration => Unsafe.As<V2RemotePartyConfiguration>( _configuration );
+        public RemotePartyConfiguration Configuration => Unsafe.As<RemotePartyConfiguration>( _configuration );
 
         /// <summary>
         /// Gets the name of this remote party.
@@ -34,7 +34,7 @@ namespace CK.AppIdentity
 
         public bool IsDestroyed => _remote.IsDestroyed;
 
-        public V2AppIdentityDomain Domain => _remote.Domain;
+        public ApplicationIdentityDomain Domain => _remote.Domain;
 
         public bool IsRooted => throw new System.NotImplementedException();
 
@@ -42,7 +42,7 @@ namespace CK.AppIdentity
 
         public bool SetDestroyed() => _remote.SetDestroyed( null );
 
-        void V2IRemote.DoSetDestroyed( bool isTop ) => _remote.DoSetDestroyed( isTop, null );
+        void IRemote.DoSetDestroyed( bool isTop ) => _remote.DoSetDestroyed( isTop, null );
 
 
     }

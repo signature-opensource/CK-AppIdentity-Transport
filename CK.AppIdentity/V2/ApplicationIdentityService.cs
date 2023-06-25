@@ -1,56 +1,59 @@
 using CK.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// The application identity singleton service. This is the root of the application identity model.
     /// </summary>
-    public sealed class OLDApplicationIdentityService : ApplicationIdentityBase, ISingletonAutoService, IHostedService, IApplicationIdentity, IAppIdentityObject, IAsyncDisposable
+    public sealed class ApplicationIdentityService : ApplicationIdentityDomain, ISingletonAutoService, IHostedService, IAsyncDisposable
     {
-        object[] _features;
         readonly AppIdentityAgent _agent;
+        readonly LocalParty _local;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _initialization;
 
-        /// <summary>
-        /// Initialized a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
-        /// </summary>
-        /// <param name="configuration">The configuration.</param>
-        public OLDApplicationIdentityService( ApplicationIdentityConfiguration configuration, IServiceProvider serviceProvider )
+        internal ApplicationIdentityService( ApplicationIdentityServiceConfiguration configuration, IServiceProvider serviceProvider )
             : base( configuration, null )
         {
-            _features = Array.Empty<object>();
+            _local = new LocalParty( configuration.Local, this );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
-            _agent = new AppIdentityAgent( this, serviceProvider );
+            _agent = new AppIdentityAgent( null/*this*/, serviceProvider );
         }
 
         internal AppIdentityAgent Agent => _agent;
 
-        ApplicationIdentityService IApplicationIdentity.ApplicationIdentityService => this;
+        /// <summary>
+        /// Gets the configuration object.
+        /// </summary>
+        public new ApplicationIdentityServiceConfiguration Configuration => Unsafe.As<ApplicationIdentityServiceConfiguration>( _configuration );
 
-        /// <inheritdoc cref="ApplicationIdentityConfiguration.DomainName"/>
-        public string DomainName => Configuration.DomainName;
+        /// <summary>
+        /// Gets the this application party name.
+        /// </summary>
+        public string PartyName => Configuration.PartyName;
 
-        /// <inheritdoc cref="ApplicationIdentityConfiguration.EnvironmentName"/>
-        public string EnvironmentName => Configuration.EnvironmentName;
+        /// <summary>
+        /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been
+        /// initialized. Initialization errors are set on this task if exceptions occurred: awaiting this
+        /// task will re-throw the initialization errors.
+        /// <para>
+        /// Use <see cref="Task.IsCompletedSuccessfully"/> to know if initialization has been successful.
+        /// </para>
+        /// </summary>
+        public Task InitializationTask => _initialization.Task;
 
         /// <inheritdoc />
-        public IEnumerable<object> Features => _features;
-
-        /// <inheritdoc />
-        public void AddFeature( object feature )
-        {
-            Util.InterlockedAddUnique( ref _features, feature );
-        }
-
-        /// <inheritdoc />
-        public Task<IRemoteParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        public Task<IRemote?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
         {
             return AddDynamicRemotePartyAsync( monitor, configuration, true, _agent, Configuration.DomainName, Configuration.EnvironmentName );
         }
@@ -84,6 +87,5 @@ namespace CK.AppIdentity
         }
 
         public override string ToString() => $"Application: {_local.FullName}";
-
     }
 }

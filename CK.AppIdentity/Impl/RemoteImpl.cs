@@ -7,14 +7,14 @@ namespace CK.AppIdentity
 {
     struct RemoteImpl
     {
-        public readonly V2AppIdentityDomain Domain;
+        public readonly ApplicationIdentityDomain Domain;
         public TaskCompletionSource? DestroyTCS;
         int _isDestroyed;
         public readonly bool IsDynamic;
 
         public bool IsDestroyed => _isDestroyed != 0;
 
-        public RemoteImpl( V2AppIdentityDomain domain, ImmutableConfigurationSection configuration )
+        public RemoteImpl( ApplicationIdentityDomain domain, ImmutableConfigurationSection configuration )
         {
             Domain = domain;
             IsDynamic = ReferenceEquals( configuration.Key, "Dynamic" );
@@ -22,20 +22,20 @@ namespace CK.AppIdentity
             DestroyTCS = null;
         }
 
-        public bool SetDestroyed( V2IRemote owner )
+        public bool SetDestroyed( IRemote owner )
         {
             Throw.CheckState( IsDynamic );
             return DoSetDestroyed( true, owner );
         }
 
-        public Task DestroyAsync( V2IRemote owner )
+        public Task DestroyAsync( IRemote owner )
         {
             SetDestroyed( owner );
             Debug.Assert( DestroyTCS != null );
             return DestroyTCS.Task;
         }
 
-        internal bool DoSetDestroyed( bool isTop, V2IRemote owner )
+        internal bool DoSetDestroyed( bool isTop, IRemote owner )
         {
             if( Interlocked.CompareExchange( ref _isDestroyed, 1, 0 ) == 0 )
             {
@@ -43,7 +43,7 @@ namespace CK.AppIdentity
                 // We set the destroy flag and tcs on subordinates but we
                 // trigger the agent on the destroyed root so that the feature drivers
                 // see the "destruction" the same as the "initialization".
-                if( owner is V2RemoteDomain domain )
+                if( owner is RemoteDomain domain )
                 {
                     // Immediately condemns the child remotes and ask to handle
                     // their destruction first.

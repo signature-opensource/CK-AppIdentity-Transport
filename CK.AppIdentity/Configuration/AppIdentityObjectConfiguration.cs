@@ -7,7 +7,7 @@ namespace CK.AppIdentity
     /// <summary>
     /// Base class of all configuration objects.
     /// </summary>
-    public abstract partial class V2AppIdentityObjectConfiguration
+    public abstract partial class AppIdentityObjectConfiguration
     {
         readonly ImmutableConfigurationSection _configuration;
         readonly string _domainName;
@@ -16,7 +16,7 @@ namespace CK.AppIdentity
         readonly IReadOnlySet<string> _disallowFeatures;
         readonly IReadOnlySet<string> _allowFeatures;
 
-        internal V2AppIdentityObjectConfiguration( ImmutableConfigurationSection configuration,
+        internal AppIdentityObjectConfiguration( ImmutableConfigurationSection configuration,
                                                 string domainName,
                                                 NormalizedPath fullName,
                                                 ref InheritedConfigurationProps props )

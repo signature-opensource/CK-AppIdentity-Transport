@@ -16,7 +16,7 @@ namespace CK.AppIdentity
         public readonly IReadOnlySet<string> DisallowFeatures;
         public readonly bool IsValid => AllowFeatures != null;
 
-        public InheritedConfigurationProps( IAppIdentityObjectConfiguration existing )
+        public InheritedConfigurationProps( AppIdentityObjectConfiguration existing )
         {
             AllowFeatures = existing.AllowFeatures;
             DisallowFeatures = existing.DisallowFeatures;
@@ -55,11 +55,11 @@ namespace CK.AppIdentity
 
         static bool TryReadAllowDisallowFeatures( IActivityMonitor monitor,
                                                   ImmutableConfigurationSection root,
-                                                  [NotNullWhen(true)] out HashSet<string>? allow,
+                                                  [NotNullWhen( true )] out HashSet<string>? allow,
                                                   [NotNullWhen( true )] out HashSet<string>? disallow )
         {
-            allow = ApplicationIdentityConfiguration.ReadUniqueStringSet( monitor, root, "AllowFeatures" );
-            disallow = ApplicationIdentityConfiguration.ReadUniqueStringSet( monitor, root, "DisallowFeatures" );
+            allow = root.ReadUniqueStringSet( monitor, "AllowFeatures" );
+            disallow = root.ReadUniqueStringSet( monitor, "DisallowFeatures" );
             if( allow != null && disallow != null )
             {
                 if( !allow.Overlaps( disallow ) )

@@ -56,7 +56,7 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="r">The remote party to test.</param>
         /// <returns>True if this feature is allowed, false otherwise.</returns>
-        public bool IsAllowedFeature( IRemoteParty r )
+        public bool IsAllowedFeature( IRemote r )
         {
             bool domainLevel = r.IsRooted
                                 ? _isRootAllowed
@@ -100,29 +100,27 @@ namespace CK.AppIdentity
         internal protected abstract Task<bool> SetupAsync( FeatureLifetimeContext context );
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="IRemoteParty.Features"/> and <see cref="IRemoteParty.DomainApplicationIdentity"/>'s features
-        /// or subordinated remotes.
+        /// Must do whatever is required to register features into <see cref="ApplicationIdentityObject.Features"/> for the remote and any subordinated remotes
+        /// if the remote is a <see cref="RemoteDomain"/>.
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
         /// </para>
         /// </summary>
         /// <param name="context">The lifetime context.</param>
-        /// <param name="party">The dynamic remote party to initialize.</param>
+        /// <param name="remote">The dynamic remote party to initialize.</param>
         /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
-        internal protected abstract Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party );
+        internal protected abstract Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote );
 
         /// <summary>
-        /// Called when a dynamic party is destroyed. In the case of a domain (<see cref="IRemoteParty.DomainApplicationIdentity"/> is not null),
-        /// the <paramref name="party"/> is the root remote to be destroyed, not each subordinated remotes: this mimics
-        /// the <see cref="SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/> work.
+        /// Called when a dynamic party is destroyed.
         /// <para>
         /// This is called in reverse order (from most dependent feature drivers to basic ones).
         /// </para>
         /// </summary>
         /// <param name="context">The lifetime context.</param>
-        /// <param name="party">The dynamic remote party to cleanup.</param>
+        /// <param name="remote">The dynamic remote party to cleanup.</param>
         /// <returns>The awaitable.</returns>
-        internal protected abstract Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party );
+        internal protected abstract Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote );
 
         /// <summary>
         /// Called by a stopping agent. Must get rid of any acquired resources at any level.

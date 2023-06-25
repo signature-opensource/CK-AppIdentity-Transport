@@ -18,7 +18,7 @@ namespace CK.AppIdentity
         readonly AppIdentityAgent _agent;
         readonly IReadOnlyList<ApplicationIdentityFeatureDriver> _drivers;
         readonly BasicTrampolineRunner _trampoline;
-        IRemoteParty? _targetParty;
+        IRemote? _targetParty;
 
         internal FeatureLifetimeContext( IActivityMonitor monitor, AppIdentityAgent agent, IReadOnlyList<ApplicationIdentityFeatureDriver> drivers )
         {
@@ -31,11 +31,11 @@ namespace CK.AppIdentity
         /// <summary>
         /// Gets the remotes that are concerned by the current operation (either the <see cref="ApplicationIdentityService"/>
         /// one's for <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
-        /// or the <see cref="IRemoteParty"/> one's for <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>) and
+        /// or the <see cref="IRemote"/> one's for <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
         /// <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>).
         /// </summary>
         /// <returns>The set of leaf remotes for the current operation.</returns>
-        public IEnumerable<IRemoteParty> GetAllLeafRemotes() => _targetParty?.GetAllLeafRemotes() ?? _agent.ApplicationIdentityService.GetAllLeafRemotes();
+        public IEnumerable<IRemote> GetAllLeafRemotes() => _targetParty?.GetAllLeafRemotes() ?? _agent.ApplicationIdentityService.GetAllLeafRemotes();
 
         /// <summary>
         /// Gets the <see cref="ApplicationIdentityService"/>'s agent.
@@ -69,12 +69,12 @@ namespace CK.AppIdentity
             return _trampoline.Error ?? new CKException( $"Initialization result is '{_trampoline.Result}'. It is not safe to continue." );
         }
 
-        internal async Task<TrampolineResult> ExecuteSetupDynamicRemoteAsync( IRemoteParty party )
+        internal async Task<TrampolineResult> ExecuteSetupDynamicRemoteAsync( IRemote remote )
         {
-            _targetParty = party;
+            _targetParty = remote;
             foreach( var d in _drivers )
             {
-                _trampoline.Trampoline.Add( () => d.SetupDynamicRemoteAsync( this, party ) );
+                _trampoline.Trampoline.Add( () => d.SetupDynamicRemoteAsync( this, remote ) );
             }
             await _trampoline.ExecuteAllAsync( _monitor );
             return _trampoline.Result;

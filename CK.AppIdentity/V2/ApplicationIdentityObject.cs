@@ -9,12 +9,12 @@ namespace CK.AppIdentity
     /// <summary>
     /// Base class of all identity objects.
     /// </summary>
-    public abstract class V2AppIdentityObject : V2IAppIdentityObject
+    public abstract class ApplicationIdentityObject : IApplicationIdentityObject
     {
-        private protected readonly V2AppIdentityObjectConfiguration _configuration;
+        private protected readonly AppIdentityObjectConfiguration _configuration;
         object[] _features;
 
-        internal V2AppIdentityObject( V2AppIdentityObjectConfiguration configuration )
+        internal ApplicationIdentityObject( AppIdentityObjectConfiguration configuration )
         {
             _configuration = configuration;
             _features = Array.Empty<object>();

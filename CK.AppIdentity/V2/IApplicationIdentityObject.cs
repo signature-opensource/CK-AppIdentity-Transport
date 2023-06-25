@@ -1,4 +1,4 @@
-﻿using CK.Core;
+using CK.Core;
 using System.Collections.Generic;
 
 namespace CK.AppIdentity
@@ -6,7 +6,7 @@ namespace CK.AppIdentity
     /// <summary>
     /// Generalizes <see cref="ApplicationIdentityService"/>, <see cref="ILocalParty"/> and <see cref="IRemoteParty"/>.
     /// </summary>
-    public interface V2IAppIdentityObject
+    public interface IApplicationIdentityObject
     {
         /// <summary>
         /// Gets the domain name.
@@ -22,9 +22,9 @@ namespace CK.AppIdentity
         /// Gets the full name of this object:
         /// <list type="bullet">
         ///   <item>
-        ///   For remote domains (<see cref="V2RemoteDomain"/>), the full name is DomainName/EnvironmentName.</item>
+        ///   For remote domains (<see cref="RemoteDomain"/>), the full name is DomainName/EnvironmentName.</item>
         ///   <item>
-        ///   For parties (<see cref="V2LocalParty"/>, <see cref="V2RemoteParty"/> and root and <see cref="V2ApplicationIdentityService"/>),
+        ///   For parties (<see cref="LocalParty"/>, <see cref="RemoteParty"/> and root and <see cref="ApplicationIdentityService"/>),
         ///   the full name is DomainName/PartyName/EnvironmentName.</item>
         /// </list>
         /// </summary>

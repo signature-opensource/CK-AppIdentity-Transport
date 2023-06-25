@@ -75,11 +75,11 @@ namespace CK.AppIdentity
             await context.ExecuteTeardownAsync().ConfigureAwait( false );
         }
 
-        record class InitializeDynamicRemoteJob( RemoteParty RemoteParty, TaskCompletionSource<bool> Result );
+        record class InitializeDynamicRemoteJob( IRemote Remote, TaskCompletionSource<bool> Result );
 
         internal void OnDestroy( RemoteParty remoteParty ) => PushTypedJob( remoteParty );
 
-        internal Task<bool> InitializeDynamicRemoteAsync( RemoteParty r )
+        internal Task<bool> InitializeDynamicRemoteAsync( IRemote r )
         {
             var cts = new TaskCompletionSource<bool>();
             PushTypedJob( new InitializeDynamicRemoteJob( r, cts ) );
@@ -107,14 +107,14 @@ namespace CK.AppIdentity
 
         async ValueTask HandleDynamicRemoteAsync( IActivityMonitor monitor, InitializeDynamicRemoteJob init )
         {
-            var r = init.RemoteParty;
+            var r = init.Remote;
             using( monitor.OpenInfo( $"Initializing dynamic Remote '{r.FullName}' ({_service._builders.Count} feature builders)." ) )
             {
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
                 // The new configured remote is published on the second round of the OnSuccess trampoline.
                 context.Trampoline.OnSuccess( () =>
                 {
-                    context.Trampoline.OnSuccess( () => ((ApplicationIdentityBase)r.ApplicationIdentity).OnSuccessAddRemoteAsync( context.Monitor, r ) );
+                    context.Trampoline.OnSuccess( () => r.Domain.OnSuccessAddRemoteAsync( context.Monitor, r ) );
                 } );
                 bool success = await context.ExecuteSetupDynamicRemoteAsync( r ) == TrampolineResult.TotalSuccess;
                 if( !success )
