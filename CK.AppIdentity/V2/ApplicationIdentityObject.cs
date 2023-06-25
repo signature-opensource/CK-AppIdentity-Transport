@@ -16,9 +16,12 @@ namespace CK.AppIdentity
 
         internal ApplicationIdentityObject( ApplicationIdentityBaseConfiguration configuration )
         {
+            Throw.CheckNotNullArgument( configuration );
             _configuration = configuration;
             _features = Array.Empty<object>();
         }
+
+        public ApplicationIdentityBaseConfiguration Configuration => _configuration;
 
         /// <inheritdoc />
         public string DomainName => _configuration.DomainName;

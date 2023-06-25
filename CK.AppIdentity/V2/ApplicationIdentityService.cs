@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -20,19 +21,30 @@ namespace CK.AppIdentity
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _initialization;
+        readonly NormalizedPath _privateStorePath;
+        readonly NormalizedPath _sharedStorePath;
 
-        internal ApplicationIdentityService( ApplicationIdentityServiceConfiguration configuration, IServiceProvider serviceProvider )
+        /// <summary>
+        /// Initializes a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
+        /// </summary>
+        /// <param name="configuration">The configuration.</param>
+        /// <param name="serviceProvider">The application service provider.</param>
+        public ApplicationIdentityService( ApplicationIdentityServiceConfiguration configuration, IServiceProvider serviceProvider )
             : base( configuration, null )
         {
+            Throw.CheckNotNullArgument( serviceProvider );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
             _agent = new AppIdentityAgent( this, serviceProvider );
+            _sharedStorePath = configuration.StoreRootPath.Combine( FullName );
+            _privateStorePath = _sharedStorePath.AppendPart( "$Local" );
+            Directory.CreateDirectory( _privateStorePath );
         }
 
         internal AppIdentityAgent Agent => _agent;
 
         /// <summary>
-        /// Gets the configuration object.
+        /// Gets the <see cref="ApplicationIdentityServiceConfiguration"/> object.
         /// </summary>
         public new ApplicationIdentityServiceConfiguration Configuration => Unsafe.As<ApplicationIdentityServiceConfiguration>( _configuration );
 
@@ -40,6 +52,16 @@ namespace CK.AppIdentity
         /// Gets the this application party name.
         /// </summary>
         public string PartyName => Configuration.PartyName;
+
+        /// <summary>
+        /// Gets the path to the "$Local" directory of this party inside the <see cref="SharedStorePath"/>.
+        /// </summary>
+        public NormalizedPath PrivateStorePath => _privateStorePath;
+
+        /// <summary>
+        /// Gets the path to the directory of this party.
+        /// </summary>
+        public NormalizedPath SharedStorePath => _sharedStorePath;
 
         /// <summary>
         /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been

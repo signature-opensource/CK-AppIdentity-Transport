@@ -15,9 +15,9 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Gets the configuration object.
+        /// Gets the <see cref="RemotePartyConfiguration"/> object.
         /// </summary>
-        public RemotePartyConfiguration Configuration => Unsafe.As<RemotePartyConfiguration>( _configuration );
+        public new RemotePartyConfiguration Configuration => Unsafe.As<RemotePartyConfiguration>( _configuration );
 
         /// <summary>
         /// Gets the name of this remote party.
@@ -38,11 +38,13 @@ namespace CK.AppIdentity
 
         public bool IsRooted => _remote.IsRooted;
 
+
         public Task DestroyAsync() => _remote.DestroyAsync( this );
 
         public bool SetDestroyed() => _remote.SetDestroyed( this );
 
         void IRemoteInternal.DoSetDestroyed( bool isTop ) => _remote.DoSetDestroyed( isTop, this );
 
+        TaskCompletionSource? IRemoteInternal.DestroyTCS => _remote.DestroyTCS;
     }
 }

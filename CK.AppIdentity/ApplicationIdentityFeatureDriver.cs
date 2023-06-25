@@ -52,30 +52,14 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Gets whether this feature is enabled for the given remote, accounting the potential intermediate
-        /// Allow/DisallowFeatures configuration of the parent DomainApplicationIdentity's remote.
+        /// Allow/DisallowFeatures configuration of the parent group's remote.
         /// </summary>
-        /// <param name="r">The remote party to test.</param>
+        /// <param name="r">The remote to test.</param>
         /// <returns>True if this feature is allowed, false otherwise.</returns>
         public bool IsAllowedFeature( IRemote r )
         {
-            bool domainLevel = r.IsRooted
-                                ? _isRootAllowed
-                                : r.ApplicationIdentity.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
-            return r.Configuration.IsAllowedFeature( _featureName, domainLevel );
-        }
-
-        /// <summary>
-        /// Gets whether this feature is enabled for a local party, accounting the potential intermediate
-        /// Allow/DisallowFeatures configuration of the parent DomainApplicationIdentity's remote.
-        /// </summary>
-        /// <param name="r">The local party to test.</param>
-        /// <returns>True if this feature is allowed at the local level, false otherwise.</returns>
-        public bool IsAllowedFeature( ILocalParty r )
-        {
-            bool domainLevel = r.IsRooted
-                                ? _isRootAllowed
-                                : r.ApplicationIdentity.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
-            return r.Configuration.IsAllowedFeature( _featureName, domainLevel );
+            bool above = r.Owner.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
+            return r.Configuration.IsAllowedFeature( _featureName, above );
         }
 
         /// <summary>

@@ -20,7 +20,7 @@ namespace CK.AppIdentity
     public class RemoteCollection : ApplicationIdentityObject
     {
         readonly ApplicationIdentityService _appIdentityService;
-        IRemote[] _remotes;
+        private protected IRemote[] _remotes;
         internal readonly PerfectEventSender<IRemote> _remotesChanged;
 
         internal RemoteCollection( RemoteCollectionConfiguration configuration, ApplicationIdentityService? appIdentityService )
@@ -47,10 +47,10 @@ namespace CK.AppIdentity
         /// </summary>
         public ApplicationIdentityService ApplicationIdentityService => _appIdentityService;
 
-        /// <summary>
-        /// Gets the configuration object.
-        /// </summary>
-        public RemoteCollectionConfiguration Configuration => Unsafe.As<RemoteCollectionConfiguration>( _configuration );
+        ///// <summary>
+        ///// Gets the configuration object.
+        ///// </summary>
+        //public RemoteCollectionConfiguration Configuration => Unsafe.As<RemoteCollectionConfiguration>( _configuration );
 
         /// <summary>
         /// Gets the remotes: <see cref="RemoteGroup"/> or <see cref="RemoteParty"/>.
@@ -157,26 +157,6 @@ namespace CK.AppIdentity
                                                                          ref inheritedProps,
                                                                          fullNameIndex );
         }
-
-        internal async Task DestroyAsync( IActivityMonitor monitor )
-        {
-            // Signals the destruction completion of all sub remotes.
-            // Clears its whole exposed remotes: when the event is raised, the destroyed
-            // remotes must not appear in the Remotes.
-            var remotes = Interlocked.Exchange( ref _remotes, Array.Empty<RemoteParty>() );
-            foreach( var r in remotes )
-            {
-                var rI = Unsafe.As<IRemoteInternal>( r );
-                Debug.Assert( rI.DestroyTCS != null );
-                // This guaranties that an event is raised even for a remote in a destroyed remote.
-                // Does this produces too much events (the bridge will relay the events to the root ApplicationIdentityService)?
-                // It may be too verbose... but this is logically sound.
-                await _remotesChanged.SafeRaiseAsync( monitor, r );
-                rI.DestroyTCS.SetResult();
-            }
-            _remotesChangedBridge.Dispose();
-        }
-
 
         internal void RemoveDestroyed( IRemote destroyed )
         {

@@ -9,6 +9,24 @@ namespace CK.AppIdentity
     public interface IApplicationIdentityObject
     {
         /// <summary>
+        /// Gets the configuration object of this remote.
+        /// <para>
+        /// It is:
+        /// <list type="bullet">
+        ///  <item>A <see cref="RemoteCollectionConfiguration"/> (with its <see cref="RemoteCollectionConfiguration.Remotes"/> configurations).</item>
+        ///  <item>A <see cref="RemotePartyConfiguration"/> (with its <see cref="RemotePartyConfiguration.PartyName"/>).</item>
+        ///  <item>A <see cref="ApplicationIdentityServiceConfiguration"/> (with its <see cref="RemotePartyConfiguration.PartyName"/>).</item>
+        /// </list>
+        ///
+        /// 
+        /// or a <see cref="RemotePartyConfiguration"/> (with its <see cref="RemotePartyConfiguration.PartyName"/>): the interesting part here
+        /// is the <see cref="ApplicationIdentityBaseConfiguration.Configuration"/> immutable configuration section that can contain any
+        /// possible feature configuration.
+        /// </para>
+        /// </summary>
+        ApplicationIdentityBaseConfiguration Configuration { get; }
+
+        /// <summary>
         /// Gets the domain name.
         /// </summary>
         string DomainName { get; }

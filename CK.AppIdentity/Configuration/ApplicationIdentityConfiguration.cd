@@ -30,6 +30,7 @@
       <Field Name="_fullName" Hidden="true" />
       <Field Name="_names" Hidden="true" />
       <Field Name="_nameSyntaxes" Hidden="true" />
+      <Method Name="ApplicationIdentityBaseConfiguration" Hidden="true" />
       <Method Name="IsAllowedFeature" Hidden="true" />
       <Method Name="ReadName" Hidden="true" />
       <Method Name="ReadNames" Hidden="true" />
@@ -50,13 +51,14 @@
     <Position X="3.25" Y="6" Width="3.25" />
     <Members>
       <Field Name="_partyName" Hidden="true" />
+      <Field Name="_storeRootPath" Hidden="true" />
       <Method Name="ApplicationIdentityServiceConfiguration" Hidden="true" />
       <Method Name="Create" Hidden="true" />
       <Method Name="CreateRemote" Hidden="true" />
       <Method Name="CreateRemotes" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>ABAAAAAAAAAIAAAAAAAAAAAAAAAAAEAAAAABAAgAAAA=</HashCode>
+      <HashCode>ABAAAAAAAAAICAAAAAAAAAAAAAAAAEAAAAABAAgAAAQ=</HashCode>
       <FileName>Configuration\ApplicationIdentityServiceConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>

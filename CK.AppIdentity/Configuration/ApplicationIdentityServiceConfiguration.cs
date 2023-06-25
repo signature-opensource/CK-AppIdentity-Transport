@@ -5,35 +5,55 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// Configuration that defines the identity of an application.
+    /// Configuration that defines the initial identity of an application.
     /// This is designed to be available as a singleton service in the DI container (the package CK.AppIdentity.Configuration does that).
+    /// <para>
+    /// Configurations are immutable (any existing configuration cannot be changed) but dynamic remote parties (that can be groups of remotes)
+    /// can be added and destroyed.
+    /// </para>
     /// </summary>
     public sealed class ApplicationIdentityServiceConfiguration : RemoteCollectionConfiguration
     {
         readonly string _partyName;
+        private readonly NormalizedPath _storeRootPath;
 
         ApplicationIdentityServiceConfiguration( ImmutableConfigurationSection configuration,
-                                                  string domainName,
-                                                  NormalizedPath fullName,
-                                                  ApplicationIdentityBaseConfiguration[] remotes,
-                                                  ref InheritedConfigurationProps inhProps )
+                                                 string domainName,
+                                                 NormalizedPath fullName,
+                                                 string store,
+                                                 ApplicationIdentityBaseConfiguration[] remotes,
+                                                 ref InheritedConfigurationProps inhProps )
             : base( configuration, domainName, fullName, remotes, ref inhProps )
         {
             Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
                             && d == domainName && e == fullName.LastPart && p == fullName.Parts[^2] );
 
             _partyName = fullName.Parts[^2];
+            _storeRootPath = store;
         }
 
         /// <summary>
         /// Gets this application party name.
         /// </summary>
         public string PartyName => _partyName;
+
+        /// <summary>
+        /// Gets the file storage root path.
+        /// <para>
+        /// When not configured, this defaults to "<see cref="Environment.SpecialFolder.LocalApplicationData"/>/CK-AppIdentity/":
+        /// this folder is de facto shared by all applications (parties) that use CK.AppIdentity and run on this computer.
+        /// Such installed parties can use <see cref="ApplicationIdentityService.PrivateStorePath"/> folder to store any application 
+        /// specific data. All installed parties can use <see cref="ApplicationIdentityService.SharedStorePath"/> and <see cref="IRemote.SharedStorePath"/>
+        /// to store and share data related to parties.
+        /// </para>
+        /// </summary>
+        public NormalizedPath StoreRootPath => _storeRootPath;
 
         /// <summary>
         /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a <see cref="IConfigurationSection"/>
@@ -99,13 +119,49 @@ namespace CK.AppIdentity
             var remotes = CreateRemotes( monitor, root.GetSection( "Remotes" ), domainName, environmentName, ref inheritedProps, fullNameIndex );
             success &= remotes != null;
 
+            var store = HandleStorePath( monitor, configuration );
+            success &= store != null;
+
             if( !success )
             {
                 monitor.CloseGroup( "Failed." );
                 return null;
             }
             var fullName = $"{domainName}/${partyName}/{environmentName}";
-            return new ApplicationIdentityServiceConfiguration( root, domainName, fullName, remotes!, ref inheritedProps );
+            return new ApplicationIdentityServiceConfiguration( root, domainName, fullName, store!, remotes!, ref inheritedProps );
+
+            static string? HandleStorePath( IActivityMonitor monitor, IConfigurationSection configuration )
+            {
+                var store = configuration[nameof( StoreRootPath )]?.Trim();
+                if( !string.IsNullOrEmpty( store ) )
+                {
+                    if( FileUtil.IndexOfInvalidPathChars( store ) >= 0 )
+                    {
+                        monitor.Error( $"Invalid path '{configuration.Path}:{nameof( StoreRootPath )}'. Invalid characters in '{store}'." );
+                        return null;
+                    }
+                    if( !Path.IsPathFullyQualified( store ) )
+                    {
+                        monitor.Error( $"Invalid path '{configuration.Path}:{nameof( StoreRootPath )}'. '{store}' must not be relative." );
+                        return null;
+                    }
+                }
+                else
+                {
+                    store = Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify );
+                    store = Path.Combine( store, "CK-AppIdentity" );
+                }
+                try
+                {
+                    Directory.CreateDirectory( store );
+                }
+                catch( Exception ex )
+                {
+                    monitor.Error( $"Unable to create store directory '{store}'.", ex );
+                    return null;
+                }
+                return store;
+            }
         }
 
         static ApplicationIdentityBaseConfiguration[]? CreateRemotes( IActivityMonitor monitor,
