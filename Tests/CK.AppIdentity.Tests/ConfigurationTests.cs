@@ -35,32 +35,54 @@ namespace CK.AppIdentity.Tests
 
             config.FullName.Should().Be( "LaToulousaine/France/Albi/$SignatureBox/#Development" );
             config.DomainName.Should().Be( "LaToulousaine/France/Albi" );
-            config.PartyName.Should().Be( "SignatureBox" );
+            config.PartyName.Should().Be( "$SignatureBox" );
             config.EnvironmentName.Should().Be( "#Development" );
-            config.Local.FullName.Should().Be( "LaToulousaine/France/Albi/$Local/#Development" );
 
             config.Remotes.Should().HaveCount( 3 );
 
-            var logTower = config.Remotes.Single( r => r.FullName == "Signature/SaaSCentral/$LogTower/#Prod" );
-            Debug.Assert( logTower != null );
+            var logTower = config.Remotes.OfType<RemotePartyConfiguration>().Single( r => r.FullName == "Signature/SaaSCentral/$LogTower/#Prod" );
             logTower.DomainName.Should().Be( "Signature/SaaSCentral" );
             logTower.EnvironmentName.Should().Be( "#Prod" );
-            logTower.As<RemotePartyConfiguration>().PartyName.Should().Be( "LogTower" );
+            logTower.As<RemotePartyConfiguration>().PartyName.Should().Be( "$LogTower" );
             logTower.As<RemotePartyConfiguration>().Address.Should().Be( "148.54.11.18:3712" );
 
-            var trolleyCentral = config.Remotes.Single( r => r.FullName == "LaToulousaine/London/$TrolleyCentral/#Development" );
-            Debug.Assert( trolleyCentral != null );
+            var trolleyCentral = config.Remotes.OfType<RemotePartyConfiguration>().Single( r => r.FullName == "LaToulousaine/London/$TrolleyCentral/#Development" );
             trolleyCentral.DomainName.Should().Be( "LaToulousaine/London" );
             trolleyCentral.EnvironmentName.Should().Be( "#Development" );
-            trolleyCentral.As<RemotePartyConfiguration>().PartyName.Should().Be( "TrolleyCentral" );
+            trolleyCentral.As<RemotePartyConfiguration>().PartyName.Should().Be( "$TrolleyCentral" );
             trolleyCentral.As<RemotePartyConfiguration>().Address.Should().BeNull();
 
-            var trolley1 = config.Remotes.Single( r => r.FullName == "LaToulousaine/France/Albi/$Trolley1/#Development" );
-            Debug.Assert( trolley1 != null );
+            var trolley1 = config.Remotes.OfType<RemotePartyConfiguration>().Single( r => r.FullName == "LaToulousaine/France/Albi/$Trolley1/#Development" );
             trolley1.DomainName.Should().Be( "LaToulousaine/France/Albi" );
             trolley1.EnvironmentName.Should().Be( "#Development" );
-            trolley1.As<RemotePartyConfiguration>().PartyName.Should().Be( "Trolley1" );
+            trolley1.As<RemotePartyConfiguration>().PartyName.Should().Be( "$Trolley1" );
             trolley1.As<RemotePartyConfiguration>().Address.Should().BeNull();
         }
+
+        [Test]
+        public void groups_are_recursive()
+        {
+            using var gLog = TestHelper.Monitor.OpenInfo( nameof( groups_are_recursive ) );
+            var good = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, c =>
+            {
+                c["DomainName"] = "SaaSProduct";
+                c["PartyName"] = "SaaS1";
+                c["EnvironmentName"] = "#E";
+                c["Remotes:0:DomainName"] = "D1";
+                c["Remotes:0:Remotes:0:PartyName"] = "A1";
+                c["Remotes:0:Remotes:1:DomainName"] = "D2";
+                c["Remotes:0:Remotes:1:Remotes:0:PartyName"] = "A2";
+            } );
+            Debug.Assert( good != null );
+            var g1 = good.Remotes.Cast<RemoteGroupConfiguration>().Single();
+            g1.Remotes.Should().HaveCount( 2 );
+            var a1 = g1.Remotes.OfType<RemotePartyConfiguration>().Single();
+            a1.FullName.Should().Be( "D1/$A1/#E" );
+            var g2 = g1.Remotes.OfType<RemoteGroupConfiguration>().Single();
+            var a2 = g2.Remotes.OfType<RemotePartyConfiguration>().Single();
+            a2.FullName.Should().Be( "D2/$A2/#E" );
+        }
+
+
     }
 }

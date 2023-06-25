@@ -75,11 +75,11 @@ namespace CK.AppIdentity
             await context.ExecuteTeardownAsync().ConfigureAwait( false );
         }
 
-        record class InitializeDynamicRemoteJob( IRemote Remote, TaskCompletionSource<bool> Result );
+        record class InitializeDynamicRemoteJob( IRemoteInternal Remote, TaskCompletionSource<bool> Result );
 
-        internal void OnDestroy( IRemote remote ) => PushTypedJob( remote );
+        internal void OnDestroy( IRemoteInternal remote ) => PushTypedJob( remote );
 
-        internal Task<bool> InitializeDynamicRemoteAsync( IRemote r )
+        internal Task<bool> InitializeDynamicRemoteAsync( IRemoteInternal r )
         {
             var cts = new TaskCompletionSource<bool>();
             PushTypedJob( new InitializeDynamicRemoteJob( r, cts ) );
@@ -90,7 +90,7 @@ namespace CK.AppIdentity
         {
             switch( job )
             {
-                case RemoteParty destroyed: return HandleDestroyAsync( monitor, destroyed );
+                case IRemoteInternal destroyed: return HandleDestroyAsync( monitor, destroyed );
                 case InitializeDynamicRemoteJob init:
                     if( Status == RunningStatus.Running )
                     {
@@ -108,7 +108,7 @@ namespace CK.AppIdentity
         async ValueTask HandleDynamicRemoteAsync( IActivityMonitor monitor, InitializeDynamicRemoteJob init )
         {
             var r = init.Remote;
-            using( monitor.OpenInfo( $"Initializing dynamic Remote '{r.FullName}' ({_service._builders.Count} feature builders)." ) )
+            using( monitor.OpenInfo( $"Initializing dynamic Remote '{r}' ({_service._builders.Count} feature builders)." ) )
             {
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
                 // The new configured remote is published on the second round of the OnSuccess trampoline.
@@ -129,7 +129,7 @@ namespace CK.AppIdentity
         {
             Debug.Assert( destroyed.DestroyTCS != null );
             var group = destroyed as RemoteGroup;
-            using( monitor.OpenInfo( $"Destroying Remote '{destroyed.FullName}'{(group != null ? $" (group with {group.Remotes.Count} remotes)": "")}." ) )
+            using( monitor.OpenInfo( $"Destroying Remote '{destroyed}'{(group != null ? $" (group with {group.Remotes.Count} remotes)": "")}." ) )
             {
                 // Enables the feature drivers to tear down any existing features, including the
                 // subordinates remotes ones if this remote defines a domain.
@@ -150,7 +150,7 @@ namespace CK.AppIdentity
                 if( group != null ) await group.DestroyAsync( monitor );
 
                 // Eventually signal the remote's destroy completion and raises the event.
-                await destroyed.Owner._remotesChanged.SafeRaiseAsync( monitor, destroyed );
+                await destroyed.Owner.RemotesChanged.SafeRaiseAsync( monitor, destroyed );
                 destroyed.DestroyTCS.SetResult();
             }
         }

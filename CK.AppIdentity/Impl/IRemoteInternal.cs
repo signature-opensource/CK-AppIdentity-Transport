@@ -16,5 +16,7 @@ namespace CK.AppIdentity
         /// Gets the destroyed task source.
         /// </summary>
         TaskCompletionSource? DestroyTCS { get; }
+
+        new IRemoteOwnerInternal Owner { get; }
     }
 }

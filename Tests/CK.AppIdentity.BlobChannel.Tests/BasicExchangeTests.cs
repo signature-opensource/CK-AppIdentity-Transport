@@ -2,6 +2,7 @@ using CK.Core;
 using FluentAssertions;
 using NUnit.Framework;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -17,26 +18,26 @@ namespace CK.AppIdentity.BlobChannel.Tests
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["DomainName"] = "Test";
-                c["Local:Name"] = "Listener";
-                c["Remotes:0:Name"] = "Sender";
+                c["PartyName"] = "Listener";
+                c["Remotes:0:PartyName"] = "Sender";
                 c["AllowFeatures"] = "BlobChannel";
             } );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["DomainName"] = "Test";
-                c["Local:Name"] = "Sender";
-                c["Remotes:0:Name"] = "Listener";
+                c["PartyName"] = "Sender";
+                c["Remotes:0:PartyName"] = "Listener";
                 c["Remotes:0:Address"] = "tcp:127.0.0.1";
                 c["AllowFeatures"] = "BlobChannel";
             } );
-            var listenerChannel = listener.Remotes.FindRequired( sender.Local.Name ).GetRequiredFeature<BlobChannelFeature>();
-            var senderChannel = sender.Remotes.FindRequired( listener.Local.Name ).GetRequiredFeature<BlobChannelFeature>();
+            var listenerChannel = listener.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
+            var senderChannel = sender.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
 
             // Setup Listener reception.
             var listenerReceived = new List<byte[]>();
             listenerChannel.Received.Sync += ( monitor, sender, bytes ) =>
             {
-                monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
+                monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
                 sender.Should().BeSameAs( listenerChannel );
                 listenerReceived.Add( bytes );
             };
@@ -44,7 +45,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var senderReceived = new List<byte[]>();
             senderChannel.Received.Sync += ( monitor, sender, bytes ) =>
             {
-                monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
+                monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
                 sender.Should().BeSameAs( senderChannel );
                 senderReceived.Add( bytes );
             };
@@ -139,8 +140,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
                     c["DomainName"] = "Test";
-                    c["Local:Name"] = "Listener";
-                    c["Remotes:0:Name"] = "Sender";
+                    c["PartyName"] = "Listener";
+                    c["Remotes:0:PartyName"] = "Sender";
                     c["AllowFeatures"] = "BlobChannel";
                 } );
             }
@@ -150,8 +151,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
                     c["DomainName"] = "Test";
-                    c["Local:Name"] = "Sender";
-                    c["Remotes:0:Name"] = "Listener";
+                    c["PartyName"] = "Sender";
+                    c["Remotes:0:PartyName"] = "Listener";
                     c["Remotes:0:Address"] = "tcp:127.0.0.1";
                     c["AllowFeatures"] = "BlobChannel";
                 } );
@@ -159,10 +160,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
             static BlobChannelFeature SetupChannel( ApplicationIdentityService from, ApplicationIdentityService to, List<byte[]> receivedData )
             {
-                var channel = from.Remotes.FindRequired( to.Local.Name ).GetRequiredFeature<BlobChannelFeature>();
+                var channel = from.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
                 channel.Received.Sync += ( monitor, sender, bytes ) =>
                 {
-                    monitor.Info( $"{sender.Transport.Party.ApplicationIdentity}: RECEIVED {bytes.Length} bytes." );
+                    monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
                     receivedData.Add( bytes );
                 };
                 return channel;

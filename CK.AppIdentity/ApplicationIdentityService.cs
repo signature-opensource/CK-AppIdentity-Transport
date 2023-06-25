@@ -1,4 +1,5 @@
 using CK.Core;
+using CK.PerfectEvent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using System;
@@ -16,13 +17,14 @@ namespace CK.AppIdentity
     /// <summary>
     /// Singleton hosted service that is the local party and the root collection of <see cref="IRemote"/>.
     /// </summary>
-    public sealed class ApplicationIdentityService : RemoteCollection, ISingletonAutoService, IHostedService, IAsyncDisposable
+    public sealed class ApplicationIdentityService : ApplicationIdentityParty, IRemoteOwnerInternal, ISingletonAutoService, IHostedService, IAsyncDisposable
     {
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _initialization;
         readonly NormalizedPath _privateStorePath;
         readonly NormalizedPath _sharedStorePath;
+        RemoteOwnerImpl _remotes;
 
         /// <summary>
         /// Initializes a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
@@ -36,9 +38,19 @@ namespace CK.AppIdentity
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
             _agent = new AppIdentityAgent( this, serviceProvider );
-            _sharedStorePath = configuration.StoreRootPath.Combine( FullName );
+            _sharedStorePath = ComputeSharedStorePath( FullName );
             _privateStorePath = _sharedStorePath.AppendPart( "$Local" );
             Directory.CreateDirectory( _privateStorePath );
+            _remotes = new RemoteOwnerImpl( this );
+            _remotes.Initialize( this, configuration.Remotes );
+        }
+
+        internal NormalizedPath ComputeSharedStorePath( NormalizedPath fullName )
+        {
+            Debug.Assert( fullName.Parts.Count >= 2 && fullName.LastPart[0] == '#' );
+            var env = fullName.LastPart;
+            var p = fullName.Path;
+            return Configuration.StoreRootPath.Combine( $"{env}/{p.AsSpan( 0, p.Length - env.Length - 1 )}" );
         }
 
         internal AppIdentityAgent Agent => _agent;
@@ -47,11 +59,6 @@ namespace CK.AppIdentity
         /// Gets the <see cref="ApplicationIdentityServiceConfiguration"/> object.
         /// </summary>
         public new ApplicationIdentityServiceConfiguration Configuration => Unsafe.As<ApplicationIdentityServiceConfiguration>( _configuration );
-
-        /// <summary>
-        /// Gets the this application party name.
-        /// </summary>
-        public string PartyName => Configuration.PartyName;
 
         /// <summary>
         /// Gets the path to the "$Local" directory of this party inside the <see cref="SharedStorePath"/>.
@@ -63,6 +70,27 @@ namespace CK.AppIdentity
         /// </summary>
         public NormalizedPath SharedStorePath => _sharedStorePath;
 
+        /// <inheritdoc />
+        public IReadOnlyCollection<IRemote> Remotes => _remotes.Remotes;
+
+        /// <inheritdoc />
+        public IEnumerable<IRemote> AllRemotes => _remotes.AllRemotes;
+
+        /// <inheritdoc />
+        public PerfectEvent<IRemote> RemotesChanged => _remotes.RemotesChanged.PerfectEvent;
+
+        /// <inheritdoc />
+        public Task<IRemote?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        {
+            return _remotes.AddDynamicRemotePartyAsync( this, monitor, configuration, _agent, Configuration.DomainName, Configuration.EnvironmentName );
+        }
+
+        PerfectEventSender<IRemote> IRemoteOwnerInternal.RemotesChanged => _remotes.RemotesChanged;
+
+        void IRemoteOwnerInternal.RemoveDestroyed( IRemote destroyed ) => _remotes.RemoveDestroyed( destroyed );
+
+        void IRemoteOwnerInternal.OnSuccessAddRemoteAsync( IActivityMonitor monitor, IRemote r ) => _remotes.OnSuccessAddRemoteAsync( monitor, r );
+
         /// <summary>
         /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been
         /// initialized. Initialization errors are set on this task if exceptions occurred: awaiting this
@@ -72,12 +100,6 @@ namespace CK.AppIdentity
         /// </para>
         /// </summary>
         public Task InitializationTask => _initialization.Task;
-
-        /// <inheritdoc />
-        public Task<IRemote?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
-        {
-            return AddDynamicRemotePartyAsync( monitor, configuration, true, _agent, Configuration.DomainName, Configuration.EnvironmentName );
-        }
 
 
         Task IHostedService.StartAsync( CancellationToken cancellationToken )

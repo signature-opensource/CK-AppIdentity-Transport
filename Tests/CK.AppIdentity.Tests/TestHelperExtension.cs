@@ -23,7 +23,7 @@ namespace CK.AppIdentity.Tests
         /// <returns>The started service.</returns>
         public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this, Action<MutableConfigurationSection> configuration )
         {
-            var c = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, configuration );
+            var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
             Debug.Assert( c != null );
             return CreateApplicationServiceAsync( @this, c );
         }
@@ -35,7 +35,7 @@ namespace CK.AppIdentity.Tests
         /// <param name="this">This test helper.</param>
         /// <param name="c">The configuration.</param>
         /// <returns>The started service.</returns>
-        public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this, ApplicationIdentityConfiguration c )
+        public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this, ApplicationIdentityServiceConfiguration c )
         {
             var serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );

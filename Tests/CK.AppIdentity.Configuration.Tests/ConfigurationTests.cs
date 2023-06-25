@@ -22,17 +22,17 @@ namespace CK.AppIdentity.Configuration.Tests
         public void AppIdentityConfiguration_from_IHostEnvironment_and_IConfiguration_can_be_default()
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( AppIdentityConfiguration_from_IHostEnvironment_and_IConfiguration_can_be_default ) );
-            using var config = new ConfigurationManager();
+            var config = new MutableConfigurationSection( "FakePath" );
             var hostEnv = new HostingEnvironment()
             {
                 ApplicationName = "HostApp",
                 EnvironmentName = "HostEnv",
             };
-            var appIdentity = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
+            var appIdentity = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, hostEnv, config );
             Debug.Assert( appIdentity != null );
             appIdentity.DomainName.Should().Be( "Default" );
-            appIdentity.EnvironmentName.Should().Be( "HostEnv" );
-            appIdentity.Local.Name.Should().Be( "HostApp" );
+            appIdentity.EnvironmentName.Should().Be( "#HostEnv" );
+            appIdentity.PartyName.Should().Be( "$HostApp" );
             appIdentity.Remotes.Should().BeEmpty();
         }
 
@@ -40,29 +40,30 @@ namespace CK.AppIdentity.Configuration.Tests
         public void AppIdentityConfiguration_from_IHostEnvironment_and_IConfiguration()
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( AppIdentityConfiguration_from_IHostEnvironment_and_IConfiguration ) );
-            using var config = new ConfigurationManager();
+            var config = new MutableConfigurationSection( "FakePath" );
             var hostEnv = new HostingEnvironment()
             {
                 ApplicationName = "HostApp",
                 EnvironmentName = "HostEnv",
             };
             config["CK-AppIdentity:DomainName"] = "OurDomain";
-            config["CK-AppIdentity:EnvironmentName"] = "TestEnvironment";
-            config["CK-AppIdentity:Local:Name"] = "MyApp";
-            config["CK-AppIdentity:Remotes:0:Name"] = "Daddy";
+            config["CK-AppIdentity:EnvironmentName"] = "#TestEnvironment";
+            config["CK-AppIdentity:PartyName"] = "MyApp";
+            config["CK-AppIdentity:Remotes:0:PartyName"] = "Daddy";
             config["CK-AppIdentity:Remotes:0:Address"] = "http://x.x";
-            var appIdentity = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetSection( "CK-AppIdentity" ) );
+            var appIdentity = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetRequiredSection( "CK-AppIdentity" ) );
             Debug.Assert( appIdentity != null );
 
             appIdentity.DomainName.Should().Be( "OurDomain" );
-            appIdentity.EnvironmentName.Should().Be( "TestEnvironment" );
-            appIdentity.Local.Name.Should().Be( "MyApp" );
+            appIdentity.EnvironmentName.Should().Be( "#TestEnvironment" );
+            appIdentity.PartyName.Should().Be( "$MyApp" );
             appIdentity.Remotes.Should().HaveCount(1);
-            var remote = appIdentity.Remotes.Single();
-            remote.Name.Should().Be( "Daddy" );
+            var remote = appIdentity.Remotes.Single() as RemotePartyConfiguration;
+            Debug.Assert( remote != null );
+            remote.PartyName.Should().Be( "$Daddy" );
             remote.Address.Should().Be( "http://x.x" );
             remote.DomainName.Should().Be( "OurDomain" );
-            remote.EnvironmentName.Should().Be( "TestEnvironment" );
+            remote.EnvironmentName.Should().Be( "#TestEnvironment" );
         }
 
         [Test]
@@ -85,6 +86,7 @@ namespace CK.AppIdentity.Configuration.Tests
             var config = new DynamicConfigurationSource();
             config["CK-Monitoring:GrandOutput:Handlers:TextFile:Path"] = textDir;
             config["CK-Monitoring:GrandOutput:Handlers:BinaryFile:Path"] = ckMonDir;
+            config["CK-AppIdentity:DomainName"] = "TestDomain";
 
             var hostBuilder = new HostBuilder()
                                 .ConfigureAppConfiguration( ( hostingContext, c ) => c.Add( config ) )

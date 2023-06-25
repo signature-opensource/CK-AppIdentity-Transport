@@ -70,10 +70,10 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Must do whatever is required to register features into <see cref="ApplicationIdentityService.Features"/>
-        /// and any <see cref="ILocalParty.Features"/>, <see cref="IRemoteParty.Features"/> and <see cref="IRemoteParty.DomainApplicationIdentity"/>'s features.
+        /// and any <see cref="IApplicationIdentityObject.Features"/>.
         /// <para>
         /// The <see cref="ApplicationIdentityService"/> property is available as well as helpers to know if this feature is allowed on
-        /// a party (see <see cref="IsAllowedFeature(ILocalParty)"/> and <see cref="IsAllowedFeature(IRemoteParty)"/>).
+        /// a party (see <see cref="IsAllowedFeature(IRemote)"/>).
         /// </para>
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
@@ -84,8 +84,8 @@ namespace CK.AppIdentity
         internal protected abstract Task<bool> SetupAsync( FeatureLifetimeContext context );
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="ApplicationIdentityObject.Features"/> for the remote and any subordinated remotes
-        /// if the remote is a <see cref="RemoteGroup"/>.
+        /// Must do whatever is required to register features into <see cref="ApplicationIdentityObject.Features"/> for the remote and any
+        /// subordinated remotes if the remote is a <see cref="RemoteGroup"/>.
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
         /// </para>

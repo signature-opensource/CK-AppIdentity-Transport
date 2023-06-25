@@ -70,7 +70,7 @@ namespace CK.AppIdentity.TransportLayer
         public InitialMessage( TransportFeature f )
         {
             Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
-            _incomingFullName = f.Party.ApplicationIdentity.Local.FullName;
+            _incomingFullName = f.Party.ApplicationIdentityService.FullName;
             _instanceId = CoreApplicationIdentity.InstanceId;
             _endPointDescription = string.Empty;
             _remoteEndPointDescription = string.Empty;

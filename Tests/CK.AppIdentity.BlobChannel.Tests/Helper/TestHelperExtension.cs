@@ -22,7 +22,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                                                                                       Action<MutableConfigurationSection> configuration,
                                                                                       Action<ServiceCollection>? configureServices = null )
         {
-            var c = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, configuration );
+            var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
             Debug.Assert( c != null );
             return CreateApplicationServiceAsync( @this, c, configureServices );
         }
@@ -35,7 +35,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <param name="c">The configuration.</param>
         /// <returns>The started service.</returns>
         public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
-                                                                                            ApplicationIdentityConfiguration c,
+                                                                                            ApplicationIdentityServiceConfiguration c,
                                                                                             Action<ServiceCollection>? configureServices = null )
         {
             var serviceBuilder = new ServiceCollection();

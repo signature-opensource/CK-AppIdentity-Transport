@@ -23,29 +23,30 @@ namespace CK.AppIdentity.Tests
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( without_feature_builders_Async ) );
             await using ApplicationIdentityService s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
+                c["DomainName"] = "D";
                 c["EnvironmentName"] = "#Production";
-                c["Local:Name"] = "MyApp";
-                c["Remotes:0:Name"] = "Remote1";
-                c["Remotes:1:Name"] = "Remote2";
+                c["PartyName"] = "MyApp";
+                c["Remotes:0:PartyName"] = "Remote1";
+                c["Remotes:1:PartyName"] = "Remote2";
             } );
 
-            s.DomainName.Should().Be( "Default" );
+            s.DomainName.Should().Be( "D" );
             s.EnvironmentName.Should().Be( "#Production" );
-            s.Local.Name.Should().Be( "MyApp" );
-            s.Local.Features.Should().BeEmpty();
+            s.PartyName.Should().Be( "$MyApp" );
+            s.Features.Should().BeEmpty();
 
             s.Remotes.Should().HaveCount( 2 );
-            var r1 = s.Remotes.Single( r => r.Name == "Remote1" );
+            var r1 = s.Remotes.OfType<RemoteParty>().Single( r => r.PartyName == "$Remote1" );
             r1.IsDynamic.Should().BeFalse();
             r1.Address.Should().BeNull();
-            r1.DomainName.Should().Be( "Default" );
+            r1.DomainName.Should().Be( "D" );
             r1.EnvironmentName.Should().Be( "#Production" );
             r1.Features.Should().BeEmpty();
 
-            var r2 = s.Remotes.Single( r => r.Name == "Remote2" );
+            var r2 = s.Remotes.OfType<RemoteParty>().Single( r => r.PartyName == "$Remote2" );
             r2.IsDynamic.Should().BeFalse();
             r2.Address.Should().BeNull();
-            r2.DomainName.Should().Be( "Default" );
+            r2.DomainName.Should().Be( "D" );
             r2.EnvironmentName.Should().Be( "#Production" );
             r2.Features.Should().BeEmpty();
 
@@ -84,7 +85,7 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
+            protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
             {
                 _dynamicSetupCount++;
                 context.Monitor.Trace( $"SetupDynamic {GetType().Name} ({SetupOrder})." );
@@ -93,7 +94,7 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+            protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
             {
                 _dynamicTeardownCount++;
                 context.Monitor.Trace( $"TeardownDynamic {GetType().Name} ({SetupOrder})." );
@@ -171,7 +172,7 @@ namespace CK.AppIdentity.Tests
         {
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( feature_builders_initialization_follows_the_dependency_order_Async ) );
             CheckOrderFeatureDriver.Reset();
-            var c = ApplicationIdentityConfiguration.Create( TestHelper.Monitor, c => c["Local:Name"] = "FakeApp" );
+            var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, c => c["FullName"] = "FakeDomain/$FakeApp" );
             Debug.Assert( c != null );
             ServiceCollection serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );
@@ -222,7 +223,7 @@ namespace CK.AppIdentity.Tests
 
             var r = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
-                c["Name"] = "SomeDynamicRemote";
+                c["PartyName"] = "SomeDynamicRemote";
             } );
             Debug.Assert( r != null );
             CheckOrderFeatureDriver._dynamicSetupCount.Should().Be( 7 );

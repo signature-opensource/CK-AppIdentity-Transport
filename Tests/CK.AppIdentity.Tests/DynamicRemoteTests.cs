@@ -19,8 +19,7 @@ namespace CK.AppIdentity.Tests
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( creating_and_destroying_dynamic_remote_and_check_RemotesChanged_event_Async ) );
             await using ApplicationIdentityService s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
-                c["DomainName"] = "OneCS-SaaS";
-                c["Local:Name"] = "OneCS1";
+                c["FullName"] = "OneCS-SaaS/$OneCS1";
             } );
             var events = new List<string>();
             s.RemotesChanged.Sync += ( m, r ) =>
@@ -29,13 +28,13 @@ namespace CK.AppIdentity.Tests
                 string msg;
                 if( appear )
                 {
-                    msg = $"'{r.FullName}' appeared.";
-                    r.ApplicationIdentity.Remotes.Should().Contain( r, msg );
+                    msg = $"'{r}' appeared.";
+                    r.ApplicationIdentityService.AllRemotes.Should().Contain( r, msg );
                 }
                 else
                 {
-                    msg = $"'{r.FullName}' disappeared.";
-                    r.ApplicationIdentity.Remotes.Should().NotContain( r, msg );
+                    msg = $"'{r}' disappeared.";
+                    r.ApplicationIdentityService.AllRemotes.Should().NotContain( r, msg );
                 }
                 m.Trace( msg );
                 events.Add( msg );
@@ -43,38 +42,29 @@ namespace CK.AppIdentity.Tests
             Debug.Assert( s != null );
             s.Remotes.Should().BeEmpty();
 
-            // Adding a simple remote.
+            // Adding a simple remote. This is a RemoteParty.
             var logTower = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
-                c["Name"] = "LogTower";
-            } );
+                c["PartyName"] = "LogTower";
+            } ) as RemoteParty;
             Debug.Assert( logTower != null );
             logTower.DomainName.Should().Be( s.DomainName );
             logTower.EnvironmentName.Should().Be( s.EnvironmentName );
-            logTower.Name.Should().Be( "LogTower" );
+            logTower.PartyName.Should().Be( "$LogTower" );
             s.Remotes.Single().Should().BeSameAs( logTower );
-            logTower.IsRooted.Should().BeTrue( "This remote is in the root ApplicationIdentityService." );
             logTower.IsDynamic.Should().BeTrue( "This remote is dynamic." );
 
-            // Adding a remote that is a domain with an initial configured remote.
-            var domain = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            // Adding a remote that is a group with an initial configured remote.
+            var laToulousaine = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
-                c["Name"] = "LaToulousaine";
+                c["DomainName"] = "LaToulousaine";
                 c["EnvironmentName"] = "#Debug";
-                c["Domain:Remotes:0:Name"] = "SignatureBox";
-            } );
-            Debug.Assert( domain != null );
-            domain.FullName.Should().Be( "OneCS-SaaS/LaToulousaine/#Debug" );
-            domain.IsDynamic.Should().BeTrue();
-            domain.IsRooted.Should().BeTrue();
-            // This remote has a non null DomainApplicationIdentity.
-            var laToulousaine = domain.DomainApplicationIdentity;
-            Debug.Assert( laToulousaine != null, "The remote hosts the domain." );
-            // This new domain is in a "Debug" environment name.
-            laToulousaine.EnvironmentName.Should().Be( "#Debug" );
-            var signatureBox = laToulousaine.Remotes.Single();
+                c["Remotes:0:PartyName"] = "SignatureBox";
+            } ) as RemoteGroup;
+            Debug.Assert( laToulousaine != null );
+            laToulousaine.IsDynamic.Should().BeTrue();
+            var signatureBox = (RemoteParty)laToulousaine.Remotes.Single();
             signatureBox.FullName.Should().Be( "LaToulousaine/$SignatureBox/#Debug" );
-            signatureBox.IsRooted.Should().BeFalse( "The signatureBox is not rooted: it belongs to a DomainApplicationIdentity." );
             signatureBox.IsDynamic.Should().BeFalse( "The signatureBox is configured: it is not dynamic." );
             FluentActions.Invoking( () => signatureBox.SetDestroyed() )
                 .Should().Throw<InvalidOperationException>( "A non dynamic remote is NOT destroyable." );
@@ -82,8 +72,8 @@ namespace CK.AppIdentity.Tests
             // Adding a new dynamic remote to a dynamic domain.
             var theTrolley = await laToulousaine.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
-                c["Name"] = "Trolley1";
-            } );
+                c["PartyName"] = "Trolley1";
+            } ) as RemoteParty;
             Debug.Assert( theTrolley != null );
             theTrolley.FullName.Should().Be( "LaToulousaine/$Trolley1/#Debug" );
             theTrolley.IsDynamic.Should().BeTrue();
@@ -92,8 +82,8 @@ namespace CK.AppIdentity.Tests
             // Adding another new dynamic remote to a dynamic domain.
             var theTrolley2 = await laToulousaine.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
             {
-                c["Name"] = "Trolley2";
-            } );
+                c["PartyName"] = "Trolley2";
+            } ) as RemoteParty;
             Debug.Assert( theTrolley2 != null );
             theTrolley2.FullName.Should().Be( "LaToulousaine/$Trolley2/#Debug" );
             theTrolley2.IsDynamic.Should().BeTrue();
@@ -116,31 +106,31 @@ namespace CK.AppIdentity.Tests
 
             // Destroying the remote "OneCS-SaaS/Debug/LaToulousaine" that defines a domain
             // with "LaToulousaine/Debug/SignatureBox" (static) and "LaToulousaine/Debug/Trolley2" (dynamic) in it.
-            await domain.DestroyAsync();
+            await laToulousaine.DestroyAsync();
             s.Remotes.Should().BeEmpty();
 
             events.Should().BeEquivalentTo( new string[]
             {
                 "'OneCS-SaaS/$LogTower/#Development' appeared.",
 
-                // A remote that defines a domain appears and its initially defined
+                // A group appears and its initially defined
                 // remotes also appear in the events (as if it was dynamically added):
                 // the event unifies the behavior.
-                "'OneCS-SaaS/Debug/LaToulousaine' appeared.",
-                "'LaToulousaine/Debug/SignatureBox' appeared.",
+                "'Group 'LaToulousaine/#Debug'' appeared.",
+                "'LaToulousaine/$SignatureBox/#Debug' appeared.",
 
-                "'LaToulousaine/Debug/Trolley1' appeared.",
-                "'LaToulousaine/Debug/Trolley2' appeared.",
+                "'LaToulousaine/$Trolley1/#Debug' appeared.",
+                "'LaToulousaine/$Trolley2/#Debug' appeared.",
 
-                "'OneCS-SaaS/Development/LogTower' disappeared.",
+                "'OneCS-SaaS/$LogTower/#Development' disappeared.",
 
-                "'LaToulousaine/Debug/Trolley1' disappeared.",
+                "'LaToulousaine/$Trolley1/#Debug' disappeared.",
 
-                // When a remote that defines a domain is destroyed, its destroyed remotes
+                // When a group is destroyed, its destroyed remotes
                 // appear before it.
-                "'LaToulousaine/Debug/SignatureBox' disappeared.",
-                "'LaToulousaine/Debug/Trolley2' disappeared.",
-                "'OneCS-SaaS/Debug/LaToulousaine' disappeared."
+                "'LaToulousaine/$SignatureBox/#Debug' disappeared.",
+                "'LaToulousaine/$Trolley2/#Debug' disappeared.",
+                "'Group 'LaToulousaine/#Debug'' disappeared."
             } );
         }
     }

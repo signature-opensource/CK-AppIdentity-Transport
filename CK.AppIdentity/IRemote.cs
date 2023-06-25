@@ -11,12 +11,7 @@ namespace CK.AppIdentity
         /// Gets this remote's owner.
         /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="RemoteGroup"/>.
         /// </summary>
-        RemoteCollection Owner { get; }
-
-        /// <summary>
-        /// Gets whether this remote is hosted by the root <see cref="ApplicationIdentityService"/>.
-        /// </summary>
-        bool IsRooted { get; }
+        IRemoteOwner Owner { get; }
 
         /// <summary>
         /// Gets whether this is a dynamic remote.

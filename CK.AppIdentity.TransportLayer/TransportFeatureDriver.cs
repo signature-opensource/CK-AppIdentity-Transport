@@ -34,30 +34,28 @@ namespace CK.AppIdentity.TransportLayer
             // Even if initialization fails, register the features: it may be required by others.
             ApplicationIdentityService.AddFeature( _transportManager );
             // Domains named "Undefined" have no Transport.
-            foreach( var r in context.GetAllLeafRemotes()
-                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
             }
             return Task.FromResult( true );
         }
 
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty remoteParty )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
         {
             bool success = true;
             // Domains named "Undefined" have no Transport.
-            foreach( var r in context.GetAllLeafRemotes()
-                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
         {
             Debug.Assert( _transportManager != null );
-            foreach( var r in context.GetAllLeafRemotes() )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
             {
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null ) _transportManager.TearDown( t );
@@ -68,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
             Debug.Assert( _transportManager != null );
-            foreach( var r in context.GetAllLeafRemotes() )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
             {
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null ) _transportManager.TearDown( t );
@@ -79,7 +77,7 @@ namespace CK.AppIdentity.TransportLayer
             return _transportManager.RunningTask;
         }
 
-        bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r )
+        bool PlugTransportFeature( FeatureLifetimeContext context, RemoteParty r )
         {
             Debug.Assert( _transportManager != null );
             Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
@@ -164,7 +162,7 @@ namespace CK.AppIdentity.TransportLayer
             return transport.ParseAddress( monitor, typed, section );
         }
 
-        bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
+        bool ResolveAdresses( IActivityMonitor monitor, RemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
         {
             listen = null;
             target = null;
@@ -179,7 +177,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             // No Address: lookup for the ListeningAddress.
             // ReadListeningAddresses returns true if no error occurred but the address map can be null.
-            if( !ReadListeningAddresses( monitor,r, out var available ) )
+            if( !ReadListeningAddresses( monitor, r, out var available ) )
             {
                 return false;
             }
@@ -191,13 +189,13 @@ namespace CK.AppIdentity.TransportLayer
                 return true;
             }
             // If there is no "ListeningAddress" at all, consider the default tcp listening address
-            // bound to the root ApplicationIdentityService.Local configuration.
-            var rootLocalConfiguration = r.ApplicationIdentity.ApplicationIdentityService.Configuration.Local.Configuration;
+            // bound to the root ApplicationIdentityService configuration.
+            var rootConfiguration = r.ApplicationIdentityService.Configuration.Configuration;
             if( available == null )
             {
                 var tcpDef = _tcp.DefaultListeningAddress;
                 Debug.Assert( tcpDef != null );
-                listen = new TransportTypeAddress( _tcp, rootLocalConfiguration, tcpDef );
+                listen = new TransportTypeAddress( _tcp, rootConfiguration, tcpDef );
                 return true;
             }
             // If there is more than one type of Transport, inject the defaults of all transport type (if supported and
@@ -209,7 +207,7 @@ namespace CK.AppIdentity.TransportLayer
                     var def = t.DefaultListeningAddress;
                     if( def != null )
                     {
-                        available.Add( t, new TransportTypeAddress( t, rootLocalConfiguration, def ) );
+                        available.Add( t, new TransportTypeAddress( t, rootConfiguration, def ) );
                     }
                 }
             }
@@ -234,13 +232,13 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
-        bool ReadListeningAddresses( IActivityMonitor monitor, IRemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
+        bool ReadListeningAddresses( IActivityMonitor monitor, RemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
         {
             result = null;
             List<ITransportTypeService>? locally = null;
             foreach( var config in r.Configuration.Configuration.LookupAllSection( "ListeningAddress" ) )
             {
-                var onLevel = ApplicationIdentityConfiguration.ReadStringArray( monitor, config );
+                var onLevel = config.ReadStringArray( monitor );
                 if( onLevel == null ) return false;
                 if( onLevel.Length > 0 )
                 {

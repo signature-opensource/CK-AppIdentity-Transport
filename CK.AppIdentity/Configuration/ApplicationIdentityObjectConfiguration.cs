@@ -1,49 +1,32 @@
 using CK.Core;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace CK.AppIdentity
 {
+
     /// <summary>
     /// Base class of all configuration objects.
+    /// This is also the configuration of an external remote (when DomainName is <see cref="CoreApplicationIdentity.DefaultDomainName"/>).
     /// </summary>
-    public abstract partial class ApplicationIdentityBaseConfiguration
+    public class ApplicationIdentityObjectConfiguration
     {
         readonly ImmutableConfigurationSection _configuration;
-        readonly string _domainName;
-        readonly string _environmentName;
-        readonly NormalizedPath _fullName;
         readonly IReadOnlySet<string> _disallowFeatures;
         readonly IReadOnlySet<string> _allowFeatures;
 
-        internal ApplicationIdentityBaseConfiguration( ImmutableConfigurationSection configuration,
-                                                       string domainName,
-                                                       NormalizedPath fullName,
-                                                       ref InheritedConfigurationProps props )
+        internal ApplicationIdentityObjectConfiguration( ImmutableConfigurationSection configuration, ref InheritedConfigurationProps props )
         {
-            Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out _, out var e ) && d == domainName && e == fullName.LastPart );
             _allowFeatures = props.AllowFeatures;
             _disallowFeatures = props.DisallowFeatures;
             _configuration = configuration;
-            _domainName = domainName;
-            _environmentName = fullName.LastPart;
-            _fullName = fullName;
         }
 
         /// <summary>
         /// Gets the configuration section for this object.
         /// </summary>
         public ImmutableConfigurationSection Configuration => _configuration;
-
-        /// <summary>
-        /// Gets the domain name.
-        /// </summary>
-        public string DomainName => _domainName;
-
-        /// <summary>
-        /// Gets the environment name.
-        /// </summary>
-        public string EnvironmentName => _environmentName;
 
         /// <summary>
         /// Gets a set of feature names that are disabled at this level.
@@ -56,12 +39,6 @@ namespace CK.AppIdentity
         /// No duplicate and no <see cref="DisallowFeatures"/> must appear in this set.
         /// </summary>
         public IReadOnlySet<string> AllowFeatures => _allowFeatures;
-
-        /// <summary>
-        /// Gets the full name of this object: the DomainName/EnvironmentName (for domains)
-        /// or DomainName/PartyName/EnvironmentName scheme (for parties).
-        /// </summary>
-        public NormalizedPath FullName => _fullName;
 
         /// <summary>
         /// Computes whether a features is allowed at this level based on <paramref name="isAllowedAbove"/>
@@ -80,6 +57,50 @@ namespace CK.AppIdentity
             return AllowFeatures.Contains( featureName );
         }
 
+        /// <summary>
+        /// Creates a configuration with a "Dynamic" key that inherits from this configuration.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="configuration">The dynamic configurator.</param>
+        /// <param name="thisDomainName">Default domain name to use.</param>
+        /// <param name="thisEnvironmentName">Default environment name to use.</param>
+        /// <returns>A configuration or null if an error occurred.</returns>
+        internal ApplicationIdentityObjectConfiguration? CreateDynamicRemoteConfiguration( IActivityMonitor monitor,
+                                                                                           Action<MutableConfigurationSection> configuration,
+                                                                                           string thisDomainName,
+                                                                                           string thisEnvironmentName )
+        {
+            // Anchors the new mutable section below this section: lookups apply.
+            // 
+            // The "Remotes:X" levels are useless. We don't need these because these slots don't carry any
+            // information other than the "collection" (array) and the "index" that we totally ignore.
+            // 
+            var anchor = Configuration;
+            var remotes = new MutableConfigurationSection( anchor );
+            var c = remotes.GetMutableSection( "Dynamic" );
+            Debug.Assert( string.IsInterned( c.Key ) == "Dynamic" );
+            configuration( c );
+            var finalConfig = new ImmutableConfigurationSection( c, anchor );
+            var inheritedProps = new InheritedConfigurationProps( this );
+            // We obviously have a race condition here on the full name unicity.
+            // The fact that no full name conflict offers no guaranty when the new configuration
+            // will be added.
+            // The fact that a full name conflicts is more interesting... But without more
+            // concurrency guaranty.
+            // We don't inject any "existing" names here: it is up to the actual add to handle
+            // existing remotes.
+            var fullNameIndex = new Dictionary<string, ImmutableConfigurationSection>( StringComparer.OrdinalIgnoreCase );
+            return ApplicationIdentityServiceConfiguration.CreateRemote( monitor,
+                                                                         finalConfig,
+                                                                         thisDomainName,
+                                                                         thisEnvironmentName,
+                                                                         ref inheritedProps,
+                                                                         fullNameIndex );
+        }
+
+        public override string ToString() => $"{GetType().Name} - {_configuration.ToString()}";
+
+        #region Names reading
         private protected enum NameKind
         {
             Domain,
@@ -201,6 +222,6 @@ namespace CK.AppIdentity
             }
             return true;
         }
-
+        #endregion
     }
 }

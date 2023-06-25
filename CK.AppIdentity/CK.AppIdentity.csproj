@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0-preview.3.23174.8" />
-    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0036-develop" />
-    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0026-develop" />
+    <PackageReference Include="CK.ActivityMonitor.SimpleSender" Version="18.0.1--0037-develop" />
+    <PackageReference Include="CK.PerfectEvent" Version="19.0.1--0027-develop" />
   </ItemGroup>
 
 </Project>

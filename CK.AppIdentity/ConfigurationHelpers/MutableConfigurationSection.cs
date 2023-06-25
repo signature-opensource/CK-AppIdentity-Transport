@@ -11,6 +11,10 @@ namespace CK.AppIdentity
     /// <summary>
     /// Mutable <see cref="IConfigurationSection"/>: this acts as a simple configuration builder
     /// that can then be captured by a <see cref="ImmutableConfigurationSection"/>.
+    /// <para>
+    /// Methods from <see cref="IConfigurationSection"/> are explicitly implemented, all their "mutable"
+    /// equivalent exist: <see cref="GetMutableSection(string)"/>, <see cref="GetMutableChildren()"/>.
+    /// </para>
     /// </summary>
     public sealed class MutableConfigurationSection : IConfigurationSection
     {
@@ -19,6 +23,18 @@ namespace CK.AppIdentity
         string? _value;
         readonly List<MutableConfigurationSection> _children;
         MutableConfigurationSection? _withValue;
+
+        /// <summary>
+        /// Initializes a new <see cref="MutableConfigurationSection"/> on a root path.
+        /// </summary>
+        /// <param name="path">The root path. It must be a valid path.</param>
+        public MutableConfigurationSection( string path )
+        {
+            CheckKeyArgument( path, path, nameof( path ) );
+            _key = ConfigurationPath.GetSectionKey( path );
+            _path = path;
+            _children = new List<MutableConfigurationSection>();
+        }
 
         /// <summary>
         /// Initializes a new <see cref="ImmutableConfigurationSection"/>.
@@ -38,18 +54,6 @@ namespace CK.AppIdentity
             _value = section.Value;
             _withValue = withValue ?? (_value != null ? this : null);
             _children = section.GetChildren().Select( c => new MutableConfigurationSection( c, _withValue ) ).ToList();
-        }
-
-        /// <summary>
-        /// Initializes a new <see cref="MutableConfigurationSection"/> on a root path.
-        /// </summary>
-        /// <param name="path">The root path. It must be a valid path.</param>
-        public MutableConfigurationSection( string path )
-        {
-            CheckKeyArgument( path, path, nameof( path ) );
-            _key = ConfigurationPath.GetSectionKey( path );
-            _path = path;
-            _children = new List<MutableConfigurationSection>();
         }
 
 
@@ -86,7 +90,7 @@ namespace CK.AppIdentity
         public string Path => _path;
 
         /// <summary>
-        /// Gets the section value. Setting it clears the <see cref="GetChildren()"/> collection.
+        /// Gets the section value. Setting it clears the <see cref="GetMutableChildren()"/> collection.
         /// Setting a null value makes this section empty: <see cref="ConfigurationExtensions.Exists(IConfigurationSection)"/>
         /// becomes false.
         /// </summary>

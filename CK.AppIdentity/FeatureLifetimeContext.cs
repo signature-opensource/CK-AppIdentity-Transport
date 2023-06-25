@@ -29,13 +29,32 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Gets the remotes that are concerned by the current operation (either the <see cref="ApplicationIdentityService"/> one's
-        /// for <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
-        /// or the <see cref="IRemote"/> one's for <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
-        /// <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>).
+        /// Gets the remotes that are concerned by the current operation, skipping any intermediate <see cref="RemoteGroup"/>.
+        /// <list type="bullet">
+        ///   <item>
+        ///   For <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
+        ///   these are all <see cref="RemoteParty"/> and <see cref="RemoteExternal"/> of the application (depth-first traversal).
+        ///   </item>
+        ///   <item>
+        ///   For <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
+        ///   <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>
+        ///   this can be the <see cref="IRemote"/> if it is a <see cref="RemoteParty"/> or <see cref="RemoteExternal"/>,
+        ///   or its content if it is a <see cref="RemoteGroup"/> (this uses <see cref="IRemoteOwner.AllRemotes"/>).
+        ///   </item>
+        /// </list>
+        /// Nothing prevents to associate features to a <see cref="RemoteGroup"/> but this should be quite rare: this helper
+        /// ease the common case where features must be associated to <see cref="RemoteParty"/> or <see cref="RemoteExternal"/>.
         /// </summary>
         /// <returns>The set of leaf remotes for the current operation.</returns>
-        public IEnumerable<IRemote> GetAllLeafRemotes() => _targetParty?.GetAllLeafRemotes() ?? _agent.ApplicationIdentityService.GetAllLeafRemotes();
+        public IEnumerable<IRemote> GetAllLeafRemotes()
+        {
+            return _targetParty switch
+            {
+                null => _agent.ApplicationIdentityService.AllRemotes,
+                RemoteGroup g => g.AllRemotes,
+                _ => new[] { _targetParty }
+            };
+        }
 
         /// <summary>
         /// Gets the <see cref="ApplicationIdentityService"/>'s agent.

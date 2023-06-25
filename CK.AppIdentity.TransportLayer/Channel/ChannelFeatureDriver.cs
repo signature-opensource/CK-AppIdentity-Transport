@@ -30,26 +30,24 @@ namespace CK.AppIdentity.BlobChannel
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             bool success = true;
-            foreach( var r in context.GetAllLeafRemotes()
-                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
             {
                 success &= PlugFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
         {
             bool success = true;
-            foreach( var r in context.GetAllLeafRemotes()
-                                     .Where( r => r.DomainName != CoreApplicationIdentity.DefaultDomainName && IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
             {
                 success &= PlugFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        bool PlugFeature( FeatureLifetimeContext context, IRemoteParty r )
+        bool PlugFeature( FeatureLifetimeContext context, RemoteParty r )
         {
             Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
             var transport = r.GetFeature<TransportFeature>();
@@ -86,7 +84,7 @@ namespace CK.AppIdentity.BlobChannel
 
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
-            foreach( var r in context.GetAllLeafRemotes() )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
             {
                 var t = r.GetFeature<T>();
                 t?.Teardown( context );
@@ -94,9 +92,9 @@ namespace CK.AppIdentity.BlobChannel
             return Task.CompletedTask;
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemoteParty party )
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
         {
-            foreach( var r in context.GetAllLeafRemotes() )
+            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
             {
                 var t = r.GetFeature<T>();
                 t?.Teardown( context );
