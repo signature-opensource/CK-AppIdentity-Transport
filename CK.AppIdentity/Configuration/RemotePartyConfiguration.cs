@@ -3,7 +3,10 @@ using System.Diagnostics;
 
 namespace CK.AppIdentity
 {
-    public sealed class RemotePartyConfiguration : AppIdentityObjectConfiguration
+    /// <summary>
+    /// Actual remote party configuration.
+    /// </summary>
+    public sealed class RemotePartyConfiguration : ApplicationIdentityBaseConfiguration
     {
         readonly string _partyName;
         readonly string? _address;
@@ -18,7 +21,8 @@ namespace CK.AppIdentity
             Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
                           && d == domainName && e == fullName.LastPart && p == fullName.Parts[^2] );
 
-            _partyName = fullName.Parts[^2]; _address = address;
+            _partyName = fullName.Parts[^2];
+            _address = address;
         }
 
         /// <summary>

@@ -8,14 +8,13 @@ namespace CK.AppIdentity
     public interface IRemote : IApplicationIdentityObject
     {
         /// <summary>
-        /// Gets this remote's domain.
-        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="RemoteDomain"/>.
+        /// Gets this remote's owner.
+        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="RemoteGroup"/>.
         /// </summary>
-        ApplicationIdentityDomain Domain { get; }
+        RemoteCollection Owner { get; }
 
         /// <summary>
-        /// Gets whether this remote is hosted by the root <see cref="ApplicationIdentityService"/>
-        /// or by a subordinated <see cref="RemoteDomain"/>.
+        /// Gets whether this remote is hosted by the root <see cref="ApplicationIdentityService"/>.
         /// </summary>
         bool IsRooted { get; }
 
@@ -46,10 +45,5 @@ namespace CK.AppIdentity
         /// <returns>The awaitable.</returns>
         Task DestroyAsync();
 
-        /// <summary>
-        /// Internal point.
-        /// </summary>
-        /// <param name="isTop"></param>
-        internal void DoSetDestroyed( bool isTop );
     }
 }

@@ -7,7 +7,7 @@ namespace CK.AppIdentity
     /// <summary>
     /// Base class of all configuration objects.
     /// </summary>
-    public abstract partial class AppIdentityObjectConfiguration
+    public abstract partial class ApplicationIdentityBaseConfiguration
     {
         readonly ImmutableConfigurationSection _configuration;
         readonly string _domainName;
@@ -16,10 +16,10 @@ namespace CK.AppIdentity
         readonly IReadOnlySet<string> _disallowFeatures;
         readonly IReadOnlySet<string> _allowFeatures;
 
-        internal AppIdentityObjectConfiguration( ImmutableConfigurationSection configuration,
-                                                string domainName,
-                                                NormalizedPath fullName,
-                                                ref InheritedConfigurationProps props )
+        internal ApplicationIdentityBaseConfiguration( ImmutableConfigurationSection configuration,
+                                                       string domainName,
+                                                       NormalizedPath fullName,
+                                                       ref InheritedConfigurationProps props )
         {
             Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out _, out var e ) && d == domainName && e == fullName.LastPart );
             _allowFeatures = props.AllowFeatures;

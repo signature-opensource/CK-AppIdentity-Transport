@@ -13,21 +13,20 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
     /// <summary>
+    /// Singleton hosted service that is the local party and the root collection of <see cref="IRemote"/>.
     /// </summary>
-    public sealed class ApplicationIdentityService : ApplicationIdentityDomain, ISingletonAutoService, IHostedService, IAsyncDisposable
+    public sealed class ApplicationIdentityService : RemoteCollection, ISingletonAutoService, IHostedService, IAsyncDisposable
     {
         readonly AppIdentityAgent _agent;
-        readonly LocalParty _local;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _initialization;
 
         internal ApplicationIdentityService( ApplicationIdentityServiceConfiguration configuration, IServiceProvider serviceProvider )
             : base( configuration, null )
         {
-            _local = new LocalParty( configuration.Local, this );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
-            _agent = new AppIdentityAgent( null/*this*/, serviceProvider );
+            _agent = new AppIdentityAgent( this, serviceProvider );
         }
 
         internal AppIdentityAgent Agent => _agent;
@@ -86,6 +85,6 @@ namespace CK.AppIdentity
             await _agent.RunningTask.ConfigureAwait( false );
         }
 
-        public override string ToString() => $"Application: {_local.FullName}";
+        public override string ToString() => $"Application: {FullName}";
     }
 }

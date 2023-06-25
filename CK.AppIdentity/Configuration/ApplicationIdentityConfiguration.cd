@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
-    <Position X="5.25" Y="0.5" Width="3.25" />
+    <Position X="3.5" Y="0.5" Width="3.25" />
     <Members>
       <Field Name="_children" Hidden="true" />
       <Field Name="_key" Hidden="true" />
@@ -19,8 +19,8 @@
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
-  <Class Name="CK.AppIdentity.AppIdentityObjectConfiguration">
-    <Position X="2.25" Y="0.5" Width="2.25" />
+  <Class Name="CK.AppIdentity.ApplicationIdentityBaseConfiguration">
+    <Position X="0.5" Y="0.5" Width="2.25" />
     <Members>
       <Field Name="_allowFeatures" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />
@@ -30,60 +30,38 @@
       <Field Name="_fullName" Hidden="true" />
       <Field Name="_names" Hidden="true" />
       <Field Name="_nameSyntaxes" Hidden="true" />
-      <Method Name="AppIdentityObjectConfiguration" Hidden="true" />
       <Method Name="IsAllowedFeature" Hidden="true" />
       <Method Name="ReadName" Hidden="true" />
       <Method Name="ReadNames" Hidden="true" />
     </Members>
     <NestedTypes>
-      <Enum Name="CK.AppIdentity.AppIdentityObjectConfiguration.NameKind" Collapsed="true">
+      <Enum Name="CK.AppIdentity.ApplicationIdentityBaseConfiguration.NameKind" Collapsed="true">
         <TypeIdentifier>
-          <NewMemberFileName>Configuration\AppIdentityObjectConfiguration.cs</NewMemberFileName>
+          <NewMemberFileName>Configuration\ApplicationIdentityBaseConfiguration.cs</NewMemberFileName>
         </TypeIdentifier>
       </Enum>
     </NestedTypes>
     <TypeIdentifier>
       <HashCode>AAAgIABCIAAAEIAAAQAgAAIIgAAAAAAAgAmAAAAAAAA=</HashCode>
-      <FileName>Configuration\AppIdentityObjectConfiguration.cs</FileName>
-    </TypeIdentifier>
-  </Class>
-  <Class Name="CK.AppIdentity.DomainConfiguration">
-    <Position X="4.25" Y="4.75" Width="1.75" />
-    <Members>
-      <Method Name="DomainConfiguration" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>AAAAAAAAAgAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAA=</HashCode>
-      <FileName>Configuration\DomainConfiguration.cs</FileName>
+      <FileName>Configuration\ApplicationIdentityBaseConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.ApplicationIdentityServiceConfiguration">
-    <Position X="3.5" Y="6.5" Width="3.25" />
+    <Position X="3.25" Y="6" Width="3.25" />
     <Members>
       <Field Name="_partyName" Hidden="true" />
       <Method Name="ApplicationIdentityServiceConfiguration" Hidden="true" />
       <Method Name="Create" Hidden="true" />
+      <Method Name="CreateRemote" Hidden="true" />
       <Method Name="CreateRemotes" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAIAAAAAAAAAAAAAAAAAEAAAAABAAgAAAA=</HashCode>
+      <HashCode>ABAAAAAAAAAIAAAAAAAAAAAAAAAAAEAAAAABAAgAAAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityServiceConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="CK.AppIdentity.LocalPartyConfiguration">
-    <Position X="2" Y="4.75" Width="2" />
-    <Members>
-      <Field Name="_partyName" Hidden="true" />
-      <Method Name="Create" Hidden="true" />
-      <Method Name="LocalPartyConfiguration" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAABAAgAAAA=</HashCode>
-      <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
-    </TypeIdentifier>
-  </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
-    <Position X="6.25" Y="4.75" Width="2.25" />
+    <Position X="0.5" Y="4.5" Width="2.25" />
     <Members>
       <Field Name="_address" Hidden="true" />
       <Field Name="_partyName" Hidden="true" />
@@ -92,6 +70,16 @@
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABAEgAAAA=</HashCode>
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CK.AppIdentity.RemoteCollectionConfiguration">
+    <Position X="3.5" Y="4.5" Width="2.75" />
+    <Members>
+      <Method Name="RemoteCollectionConfiguration" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Configuration\RemoteCollectionConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Font Name="Segoe UI" Size="9" />

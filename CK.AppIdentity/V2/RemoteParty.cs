@@ -4,11 +4,11 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
 
-    public sealed class RemoteParty : ApplicationIdentityObject, IRemote, IParty
+    public sealed class RemoteParty : ApplicationIdentityObject, IRemote, IRemoteInternal
     {
         RemoteImpl _remote;
 
-        internal RemoteParty( RemotePartyConfiguration configuration, ApplicationIdentityDomain domain )
+        internal RemoteParty( RemotePartyConfiguration configuration, RemoteCollection domain )
             : base( configuration )
         {
             _remote = new RemoteImpl( domain, configuration.Configuration );
@@ -34,16 +34,15 @@ namespace CK.AppIdentity
 
         public bool IsDestroyed => _remote.IsDestroyed;
 
-        public ApplicationIdentityDomain Domain => _remote.Domain;
+        public RemoteCollection Owner => _remote.Owner;
 
-        public bool IsRooted => throw new System.NotImplementedException();
+        public bool IsRooted => _remote.IsRooted;
 
-        public Task DestroyAsync() => _remote.DestroyAsync( null );
+        public Task DestroyAsync() => _remote.DestroyAsync( this );
 
-        public bool SetDestroyed() => _remote.SetDestroyed( null );
+        public bool SetDestroyed() => _remote.SetDestroyed( this );
 
-        void IRemote.DoSetDestroyed( bool isTop ) => _remote.DoSetDestroyed( isTop, null );
-
+        void IRemoteInternal.DoSetDestroyed( bool isTop ) => _remote.DoSetDestroyed( isTop, this );
 
     }
 }

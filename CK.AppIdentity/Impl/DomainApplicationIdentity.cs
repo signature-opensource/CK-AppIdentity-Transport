@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -66,12 +67,13 @@ namespace CK.AppIdentity
             var subDomains = Interlocked.Exchange( ref _remotes, Array.Empty<RemoteParty>() );
             foreach( var r in subDomains )
             {
-                Debug.Assert( r._destroyTCS != null );
+                var rI = Unsafe.As<IRemoteInternal>( r );
+                Debug.Assert( rI.DestroyTCS != null );
                 // This guaranties that an event is raised even for a remote in a destroyed remote.
                 // Does this produces too much events (the bridge will relay the events to the root ApplicationIdentityService)?
-                // May be... but this is logically sound.
+                // It may be too verbose... but this is logically sound.
                 await _remotesChanged.SafeRaiseAsync( monitor, r );
-                r._destroyTCS.SetResult();
+                r.DestroyTCS.SetResult();
             }
             _remotesChangedBridge.Dispose();
         }

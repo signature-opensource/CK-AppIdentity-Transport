@@ -22,9 +22,9 @@ namespace CK.AppIdentity
         /// Gets the full name of this object:
         /// <list type="bullet">
         ///   <item>
-        ///   For remote domains (<see cref="RemoteDomain"/>), the full name is DomainName/EnvironmentName.</item>
+        ///   For groups (<see cref="RemoteGroup"/>), the full name is DomainName/EnvironmentName.</item>
         ///   <item>
-        ///   For parties (<see cref="LocalParty"/>, <see cref="RemoteParty"/> and root and <see cref="ApplicationIdentityService"/>),
+        ///   For parties (<see cref="RemoteParty"/> and root and <see cref="ApplicationIdentityService"/>),
         ///   the full name is DomainName/PartyName/EnvironmentName.</item>
         /// </list>
         /// </summary>

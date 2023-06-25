@@ -29,8 +29,8 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Gets the remotes that are concerned by the current operation (either the <see cref="ApplicationIdentityService"/>
-        /// one's for <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
+        /// Gets the remotes that are concerned by the current operation (either the <see cref="ApplicationIdentityService"/> one's
+        /// for <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
         /// or the <see cref="IRemote"/> one's for <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
         /// <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>).
         /// </summary>
@@ -80,7 +80,7 @@ namespace CK.AppIdentity
             return _trampoline.Result;
         }
 
-        internal Task ExecuteTeardownDynamicRemoteAsync( IRemoteParty party )
+        internal Task ExecuteTeardownDynamicRemoteAsync( IRemote party )
         {
             _targetParty = party;
             // Calls the drivers in reverse order for the destruction.

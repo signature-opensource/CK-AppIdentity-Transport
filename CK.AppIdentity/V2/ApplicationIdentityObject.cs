@@ -11,10 +11,10 @@ namespace CK.AppIdentity
     /// </summary>
     public abstract class ApplicationIdentityObject : IApplicationIdentityObject
     {
-        private protected readonly AppIdentityObjectConfiguration _configuration;
+        private protected readonly ApplicationIdentityBaseConfiguration _configuration;
         object[] _features;
 
-        internal ApplicationIdentityObject( AppIdentityObjectConfiguration configuration )
+        internal ApplicationIdentityObject( ApplicationIdentityBaseConfiguration configuration )
         {
             _configuration = configuration;
             _features = Array.Empty<object>();
