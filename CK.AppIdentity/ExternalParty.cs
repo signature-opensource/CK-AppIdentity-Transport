@@ -7,11 +7,11 @@ namespace CK.AppIdentity
     /// Its configuration is the base <see cref="ApplicationIdentityObjectConfiguration"/>: it is up to the features
     /// to match any configuration key (like a "GitHubApi" section) and plug features on the remote.
     /// </summary>
-    public sealed class RemoteExternal : ApplicationIdentityObject, IRemote, IRemoteInternal
+    public sealed class ExternalParty : ApplicationIdentityObject, IRemote, IRemoteInternal
     {
         RemoteImpl _remote;
 
-        internal RemoteExternal( ApplicationIdentityObjectConfiguration configuration, IRemoteOwnerInternal owner )
+        internal ExternalParty( ApplicationIdentityObjectConfiguration configuration, IRemoteOwnerInternal owner )
             : base( configuration, owner.ApplicationIdentityService )
         {
             _remote = new RemoteImpl( owner, configuration.Configuration );

@@ -9,7 +9,7 @@ namespace CK.AppIdentity
     {
         /// <summary>
         /// Gets this remote's owner.
-        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="RemoteGroup"/>.
+        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="PartyGroup"/>.
         /// </summary>
         IRemoteOwner Owner { get; }
 

@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-    public sealed class RemoteGroup : ApplicationIdentityObject, IRemote, IRemoteInternal, IRemoteOwnerInternal
+    public sealed class PartyGroup : ApplicationIdentityObject, IRemote, IRemoteInternal, IRemoteOwnerInternal
     {
         // RemoteGroup is a group of Remotes (it owns remotes). 
         RemoteOwnerImpl _remotes;
@@ -19,20 +19,20 @@ namespace CK.AppIdentity
         // Changes in contained remotes are propagated to this remote owner).
         readonly IBridge _remotesChangedBridge;
 
-        internal RemoteGroup( RemoteGroupConfiguration configuration, IRemoteOwnerInternal owner )
+        internal PartyGroup( PartyGroupConfiguration configuration, IRemoteOwnerInternal owner )
             : base( configuration, owner.ApplicationIdentityService )
         {
             _remote = new RemoteImpl( owner, configuration.Configuration );
             _remotes = new RemoteOwnerImpl( this );
-            _remotes.Initialize( this, configuration.Remotes );
+            _remotes.Initialize( this, configuration.Parties );
             // Creates a relay for RemotesChanged from this group to the owner's one.
             _remotesChangedBridge = _remotes.RemotesChanged.CreateRelay( owner.RemotesChanged );
         }
 
         /// <summary>
-        /// Gets the <see cref="RemoteGroupConfiguration"/> object.
+        /// Gets the <see cref="PartyGroupConfiguration"/> object.
         /// </summary>
-        public new RemoteGroupConfiguration Configuration => Unsafe.As<RemoteGroupConfiguration>( _configuration );
+        public new PartyGroupConfiguration Configuration => Unsafe.As<PartyGroupConfiguration>( _configuration );
 
         /// <inheritdoc />
         public IRemoteOwner Owner => _remote.Owner;

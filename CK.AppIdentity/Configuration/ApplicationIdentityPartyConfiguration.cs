@@ -5,7 +5,8 @@ namespace CK.AppIdentity
 {
     /// <summary>
     /// Parties are named objects.
-    /// It can be the root application identity or a remote party.
+    /// It can be the root application identity (the local party), a remote or external party, or a
+    /// local party that "controls" a Domain.
     /// </summary>
     public abstract class ApplicationIdentityPartyConfiguration : ApplicationIdentityObjectConfiguration
     {
@@ -45,8 +46,7 @@ namespace CK.AppIdentity
         public string EnvironmentName => _environmentName;
 
         /// <summary>
-        /// Gets the full name of this object: the DomainName/EnvironmentName (for domains)
-        /// or DomainName/PartyName/EnvironmentName scheme (for parties).
+        /// Gets the full name of this object.
         /// </summary>
         public NormalizedPath FullName => _fullName;
 

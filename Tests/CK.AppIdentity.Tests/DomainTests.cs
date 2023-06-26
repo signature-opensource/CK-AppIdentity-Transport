@@ -34,7 +34,7 @@ namespace CK.AppIdentity.Tests
             s.PartyName.Should().Be( "$SaaS1" );
             s.Remotes.Should().HaveCount( 2 );
             // Gets the group by its Configuration's domain name (a RemoteGroup doesn't expose its Domain since this has no real semantics).
-            var allInOne = s.Remotes.OfType<RemoteGroup>().Single( r => r.Configuration.DomainName == "AllInOneInc" );
+            var allInOne = s.Remotes.OfType<PartyGroup>().Single( r => r.Configuration.DomainName == "AllInOneInc" );
             allInOne.Configuration.EnvironmentName.Should().Be( "#Development" );
             allInOne.Remotes.Should().HaveCount( 5, "There are 5 agents in this group." );
             allInOne.Remotes.Cast<RemoteParty>().Should().AllSatisfy( r =>
@@ -43,7 +43,7 @@ namespace CK.AppIdentity.Tests
                 r.DomainName.Should().Be( "AllInOneInc" );
                 r.EnvironmentName.Should().Be( "#Development" );
             } );
-            var opal = s.Remotes.OfType<RemoteGroup>().Single( r => r.Configuration.DomainName == "OpalCorp" );
+            var opal = s.Remotes.OfType<PartyGroup>().Single( r => r.Configuration.DomainName == "OpalCorp" );
             opal.Remotes.Should().HaveCount( 2, "There are 2 agents in this domain." );
             opal.Remotes.Cast<RemoteParty>().Should().AllSatisfy( r =>
             {

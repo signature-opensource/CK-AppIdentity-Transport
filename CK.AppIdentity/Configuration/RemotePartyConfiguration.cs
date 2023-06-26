@@ -4,7 +4,12 @@ using System.Diagnostics;
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// Actual remote party configuration.
+    /// Remote or External party configuration.
+    /// The Address is always optional.
+    /// <para>
+    /// An external party is in the domain "External", it may have an Address or not and its
+    /// <see cref="ApplicationIdentityPartyConfiguration.EnvironmentName"/> is mostly irrelevant.
+    /// </para>
     /// </summary>
     public sealed class RemotePartyConfiguration : ApplicationIdentityPartyConfiguration
     {
@@ -22,6 +27,11 @@ namespace CK.AppIdentity
 
             _address = address;
         }
+
+        /// <summary>
+        /// Gets whether this is an External party.
+        /// </summary>
+        public bool IsExternalParty => ReferenceEquals( FullName.Path, "External" );
 
         /// <summary>
         /// Gets the address of this party.

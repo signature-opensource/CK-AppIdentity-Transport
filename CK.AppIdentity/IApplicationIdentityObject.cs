@@ -13,7 +13,7 @@ namespace CK.AppIdentity
         /// <para>
         /// It can be:
         /// <list type="bullet">
-        ///  <item>A <see cref="RemoteGroupConfiguration"/>.</item>
+        ///  <item>A <see cref="PartyGroupConfiguration"/>.</item>
         ///  <item>A <see cref="RemotePartyConfiguration"/>.</item>
         ///  <item>A <see cref="ApplicationIdentityServiceConfiguration"/>.</item>
         ///  <item>A base <see cref="ApplicationIdentityObjectConfiguration"/> for external remotes.</item>

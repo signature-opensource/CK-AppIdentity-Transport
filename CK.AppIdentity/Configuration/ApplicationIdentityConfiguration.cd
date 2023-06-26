@@ -30,7 +30,7 @@
       <Method Name="CreateRemotes" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>ABAAAAAAAgAICAAAAAAAAAAAAAAAAEAAAAIAAAAAAAQ=</HashCode>
+      <HashCode>ABAAAIAAAgAICAAAAAAAAAAAAAQABUAAEAIAAAAAAAQ=</HashCode>
       <FileName>Configuration\ApplicationIdentityServiceConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -41,13 +41,15 @@
       <Method Name="RemotePartyConfiguration" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAEAAAAA=</HashCode>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAEAAAAAAAACAAAAAEAAAAA=</HashCode>
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.RemoteGroupConfiguration">
     <Position X="0.75" Y="4.5" Width="2.5" />
     <Members>
+      <Field Name="_domainName" Hidden="true" />
+      <Field Name="_environmentName" Hidden="true" />
       <Method Name="RemoteGroupConfiguration" Hidden="true" />
     </Members>
     <TypeIdentifier>
@@ -75,15 +77,8 @@
         </TypeIdentifier>
       </Enum>
     </NestedTypes>
-    <AssociationLine Name="Configuration" Type="CK.AppIdentity.ImmutableConfigurationSection" FixedFromPoint="true" FixedToPoint="true">
-      <Path>
-        <Point X="2.5" Y="2.949" />
-        <Point X="2.5" Y="3.238" />
-        <Point X="3.75" Y="3.238" />
-      </Path>
-    </AssociationLine>
     <TypeIdentifier>
-      <HashCode>AAAAIABCIAAAEAAEAQAgAAAAgAAAAAQAgAEAAAAAAAA=</HashCode>
+      <HashCode>AAAAIABCIAAAEAAEAQAgAAAAgAAAgAQAgAEAAAAAAAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityObjectConfiguration.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>
@@ -105,6 +100,13 @@
     <TypeIdentifier>
       <HashCode>AAAgAAAAAAAAAIAAAAAAAAIIAAAAAAAAAAiBAAgAAAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityPartyConfiguration.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CK.AppIdentity.LocalPartyConfiguration">
+    <Position X="7.25" Y="5.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Font Name="Segoe UI" Size="9" />

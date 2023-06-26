@@ -128,11 +128,11 @@ namespace CK.AppIdentity
         async ValueTask HandleDestroyAsync( IActivityMonitor monitor, IRemoteInternal destroyed )
         {
             Debug.Assert( destroyed.DestroyTCS != null );
-            var group = destroyed as RemoteGroup;
-            using( monitor.OpenInfo( $"Destroying Remote '{destroyed}'{(group != null ? $" (group with {group.Remotes.Count} remotes)": "")}." ) )
+            var group = destroyed as PartyGroup;
+            using( monitor.OpenInfo( $"Destroying party {(group != null ? $"group with {group.Remotes.Count} parties": $"'{destroyed}'")}." ) )
             {
                 // Enables the feature drivers to tear down any existing features, including the
-                // subordinates remotes ones if this remote defines a domain.
+                // subordinates parties if this remote defines a domain.
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
                 await context.ExecuteTeardownDynamicRemoteAsync( destroyed );
 

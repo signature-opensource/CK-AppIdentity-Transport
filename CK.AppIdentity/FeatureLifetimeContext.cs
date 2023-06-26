@@ -29,21 +29,21 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Gets the remotes that are concerned by the current operation, skipping any intermediate <see cref="RemoteGroup"/>.
+        /// Gets the remotes that are concerned by the current operation, skipping any intermediate <see cref="PartyGroup"/>.
         /// <list type="bullet">
         ///   <item>
         ///   For <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
-        ///   these are all <see cref="RemoteParty"/> and <see cref="RemoteExternal"/> of the application (depth-first traversal).
+        ///   these are all <see cref="RemoteParty"/> and <see cref="ExternalParty"/> of the application (depth-first traversal).
         ///   </item>
         ///   <item>
         ///   For <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
         ///   <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>
-        ///   this can be the <see cref="IRemote"/> if it is a <see cref="RemoteParty"/> or <see cref="RemoteExternal"/>,
-        ///   or its content if it is a <see cref="RemoteGroup"/> (this uses <see cref="IRemoteOwner.AllRemotes"/>).
+        ///   this can be the <see cref="IRemote"/> if it is a <see cref="RemoteParty"/> or <see cref="ExternalParty"/>,
+        ///   or its content if it is a <see cref="PartyGroup"/> (this uses <see cref="IRemoteOwner.AllRemotes"/>).
         ///   </item>
         /// </list>
-        /// Nothing prevents to associate features to a <see cref="RemoteGroup"/> but this should be quite rare: this helper
-        /// ease the common case where features must be associated to <see cref="RemoteParty"/> or <see cref="RemoteExternal"/>.
+        /// Nothing prevents to associate features to a <see cref="PartyGroup"/> but this should be quite rare: this helper
+        /// ease the common case where features must be associated to <see cref="RemoteParty"/> or <see cref="ExternalParty"/>.
         /// </summary>
         /// <returns>The set of leaf remotes for the current operation.</returns>
         public IEnumerable<IRemote> GetAllLeafRemotes()
@@ -51,7 +51,7 @@ namespace CK.AppIdentity
             return _targetParty switch
             {
                 null => _agent.ApplicationIdentityService.AllRemotes,
-                RemoteGroup g => g.AllRemotes,
+                PartyGroup g => g.AllRemotes,
                 _ => new[] { _targetParty }
             };
         }

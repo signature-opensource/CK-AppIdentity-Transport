@@ -40,8 +40,8 @@ namespace CK.AppIdentity
             return c switch
             {
                 RemotePartyConfiguration p => new RemoteParty( p, @this ),
-                RemoteGroupConfiguration g => new RemoteGroup( g, @this ),
-                ApplicationIdentityObjectConfiguration e => new RemoteExternal( e, @this ),
+                PartyGroupConfiguration g => new PartyGroup( g, @this ),
+                ApplicationIdentityObjectConfiguration e => new ExternalParty( e, @this ),
                 _ => Throw.NotSupportedException<IRemoteInternal>()
             };
         }
@@ -55,7 +55,7 @@ namespace CK.AppIdentity
                 foreach( var r in _remotes )
                 {
                     yield return r;
-                    if( r is RemoteGroup g )
+                    if( r is PartyGroup g )
                     {
                         foreach( var rS in g.AllRemotes )
                         {
@@ -87,7 +87,7 @@ namespace CK.AppIdentity
         internal Task OnSuccessAddRemoteAsync( IActivityMonitor monitor, IRemote r )
         {
             Util.InterlockedAdd( ref _remotes, r );
-            if( r is RemoteGroup group )
+            if( r is PartyGroup group )
             {
                 // This is to publish "new remotes" events in the root ApplicationIndentityService.RemotesChanged event
                 // so that by subscribing to this event, the whole structure change can be tracked.

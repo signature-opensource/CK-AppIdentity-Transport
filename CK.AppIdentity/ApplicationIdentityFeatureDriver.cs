@@ -85,7 +85,7 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Must do whatever is required to register features into <see cref="ApplicationIdentityObject.Features"/> for the remote and any
-        /// subordinated remotes if the remote is a <see cref="RemoteGroup"/>.
+        /// subordinated remotes if the remote is a <see cref="PartyGroup"/>.
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
         /// </para>

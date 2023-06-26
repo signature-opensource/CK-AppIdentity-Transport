@@ -75,12 +75,12 @@ namespace CK.AppIdentity.Tests
                 c["Remotes:0:Remotes:1:Remotes:0:PartyName"] = "A2";
             } );
             Debug.Assert( good != null );
-            var g1 = good.Remotes.Cast<RemoteGroupConfiguration>().Single();
-            g1.Remotes.Should().HaveCount( 2 );
-            var a1 = g1.Remotes.OfType<RemotePartyConfiguration>().Single();
+            var g1 = good.Remotes.Cast<PartyGroupConfiguration>().Single();
+            g1.Parties.Should().HaveCount( 2 );
+            var a1 = g1.Parties.OfType<RemotePartyConfiguration>().Single();
             a1.FullName.Should().Be( "D1/$A1/#E" );
-            var g2 = g1.Remotes.OfType<RemoteGroupConfiguration>().Single();
-            var a2 = g2.Remotes.OfType<RemotePartyConfiguration>().Single();
+            var g2 = g1.Parties.OfType<PartyGroupConfiguration>().Single();
+            var a2 = g2.Parties.OfType<RemotePartyConfiguration>().Single();
             a2.FullName.Should().Be( "D2/$A2/#E" );
         }
 

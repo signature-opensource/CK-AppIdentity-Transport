@@ -45,7 +45,7 @@ namespace CK.AppIdentity
                 // We set the destroy flag and tcs on subordinates but we
                 // trigger the agent on the destroyed root so that the feature drivers
                 // see the "destruction" the same as the "initialization".
-                if( @this is RemoteGroup composite )
+                if( @this is PartyGroup composite )
                 {
                     // Immediately condemns the child remotes and ask to handle
                     // their destruction first.

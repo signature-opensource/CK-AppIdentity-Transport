@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Security.AccessControl;
 
 namespace CK.AppIdentity
 {
@@ -90,7 +91,7 @@ namespace CK.AppIdentity
             // We don't inject any "existing" names here: it is up to the actual add to handle
             // existing remotes.
             var fullNameIndex = new Dictionary<string, ImmutableConfigurationSection>( StringComparer.OrdinalIgnoreCase );
-            return ApplicationIdentityServiceConfiguration.CreateRemote( monitor,
+            return ApplicationIdentityServiceConfiguration.CreateParty( monitor,
                                                                          finalConfig,
                                                                          thisDomainName,
                                                                          thisEnvironmentName,
@@ -168,9 +169,9 @@ namespace CK.AppIdentity
                     monitor.Error( $"'{s.Path}:DomainName' cannot be used when '{s.Path}:FullName' is defined." );
                     success = false;
                 }
-                if( s["Name"] != null )
+                if( s["PartyName"] != null )
                 {
-                    monitor.Error( $"'{s.Path}:Name' cannot be used when '{s.Path}:FullName' is defined." );
+                    monitor.Error( $"'{s.Path}:PartyName' cannot be used when '{s.Path}:FullName' is defined." );
                     success = false;
                 }
                 if( e == null )
@@ -182,7 +183,9 @@ namespace CK.AppIdentity
                     monitor.Error( $"'{s.Path}:EnvironmentName' cannot be used when '{s.Path}:FullName' defines it." );
                     success = false;
                 }
-                domainName = d;
+                Debug.Assert( string.IsInterned( "<error>" ) != null && string.IsInterned( "External" ) != null );
+                domainName = NormalizeDomainName( monitor, d );
+                success &= ReferenceEquals( domainName, "<error>" );
                 partyName = p;
                 environmentName = e;
                 return success;
@@ -208,6 +211,11 @@ namespace CK.AppIdentity
                     name = "<error>";
                     return false;
                 }
+                if( kind == NameKind.Domain )
+                {
+                    name = NormalizeDomainName( monitor, n );
+                    return name != "<error>";
+                }
                 name = n;
             }
             else
@@ -222,6 +230,31 @@ namespace CK.AppIdentity
             }
             return true;
         }
+
+        static string NormalizeDomainName( IActivityMonitor monitor, string domainName )
+        {
+            if( domainName.StartsWith( "External", StringComparison.OrdinalIgnoreCase ) )
+            {
+                return CheckNoSubDomain( monitor, domainName, "External" );
+            }
+            if( domainName.StartsWith( CoreApplicationIdentity.DefaultDomainName, StringComparison.OrdinalIgnoreCase ) )
+            {
+                return CheckNoSubDomain( monitor, domainName, CoreApplicationIdentity.DefaultDomainName );
+            }
+            return domainName;
+
+            static string CheckNoSubDomain( IActivityMonitor monitor, string domainName, string prefix )
+            {
+                int prefixLen = prefix.Length;
+                if( domainName.Length > prefixLen && domainName[prefixLen] == '/' )
+                {
+                    monitor.Error( $"Domain name cannot start with \"{prefix}\". This denotes an \"External\" system where domains don't apply." );
+                    return "<error>";
+                }
+                return "External";
+            }
+        }
+
         #endregion
     }
 }

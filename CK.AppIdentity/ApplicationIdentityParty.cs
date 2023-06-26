@@ -5,7 +5,7 @@ namespace CK.AppIdentity
 {
     /// <summary>
     /// Parties are <see cref="ApplicationIdentityService"/> and <see cref="RemoteParty"/>.
-    /// <see cref="RemoteGroup"/> and <see cref="ExternalRemote"/> are not parties.
+    /// <see cref="PartyGroup"/> and <see cref="ExternalParty"/> are not parties.
     /// </summary>
     public abstract class ApplicationIdentityParty : ApplicationIdentityObject
     {

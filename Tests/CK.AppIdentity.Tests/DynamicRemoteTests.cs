@@ -60,7 +60,7 @@ namespace CK.AppIdentity.Tests
                 c["DomainName"] = "LaToulousaine";
                 c["EnvironmentName"] = "#Debug";
                 c["Remotes:0:PartyName"] = "SignatureBox";
-            } ) as RemoteGroup;
+            } ) as PartyGroup;
             Debug.Assert( laToulousaine != null );
             laToulousaine.IsDynamic.Should().BeTrue();
             var signatureBox = (RemoteParty)laToulousaine.Remotes.Single();

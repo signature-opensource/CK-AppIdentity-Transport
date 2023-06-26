@@ -39,7 +39,7 @@ namespace CK.AppIdentity
         /// Gets the remote configurations that can be:
         /// <list type="bullet">
         ///   <item><see cref="RemotePartyConfiguration"/> for a remote party.</item>
-        ///   <item><see cref="RemoteGroupConfiguration"/> for group of remotes (composite remote).</item>
+        ///   <item><see cref="PartyGroupConfiguration"/> for group of remotes (composite remote).</item>
         ///   <item>Base <see cref="ApplicationIdentityObjectConfiguration"/> for external remotes (when DomainName is <see cref="CoreApplicationIdentity.DefaultDomainName"/>).</item>
         /// </list>
         /// </summary>
@@ -132,7 +132,8 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a "CK-AppIdentity" <see cref="MutableConfigurationSection"/>
-        /// that is setup by a callback. At least "DomainName" and "Name" configuration must be set ("EnvironmentName" defaults to "Development").
+        /// that is setup by a callback. At least "DomainName" and "PartyName" (or FullName") configuration must be set ("EnvironmentName" defaults
+        /// to "#Development").
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="configuration">Must configure the "CK-AppIdentity" section.</param>
@@ -168,17 +169,18 @@ namespace CK.AppIdentity
 
             success &= InheritedConfigurationProps.TryCreate( monitor, root, out var inheritedProps );
 
-            if( domainName == CoreApplicationIdentity.DefaultDomainName )
+            if( ReferenceEquals( domainName, "External" ) )
             {
-                monitor.Error( $"Root domain name cannot be '{CoreApplicationIdentity.DefaultDomainName}'. This name denotes an external system." );
+                Debug.Assert( CoreApplicationIdentity.DefaultDomainName == "Undefined" );
+                monitor.Error( $"Root domain name cannot be \"External\" or \"Undefined\". This name denotes an external system." );
                 success = false;
             }
 
-            // Always try to create the remotes even if success is already false: this enables
+            // Always try to create the parties even if success is already false: this enables
             // configuration errors to be fixed at once.
             var fullNameIndex = new Dictionary<string, ImmutableConfigurationSection>( StringComparer.OrdinalIgnoreCase );
-            var remotes = CreateRemotes( monitor, root.GetSection( "Remotes" ), domainName, environmentName, ref inheritedProps, fullNameIndex );
-            success &= remotes != null;
+            var parties = CreateParties( monitor, root.GetSection( "Parties" ), domainName, environmentName, ref inheritedProps, fullNameIndex );
+            success &= parties != null;
 
             var store = HandleStorePath( monitor, configuration );
             success &= store != null;
@@ -189,7 +191,7 @@ namespace CK.AppIdentity
                 return null;
             }
             var fullName = partyName[0] == '$' ? $"{domainName}/{partyName}/{environmentName}" : $"{domainName}/${partyName}/{environmentName}";
-            return new ApplicationIdentityServiceConfiguration( root, domainName, fullName, store!, remotes!, ref inheritedProps );
+            return new ApplicationIdentityServiceConfiguration( root, domainName, fullName, store!, parties!, ref inheritedProps );
 
             static string? HandleStorePath( IActivityMonitor monitor, IConfigurationSection configuration )
             {
@@ -224,59 +226,51 @@ namespace CK.AppIdentity
             }
         }
 
-        static ApplicationIdentityObjectConfiguration[]? CreateRemotes( IActivityMonitor monitor,
-                                                                      ImmutableConfigurationSection configuration,
-                                                                      string domainName,
-                                                                      string environmentName,
-                                                                      ref InheritedConfigurationProps domainProps,
-                                                                      Dictionary<string, ImmutableConfigurationSection> fullNameIndex )
+        static ApplicationIdentityObjectConfiguration[]? CreateParties( IActivityMonitor monitor,
+                                                                        ImmutableConfigurationSection configuration,
+                                                                        string domainName,
+                                                                        string environmentName,
+                                                                        ref InheritedConfigurationProps domainProps,
+                                                                        Dictionary<string, ImmutableConfigurationSection> fullNameIndex )
         {
-            Debug.Assert( configuration.Key == "Remotes" );
+            Debug.Assert( configuration.Key == "Parties" );
             bool success = domainProps.IsValid;
-            var remotes = new List<ApplicationIdentityObjectConfiguration>();
+            var parties = new List<ApplicationIdentityObjectConfiguration>();
             foreach( var c in configuration.GetChildren() )
             {
-                var r = CreateRemote( monitor, c, domainName, environmentName, ref domainProps, fullNameIndex );
+                var r = CreateParty( monitor, c, domainName, environmentName, ref domainProps, fullNameIndex );
                 if( r == null ) success = false;
-                else if( success ) remotes.Add( r );
+                else if( success ) parties.Add( r );
             }
-            return success ? remotes.ToArray() : null;
+            return success ? parties.ToArray() : null;
 
         }
 
-        internal static ApplicationIdentityObjectConfiguration? CreateRemote( IActivityMonitor monitor,
+        internal static ApplicationIdentityObjectConfiguration? CreateParty( IActivityMonitor monitor,
                                                                              ImmutableConfigurationSection configuration,
                                                                              string? appDomainName,
                                                                              string? appEnvironmentName,
                                                                              ref InheritedConfigurationProps domainProps,
                                                                              Dictionary<string,ImmutableConfigurationSection> fullNameIndex )
         {
-            // Handles "Remotes" as the first discriminator.
-            var remotesSection = configuration.GetSection( "Remotes" );
+            // Handles "Parties" as the first discriminator.
+            var remotesSection = configuration.GetSection( "Parties" );
             if( remotesSection.Exists() )
             {
-                return HandleRemoteGroup( monitor, configuration, appDomainName, appEnvironmentName, domainProps, fullNameIndex, remotesSection );
+                return HandlePartyGroup( monitor, configuration, appDomainName, appEnvironmentName, domainProps, fullNameIndex, remotesSection );
             }
             else
             {
-                Debug.Assert( CoreApplicationIdentity.DefaultDomainName == "Undefined" );
-                // Lookup for "DomainName": "Undefined" discriminator: this is an external remote.
-                if( ReadName( monitor, configuration, NameKind.Domain, out var domainName, defaultName: "" )
-                    && domainName == "Undefined" )
-                {
-                    return HandleRemoteExternal( monitor, configuration, domainProps );
-                }
-
-                return HandleRemoteParty( monitor, configuration, appDomainName, appEnvironmentName, domainProps, fullNameIndex );
+                return HandleParty( monitor, configuration, appDomainName, appEnvironmentName, domainProps, fullNameIndex );
             }
 
-            static RemoteGroupConfiguration? HandleRemoteGroup( IActivityMonitor monitor,
-                                                                ImmutableConfigurationSection configuration,
-                                                                string? appDomainName,
-                                                                string? appEnvironmentName,
-                                                                InheritedConfigurationProps domainProps,
-                                                                Dictionary<string, ImmutableConfigurationSection> fullNameIndex,
-                                                                ImmutableConfigurationSection remotesSection )
+            static PartyGroupConfiguration? HandlePartyGroup( IActivityMonitor monitor,
+                                                              ImmutableConfigurationSection configuration,
+                                                              string? appDomainName,
+                                                              string? appEnvironmentName,
+                                                              InheritedConfigurationProps domainProps,
+                                                              Dictionary<string, ImmutableConfigurationSection> fullNameIndex,
+                                                              ImmutableConfigurationSection remotesSection )
             {
                 using var gLog = monitor.OpenInfo( $"Remote group found '{remotesSection.Path}'." );
                 bool success = configuration.CheckNotExist( monitor, "FullName", "FullName cannot be used on a group (a Remote with Remotes). Only DomainName or EnvironmentName can be defined." )
@@ -290,30 +284,42 @@ namespace CK.AppIdentity
                     monitor.Error( $"Invalid configuration '{remotesSection.Path}': '{CoreApplicationIdentity.DefaultDomainName}' cannot contain Remotes. This name denotes an external system." );
                     success = false;
                 }
-                var remotes = CreateRemotes( monitor, remotesSection, domainName, environmentName, ref inhProps, fullNameIndex );
+                var remotes = CreateParties( monitor, remotesSection, domainName, environmentName, ref inhProps, fullNameIndex );
                 success &= remotes != null;
 
                 return success
-                        ? new RemoteGroupConfiguration( configuration, domainName, environmentName, remotes!, ref inhProps )
+                        ? new PartyGroupConfiguration( configuration, domainName, environmentName, remotes!, ref inhProps )
                         : null;
             }
 
-            static RemotePartyConfiguration? HandleRemoteParty( IActivityMonitor monitor,
-                                                                ImmutableConfigurationSection configuration,
-                                                                string? appDomainName,
-                                                                string? appEnvironmentName,
-                                                                InheritedConfigurationProps domainProps,
-                                                                Dictionary<string, ImmutableConfigurationSection> fullNameIndex )
+            static ApplicationIdentityPartyConfiguration? HandleParty( IActivityMonitor monitor,
+                                                                       ImmutableConfigurationSection configuration,
+                                                                       string? appDomainName,
+                                                                       string? appEnvironmentName,
+                                                                       InheritedConfigurationProps domainProps,
+                                                                       Dictionary<string, ImmutableConfigurationSection> fullNameIndex )
             {
                 bool success = ReadNames( monitor, configuration,
-                                          out var domainName, out var name, out var environmentName,
+                                          out var domainName, out var partyName, out var environmentName,
                                           appDomainName, null, appEnvironmentName )
                                & InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps );
 
-                var fullName = name[0] == '$' ? $"{domainName}/{name}/{environmentName}" : $"{domainName}/${name}/{environmentName}";
+                bool isLocalParty;
+                NormalizedPath fullName;
+                if( partyName[0] == '$' )
+                {
+                    fullName = $"{domainName}/{partyName}/{environmentName}";
+                    isLocalParty = partyName.AsSpan( 1 ).Equals( fullName.Parts[^3], StringComparison.OrdinalIgnoreCase );
+                }
+                else
+                {
+                    fullName = $"{domainName}/${partyName}/{environmentName}";
+                    isLocalParty = partyName.Equals( fullName.Parts[^3], StringComparison.OrdinalIgnoreCase );
+                }
+                Debug.Assert( fullNameIndex.Comparer == StringComparer.OrdinalIgnoreCase );
                 if( fullNameIndex.TryGetValue( fullName, out var exists ) )
                 {
-                    monitor.Error( $"Duplicate remote party definition '{configuration.Path}': full name '{fullName}' is already defined by '{exists.Path}'." );
+                    monitor.Error( $"Duplicate party definition '{configuration.Path}': full name '{fullName}' is already defined by '{exists.Path}'." );
                     success = false;
                 }
                 else
@@ -321,21 +327,9 @@ namespace CK.AppIdentity
                     fullNameIndex.Add( fullName, configuration );
                 }
                 return success
-                        ? new RemotePartyConfiguration( configuration, domainName, fullName, configuration["Address"], ref remoteProps )
-                        : null;
-            }
-
-            static ApplicationIdentityObjectConfiguration? HandleRemoteExternal( IActivityMonitor monitor,
-                                                                                 ImmutableConfigurationSection configuration,
-                                                                                 InheritedConfigurationProps domainProps )
-            {
-                var onlyDomain = $"external remote (when DomainName is \"Undefined\") cannot have any other names.";
-                bool success = InheritedConfigurationProps.TryCreate( monitor, domainProps, configuration, out var remoteProps )
-                               & configuration.CheckNotExist( monitor, "PartyName", onlyDomain )
-                               & configuration.CheckNotExist( monitor, "EnvionmentName", onlyDomain )
-                               & configuration.CheckNotExist( monitor, "FullName", onlyDomain );
-                return success
-                        ? new ApplicationIdentityObjectConfiguration( configuration, ref remoteProps )
+                        ? isLocalParty
+                            ? new LocalPartyConfiguration( configuration, domainName, fullName, ref remoteProps )
+                            : new RemotePartyConfiguration( configuration, domainName, fullName, configuration["Address"], ref remoteProps )
                         : null;
             }
         }
