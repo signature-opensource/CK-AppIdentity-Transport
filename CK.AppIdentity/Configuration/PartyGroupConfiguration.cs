@@ -36,7 +36,7 @@ namespace CK.AppIdentity
         /// Gets the subordinated configurations that can be:
         /// <list type="bullet">
         ///   <item><see cref="RemotePartyConfiguration"/> for a remote or external party.</item>
-        ///   <item><see cref="LocalPartyConfiguration"/> for local domain controller parties.</item>
+        ///   <item><see cref="DomainPartyConfiguration"/> for local domain controller parties.</item>
         ///   <item>Another <see cref="PartyGroupConfiguration"/> for group of parties (that is not a Party).</item>
         /// </list>
         /// </summary>

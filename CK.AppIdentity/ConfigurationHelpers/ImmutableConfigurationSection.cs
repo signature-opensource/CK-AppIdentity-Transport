@@ -11,6 +11,13 @@ namespace CK.AppIdentity
     /// <summary>
     /// Immutable capture of a <see cref="IConfigurationSection"/>.
     /// </summary>
+    /// <remarks>
+    /// If persistenc of configuration must be implemented once, the potetial parent configurations MUST NOT be flattened
+    /// (even the parent for a child): configurations may be combined by consumer in a complex way, the whole parent chain
+    /// must be restored to guaranty the same "final configuration".
+    /// If you doubt consider this question: how do you know if a given property is "additive" - because it belongs to
+    /// a set - or is "overridable"/"replacable"?
+    /// </remarks>
     public sealed class ImmutableConfigurationSection : IConfigurationSection
     {
         readonly string _key;
@@ -25,7 +32,8 @@ namespace CK.AppIdentity
         /// The <paramref name="lookupParent"/> is used only for <see cref="TryLookupSection(string)"/> and <see cref="TryLookupValue(string)"/>.
         /// It is not exposed and this is intended since it will introduce an inconsistency: this "child" cannot appear in the
         /// parent children (<see cref="ImmutableConfigurationSection.GetChildren()"/>). The new section can even "hide" an existing section of the
-        /// parent. Think to it as a convenient fallback mechanism that makes sense from the child section only.
+        /// parent. Think to it as a convenient fallback mechanism that makes sense from the child section only even if <see cref="LookupAllSection"/>
+        /// enables a more complex analysis through the parents: parent sections can be combined in a complex way if needed.
         /// </para>
         /// </summary>
         /// <param name="section">The section to capture.</param>

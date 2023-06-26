@@ -328,7 +328,7 @@ namespace CK.AppIdentity
                 }
                 return success
                         ? isLocalParty
-                            ? new LocalPartyConfiguration( configuration, domainName, fullName, ref remoteProps )
+                            ? new DomainPartyConfiguration( configuration, domainName, fullName, ref remoteProps )
                             : new RemotePartyConfiguration( configuration, domainName, fullName, configuration["Address"], ref remoteProps )
                         : null;
             }
