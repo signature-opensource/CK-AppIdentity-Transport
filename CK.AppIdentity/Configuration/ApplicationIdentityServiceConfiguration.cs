@@ -4,10 +4,7 @@ using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
-using System.Xml.Linq;
 
 namespace CK.AppIdentity
 {
@@ -23,6 +20,8 @@ namespace CK.AppIdentity
     {
         readonly ApplicationIdentityObjectConfiguration[] _remotes;
         readonly NormalizedPath _storeRootPath;
+        static NormalizedPath _defaultStoreRootPath;
+        static readonly object _defaultStoreRootPathLock = new object();
 
         ApplicationIdentityServiceConfiguration( ImmutableConfigurationSection configuration,
                                                  string domainName,
@@ -47,15 +46,56 @@ namespace CK.AppIdentity
         public IReadOnlyCollection<ApplicationIdentityObjectConfiguration> Remotes => _remotes;
 
         /// <summary>
-        /// Gets the file storage root path.
+        /// Gets the file storage root path. Defaults to <see cref="DefaultStoreRootPath"/>.
         /// <para>
-        /// When not configured, this defaults to "<see cref="Environment.SpecialFolder.LocalApplicationData"/>/CK-AppIdentity/":
-        /// this folder is de facto shared by all applications (parties) that use CK.AppIdentity and run on this computer.
+        /// This folder is de facto shared by all applications (parties) that use CK.AppIdentity and run on this computer.
         /// Such installed parties can use <see cref="ApplicationIdentityService.PrivateStorePath"/> folder to store any application 
         /// specific data. All installed parties can use <see cref="IParty.SharedStorePath"/> to store and share data related to parties.
         /// </para>
         /// </summary>
         public NormalizedPath StoreRootPath => _storeRootPath;
+
+        /// <summary>
+        /// Gets or sets the default store path that is by default "<see cref="Environment.SpecialFolder.LocalApplicationData"/>/CK-AppIdentity".
+        /// <para>
+        /// This is primarily intended for tests and must be set prior to any access to this property: once this property is accessed or set,
+        /// its value is settled. 
+        /// </para>
+        /// </summary>
+        public static NormalizedPath DefaultStoreRootPath
+        {
+            get
+            {
+                var p = _defaultStoreRootPath;
+                if( p.IsEmptyPath )
+                {
+                    lock( _defaultStoreRootPathLock )
+                    {
+                        p = _defaultStoreRootPath;
+                        if( p.IsEmptyPath )
+                        {
+                            p = Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify );
+                            p = Path.Combine( p, "CK-AppIdentity" );
+                        }
+                    }
+                    _defaultStoreRootPath = p;
+                }
+                return p;
+            }
+            set
+            {
+                var p = _defaultStoreRootPath;
+                if( p.IsEmptyPath )
+                {
+                    lock( _defaultStoreRootPathLock )
+                    {
+                        p = _defaultStoreRootPath;
+                        if( p.IsEmptyPath ) p = value;
+                    }
+                    _defaultStoreRootPath = p;
+                }
+            }
+        }
 
         /// <summary>
         /// Tries to create an <see cref="ApplicationIdentityConfiguration"/> instance from a <see cref="IConfigurationSection"/>
@@ -169,8 +209,7 @@ namespace CK.AppIdentity
                 }
                 else
                 {
-                    store = Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify );
-                    store = Path.Combine( store, "CK-AppIdentity" );
+                    store = DefaultStoreRootPath;
                 }
                 try
                 {

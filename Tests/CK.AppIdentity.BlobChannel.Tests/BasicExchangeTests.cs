@@ -139,9 +139,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
-                    c["DomainName"] = "Test";
-                    c["PartyName"] = "Listener";
-                    c["Remotes:0:PartyName"] = "Sender";
+                    c["FullName"] = "Test/$Listener";
+                    c["Remotes:0:PartyName"] = "$Sender";
                     c["AllowFeatures"] = "BlobChannel";
                 } );
             }
@@ -150,9 +149,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
-                    c["DomainName"] = "Test";
-                    c["PartyName"] = "Sender";
-                    c["Remotes:0:PartyName"] = "Listener";
+                    c["FullName"] = "Test/$Sender";
+                    c["Remotes:0:PartyName"] = "$Listener";
                     c["Remotes:0:Address"] = "tcp:127.0.0.1";
                     c["AllowFeatures"] = "BlobChannel";
                 } );

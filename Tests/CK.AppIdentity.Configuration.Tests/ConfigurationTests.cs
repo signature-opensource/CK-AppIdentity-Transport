@@ -1,17 +1,16 @@
-using CK.Testing;
 using CK.Core;
+using CK.Monitoring;
+using CK.Testing;
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using NUnit.Framework;
-using System.Threading.Tasks;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Diagnostics;
-using CK.Monitoring;
-using FluentAssertions;
-using Microsoft.Extensions.Hosting.Internal;
-using Microsoft.Extensions.Configuration;
+using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
-using CK.Monitoring.Handlers;
 
 namespace CK.AppIdentity.Configuration.Tests
 {

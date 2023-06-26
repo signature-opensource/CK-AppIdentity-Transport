@@ -11,6 +11,7 @@ using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.Tests
 {
+
     [TestFixture]
     public class ConfigurationTests
     {
