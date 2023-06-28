@@ -1,17 +1,24 @@
 using CK.Core;
 using Microsoft.Extensions.Configuration;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-
-    public interface IRemote : IApplicationIdentityObject
+    /// <summary>
+    /// A owned party belongs to the root <see cref="ApplicationIdentityService"/> or to a <see cref="ITenantDomainParty"/>.
+    /// It can be a <see cref="IRemoteParty"/> or a <see cref="ITenantDomainParty"/>.
+    /// <para>
+    /// A owned party can be destroyed if it has been dynamically created.
+    /// </para>
+    /// </summary>
+    public interface IOwnedParty : IParty
     {
         /// <summary>
-        /// Gets this remote's owner.
-        /// This can be the root <see cref="ApplicationIdentityService"/> or a <see cref="PartyGroup"/>.
+        /// Gets this party's owner.
+        /// This can be the root <see cref="IApplicationIdentityService"/> or a <see cref="ITenantDomainParty"/>.
         /// </summary>
-        IRemoteOwner Owner { get; }
+        ILocalParty Owner { get; }
 
         /// <summary>
         /// Gets whether this is a dynamic remote.
@@ -19,7 +26,7 @@ namespace CK.AppIdentity
         bool IsDynamic { get; }
 
         /// <summary>
-        /// Gets whether this remote has been removed from the root <see cref="ApplicationIdentityService"/>.
+        /// Gets whether this remote has been removed from the root <see cref="IApplicationIdentityService"/>.
         /// </summary>
         bool IsDestroyed { get; }
 

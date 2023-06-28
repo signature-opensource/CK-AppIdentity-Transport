@@ -6,7 +6,8 @@
       <Field Name="_bestRegisteredProtocols" Hidden="true" />
       <Field Name="_channels" Hidden="true" />
       <Field Name="_connectionAvailabilityChanged" Hidden="true" />
-      <Field Name="_connectionAvailabitity" Hidden="true" />
+      <Field Name="_connectionAvailabilty" Hidden="true" />
+      <Field Name="_connectionEventBridge" Hidden="true" />
       <Field Name="_controller" Hidden="true" />
       <Field Name="_disallowEviction" Hidden="true" />
       <Field Name="_listener" Hidden="true" />
@@ -30,10 +31,10 @@
       <Method Name="ToString" Hidden="true" />
       <Property Name="TransportController" Hidden="true" />
       <Method Name="TransportFeature" Hidden="true" />
-      <Method Name="UpdateConnectionAvailabitityAsync" Hidden="true" />
+      <Method Name="UpdateConnectionAvailabilityAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>CkQAAAgDAABDBAwMAAAABBAkRKCAIQAAEARAMEABAEA=</HashCode>
+      <HashCode>CkQAAAgIAQBDBQwMAAAABBAkRKCAIAAAEQRAMEABAEA=</HashCode>
       <FileName>TransportFeature.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>
@@ -51,11 +52,11 @@
     <Position X="0.5" Y="3.25" Width="1.5" />
     <TypeIdentifier />
   </Interface>
-  <Enum Name="CK.AppIdentity.TransportLayer.ConnectionAvailabitity">
+  <Enum Name="CK.AppIdentity.TransportLayer.ConnectionAvailability">
     <Position X="0.5" Y="1.5" Width="2" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAQAAAAAAAAAAAAAgAAACAAAAAAAEAAAA=</HashCode>
-      <FileName>ConnectionAvailabitity.cs</FileName>
+      <FileName>ConnectionAvailability.cs</FileName>
     </TypeIdentifier>
   </Enum>
   <Font Name="Segoe UI" Size="9" />

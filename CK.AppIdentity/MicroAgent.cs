@@ -11,7 +11,8 @@ namespace CK.AppIdentity
 {
     /// <summary>
     /// Simple agent that always accepts jobs (basic delegates and any specifically implemented type - see the protected <see cref="PushTypedJob(object)"/>),
-    /// starts once but may refuse to start, and always run (once started errors are logged but it continues its work) until disposed.
+    /// starts once but may refuse to start, and always run (once started errors are logged but it continues its work) until the
+    /// protected <see cref="SendStop"/> method is called.
     /// <para>
     /// It is rather basic but enough for our needs here and may be reused by <see cref="ApplicationIdentityFeatureDriver"/> if needed.
     /// </para>

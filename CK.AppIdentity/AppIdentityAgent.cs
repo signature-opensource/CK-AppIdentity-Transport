@@ -59,7 +59,7 @@ namespace CK.AppIdentity
             using( monitor.OpenInfo( $"Starting {ToString()}: initializing '{_service._builders.Select( f => f.FeatureName ).Concatenate("', '")}' features." ) )
             {
                 var initContext = new FeatureLifetimeContext( monitor, this, _service._builders );
-                Exception? error = await initContext.ExecuteSetupAsync();
+                Exception? error = await initContext.ExecuteSetupAsync().ConfigureAwait( false );
                 if( error == null ) _service._initialization.SetResult();
                 else
                 {
@@ -75,14 +75,14 @@ namespace CK.AppIdentity
             await context.ExecuteTeardownAsync().ConfigureAwait( false );
         }
 
-        record class InitializeDynamicRemoteJob( IRemoteInternal Remote, TaskCompletionSource<bool> Result );
+        record class InitializeDynamicPartiesJob( AddedDynamicParties Added, TaskCompletionSource<bool> Result );
 
-        internal void OnDestroy( IRemoteInternal remote ) => PushTypedJob( remote );
+        internal void OnDestroy( IOwnedPartyInternal owned ) => PushTypedJob( owned );
 
-        internal Task<bool> InitializeDynamicRemoteAsync( IRemoteInternal r )
+        internal Task<bool> InitializeDynamicPartiesAsync( AddedDynamicParties parties )
         {
             var cts = new TaskCompletionSource<bool>();
-            PushTypedJob( new InitializeDynamicRemoteJob( r, cts ) );
+            PushTypedJob( new InitializeDynamicPartiesJob( parties, cts ) );
             return cts.Task;
         }
 
@@ -90,11 +90,11 @@ namespace CK.AppIdentity
         {
             switch( job )
             {
-                case IRemoteInternal destroyed: return HandleDestroyAsync( monitor, destroyed );
-                case InitializeDynamicRemoteJob init:
+                case IOwnedPartyInternal destroyed: return HandleDestroyAsync( monitor, destroyed );
+                case InitializeDynamicPartiesJob init:
                     if( Status == RunningStatus.Running )
                     {
-                        return HandleDynamicRemoteAsync( monitor, init );
+                        return HandleInitializeDynamicParties( monitor, init );
                     }
                     else
                     {
@@ -105,52 +105,68 @@ namespace CK.AppIdentity
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
-        async ValueTask HandleDynamicRemoteAsync( IActivityMonitor monitor, InitializeDynamicRemoteJob init )
+        async ValueTask HandleInitializeDynamicParties( IActivityMonitor monitor, InitializeDynamicPartiesJob init )
         {
-            var r = init.Remote;
-            using( monitor.OpenInfo( $"Initializing dynamic Remote '{r}' ({_service._builders.Count} feature builders)." ) )
+            int addedCount = init.Added.Count;
+            using( monitor.OpenInfo( $"Initializing {addedCount} parties ({_service._builders.Count} feature builders)." ) )
             {
-                var context = new FeatureLifetimeContext( monitor, this, _service._builders );
-                // The new configured remote is published on the second round of the OnSuccess trampoline.
-                context.Trampoline.OnSuccess( () =>
+                bool success = true;
+                // Setup a hash set with ALL the names, including the root application one.
+                var existing = new HashSet<string>( _service.AllParties.Select( p => p.FullName.Path ).Prepend( _service.FullName.Path ), StringComparer.OrdinalIgnoreCase );
+                Debug.Assert( _service.AllParties.All( p => !p.IsDestroyed ), "We are in the Agent: operations are serialized: destroyed parties are not observable." );
+                foreach( var p in init.Added.Parties )
                 {
-                    context.Trampoline.OnSuccess( () => r.Owner.OnSuccessAddRemoteAsync( context.Monitor, r ) );
-                } );
-                bool success = await context.ExecuteSetupDynamicRemoteAsync( r ) == TrampolineResult.TotalSuccess;
-                if( !success )
-                {
-                    monitor.CloseGroup( "Failed." );
+                    var newOne = p.FullName.Path;
+                    Debug.Assert( init.Added.Parties.SingleOrDefault( a => a.FullName.Path.Equals( p.FullName, StringComparison.OrdinalIgnoreCase ) ) == p,
+                                  "This has been checked when building the configuration objects: there is no duplicates in the configuration." );
+                    if( existing.Contains( newOne ) )
+                    {
+                        monitor.Error( $"Party '{newOne}' already exists. A party must first be destroyed before being added again." );
+                        success = false;
+                    }
                 }
+                // If a clash occurs, we add nothing.
+                if( success )
+                {
+                    foreach( var p in init.Added.Parties )
+                    {
+                        using( monitor.OpenInfo( $"Initializing dynamic party '{p}'." ) )
+                        {
+                            var context = new FeatureLifetimeContext( monitor, this, _service._builders );
+                            // The new configured party is published on the second round of the OnSuccess trampoline.
+                            context.Trampoline.OnSuccess( () =>
+                            {
+                                context.Trampoline.OnSuccess( () => _service.OnCreatedAsync( context.Monitor, p ) );
+                            } );
+                            if( await context.ExecuteSetupDynamicRemoteAsync( p ).ConfigureAwait( false ) != TrampolineResult.TotalSuccess )
+                            {
+                                success = false;
+                                monitor.CloseGroup( "Failed." );
+                                break;
+                            }
+                        }
+                    }
+                }
+                if( !success ) monitor.CloseGroup( "Failed." );
                 init.Result.SetResult( success );
             }
         }
 
-        async ValueTask HandleDestroyAsync( IActivityMonitor monitor, IRemoteInternal destroyed )
+        async ValueTask HandleDestroyAsync( IActivityMonitor monitor, IOwnedPartyInternal destroyed )
         {
             Debug.Assert( destroyed.DestroyTCS != null );
-            var group = destroyed as PartyGroup;
-            using( monitor.OpenInfo( $"Destroying party {(group != null ? $"group with {group.Remotes.Count} parties": $"'{destroyed}'")}." ) )
+            using( monitor.OpenInfo( $"Destroying '{destroyed}'." ) )
             {
                 // Enables the feature drivers to tear down any existing features, including the
-                // subordinates parties if this remote defines a domain.
+                // subordinates remotes if this is a domain.
                 var context = new FeatureLifetimeContext( monitor, this, _service._builders );
-                await context.ExecuteTeardownDynamicRemoteAsync( destroyed );
+                await context.ExecuteTeardownDynamicRemoteAsync( destroyed ).ConfigureAwait( false );
 
-                // Removes the destroyed from its owner's Remotes array.
-                destroyed.Owner.RemoveDestroyed( destroyed );
+                // The service routes the call to the LocalService (for a remote) or
+                // its domains.
+                await _service.OnDestroyedAsync( monitor, destroyed ).ConfigureAwait( false );
 
-                // Should we raise the RemotesChanged event after the Destroy task completion?
-                // It seems safer to raise the RemotesChanged after the task completion but the
-                // event handling is part of the destroy activity: we raise the destroy events
-                // before signaling the end.
-
-                // If we are on a group, destroys it: it will
-                // clear its Remotes array, raise the destroy event and complete the destroy tasks
-                // for each of the remote and eventually dispose its event bridge. 
-                if( group != null ) await group.DestroyAsync( monitor );
-
-                // Eventually signal the remote's destroy completion and raises the event.
-                await destroyed.Owner.RemotesChanged.SafeRaiseAsync( monitor, destroyed );
+                // Set the completion after all the events have been raised.
                 destroyed.DestroyTCS.SetResult();
             }
         }

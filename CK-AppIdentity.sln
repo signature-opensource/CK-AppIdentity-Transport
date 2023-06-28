@@ -8,7 +8,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.editorconfig = .editorconfig
 		.gitignore = .gitignore
 		appveyor.yml = appveyor.yml
-		Doc\CK-AppIdentity.pptx = Doc\CK-AppIdentity.pptx
 		NuGet.config = NuGet.config
 		README.md = README.md
 		RepositoryInfo.xml = RepositoryInfo.xml
@@ -42,6 +41,11 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.BlobChannel", "CK.AppIdentity.BlobChannel\CK.AppIdentity.BlobChannel.csproj", "{F1E1D2F7-4573-47D8-AD20-EBC9637D57E7}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.BlobChannel.Tests", "Tests\CK.AppIdentity.BlobChannel.Tests\CK.AppIdentity.BlobChannel.Tests.csproj", "{10311192-BE3A-483B-82AB-B8E6878A04E2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Doc", "Doc", "{92AEB1AC-BF13-4223-B60A-D860DED791F7}"
+	ProjectSection(SolutionItems) = preProject
+		Doc\CK-AppIdentity.pptx = Doc\CK-AppIdentity.pptx
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -103,6 +107,7 @@ Global
 		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{C94859C9-ED2F-4824-A6D2-501C78C1612A} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{10311192-BE3A-483B-82AB-B8E6878A04E2} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
+		{92AEB1AC-BF13-4223-B60A-D860DED791F7} = {7C9F751D-25CD-4A19-838B-B69E7B897468}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAD33C0C-C901-4BB7-9D1C-E87979CF9029}

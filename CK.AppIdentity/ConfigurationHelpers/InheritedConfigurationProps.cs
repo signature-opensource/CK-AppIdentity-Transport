@@ -16,7 +16,7 @@ namespace CK.AppIdentity
         public readonly IReadOnlySet<string> DisallowFeatures;
         public readonly bool IsValid => AllowFeatures != null;
 
-        public InheritedConfigurationProps( ApplicationIdentityObjectConfiguration existing )
+        public InheritedConfigurationProps( ApplicationIdentityPartyConfiguration existing )
         {
             AllowFeatures = existing.AllowFeatures;
             DisallowFeatures = existing.DisallowFeatures;

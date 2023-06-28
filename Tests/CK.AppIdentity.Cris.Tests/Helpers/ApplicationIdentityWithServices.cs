@@ -30,7 +30,7 @@ namespace CK.AppIdentity.Cris.Tests
 
         public ILocalParty Local => _s.Local;
 
-        public IReadOnlyCollection<IRemoteParty> Remotes => _s.Remotes;
+        public IReadOnlyCollection<IRemoteParty> Remotes => _s.Parties;
 
         public PerfectEvent<IRemoteParty> RemotesChanged => _s.RemotesChanged;
 

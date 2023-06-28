@@ -51,15 +51,19 @@ namespace CK.AppIdentity
         public bool IsRootAllowed => _isRootAllowed;
 
         /// <summary>
-        /// Gets whether this feature is enabled for the given remote, accounting the potential intermediate
-        /// Allow/DisallowFeatures configuration of the parent group's remote.
+        /// Gets whether this feature is enabled for the given party (including the root <see cref="IApplicationIdentityService"/>),
+        /// accounting the potential intermediate Allow/DisallowFeatures inherited configurations.
         /// </summary>
-        /// <param name="r">The remote to test.</param>
+        /// <param name="p">The party to test.</param>
         /// <returns>True if this feature is allowed, false otherwise.</returns>
-        public bool IsAllowedFeature( IRemote r )
+        public bool IsAllowedFeature( IParty p )
         {
-            bool above = r.Owner.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
-            return r.Configuration.IsAllowedFeature( _featureName, above );
+            if( p is IOwnedParty o )
+            {
+                bool above = o.Owner.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
+                return p.Configuration.IsAllowedFeature( _featureName, above );
+            }
+            return p.Configuration.IsAllowedFeature( _featureName, _isRootAllowed );
         }
 
         /// <summary>
@@ -69,11 +73,11 @@ namespace CK.AppIdentity
         public string FeatureName => _featureName;
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="ApplicationIdentityService.Features"/>
-        /// and any <see cref="IApplicationIdentityObject.Features"/>.
+        /// Must do whatever is required to register features into any <see cref="IParty.Features"/>
+        /// of <see cref="IApplicationIdentityService.AllParties"/>.
         /// <para>
         /// The <see cref="ApplicationIdentityService"/> property is available as well as helpers to know if this feature is allowed on
-        /// a party (see <see cref="IsAllowedFeature(IRemote)"/>).
+        /// a party (see <see cref="IsAllowedFeature(IParty)"/>).
         /// </para>
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
@@ -84,16 +88,16 @@ namespace CK.AppIdentity
         internal protected abstract Task<bool> SetupAsync( FeatureLifetimeContext context );
 
         /// <summary>
-        /// Must do whatever is required to register features into <see cref="ApplicationIdentityObject.Features"/> for the remote and any
-        /// subordinated remotes if the remote is a <see cref="PartyGroup"/>.
+        /// Must do whatever is required to register features into <see cref="ApplicationIdentityParty.Features"/> for the party and any
+        /// <see cref="ILocalParty.Remotes"/> if the party is a <see cref="TenantDomainParty"/>.
         /// <para>
         /// This is called in the same order as this driver has been instantiated: any dependent feature drivers have been initialized.
         /// </para>
         /// </summary>
         /// <param name="context">The lifetime context.</param>
-        /// <param name="remote">The dynamic remote party to initialize.</param>
+        /// <param name="party">The dynamic party to initialize.</param>
         /// <returns>True on success, false on non recoverable error (errors must be logged).</returns>
-        internal protected abstract Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote );
+        internal protected abstract Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party );
 
         /// <summary>
         /// Called when a dynamic party is destroyed.
@@ -102,9 +106,9 @@ namespace CK.AppIdentity
         /// </para>
         /// </summary>
         /// <param name="context">The lifetime context.</param>
-        /// <param name="remote">The dynamic remote party to cleanup.</param>
+        /// <param name="party">The dynamic party to cleanup.</param>
         /// <returns>The awaitable.</returns>
-        internal protected abstract Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote );
+        internal protected abstract Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party );
 
         /// <summary>
         /// Called by a stopping agent. Must get rid of any acquired resources at any level.

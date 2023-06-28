@@ -26,8 +26,8 @@ namespace CK.AppIdentity.Tests
                 c["DomainName"] = "D";
                 c["EnvironmentName"] = "#Production";
                 c["PartyName"] = "MyApp";
-                c["Remotes:0:PartyName"] = "Remote1";
-                c["Remotes:1:PartyName"] = "Remote2";
+                c["Parties:0:PartyName"] = "Remote1";
+                c["Parties:1:PartyName"] = "Remote2";
             } );
 
             s.DomainName.Should().Be( "D" );
@@ -35,15 +35,15 @@ namespace CK.AppIdentity.Tests
             s.PartyName.Should().Be( "$MyApp" );
             s.Features.Should().BeEmpty();
 
-            s.Remotes.Should().HaveCount( 2 );
-            var r1 = s.Remotes.OfType<RemoteParty>().Single( r => r.PartyName == "$Remote1" );
+            s.Parties.Should().HaveCount( 2 );
+            var r1 = s.Remotes.Single( r => r.PartyName == "$Remote1" );
             r1.IsDynamic.Should().BeFalse();
             r1.Address.Should().BeNull();
             r1.DomainName.Should().Be( "D" );
             r1.EnvironmentName.Should().Be( "#Production" );
             r1.Features.Should().BeEmpty();
 
-            var r2 = s.Remotes.OfType<RemoteParty>().Single( r => r.PartyName == "$Remote2" );
+            var r2 = s.Remotes.Single( r => r.PartyName == "$Remote2" );
             r2.IsDynamic.Should().BeFalse();
             r2.Address.Should().BeNull();
             r2.DomainName.Should().Be( "D" );
@@ -85,7 +85,7 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
+            protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
             {
                 _dynamicSetupCount++;
                 context.Monitor.Trace( $"SetupDynamic {GetType().Name} ({SetupOrder})." );
@@ -94,7 +94,7 @@ namespace CK.AppIdentity.Tests
                 return Task.FromResult( true );
             }
 
-            protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
+            protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
             {
                 _dynamicTeardownCount++;
                 context.Monitor.Trace( $"TeardownDynamic {GetType().Name} ({SetupOrder})." );
@@ -221,7 +221,7 @@ namespace CK.AppIdentity.Tests
             fC_A_3.SetupOrder.Should().BeGreaterThan( fA_1.SetupOrder ).And.BeGreaterThan( f3_2.SetupOrder );
             fD_B_2.SetupOrder.Should().BeGreaterThan( fB_A.SetupOrder ).And.BeGreaterThan( f2_1.SetupOrder );
 
-            var r = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            var r = await s.AddRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "SomeDynamicRemote";
             } );

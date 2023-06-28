@@ -30,24 +30,24 @@ namespace CK.AppIdentity.BlobChannel
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
         {
             bool success = true;
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllRemotes().Where( IsAllowedFeature ) )
             {
                 success &= PlugFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
         {
             bool success = true;
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
+            foreach( var r in context.GetAllRemotes().Where( IsAllowedFeature ) )
             {
                 success &= PlugFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        bool PlugFeature( FeatureLifetimeContext context, RemoteParty r )
+        bool PlugFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
             Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
             var transport = r.GetFeature<TransportFeature>();
@@ -84,7 +84,7 @@ namespace CK.AppIdentity.BlobChannel
 
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
+            foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<T>();
                 t?.Teardown( context );
@@ -92,9 +92,9 @@ namespace CK.AppIdentity.BlobChannel
             return Task.CompletedTask;
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
         {
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
+            foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<T>();
                 t?.Teardown( context );

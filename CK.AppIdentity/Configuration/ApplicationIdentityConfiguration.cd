@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
-    <Position X="3.75" Y="0.5" Width="3.25" />
+    <Position X="4.25" Y="0.5" Width="3.25" />
     <Members>
       <Field Name="_children" Hidden="true" />
       <Field Name="_key" Hidden="true" />
@@ -20,22 +20,25 @@
     <Lollipop Position="0.2" />
   </Class>
   <Class Name="CK.AppIdentity.ApplicationIdentityServiceConfiguration">
-    <Position X="1.5" Y="6.75" Width="3.25" />
+    <Position X="3.25" Y="4.75" Width="3" />
     <Members>
+      <Field Name="_defaultStoreRootPath" Hidden="true" />
+      <Field Name="_defaultStoreRootPathLock" Hidden="true" />
       <Field Name="_remotes" Hidden="true" />
       <Field Name="_storeRootPath" Hidden="true" />
+      <Field Name="_tenants" Hidden="true" />
       <Method Name="ApplicationIdentityServiceConfiguration" Hidden="true" />
       <Method Name="Create" Hidden="true" />
-      <Method Name="CreateRemote" Hidden="true" />
-      <Method Name="CreateRemotes" Hidden="true" />
+      <Method Name="CreateParties" Hidden="true" />
+      <Method Name="ReadParties" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>ABAAAIAAAgAICAAAAAAAAAAAAAQABUAAEAIAAAAAAAQ=</HashCode>
+      <HashCode>AAIAAICAAgAACIAAAAAAAAAAAAQAAUAAEAIAAAAAAAQ=</HashCode>
       <FileName>Configuration\ApplicationIdentityServiceConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.RemotePartyConfiguration">
-    <Position X="5" Y="6.75" Width="2.25" />
+    <Position X="6.5" Y="4.75" Width="2.25" />
     <Members>
       <Field Name="_address" Hidden="true" />
       <Method Name="RemotePartyConfiguration" Hidden="true" />
@@ -45,68 +48,48 @@
       <FileName>Configuration\RemotePartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="CK.AppIdentity.RemoteGroupConfiguration">
-    <Position X="0.75" Y="4.5" Width="2.5" />
-    <Members>
-      <Field Name="_domainName" Hidden="true" />
-      <Field Name="_environmentName" Hidden="true" />
-      <Method Name="RemoteGroupConfiguration" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>AAAgAAAAAgAAAAAAAAAAAAAIAAAAAAAAAAiAAAAAAAA=</HashCode>
-      <FileName>Configuration\RemoteGroupConfiguration.cs</FileName>
-    </TypeIdentifier>
-  </Class>
-  <Class Name="CK.AppIdentity.ApplicationIdentityObjectConfiguration">
-    <Position X="0.5" Y="0.75" Width="3" />
+  <Class Name="CK.AppIdentity.ApplicationIdentityPartyConfiguration">
+    <Position X="0.5" Y="0.5" Width="2.75" />
     <Members>
       <Field Name="_allowFeatures" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />
       <Field Name="_disallowFeatures" Hidden="true" />
-      <Field Name="_names" Hidden="true" />
-      <Field Name="_nameSyntaxes" Hidden="true" />
-      <Method Name="ApplicationIdentityObjectConfiguration" Hidden="true" />
-      <Method Name="IsAllowedFeature" Hidden="true" />
-      <Method Name="ReadName" Hidden="true" />
-      <Method Name="ReadNames" Hidden="true" />
-    </Members>
-    <NestedTypes>
-      <Enum Name="CK.AppIdentity.ApplicationIdentityObjectConfiguration.NameKind" Collapsed="true">
-        <TypeIdentifier>
-          <NewMemberFileName>Configuration\ApplicationIdentityObjectConfiguration.cs</NewMemberFileName>
-        </TypeIdentifier>
-      </Enum>
-    </NestedTypes>
-    <TypeIdentifier>
-      <HashCode>AAAAIABCIAAAEAAEAQAgAAAAgAAAgAQAgAEAAAAAAAA=</HashCode>
-      <FileName>Configuration\ApplicationIdentityObjectConfiguration.cs</FileName>
-    </TypeIdentifier>
-    <ShowAsAssociation>
-      <Property Name="Configuration" />
-    </ShowAsAssociation>
-  </Class>
-  <Class Name="CK.AppIdentity.ApplicationIdentityPartyConfiguration">
-    <Position X="3.75" Y="4.5" Width="2.5" />
-    <Members>
       <Field Name="_domainName" Hidden="true" />
       <Field Name="_environmentName" Hidden="true" />
       <Field Name="_fullName" Hidden="true" />
+      <Field Name="_names" Hidden="true" />
+      <Field Name="_nameSyntaxes" Hidden="true" />
       <Field Name="_partyName" Hidden="true" />
       <Method Name="ApplicationIdentityPartyConfiguration" Hidden="true" />
+      <Method Name="CreateDynamicRemoteConfiguration" Hidden="true" />
+      <Method Name="IsAllowedFeature" Hidden="true" />
+      <Method Name="ReadNames" Hidden="true" />
+      <Method Name="ToString" Hidden="true" />
     </Members>
     <Compartments>
       <Compartment Name="Fields" Collapsed="true" />
     </Compartments>
+    <NestedTypes>
+      <Enum Name="CK.AppIdentity.ApplicationIdentityPartyConfiguration.NameKind" Collapsed="true">
+        <TypeIdentifier>
+          <NewMemberFileName>Configuration\ApplicationIdentityPartyConfiguration.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Enum>
+    </NestedTypes>
     <TypeIdentifier>
-      <HashCode>AAAgAAAAAAAAAIAAAAAAAAIIAAAAAAAAAAiBAAgAAAA=</HashCode>
+      <HashCode>AAAgIABCIAAAEIAEAQAgAAIIgAAAAAQAgAmBAAgAAAA=</HashCode>
       <FileName>Configuration\ApplicationIdentityPartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="CK.AppIdentity.LocalPartyConfiguration">
-    <Position X="7.25" Y="5.25" Width="1.5" />
+  <Class Name="CK.AppIdentity.TenantDomainPartyConfiguration">
+    <Position X="0.5" Y="4.75" Width="2.5" />
+    <Members>
+      <Field Name="_remotes" Hidden="true" />
+      <Method Name="TenantDomainPartyConfiguration" Hidden="true" />
+    </Members>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
-      <FileName>Configuration\LocalPartyConfiguration.cs</FileName>
+      <HashCode>AAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAA=</HashCode>
+      <FileName>Configuration\TenantDomainPartyConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Font Name="Segoe UI" Size="9" />

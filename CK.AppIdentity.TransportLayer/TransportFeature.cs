@@ -16,7 +16,7 @@ namespace CK.AppIdentity.TransportLayer
     public sealed class TransportFeature
     {
         readonly TransportManager _transportManager;
-        readonly RemoteParty _party;
+        readonly IRemoteParty _party;
         // Either listener or target is not null.
         readonly TransportListener? _listener;
         readonly TransportTypeAddress? _target;
@@ -41,7 +41,7 @@ namespace CK.AppIdentity.TransportLayer
         bool _disallowEviction;
 
         internal TransportFeature( TransportManager transportManager,
-                                   RemoteParty remote,
+                                   IRemoteParty remote,
                                    TransportListener? listener,
                                    TransportTypeAddress? target,
                                    bool disallowEviction )
@@ -321,9 +321,9 @@ namespace CK.AppIdentity.TransportLayer
         public Task ReadyTask => _readyTask.Task;
 
         /// <summary>
-        /// Gets the party.
+        /// Gets the remote party.
         /// </summary>
-        public RemoteParty Party => _party;
+        public IRemoteParty Party => _party;
 
         /// <summary>
         /// Gets whether we are listening or calling the remote.

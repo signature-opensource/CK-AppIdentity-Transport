@@ -18,7 +18,7 @@ namespace CK.AppIdentity
         readonly AppIdentityAgent _agent;
         readonly IReadOnlyList<ApplicationIdentityFeatureDriver> _drivers;
         readonly BasicTrampolineRunner _trampoline;
-        IRemote? _targetParty;
+        IOwnedParty? _targetParty;
 
         internal FeatureLifetimeContext( IActivityMonitor monitor, AppIdentityAgent agent, IReadOnlyList<ApplicationIdentityFeatureDriver> drivers )
         {
@@ -29,30 +29,31 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Gets the remotes that are concerned by the current operation, skipping any intermediate <see cref="PartyGroup"/>.
+        /// Gets the remotes that are concerned by the current operation, skipping any intermediate <see cref="TenantDomainParty"/>.
         /// <list type="bullet">
         ///   <item>
         ///   For <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/> and <see cref="ApplicationIdentityFeatureDriver.TeardownAsync(FeatureLifetimeContext)"/>
-        ///   these are all <see cref="RemoteParty"/> and <see cref="ExternalParty"/> of the application (depth-first traversal).
+        ///   these are the <see cref="IApplicationIdentityService.AllRemotes"/>.
         ///   </item>
         ///   <item>
-        ///   For <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>) and
-        ///   <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IRemote)"/>
-        ///   this can be the <see cref="IRemote"/> if it is a <see cref="RemoteParty"/> or <see cref="ExternalParty"/>,
-        ///   or its content if it is a <see cref="PartyGroup"/> (this uses <see cref="IRemoteOwner.AllRemotes"/>).
+        ///   For <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IOwnedParty)"/>) and
+        ///   <see cref="ApplicationIdentityFeatureDriver.TeardownDynamicRemoteAsync(FeatureLifetimeContext, IOwnedParty)"/>
+        ///   this is the <see cref="IOwnedParty"/> if it is a <see cref="RemoteParty"/>, or its content if it is a <see cref="TenantDomainParty"/>
+        ///   (<see cref="ILocalParty.Remotes"/>).
         ///   </item>
         /// </list>
-        /// Nothing prevents to associate features to a <see cref="PartyGroup"/> but this should be quite rare: this helper
-        /// ease the common case where features must be associated to <see cref="RemoteParty"/> or <see cref="ExternalParty"/>.
+        /// Nothing prevents to associate features to a <see cref="ITenantDomainParty"/> but this is less common: this helper
+        /// ease the case where features must be associated to <see cref="IRemoteParty"/>.
         /// </summary>
-        /// <returns>The set of leaf remotes for the current operation.</returns>
-        public IEnumerable<IRemote> GetAllLeafRemotes()
+        /// <returns>The set of remotes to consider for the current operation.</returns>
+        public IEnumerable<IRemoteParty> GetAllRemotes()
         {
             return _targetParty switch
             {
                 null => _agent.ApplicationIdentityService.AllRemotes,
-                PartyGroup g => g.AllRemotes,
-                _ => new[] { _targetParty }
+                TenantDomainParty g => g.Remotes,
+                RemoteParty p => new[] { p },
+                _ => Throw.NotSupportedException<IEnumerable<IRemoteParty>>()
             };
         }
 
@@ -88,7 +89,7 @@ namespace CK.AppIdentity
             return _trampoline.Error ?? new CKException( $"Initialization result is '{_trampoline.Result}'. It is not safe to continue." );
         }
 
-        internal async Task<TrampolineResult> ExecuteSetupDynamicRemoteAsync( IRemote remote )
+        internal async Task<TrampolineResult> ExecuteSetupDynamicRemoteAsync( IOwnedParty remote )
         {
             _targetParty = remote;
             foreach( var d in _drivers )
@@ -99,7 +100,7 @@ namespace CK.AppIdentity
             return _trampoline.Result;
         }
 
-        internal Task ExecuteTeardownDynamicRemoteAsync( IRemote party )
+        internal Task ExecuteTeardownDynamicRemoteAsync( IOwnedParty party )
         {
             _targetParty = party;
             // Calls the drivers in reverse order for the destruction.

@@ -33,29 +33,29 @@ namespace CK.AppIdentity.TransportLayer
             }
             // Even if initialization fails, register the features: it may be required by others.
             ApplicationIdentityService.AddFeature( _transportManager );
-            // Domains named "Undefined" have no Transport.
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
-            {
-                success &= PlugTransportFeature( context, r );
-            }
-            return Task.FromResult( true );
-        }
-
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
-        {
-            bool success = true;
-            // Domains named "Undefined" have no Transport.
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>().Where( r => IsAllowedFeature( r ) ) )
+            // External parties have no Transport.
+            foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IRemote remote )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
+        {
+            bool success = true;
+            // External parties have no Transport.
+            foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
+            {
+                success &= PlugTransportFeature( context, r );
+            }
+            return Task.FromResult( success );
+        }
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
         {
             Debug.Assert( _transportManager != null );
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
+            foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null ) _transportManager.TearDown( t );
@@ -66,7 +66,7 @@ namespace CK.AppIdentity.TransportLayer
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
             Debug.Assert( _transportManager != null );
-            foreach( var r in context.GetAllLeafRemotes().OfType<RemoteParty>() )
+            foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null ) _transportManager.TearDown( t );
@@ -77,7 +77,7 @@ namespace CK.AppIdentity.TransportLayer
             return _transportManager.RunningTask;
         }
 
-        bool PlugTransportFeature( FeatureLifetimeContext context, RemoteParty r )
+        bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
             Debug.Assert( _transportManager != null );
             Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
@@ -162,7 +162,7 @@ namespace CK.AppIdentity.TransportLayer
             return transport.ParseAddress( monitor, typed, section );
         }
 
-        bool ResolveAdresses( IActivityMonitor monitor, RemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
+        bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
         {
             listen = null;
             target = null;
@@ -232,7 +232,7 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
-        bool ReadListeningAddresses( IActivityMonitor monitor, RemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
+        bool ReadListeningAddresses( IActivityMonitor monitor, IRemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
         {
             result = null;
             List<ITransportTypeService>? locally = null;

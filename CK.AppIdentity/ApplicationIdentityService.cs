@@ -15,16 +15,15 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity
 {
     /// <summary>
-    /// Singleton hosted service that is the local party and the root collection of <see cref="IRemote"/>.
+    /// Singleton hosted service that is the local party and the root collection of <see cref="IOwnedParty"/>.
     /// </summary>
-    public sealed class ApplicationIdentityService : ApplicationIdentityParty, IRemoteOwnerInternal, ISingletonAutoService, IHostedService, IAsyncDisposable
+    public sealed class ApplicationIdentityService : LocalParty, IApplicationIdentityService, ISingletonAutoService, IHostedService, IAsyncDisposable
     {
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
         internal TaskCompletionSource _initialization;
-        readonly NormalizedPath _privateStorePath;
-        readonly NormalizedPath _sharedStorePath;
-        RemoteOwnerImpl _remotes;
+        readonly internal PerfectEventSender<IOwnedParty> _allPartyChanged;
+        internal TenantDomainParty[] _domains;
 
         /// <summary>
         /// Initializes a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
@@ -32,17 +31,14 @@ namespace CK.AppIdentity
         /// <param name="configuration">The configuration.</param>
         /// <param name="serviceProvider">The application service provider.</param>
         public ApplicationIdentityService( ApplicationIdentityServiceConfiguration configuration, IServiceProvider serviceProvider )
-            : base( configuration, null )
+            : base( configuration, configuration.Remotes, false, null )
         {
             Throw.CheckNotNullArgument( serviceProvider );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
             _agent = new AppIdentityAgent( this, serviceProvider );
-            _sharedStorePath = ComputeSharedStorePath( FullName );
-            _privateStorePath = _sharedStorePath.AppendPart( "$Local" );
-            Directory.CreateDirectory( _privateStorePath );
-            _remotes = new RemoteOwnerImpl( this );
-            _remotes.Initialize( this, configuration.Remotes );
+            _allPartyChanged = (PerfectEventSender<IOwnedParty>)_remotesChangedBridge.Target;
+            _domains = configuration.TenantDomains.Select( c => new TenantDomainParty( c, false, this ) ).ToArray();
         }
 
         internal NormalizedPath ComputeSharedStorePath( NormalizedPath fullName )
@@ -55,52 +51,107 @@ namespace CK.AppIdentity
 
         internal AppIdentityAgent Agent => _agent;
 
-        /// <summary>
-        /// Gets the <see cref="ApplicationIdentityServiceConfiguration"/> object.
-        /// </summary>
+        /// <inheritdoc />
         public new ApplicationIdentityServiceConfiguration Configuration => Unsafe.As<ApplicationIdentityServiceConfiguration>( _configuration );
 
-        /// <summary>
-        /// Gets the path to the "$Local" directory of this party inside the <see cref="SharedStorePath"/>.
-        /// </summary>
-        public NormalizedPath PrivateStorePath => _privateStorePath;
-
-        /// <summary>
-        /// Gets the path to the directory of this party.
-        /// </summary>
-        public NormalizedPath SharedStorePath => _sharedStorePath;
+        /// <inheritdoc />
+        public PerfectEvent<IOwnedParty> AllPartyChanged => _allPartyChanged.PerfectEvent;
 
         /// <inheritdoc />
-        public IReadOnlyCollection<IRemote> Remotes => _remotes.Remotes;
+        public IReadOnlyCollection<ITenantDomainParty> TenantDomains => _domains;
 
         /// <inheritdoc />
-        public IEnumerable<IRemote> AllRemotes => _remotes.AllRemotes;
-
-        /// <inheritdoc />
-        public PerfectEvent<IRemote> RemotesChanged => _remotes.RemotesChanged.PerfectEvent;
-
-        /// <inheritdoc />
-        public Task<IRemote?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        public IEnumerable<IRemoteParty> AllRemotes
         {
-            return _remotes.AddDynamicRemotePartyAsync( this, monitor, configuration, _agent, Configuration.DomainName, Configuration.EnvironmentName );
+            get
+            {
+                foreach( var r in _remotes ) yield return r;
+                foreach( var d in _domains )
+                {
+                    foreach( var r in d.Remotes )
+                    {
+                        yield return r;
+                    }
+                }
+            }
         }
 
-        PerfectEventSender<IRemote> IRemoteOwnerInternal.RemotesChanged => _remotes.RemotesChanged;
+        /// <inheritdoc />
+        public IEnumerable<IOwnedParty> Parties => ((IEnumerable<IOwnedParty>)Remotes).Concat( TenantDomains );
 
-        void IRemoteOwnerInternal.RemoveDestroyed( IRemote destroyed ) => _remotes.RemoveDestroyed( destroyed );
+        /// <inheritdoc />
+        public IEnumerable<IOwnedParty> AllParties
+        {
+            get
+            {
+                foreach( var r in _remotes ) yield return r;
+                foreach( var d in _domains )
+                {
+                    yield return d;
+                    foreach( var r in d.Remotes )
+                    {
+                        yield return r;
+                    }
+                }
+            }
+        }
 
-        void IRemoteOwnerInternal.OnSuccessAddRemoteAsync( IActivityMonitor monitor, IRemote r ) => _remotes.OnSuccessAddRemoteAsync( monitor, r );
-
-        /// <summary>
-        /// Gets a task that is completed once all the <see cref="AppIdentityFeatureBuilder"/> have been
-        /// initialized. Initialization errors are set on this task if exceptions occurred: awaiting this
-        /// task will re-throw the initialization errors.
-        /// <para>
-        /// Use <see cref="Task.IsCompletedSuccessfully"/> to know if initialization has been successful.
-        /// </para>
-        /// </summary>
+        /// <inheritdoc />
         public Task InitializationTask => _initialization.Task;
 
+        /// <inheritdoc />
+        public Task<AddedDynamicParties?> AddPartiesAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        {
+            return AddDynamicPartiesAsync( monitor, configuration, false, false, this );
+        }
+
+        /// <inheritdoc />
+        public async Task<ITenantDomainParty?> AddTenantDomainAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        {
+            return (await AddDynamicPartiesAsync( monitor, configuration, false, true, this ).ConfigureAwait( false ))?.Tenants.Single();
+        }
+
+        internal Task OnDestroyedAsync( IActivityMonitor monitor, IOwnedParty owned )
+        {
+            return owned switch
+            {
+                RemoteParty p => p.Owner.OnDestroyedRemoteAsync( monitor, p ),
+                TenantDomainParty d => OnDestroyedDomainAsync( monitor, d ),
+                _ => Throw.NotSupportedException<Task>()
+            };
+        }
+
+        async Task OnDestroyedDomainAsync( IActivityMonitor monitor, TenantDomainParty d )
+        {
+            Debug.Assert( d._destroyTCS != null );
+            Util.InterlockedRemove( ref _domains, d );
+            await d.OnDestroyedAsync( monitor ).ConfigureAwait( false );
+            await _allPartyChanged.RaiseAsync( monitor, d ).ConfigureAwait( false );
+            // It is the agent that eventually signals the destroyTCS.
+        }
+
+        internal Task OnCreatedAsync( IActivityMonitor monitor, IOwnedParty owned )
+        {
+            return owned switch
+            {
+                RemoteParty p => p.Owner.OnCreatedRemoteAsync( monitor, p ),
+                TenantDomainParty d => OnCreatedDomainAsync( monitor, d ),
+                _ => Throw.NotSupportedException<Task>()
+            };
+        }
+
+        async Task OnCreatedDomainAsync( IActivityMonitor monitor, TenantDomainParty d )
+        {
+            Util.InterlockedAdd( ref _domains, d );
+            // Makes the domain appear before its remotes.
+            await _allPartyChanged.RaiseAsync( monitor, d ).ConfigureAwait( false );
+            foreach( var r in d.Remotes )
+            {
+                // There's little chance that subscribers exist on the new remote
+                // but it is cleaner to raise the event through it (the bridge will do its job).
+                await d.RemotesChangedSender.RaiseAsync( monitor, r ).ConfigureAwait( false );
+            }
+        }
 
         Task IHostedService.StartAsync( CancellationToken cancellationToken )
         {

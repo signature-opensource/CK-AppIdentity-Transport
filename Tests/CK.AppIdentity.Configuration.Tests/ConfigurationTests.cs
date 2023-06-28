@@ -48,8 +48,8 @@ namespace CK.AppIdentity.Configuration.Tests
             config["CK-AppIdentity:DomainName"] = "OurDomain";
             config["CK-AppIdentity:EnvironmentName"] = "#TestEnvironment";
             config["CK-AppIdentity:PartyName"] = "MyApp";
-            config["CK-AppIdentity:Remotes:0:PartyName"] = "Daddy";
-            config["CK-AppIdentity:Remotes:0:Address"] = "http://x.x";
+            config["CK-AppIdentity:Parties:0:PartyName"] = "Daddy";
+            config["CK-AppIdentity:Parties:0:Address"] = "http://x.x";
             var appIdentity = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetRequiredSection( "CK-AppIdentity" ) );
             Debug.Assert( appIdentity != null );
 

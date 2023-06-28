@@ -24,13 +24,14 @@ namespace CK.AppIdentity.Tests
                 c["DomainName"] = "LaToulousaine/France/Albi";
                 c["PartyName"] = "SignatureBox";
 
-                c["Remotes:0:DomainName"] = "Signature/SaaSCentral";
-                c["Remotes:0:EnvironmentName"] = "#Prod";
-                c["Remotes:0:PartyName"] = "LogTower";
-                c["Remotes:0:Address"] = "148.54.11.18:3712";
+                c["Parties:0:DomainName"] = "Signature/SaaSCentral";
+                c["Parties:0:EnvironmentName"] = "#Prod";
+                c["Parties:0:PartyName"] = "LogTower";
+                c["Parties:0:Address"] = "148.54.11.18:3712";
 
-                c["Remotes:1:FullName"] = "LaToulousaine/London/$TrolleyCentral";
-                c["Remotes:2:PartyName"] = "Trolley1";
+                // The French $SignatureBox talks to the English $TrolleyCentral.
+                c["Parties:1:FullName"] = "LaToulousaine/London/$TrolleyCentral";
+                c["Parties:2:PartyName"] = "Trolley1";
             } );
             Debug.Assert( config != null );
 
@@ -61,29 +62,23 @@ namespace CK.AppIdentity.Tests
         }
 
         [Test]
-        public void groups_are_recursive()
+        public void tenant_domains_can_define_tenant_domains_but_they_are_lifted()
         {
-            using var gLog = TestHelper.Monitor.OpenInfo( nameof( groups_are_recursive ) );
+            using var gLog = TestHelper.Monitor.OpenInfo( nameof( tenant_domains_can_define_tenant_domains_but_they_are_lifted ) );
             var good = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, c =>
             {
-                c["DomainName"] = "SaaSProduct";
-                c["PartyName"] = "SaaS1";
-                c["EnvironmentName"] = "#E";
-                c["Remotes:0:DomainName"] = "D1";
-                c["Remotes:0:Remotes:0:PartyName"] = "A1";
-                c["Remotes:0:Remotes:1:DomainName"] = "D2";
-                c["Remotes:0:Remotes:1:Remotes:0:PartyName"] = "A2";
+                c["FullName"] = "SaaSProduct/$SaaS1/#E";
+                c["Parties:0:FullName"] = "D1/$D1";
+                c["Parties:0:Parties:0:PartyName"] = "A1";
+                c["Parties:0:Parties:1:FullName"] = "D2/$D2";
+                c["Parties:0:Parties:1:Parties:0:PartyName"] = "A2";
+                c["Parties:0:Parties:2:FullName"] = "D3/$D3";
             } );
             Debug.Assert( good != null );
-            var g1 = good.Remotes.Cast<PartyGroupConfiguration>().Single();
-            g1.Parties.Should().HaveCount( 2 );
-            var a1 = g1.Parties.OfType<RemotePartyConfiguration>().Single();
-            a1.FullName.Should().Be( "D1/$A1/#E" );
-            var g2 = g1.Parties.OfType<PartyGroupConfiguration>().Single();
-            var a2 = g2.Parties.OfType<RemotePartyConfiguration>().Single();
-            a2.FullName.Should().Be( "D2/$A2/#E" );
+            good.Remotes.Should().BeEmpty();
+            good.TenantDomains.Should().HaveCount( 3 );
+            good.TenantDomains.Select( d => d.FullName.Path ).Should().BeEquivalentTo( new[] { "D1/$D1/#E", "D2/$D2/#E", "D3/$D3/#E" } );
         }
-
 
     }
 }

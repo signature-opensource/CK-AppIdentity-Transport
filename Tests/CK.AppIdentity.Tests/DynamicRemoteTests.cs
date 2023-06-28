@@ -14,100 +14,103 @@ namespace CK.AppIdentity.Tests
     public class DynamicRemoteTests
     {
         [Test]
-        public async Task creating_and_destroying_dynamic_remote_and_check_RemotesChanged_event_Async()
+        public async Task creating_and_destroying_dynamic_remote_or_tenants_raise_AllPartyChanged_event_Async()
         {
-            using var gLog = TestHelper.Monitor.OpenInfo( nameof( creating_and_destroying_dynamic_remote_and_check_RemotesChanged_event_Async ) );
+            using var gLog = TestHelper.Monitor.OpenInfo( nameof( creating_and_destroying_dynamic_remote_or_tenants_raise_AllPartyChanged_event_Async ) );
             await using ApplicationIdentityService s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "OneCS-SaaS/$OneCS1";
             } );
             var events = new List<string>();
-            s.RemotesChanged.Sync += ( m, r ) =>
+            s.AllPartyChanged.Sync += ( m, r ) =>
             {
                 bool appear = !r.IsDestroyed;
                 string msg;
                 if( appear )
                 {
                     msg = $"'{r}' appeared.";
-                    r.ApplicationIdentityService.AllRemotes.Should().Contain( r, msg );
+                    r.ApplicationIdentityService.AllParties.Should().Contain( r, msg );
                 }
                 else
                 {
                     msg = $"'{r}' disappeared.";
-                    r.ApplicationIdentityService.AllRemotes.Should().NotContain( r, msg );
+                    r.ApplicationIdentityService.AllParties.Should().NotContain( r, msg );
                 }
                 m.Trace( msg );
                 events.Add( msg );
             };
             Debug.Assert( s != null );
-            s.Remotes.Should().BeEmpty();
+            s.Parties.Should().BeEmpty();
 
             // Adding a simple remote. This is a RemoteParty.
-            var logTower = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            IReadOnlyCollection<IRemoteParty>? addedRemotes = await s.AddMultipleRemotesAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "LogTower";
-            } ) as RemoteParty;
-            Debug.Assert( logTower != null );
+            } );
+            Debug.Assert( addedRemotes != null );
+            var logTower = addedRemotes.Single();
             logTower.DomainName.Should().Be( s.DomainName );
             logTower.EnvironmentName.Should().Be( s.EnvironmentName );
             logTower.PartyName.Should().Be( "$LogTower" );
-            s.Remotes.Single().Should().BeSameAs( logTower );
+            s.Parties.Single().Should().BeSameAs( logTower );
             logTower.IsDynamic.Should().BeTrue( "This remote is dynamic." );
 
-            // Adding a remote that is a group with an initial configured remote.
-            var laToulousaine = await s.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            // Adding a tenant domain with an initial configured remote.
+            AddedDynamicParties? added = await s.AddPartiesAsync( TestHelper.Monitor, c =>
             {
                 c["DomainName"] = "LaToulousaine";
+                c["PartyName"] = "$LaToulousaine";
                 c["EnvironmentName"] = "#Debug";
-                c["Remotes:0:PartyName"] = "SignatureBox";
-            } ) as PartyGroup;
-            Debug.Assert( laToulousaine != null );
+                c["Parties:0:PartyName"] = "SignatureBox";
+            } );
+            Debug.Assert( added != null );
+            var laToulousaine = added.Value.Tenants.Single();
             laToulousaine.IsDynamic.Should().BeTrue();
-            var signatureBox = (RemoteParty)laToulousaine.Remotes.Single();
+            var signatureBox = laToulousaine.Remotes.Single();
             signatureBox.FullName.Should().Be( "LaToulousaine/$SignatureBox/#Debug" );
-            signatureBox.IsDynamic.Should().BeFalse( "The signatureBox is configured: it is not dynamic." );
-            FluentActions.Invoking( () => signatureBox.SetDestroyed() )
-                .Should().Throw<InvalidOperationException>( "A non dynamic remote is NOT destroyable." );
+            signatureBox.IsDynamic.Should().BeTrue( "The signatureBox has been dynamically added by its tenant." );
 
-            // Adding a new dynamic remote to a dynamic domain.
-            var theTrolley = await laToulousaine.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            // Adding a new dynamic remote to the domain.
+            addedRemotes = await laToulousaine.AddMultipleRemotesAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "Trolley1";
-            } ) as RemoteParty;
-            Debug.Assert( theTrolley != null );
+            } );
+            Debug.Assert( addedRemotes != null );
+            var theTrolley = addedRemotes.Single();
             theTrolley.FullName.Should().Be( "LaToulousaine/$Trolley1/#Debug" );
             theTrolley.IsDynamic.Should().BeTrue();
             laToulousaine.Remotes.Should().HaveCount( 2 );
 
             // Adding another new dynamic remote to a dynamic domain.
-            var theTrolley2 = await laToulousaine.AddDynamicRemoteAsync( TestHelper.Monitor, c =>
+            addedRemotes = await laToulousaine.AddMultipleRemotesAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "Trolley2";
-            } ) as RemoteParty;
-            Debug.Assert( theTrolley2 != null );
+            } );
+            Debug.Assert( addedRemotes != null );
+            var theTrolley2 = addedRemotes.Single();
             theTrolley2.FullName.Should().Be( "LaToulousaine/$Trolley2/#Debug" );
             theTrolley2.IsDynamic.Should().BeTrue();
             laToulousaine.Remotes.Should().HaveCount( 3 );
 
             // Destroying dynamic remotes.
-            s.Remotes.Should().HaveCount( 2, "The LogTower and the LaToulousaine." );
+            s.Parties.Should().HaveCount( 2, "The LogTower and the LaToulousaine." );
             logTower.IsDestroyed.Should().BeFalse();
             // The destruction is a background process that can be initiated by the
             // synchronous SetDestroyed().
             logTower.SetDestroyed();
             // To wait for the actual destruction of a remote, DestroyAsync() can always be called.
             await logTower.DestroyAsync();
-            s.Remotes.Should().HaveCount( 1, "LaToulousaine only." );
+            s.Parties.Should().HaveCount( 1, "LaToulousaine only." );
             // Even when it's done of course.
             await logTower.DestroyAsync();
 
             // Destroying the dynamic Trolley.
             await theTrolley.DestroyAsync();
 
-            // Destroying the remote "OneCS-SaaS/Debug/LaToulousaine" that defines a domain
-            // with "LaToulousaine/Debug/SignatureBox" (static) and "LaToulousaine/Debug/Trolley2" (dynamic) in it.
+            // Destroying the tenant domain "OneCS-SaaS/$LaToulousaine/#Debug"
+            // with "LaToulousaine/$SignatureBox/#Debug" and "LaToulousaine/$Trolley2/#Debug" in it.
             await laToulousaine.DestroyAsync();
-            s.Remotes.Should().BeEmpty();
+            s.Parties.Should().BeEmpty();
 
             events.Should().BeEquivalentTo( new string[]
             {
@@ -116,7 +119,7 @@ namespace CK.AppIdentity.Tests
                 // A group appears and its initially defined
                 // remotes also appear in the events (as if it was dynamically added):
                 // the event unifies the behavior.
-                "'Group 'LaToulousaine/#Debug'' appeared.",
+                "'LaToulousaine/$LaToulousaine/#Debug' appeared.",
                 "'LaToulousaine/$SignatureBox/#Debug' appeared.",
 
                 "'LaToulousaine/$Trolley1/#Debug' appeared.",
@@ -130,7 +133,7 @@ namespace CK.AppIdentity.Tests
                 // appear before it.
                 "'LaToulousaine/$SignatureBox/#Debug' disappeared.",
                 "'LaToulousaine/$Trolley2/#Debug' disappeared.",
-                "'Group 'LaToulousaine/#Debug'' disappeared."
+                "'LaToulousaine/$LaToulousaine/#Debug' disappeared."
             } );
         }
     }

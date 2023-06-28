@@ -17,21 +17,19 @@ namespace CK.AppIdentity.BlobChannel.Tests
             // BlobChannel is an opt-in feature: it must be explicitly allowed.
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
-                c["DomainName"] = "Test";
-                c["PartyName"] = "Listener";
-                c["Remotes:0:PartyName"] = "Sender";
+                c["FullName"] = "Test/$Listener";
+                c["Parties:0:PartyName"] = "Sender";
                 c["AllowFeatures"] = "BlobChannel";
             } );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
             {
-                c["DomainName"] = "Test";
-                c["PartyName"] = "Sender";
-                c["Remotes:0:PartyName"] = "Listener";
-                c["Remotes:0:Address"] = "tcp:127.0.0.1";
+                c["FullName"] = "Test/$Sender";
+                c["Parties:0:PartyName"] = "Listener";
+                c["Parties:0:Address"] = "tcp:127.0.0.1";
                 c["AllowFeatures"] = "BlobChannel";
             } );
-            var listenerChannel = listener.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
-            var senderChannel = sender.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
+            var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
+            var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 
             // Setup Listener reception.
             var listenerReceived = new List<byte[]>();
@@ -140,7 +138,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
                     c["FullName"] = "Test/$Listener";
-                    c["Remotes:0:PartyName"] = "$Sender";
+                    c["Parties:0:PartyName"] = "$Sender";
                     c["AllowFeatures"] = "BlobChannel";
                 } );
             }
@@ -150,15 +148,15 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
                     c["FullName"] = "Test/$Sender";
-                    c["Remotes:0:PartyName"] = "$Listener";
-                    c["Remotes:0:Address"] = "tcp:127.0.0.1";
+                    c["Parties:0:PartyName"] = "$Listener";
+                    c["Parties:0:Address"] = "tcp:127.0.0.1";
                     c["AllowFeatures"] = "BlobChannel";
                 } );
             }
 
             static BlobChannelFeature SetupChannel( ApplicationIdentityService from, ApplicationIdentityService to, List<byte[]> receivedData )
             {
-                var channel = from.Remotes.OfType<RemoteParty>().Single().GetRequiredFeature<BlobChannelFeature>();
+                var channel = from.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
                 channel.Received.Sync += ( monitor, sender, bytes ) =>
                 {
                     monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
