@@ -1,5 +1,7 @@
+using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
 using CK.Testing;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
@@ -9,6 +11,7 @@ using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
+
     static class TestHelperExtension
     {
         /// <summary>
@@ -42,6 +45,11 @@ namespace CK.AppIdentity.BlobChannel.Tests
             serviceBuilder.AddSingleton( c );
             serviceBuilder.AddSingleton<ApplicationIdentityService>();
             serviceBuilder.AddSingleton<MessageProtocolDirectoryService>();
+
+            serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
+
+            serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
+            serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
 
             serviceBuilder.AddSingleton<TransportFeatureDriver>();
             serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );

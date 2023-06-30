@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
@@ -16,7 +17,7 @@ namespace CK.AppIdentity
     {
         readonly ApplicationIdentityService _appIdentityService;
         private protected readonly ApplicationIdentityPartyConfiguration _configuration;
-        readonly NormalizedPath _sharedStorePath;
+        readonly FileStore _sharedStore;
         object[] _features;
 
         internal ApplicationIdentityParty( ApplicationIdentityPartyConfiguration configuration, ApplicationIdentityService? appIdentityService )
@@ -25,8 +26,7 @@ namespace CK.AppIdentity
             _appIdentityService = appIdentityService ?? (ApplicationIdentityService)this;
             _configuration = configuration;
             _features = Array.Empty<object>();
-            _sharedStorePath = ApplicationIdentityService.ComputeSharedStorePath( configuration.FullName );
-            Directory.CreateDirectory( _sharedStorePath );
+            _sharedStore = new FileStore( ApplicationIdentityService.ComputeSharedStorePath( configuration.FullName ) );
         }
 
         /// <inheritdoc />
@@ -68,7 +68,19 @@ namespace CK.AppIdentity
         }
 
         /// <inheritdoc />
-        public NormalizedPath SharedStorePath => _sharedStorePath;
+        public IFileStore SharedFileStore => _sharedStore;
+
+        /// <summary>
+        /// Called by the service from the stopping agent when the service is being disposed
+        /// or when this party has been destroyed.
+        /// </summary>
+        /// <param name="monitor">The agent's monitor.</param>
+        /// <param name="isDestroyed">This party is being destroyed.</param>
+        internal virtual ValueTask OnShutdownOrDestroyedAsync( IActivityMonitor monitor, bool isDestroyed )
+        {
+            _sharedStore.OnShutdownOrDestroyed( monitor, isDestroyed );
+            return ValueTask.CompletedTask;
+        }
 
         /// <inheritdoc cref="IParty.ToString"/>
         public override string ToString() => FullName;

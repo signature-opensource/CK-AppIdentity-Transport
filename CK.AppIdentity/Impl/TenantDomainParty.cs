@@ -9,7 +9,7 @@ namespace CK.AppIdentity
 {
     sealed class TenantDomainParty : LocalParty, ITenantDomainParty, IOwnedPartyInternal
     {
-        internal TaskCompletionSource? _destroyTCS;
+        TaskCompletionSource? _destroyTCS;
         int _isDestroyed;
         readonly bool _isDynamic;
 
@@ -59,8 +59,6 @@ namespace CK.AppIdentity
             return false;
         }
 
-        TaskCompletionSource? IOwnedPartyInternal.DestroyTCS => _destroyTCS;
-
         internal async Task OnDestroyedAsync( IActivityMonitor monitor )
         {
             // Signals the destruction completion of all subordinate remotes.
@@ -69,20 +67,23 @@ namespace CK.AppIdentity
             var remotes = Interlocked.Exchange( ref _remotes, Array.Empty<RemoteParty>() );
             foreach( var r in remotes )
             {
-                Debug.Assert( r._destroyTCS != null );
-                // This raises an event for a remote in a destroyed TenantDomain.
+                // This raises an event for each remote.
                 // Does this produces too much events (the bridge will relay the events to the root ApplicationIdentityService)?
                 // It may be too verbose... but this is logically sound.
-                await _remotesChanged.SafeRaiseAsync( monitor, r );
-                r._destroyTCS.SetResult();
+                await _remotesChanged.SafeRaiseAsync( monitor, r ).ConfigureAwait( false );
+                await r.OnShutdownOrDestroyedAsync( monitor, true ).ConfigureAwait( false );
             }
-            _remotesChangedBridge.Dispose();
         }
 
-        /// <inheritdoc />
-        public Task<IOwnedParty?> AddDynamicRemoteAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
+        internal override async ValueTask OnShutdownOrDestroyedAsync( IActivityMonitor monitor, bool isDestroyed )
         {
-            throw new NotImplementedException();
+            _remotesChangedBridge.Dispose();
+            await base.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
+            if( isDestroyed )
+            {
+                Debug.Assert( _destroyTCS != null );
+                _destroyTCS.SetResult();
+            }
         }
     }
 }

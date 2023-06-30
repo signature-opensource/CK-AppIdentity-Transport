@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.PerfectEvent;
 using Microsoft.VisualBasic;
@@ -101,9 +102,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( t );
         }
 
-        internal void UnknownIncomingRemote( InitialMessage m )
+        internal void UnknownIncomingRemote( InitialMessage m, RemoteIdentityKey? trustedIdentity )
         {
-            PushTypedJob( m );
+            PushTypedJob( new UnknownIncomingRemoteJob( m, trustedIdentity ) );
         }
 
         internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap )
@@ -139,8 +140,8 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
+        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, RemoteIdentityKey? TrustedIdentity );
         // A new incoming Transport from a TransportListener is directly the Transport object.
-        // An unknown incoming connection is directly the InitialMessage.
         // The heart beat (timer) is DBNull.Value instance.
         // SwitchOn of a TransportFeature is the transport feature itself.
         sealed record class TryConnectToJob( TransportFeature Remote );
@@ -194,7 +195,7 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
-                case InitialMessage m:
+                case UnknownIncomingRemoteJob m:
                     return HandleUnknownIncomingRemote( monitor, m );
                 case NewValidTransportJob j:
                     return HandleNewValidTransport( monitor, j );
@@ -257,10 +258,10 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async ValueTask HandleUnknownIncomingRemote( IActivityMonitor monitor, InitialMessage initialMessage )
+        async ValueTask HandleUnknownIncomingRemote( IActivityMonitor monitor, UnknownIncomingRemoteJob job )
         {
-            _waitingList.Add( initialMessage );
-            await _waitingListChanged.SafeRaiseAsync( monitor, initialMessage );
+            _waitingList.Add( job.Message );
+            await _waitingListChanged.SafeRaiseAsync( monitor, job.Message );
         }
 
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )

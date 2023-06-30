@@ -19,26 +19,5 @@
     <ProjectReference Include="..\..\CK.AppIdentity\CK.AppIdentity.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="TestStore\#Debug\LaToulousaine\%24SignatureBox\" />
-    <Folder Include="TestStore\#Debug\LaToulousaine\%24Trolley1\" />
-    <Folder Include="TestStore\#Debug\LaToulousaine\%24Trolley2\" />
-    <Folder Include="TestStore\#Development\AllInOneInc\%24ControlBox\" />
-    <Folder Include="TestStore\#Development\AllInOneInc\%24Hall1Trolley\" />
-    <Folder Include="TestStore\#Development\AllInOneInc\%24Hall1Wall\" />
-    <Folder Include="TestStore\#Development\AllInOneInc\%24Hall2Trolley\" />
-    <Folder Include="TestStore\#Development\AllInOneInc\%24Hall2Wall\" />
-    <Folder Include="TestStore\#Development\FakeDomain\%24FakeApp\%24Local\" />
-    <Folder Include="TestStore\#Development\FakeDomain\%24SomeDynamicRemote\" />
-    <Folder Include="TestStore\#Development\OneCS-SaaS\%24LogTower\" />
-    <Folder Include="TestStore\#Development\OneCS-SaaS\%24OneCS1\%24Local\" />
-    <Folder Include="TestStore\#Development\OpalCorp\%24ControlBox\" />
-    <Folder Include="TestStore\#Development\OpalCorp\%24MeasureStation\" />
-    <Folder Include="TestStore\#Development\SaaSProduct\%24SaaS1\%24Local\" />
-    <Folder Include="TestStore\#Production\D\%24MyApp\%24Local\" />
-    <Folder Include="TestStore\#Production\D\%24Remote1\" />
-    <Folder Include="TestStore\#Production\D\%24Remote2\" />
-  </ItemGroup>
-
 
 </Project>

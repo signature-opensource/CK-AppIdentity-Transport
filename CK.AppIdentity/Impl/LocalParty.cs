@@ -20,7 +20,7 @@ namespace CK.AppIdentity
     {
         private protected RemoteParty[] _remotes;
         internal readonly PerfectEventSender<IRemoteParty> _remotesChanged;
-        readonly NormalizedPath _privateStorePath;
+        readonly FileStore _privateStore;
         // Changes in contained remotes are propagated to the root AllPartyChanged event.
         private protected readonly IBridge _remotesChangedBridge;
 
@@ -38,7 +38,7 @@ namespace CK.AppIdentity
             // The ApplicationIdentityService constructor will get the IBridge.Target. 
             var bridgeTarget = appIdentityService?._allPartyChanged ?? new PerfectEventSender<IOwnedParty>();
             _remotesChangedBridge = _remotesChanged.CreateBridge( bridgeTarget!, Unsafe.As<IOwnedParty> );
-            _privateStorePath = SharedStorePath.AppendPart( "$Local" );
+            _privateStore = new FileStore( SharedFileStore.FolderPath.AppendPart( "$Local" ) );
         }
 
         /// <inheritdoc />
@@ -48,7 +48,7 @@ namespace CK.AppIdentity
         public IReadOnlyCollection<IRemoteParty> Remotes => _remotes;
 
         /// <inheritdoc />
-        public NormalizedPath PrivateStorePath => _privateStorePath;
+        public IFileStore PrivateFileStore => _privateStore;
 
         /// <inheritdoc />
         public async Task<IReadOnlyCollection<IRemoteParty>?> AddMultipleRemotesAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )
@@ -114,11 +114,11 @@ namespace CK.AppIdentity
 
         internal PerfectEventSender<IRemoteParty> RemotesChangedSender => _remotesChanged;
 
-        internal Task OnDestroyedRemoteAsync( IActivityMonitor monitor, RemoteParty p )
+        internal async Task OnDestroyedRemoteAsync( IActivityMonitor monitor, RemoteParty p )
         {
             Util.InterlockedRemove( ref _remotes, p );
-            // It is the agent that eventually signals the destroyTCS.
-            return _remotesChanged.RaiseAsync( monitor, p );
+            await _remotesChanged.RaiseAsync( monitor, p ).ConfigureAwait( false );
+            await p.OnShutdownOrDestroyedAsync( monitor, true ).ConfigureAwait( false );
         }
 
         internal Task OnCreatedRemoteAsync( IActivityMonitor monitor, RemoteParty p )
@@ -126,6 +126,19 @@ namespace CK.AppIdentity
             Util.InterlockedAdd( ref _remotes, p );
             return _remotesChanged.RaiseAsync( monitor, p );
         }
+
+        internal override async ValueTask OnShutdownOrDestroyedAsync( IActivityMonitor monitor, bool isDestroyed )
+        {
+            await base.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
+            _privateStore.OnShutdownOrDestroyed( monitor, isDestroyed );
+            Debug.Assert( !isDestroyed || _remotes.Length == 0, "The ApplicationIdentityService is never destroyed, only shut down. " +
+                                                                "Destroying applies only for the TenantDomainParty and its has already cleared the _remotes list." );
+            foreach( var r in _remotes )
+            {
+                await r.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
+            }
+        }
+
 
     }
 }

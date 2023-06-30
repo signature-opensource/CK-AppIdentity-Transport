@@ -1,8 +1,10 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Buffers;
 using System.Collections;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace CK.AppIdentity.TransportLayer
@@ -21,8 +23,10 @@ namespace CK.AppIdentity.TransportLayer
         /// The <see cref="CoreApplicationIdentity.InstanceId"/> is currently 21 characters long.
         /// </summary>
         const int InstanceIdMaxLength = 21;
-        const int MaxPublicKeyCount = 2;
-        const int MaxPublicKeySize = 2048; // To be tested...
+        const int MaxPublicKeyCount = ILocalKeys.MaxIdentityCount;
+        // Signatures can have varying length but no more than 256 bytes.
+        const int MaxSignatureSize = 256;
+        const int MaxPublicKeySize = 8 + 2048; // TimeName (DateTime) + ...To be tested...
         // Used as a high limit so that weirdly big messages are just skipped.
         // Note that each string or array read are also protected.
         public const int MaxLength = 8 // "CK-AppId"
@@ -32,7 +36,8 @@ namespace CK.AppIdentity.TransportLayer
                                    + 5 // Number of protocol names (allows uint.MaxValue)
                                    + MaxProtocolFullNameCount * (2 + MessageProtocol.FullNameMaxLength)
                                    + 5 // Number of public keys (allows uint.MaxValue)
-                                   + MaxPublicKeyCount * (4 + MaxPublicKeySize);
+                                   + MaxPublicKeyCount * (4 + MaxPublicKeySize)
+                                   + MaxPublicKeyCount * MaxSignatureSize;
 
         readonly string _incomingFullName;
         readonly string _endPointDescription;
@@ -48,7 +53,11 @@ namespace CK.AppIdentity.TransportLayer
         // code comments.
         // For an ingoing message, this is an array.
         readonly IReadOnlyCollection<string> _availableProtocols;
-        readonly PublicKey[] _publicKeys;
+        readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
+
+        // Incoming message specific data:
+        readonly IReadOnlyList<RemoteIdentityKeyData> _remoteIdentities;
+        readonly byte[][]? _signatures;
 
         sealed class ProtocolAdapter : IReadOnlyCollection<string>
         {
@@ -66,26 +75,42 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Outgoing message constructor. 
         /// </summary>
-        /// <param name="f">The remote party.</param>
+        /// <param name="f">The remote party's transport.</param>
         public InitialMessage( TransportFeature f )
         {
+            Debug.Assert( !f.IsListening );
             Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
-            _incomingFullName = f.Party.ApplicationIdentityService.FullName;
+            _incomingFullName = f.Party.Owner.FullName;
+            // This acts as the nonce: one instance can initiate a connexion only once.
             _instanceId = CoreApplicationIdentity.InstanceId;
             _endPointDescription = string.Empty;
             _remoteEndPointDescription = string.Empty;
             _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
-            // TODO: f.Party.GetPublicKeys();
-            _publicKeys = Array.Empty<PublicKey>();
+            _localIdentities = f.LocalKeys.Identities;
+            _remoteIdentities = Array.Empty<RemoteIdentityKeyData>();
         }
 
+        /// <summary>
+        /// Ingoing message constructor: the <see cref="RemoteIdentityKeyData"/> keys,
+        /// the SHA1 hash of the data and the signatures for each key.
+        /// </summary>
+        /// <param name="endPointDescription"></param>
+        /// <param name="remoteEndPointDescription"></param>
+        /// <param name="version"></param>
+        /// <param name="instanceId"></param>
+        /// <param name="incomingFullName"></param>
+        /// <param name="protocols"></param>
+        /// <param name="identities"></param>
+        /// <param name="hashData"></param>
+        /// <param name="signatures"></param>
         InitialMessage( string endPointDescription,
                         string remoteEndPointDescription,
                         int version,
                         string instanceId,
                         string incomingFullName,
                         string[] protocols,
-                        PublicKey[] publicKeys )
+                        RemoteIdentityKeyData[] identities,
+                        byte[][] signatures )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
@@ -93,7 +118,9 @@ namespace CK.AppIdentity.TransportLayer
             _instanceId = instanceId;
             _incomingFullName = incomingFullName;
             _availableProtocols = protocols;
-            _publicKeys = publicKeys;
+            _remoteIdentities = identities;
+            _signatures = signatures;
+            _localIdentities = Array.Empty<LocalIdentityKey>();
         }
 
         /// <summary>
@@ -138,16 +165,37 @@ namespace CK.AppIdentity.TransportLayer
             }
             var keyCount = r.ReadSmallUInt32();
             Throw.CheckData( keyCount <= MaxPublicKeyCount );
-            PublicKey[] keys = new PublicKey[keyCount];
+            var keys = new RemoteIdentityKeyData[keyCount];
             for( int i = 0; i < keys.Length; i++ )
             {
+                var timeName = r.ReadDateTime();
                 var lenPublicKey = r.ReadSmallUInt32();
                 Throw.CheckData( lenPublicKey <= MaxPublicKeySize );
                 var bytes = r.ReadBytes( lenPublicKey );
-                keys[i] = PublicKey.CreateFromSubjectPublicKeyInfo( bytes, out int bytesRead );
+                var publicKey = PublicKey.CreateFromSubjectPublicKeyInfo( bytes, out int bytesRead );
                 Throw.CheckData( bytesRead == bytes.Length );
+                keys[i] = new RemoteIdentityKeyData( timeName, publicKey );
             }
-            initialMessage = new InitialMessage( endPointDescription, remoteEndPointDescription, otherVersion, instanceId, fullName, protocols, keys );
+            // The message data itself has been read. Now comes the keyCount signatures.
+            var signatures = new byte[keyCount][];
+            Debug.Assert( signatures.Length == keyCount );
+            for( int i = 0; i < keys.Length; i++ )
+            {
+                // We could have settled the signature size (we use DSASignatureFormat.IeeeP1363FixedFieldConcatenation)
+                // but it doesn't cost much (1 byte) to let it variable so that are free to use different key size (the
+                // current default is 256 bits and this should be enough but who knows, so let the max signature size be
+                // 256 bytes).
+                var lenSignature = r.ReadByte();
+                signatures[i] = r.ReadBytes( lenSignature );
+            }
+            initialMessage = new InitialMessage( endPointDescription,
+                                                 remoteEndPointDescription,
+                                                 otherVersion,
+                                                 instanceId,
+                                                 fullName,
+                                                 protocols,
+                                                 keys,
+                                                 signatures );
             return true;
         }
 
@@ -162,12 +210,12 @@ namespace CK.AppIdentity.TransportLayer
             {
                 w.WriteString( protocol );
             }
-            w.WriteSmallUInt32( (uint)_publicKeys.Length );
-            foreach( var k in _publicKeys )
+            w.WriteSmallUInt32( (uint)_localIdentities.Count );
+            foreach( var k in _localIdentities )
             {
-                var bytes = k.ExportSubjectPublicKeyInfo();
-                w.WriteSmallUInt32( (uint)bytes.Length );
-                w.WriteBytes( bytes );
+                w.WriteDateTime( k.TimeName );
+                w.WriteSmallUInt32( (uint)k.PublicKeyRawData.Length );
+                w.WriteBytes( k.PublicKeyRawData.Span );
             }
         }
 
@@ -209,9 +257,20 @@ namespace CK.AppIdentity.TransportLayer
         public IReadOnlyCollection<string> AvailableProtocols => _availableProtocols;
 
         /// <summary>
-        /// Gets the list of public keys that identify the incoming remote.
+        /// Gets the list of public keys that identify this local party to the target.
+        /// This is empty for an incoming message.
         /// </summary>
-        public IReadOnlyList<PublicKey> PublicKeys => _publicKeys;
+        public IReadOnlyList<LocalIdentityKey> LocalIdentities => _localIdentities;
 
+        /// <summary>
+        /// Gets the list of public keys that identify incoming message's party.
+        /// This is empty for an outgoing message.
+        /// </summary>
+        public IReadOnlyList<RemoteIdentityKeyData> RemoteIdentities => _remoteIdentities;
+
+        /// <summary>
+        /// Incoming message only: contains the signatures for each <see cref="RemoteIdentities"/>.
+        /// </summary>
+        public byte[][]? Signatures => _signatures;
     }
 }

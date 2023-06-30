@@ -1,8 +1,10 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.PerfectEvent;
 using System;
 using System.Collections;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading;
 
@@ -17,9 +19,14 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
-        // Either listener or target is not null.
+
+        // Either (listener,remoteKeys) or (target,localKeys) is not null.
         readonly TransportListener? _listener;
+        readonly IRemoteKeys? _remoteKeys;
+
         readonly TransportTypeAddress? _target;
+        readonly ILocalKeys? _localKeys;
+
         readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
         // This relays our ConnectionAvailabilityChanged event to the TransportManagerFeature one.
         // We must dispose it when tearing down this feature.
@@ -43,14 +50,20 @@ namespace CK.AppIdentity.TransportLayer
         internal TransportFeature( TransportManager transportManager,
                                    IRemoteParty remote,
                                    TransportListener? listener,
+                                   IRemoteKeys? remoteKeys,
                                    TransportTypeAddress? target,
+                                   ILocalKeys? localKeys,
                                    bool disallowEviction )
         {
-            Debug.Assert( (listener == null) != (target == null) );
+            Debug.Assert( (listener == null) != (target == null), "Either we are listening or we are targeting." );
+            Debug.Assert( (listener != null) == (remoteKeys != null), "When listening we can manage the remote trusted Identity key." );
+            Debug.Assert( (target != null) == (localKeys != null), "When targeting we can manage our private Identity keys." );
             _transportManager = transportManager;
             _party = remote;
             _listener = listener;
+            _remoteKeys = remoteKeys;
             _target = target;
+            _localKeys = localKeys;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
 
             _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
@@ -326,14 +339,27 @@ namespace CK.AppIdentity.TransportLayer
         public IRemoteParty Party => _party;
 
         /// <summary>
-        /// Gets whether we are listening or calling the remote.
+        /// Gets whether we are listening or targeting the remote.
         /// </summary>
+        [MemberNotNullWhen( false, nameof( TargetAddress ) )]
+        [MemberNotNullWhen( false, nameof( LocalKeys ) )]
+        [MemberNotNullWhen( true, nameof( RemoteKeys ) )]
         public bool IsListening => _listener != null;
 
         /// <summary>
         /// Gets the non null target address if <see cref="IsListening"/> is false.
         /// </summary>
         public TransportTypeAddress? TargetAddress => _target;
+
+        /// <summary>
+        /// Available when <see cref="TargetAddress"/> is not null (ie. <see cref="IsListening"/> is false).
+        /// </summary>
+        public ILocalKeys? LocalKeys => _localKeys;
+
+        /// <summary>
+        /// Available when <see cref="IsListening"/> is true.
+        /// </summary>
+        public IRemoteKeys? RemoteKeys => _remoteKeys;
 
         /// <summary>
         /// Gets or sets whether this remote disallows a new remote incoming transport
@@ -349,8 +375,23 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets the initial message to send when this is a caller.
         /// This will be used each time a new connection must be established.
+        /// <para>
+        /// To support dynamic key renewal, we check that the <see cref="InitialMessage.LocalIdentities"/>
+        /// is the same as the <see cref="ILocalKeys.Identities"/>.
+        /// </para>
         /// </summary>
-        internal InitialMessage? OutgoingInitialMessage => _outgoingInitialMessage;
+        internal InitialMessage? OutgoingInitialMessage
+        {
+            get
+            {
+                var m = _outgoingInitialMessage;
+                if( m != null && m.LocalIdentities != _localKeys.Identities )
+                {
+                    m = _outgoingInitialMessage = new InitialMessage( this );
+                }
+                return m;
+            }
+        }
 
         internal void InitializeOutgoingAndInitiateConnection()
         {

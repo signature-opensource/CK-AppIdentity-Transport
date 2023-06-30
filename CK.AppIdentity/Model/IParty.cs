@@ -75,13 +75,13 @@ namespace CK.AppIdentity
         T GetRequiredFeature<T>();
 
         /// <summary>
-        /// Gets the path to the shared directory for this party.
+        /// Gets shared file store for this party.
         /// <para>
         /// This directory is shared by all local parties that runs on this computer/file system.
-        /// Use <see cref="ILocalParty.PrivateStorePath"/> to obtain the "$Local" directory of a local party.
+        /// Use <see cref="ILocalParty.PrivateFileStore"/> to obtain the "$Local" directory of a local party.
         /// </para>
         /// </summary>
-        NormalizedPath SharedStorePath { get; }
+        IFileStore SharedFileStore { get; }
 
         /// <summary>
         /// Overridden to return the <see cref="FullName"/>.

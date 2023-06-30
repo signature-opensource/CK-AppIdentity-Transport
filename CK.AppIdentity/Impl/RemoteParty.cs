@@ -1,4 +1,7 @@
 using CK.Core;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -9,7 +12,7 @@ namespace CK.AppIdentity
     sealed class RemoteParty : ApplicationIdentityParty, IRemoteParty, IOwnedPartyInternal
     {
         LocalParty _owner;
-        internal TaskCompletionSource? _destroyTCS;
+        TaskCompletionSource? _destroyTCS;
         int _isDestroyed;
         readonly bool _isDynamic;
 
@@ -58,6 +61,14 @@ namespace CK.AppIdentity
             return false;
         }
 
-        TaskCompletionSource? IOwnedPartyInternal.DestroyTCS => _destroyTCS;
+        internal override async ValueTask OnShutdownOrDestroyedAsync( IActivityMonitor monitor, bool isDestroyed )
+        {
+            await base.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
+            if( isDestroyed )
+            {
+                Debug.Assert(_destroyTCS != null );
+                _destroyTCS.SetResult();
+            }
+        }
     }
 }

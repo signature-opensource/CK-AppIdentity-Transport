@@ -73,6 +73,7 @@ namespace CK.AppIdentity
         {
             var context = new FeatureLifetimeContext( monitor, this, _service._builders );
             await context.ExecuteTeardownAsync().ConfigureAwait( false );
+            await _service.OnShutdownAsync( monitor ).ConfigureAwait( false );
         }
 
         record class InitializeDynamicPartiesJob( AddedDynamicParties Added, TaskCompletionSource<bool> Result );
@@ -154,7 +155,6 @@ namespace CK.AppIdentity
 
         async ValueTask HandleDestroyAsync( IActivityMonitor monitor, IOwnedPartyInternal destroyed )
         {
-            Debug.Assert( destroyed.DestroyTCS != null );
             using( monitor.OpenInfo( $"Destroying '{destroyed}'." ) )
             {
                 // Enables the feature drivers to tear down any existing features, including the
@@ -165,9 +165,6 @@ namespace CK.AppIdentity
                 // The service routes the call to the LocalService (for a remote) or
                 // its domains.
                 await _service.OnDestroyedAsync( monitor, destroyed ).ConfigureAwait( false );
-
-                // Set the completion after all the events have been raised.
-                destroyed.DestroyTCS.SetResult();
             }
         }
 

@@ -1,0 +1,66 @@
+using CK.Core;
+using System;
+using System.Linq;
+using System.Security.Cryptography.X509Certificates;
+
+namespace CK.AppIdentity.KeyManagement
+{
+    /// <summary>
+    /// Data only key (no computing capabilities).
+    /// <para>
+    /// This implements <see cref="IEquatable{T}"/> for any kind of <see cref="IPublicKeyData"/>.
+    /// </para>
+    /// </summary>
+    public sealed class RemoteIdentityKeyData : IPublicKeyData, IEquatable<IPublicKeyData>
+    {
+        readonly PublicKey _publicKey;
+        readonly byte[] _publicRaw;
+        readonly string _name;
+        readonly DateTime _timeName;
+
+        /// <summary>
+        /// Initializes a remote public key.
+        /// </summary>
+        /// <param name="timeName">The key's time name.</param>
+        /// <param name="publicKey">The public key.</param>
+        public RemoteIdentityKeyData( DateTime timeName, PublicKey publicKey )
+        {
+            Throw.CheckNotNullArgument( publicKey );
+            Throw.CheckArgument( timeName.Kind == DateTimeKind.Utc );
+            _name = timeName.ToString( FileUtil.FileNameUniqueTimeUtcFormat );
+            _timeName = timeName;
+            _publicKey = publicKey;
+            _publicRaw = publicKey.ExportSubjectPublicKeyInfo();
+        }
+
+        /// <inheritdoc />
+        public PublicKey PublicKey => _publicKey;
+
+        /// <inheritdoc />
+        public ReadOnlyMemory<byte> PublicKeyRawData => _publicRaw;
+
+        /// <inheritdoc />
+        public string Name => _name;
+
+        /// <inheritdoc />
+        public DateTime TimeName => _timeName;
+
+        /// <summary>
+        /// Challenges <see cref="TimeName"/> and <see cref="PublicKeyRawData"/>.
+        /// <para>
+        /// The <paramref name="other"/> must be a non null <see cref="RemoteIdentityKey"/>,
+        /// <see cref="RemoteIdentityKeyData"/> or <see cref="LocalIdentityKey"/>.
+        /// Any other implementation of <see cref="IPublicKeyData"/> will never be equal to this.
+        /// </para>
+        /// </summary>
+        /// <param name="other">The other key to test.</param>
+        /// <returns>True if the public key data is the same as this one.</returns>
+        public bool Equals( IPublicKeyData? other )
+        {
+            return other != null
+                    && _timeName == other.TimeName
+                    && _publicRaw.AsSpan().SequenceEqual( other.PublicKeyRawData.Span )
+                    && (other is RemoteIdentityKey || other is RemoteIdentityKeyData || other is LocalIdentityKey );
+        }
+    }
+}

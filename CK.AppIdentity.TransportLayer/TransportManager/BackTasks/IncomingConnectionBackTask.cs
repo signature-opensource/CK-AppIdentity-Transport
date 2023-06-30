@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Diagnostics;
 using System.Reflection;
@@ -55,9 +56,13 @@ namespace CK.AppIdentity.TransportLayer
 
             // Accessing the Parties is thread safe.
             TransportFeature? remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.IncomingFullName );
-            // If the remote is not known, signals this InitialMessage to the TransportManager:
-            // The incoming Remote may be accepted later but for now, we reject the connection.
-            if( remote == null )
+            Debug.Assert( remote == null || remote.IsListening );
+            // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
+            // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
+            // Note: if remote is not null, we are listening and hence we have a non null RemoteKeys. Unfortunately, null propagation
+            //       analysis fails here.
+            var trustedIdentity = remote?.RemoteKeys!.TrustedIdentity;
+            if( trustedIdentity == null || !initialMessage.RemoteIdentities.Any( i => i.Equals( trustedIdentity ) ) )
             {
                 // Before awaking the TransportManager, we send the deny message:
                 // If this is a bad remote guy that tries to timeout us, this will be cleanup by the heart beat:
@@ -68,13 +73,17 @@ namespace CK.AppIdentity.TransportLayer
                 if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
-                    // this potential new UnknownRemote party.
-                    transportManager.UnknownIncomingRemote( initialMessage );
+                    // this potential new UnknownRemote party with the trusted identity (if any) considered at the
+                    // time of the decision.
+                    transportManager.UnknownIncomingRemote( initialMessage, trustedIdentity );
                 }
                 return;
             }
-            // We know the remote full name. We first verify the signature.
-            // TODO.
+            // We know the remote full name and we trust one of its public keys: it is time to verify the message signatures.
+            // The message is signed by each of its identities but it would be useless and costly to verify each of them (we will have to
+            // instantiate a ECDsa for each of the RemotePublicKeyData). We just have to check the signature against our trustedIdentity
+            // that already has a ECDsa up and running.
+
 
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )

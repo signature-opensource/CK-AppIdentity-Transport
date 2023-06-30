@@ -18,8 +18,4 @@
     <ProjectReference Include="..\..\CK.AppIdentity.Configuration\CK.AppIdentity.Configuration.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="TestStore\" />
-  </ItemGroup>
-
 </Project>

@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Diagnostics;
 using System.IO;
@@ -33,7 +34,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             // Even if initialization fails, register the features: it may be required by others.
             ApplicationIdentityService.AddFeature( _transportManager );
-            // External parties have no Transport.
+            // Local and External remote parties have no Transport.
             foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
@@ -44,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
         protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
         {
             bool success = true;
-            // External parties have no Transport.
+            // Local and External remote parties have no Transport.
             foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
                 success &= PlugTransportFeature( context, r );
@@ -87,6 +88,34 @@ namespace CK.AppIdentity.TransportLayer
                 return false;
             }
             Debug.Assert( (listen == null) != (target == null) );
+            // Transport requires the KeyManagement feature:
+            // - If we are listening, then we must have a IRemoteKeys manager.
+            // - If we are targeting, then we must have a ILocalKeys manager.
+            IRemoteKeys? remoteKeys = null;
+            ILocalKeys? localKeys = null;
+            if( listen != null )
+            {
+                remoteKeys = r.GetFeature<IRemoteKeys>();
+                if( remoteKeys == null )
+                {
+                    context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature. " +
+                                          $"This remote has no target 'Address' (and listens to the '{listen}' address): it must be able to handle the Trusted Identity key of its peer." );
+                    // This is not an error.
+                    return true;
+                }
+            }
+            else
+            {
+                localKeys = r.Owner.GetFeature<ILocalKeys>();
+                if( localKeys == null )
+                {
+                    context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because its host '{r.Owner}' has a disallowed 'KeyManagement' feature. " +
+                                          $"This remote targets '{target}' address: it must be able to handle the identity keys of this local party." );
+                    // This is not an error.
+                    return true;
+                }
+            }
+            // Now we have our pairs (listen address, remote keys) xor (target address, local keys). 
             // If we are listening and cannot setup a listener on the local address, it's an error.
             TransportListener? listener = null;
             bool disallowEviction = false;
@@ -104,7 +133,7 @@ namespace CK.AppIdentity.TransportLayer
             // listener and if the party is the initiator it must start to try to connect.
             // However, to be able to start exchanging with others, we must know the message protocols
             // that are supported.
-            var t = new TransportFeature( _transportManager, r, listener, target, disallowEviction );
+            var t = new TransportFeature( _transportManager, r, listener, remoteKeys, target, localKeys, disallowEviction );
             // We add the feature here to the remote so that channels can use it.
             // And we wait a successful initialization to "publish" the new TransportFeature to the
             // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature

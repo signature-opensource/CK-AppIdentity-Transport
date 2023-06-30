@@ -123,11 +123,14 @@ namespace CK.AppIdentity
 
         async Task OnDestroyedDomainAsync( IActivityMonitor monitor, TenantDomainParty d )
         {
-            Debug.Assert( d._destroyTCS != null );
             Util.InterlockedRemove( ref _domains, d );
+            // This destroys the LocalParty's remotes (including calls to OnShutdownOrDestroyedAsync)
+            // and clears the _remotes array.
             await d.OnDestroyedAsync( monitor ).ConfigureAwait( false );
+            // We raise the event before the final destruction of the domain and
+            // its _destroyTCS signal.
             await _allPartyChanged.RaiseAsync( monitor, d ).ConfigureAwait( false );
-            // It is the agent that eventually signals the destroyTCS.
+            await d.OnShutdownOrDestroyedAsync( monitor, true ).ConfigureAwait( false );
         }
 
         internal Task OnCreatedAsync( IActivityMonitor monitor, IOwnedParty owned )
@@ -180,6 +183,24 @@ namespace CK.AppIdentity
             await _agent.RunningTask.ConfigureAwait( false );
         }
 
+        /// <summary>
+        /// Called by the agent when stopping: this service is being disposed.
+        /// </summary>
+        /// <param name="monitor">The agent's monitor.</param>
+        internal async Task OnShutdownAsync( IActivityMonitor monitor )
+        {
+            foreach( var r in _remotes )
+            {
+                await r.OnShutdownOrDestroyedAsync( monitor, false );
+            }
+            foreach( var d in _domains )
+            {
+                await d.OnShutdownOrDestroyedAsync( monitor, false );
+            }
+
+        }
+
         public override string ToString() => $"Application: {FullName}";
+
     }
 }

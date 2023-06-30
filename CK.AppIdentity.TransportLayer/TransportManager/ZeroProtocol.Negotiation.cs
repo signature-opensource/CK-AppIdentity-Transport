@@ -1,5 +1,8 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System.Buffers;
 using System.Diagnostics;
+using System.Security.Cryptography;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -28,18 +31,51 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>False if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
         public static async ValueTask<bool> SendInitialMessageAsync( TransportFeature remote, Transport transport, int version )
         {
-            Debug.Assert( remote.OutgoingInitialMessage != null );
+            // Captures the current initial message.
+            var initialMessage = remote.OutgoingInitialMessage;
+            Debug.Assert( initialMessage != null && initialMessage.LocalIdentities.Count > 0 );
             var m = _zeroFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 // There is currently only one version.
                 Throw.CheckArgument( version == CurrentVersion );
-                remote.OutgoingInitialMessage.WriteCurrentVersion( ref w );
+                initialMessage.WriteCurrentVersion( ref w );
                 w.Commit();
             } );
+            // TODO: The message must be signed by all the currently valid identities.
+            // But for this, we need to change the TransportMessage definition:
+            // - IncomingTransportMessage is read only.
+            // - OutgoingMessage is mutable.
+            // - Prefix is managed independently of the content message.
+            ComputeSHA512HashAndAppendSignatures( m, initialMessage.LocalIdentities );
             bool r = await transport.SendAsync( m ).ConfigureAwait( false );
             m.Dispose();
             return r;
+        }
+
+        static void ComputeSHA512HashAndAppendSignatures( TransportMessage m, IReadOnlyList<LocalIdentityKey> localIdentities )
+        {
+            Span<byte> messageHash = stackalloc byte[64];
+            Span<byte> signature = stackalloc byte[256];
+            ComputeHash( m.Message, messageHash );
+            var w = new FastByteWriter( m.GetBufferWriter() );
+            foreach( var i in localIdentities )
+            {
+                Throw.CheckData( i.TrySignHash( messageHash, signature, out int byteWritten ) );
+                w.WriteByte( (byte)byteWritten );
+                w.WriteBytes( signature );
+            }
+            w.Commit();
+        }
+
+        static void ComputeHash( ReadOnlySequence<byte> message, Span<byte> hash )
+        {
+            using var h = IncrementalHash.CreateHash( HashAlgorithmName.SHA512 );
+            foreach( var s in message )
+            {
+                h.AppendData( s.Span );
+            }
+            h.GetCurrentHash( hash );
         }
 
         public static async ValueTask<bool> SendUnknownRemoteReplyMessageAsync( Transport transport, string? userAcceptUri )
