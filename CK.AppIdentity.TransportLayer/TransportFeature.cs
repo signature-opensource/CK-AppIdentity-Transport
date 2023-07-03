@@ -20,12 +20,13 @@ namespace CK.AppIdentity.TransportLayer
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
 
-        // Either (listener,remoteKeys) or (target,localKeys) is not null.
+        // Either listener or target is not null.
         readonly TransportListener? _listener;
-        readonly IRemoteKeys? _remoteKeys;
 
         readonly TransportTypeAddress? _target;
-        readonly ILocalKeys? _localKeys;
+
+        readonly ILocalKeys _localKeys;
+        readonly IRemoteKeys _remoteKeys;
 
         readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
         // This relays our ConnectionAvailabilityChanged event to the TransportManagerFeature one.
@@ -50,14 +51,12 @@ namespace CK.AppIdentity.TransportLayer
         internal TransportFeature( TransportManager transportManager,
                                    IRemoteParty remote,
                                    TransportListener? listener,
-                                   IRemoteKeys? remoteKeys,
                                    TransportTypeAddress? target,
-                                   ILocalKeys? localKeys,
+                                   ILocalKeys localKeys,
+                                   IRemoteKeys remoteKeys,
                                    bool disallowEviction )
         {
             Debug.Assert( (listener == null) != (target == null), "Either we are listening or we are targeting." );
-            Debug.Assert( (listener != null) == (remoteKeys != null), "When listening we can manage the remote trusted Identity key." );
-            Debug.Assert( (target != null) == (localKeys != null), "When targeting we can manage our private Identity keys." );
             _transportManager = transportManager;
             _party = remote;
             _listener = listener;
@@ -342,8 +341,6 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets whether we are listening or targeting the remote.
         /// </summary>
         [MemberNotNullWhen( false, nameof( TargetAddress ) )]
-        [MemberNotNullWhen( false, nameof( LocalKeys ) )]
-        [MemberNotNullWhen( true, nameof( RemoteKeys ) )]
         public bool IsListening => _listener != null;
 
         /// <summary>
@@ -352,14 +349,14 @@ namespace CK.AppIdentity.TransportLayer
         public TransportTypeAddress? TargetAddress => _target;
 
         /// <summary>
-        /// Available when <see cref="TargetAddress"/> is not null (ie. <see cref="IsListening"/> is false).
+        /// Gets the local keys manager.
         /// </summary>
-        public ILocalKeys? LocalKeys => _localKeys;
+        public ILocalKeys LocalKeys => _localKeys;
 
         /// <summary>
-        /// Available when <see cref="IsListening"/> is true.
+        /// Gets the remote keys manager.
         /// </summary>
-        public IRemoteKeys? RemoteKeys => _remoteKeys;
+        public IRemoteKeys RemoteKeys => _remoteKeys;
 
         /// <summary>
         /// Gets or sets whether this remote disallows a new remote incoming transport

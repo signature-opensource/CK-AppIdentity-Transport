@@ -59,9 +59,7 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( remote == null || remote.IsListening );
             // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
             // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
-            // Note: if remote is not null, we are listening and hence we have a non null RemoteKeys. Unfortunately, null propagation
-            //       analysis fails here.
-            var trustedIdentity = remote?.RemoteKeys!.TrustedIdentity;
+            var trustedIdentity = remote?.RemoteKeys.TrustedIdentity;
             if( trustedIdentity == null || !initialMessage.RemoteIdentities.Any( i => i.Equals( trustedIdentity ) ) )
             {
                 // Before awaking the TransportManager, we send the deny message:
@@ -160,13 +158,13 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( incoming?.Listener != null );
             InitialMessage? initialMessage;
 
-            TransportMessage? message = null;
+            IncomingMessage? message = null;
             try
             {
                 bool downgradedVersion = false;
                 retry:
                 message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength );
-                if( !message.IsValid || message == TransportMessage.Empty || message == TransportMessage.EmptyAck )
+                if( !message.IsValid || message == IncomingMessage.Empty || message == IncomingMessage.EmptyAck )
                 {
                     transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
                     return null;

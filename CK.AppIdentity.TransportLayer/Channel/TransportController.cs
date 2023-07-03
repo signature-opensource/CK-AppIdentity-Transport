@@ -282,10 +282,10 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal bool Receive0Message( IActivityMonitor receiveMonitor, TransportMessage m )
+        internal bool Receive0Message( IActivityMonitor receiveMonitor, IncomingMessage m )
         {
             Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
-            if( m == TransportMessage.Empty )
+            if( m == IncomingMessage.Empty )
             {
                 // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
                 // the other side worries about us because we did not send it any message for some time.

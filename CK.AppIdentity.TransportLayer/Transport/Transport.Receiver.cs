@@ -58,14 +58,14 @@ namespace CK.AppIdentity.TransportLayer
                     if( m.Protocol == MessageProtocol.ZeroProtocol )
                     {
                         // Handles Canceled and Invalid messages.
-                        if( m == TransportMessage.Canceled )
+                        if( m == IncomingMessage.Canceled )
                         {
                             // The transport.LifeTime has been signaled: the transport has been
                             // killed.
                             receiveMonitor.Trace( $"Canceled message received." );
                             break;
                         }
-                        if( m == TransportMessage.Invalid )
+                        if( m == IncomingMessage.Invalid )
                         {
                             // The message was invalid. This is a serious error: kill
                             // the transport as if an exception occurred.
@@ -74,7 +74,7 @@ namespace CK.AppIdentity.TransportLayer
                             break;
                         }
                         // Handles KeepAlive acknowledgment directly without bothering the controller.
-                        if( m == TransportMessage.EmptyAck )
+                        if( m == IncomingMessage.EmptyAck )
                         {
                             // The empty message acknowledgment: the IncomingMessageFactory.LastReceived has been updated.
                             // we have nothing to do.

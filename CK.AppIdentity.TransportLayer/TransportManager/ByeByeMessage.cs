@@ -4,7 +4,7 @@ namespace CK.AppIdentity.TransportLayer
     /// Bye-bye message has a text reason and a number of seconds that the other part
     /// should honor by waiting at least this time before trying to reconnect.
     /// <para>
-    /// The <paramref name="ShutUp"/> applies connection initiator. Listeners ignore it. 
+    /// The <paramref name="ShutUp"/> applies to connection initiator. Listeners ignore it. 
     /// </para>
     /// </summary>
     /// <param name="Reason">Reason of the disconnection.</param>

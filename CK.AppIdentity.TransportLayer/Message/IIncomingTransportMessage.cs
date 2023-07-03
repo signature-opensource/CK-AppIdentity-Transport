@@ -6,18 +6,12 @@
 //    /// Read only view of a <see cref="TransportMessage"/> that cannot be
 //    /// retained or disposed.
 //    /// </summary>
-//    public interface ITransportMessageData
+//    public interface IIncomingTransportMessageData
 //    {
 //        /// <summary>
 //        /// Gets the message protocol.
 //        /// </summary>
 //        MessageProtocol Protocol { get; }
-
-//        /// <summary>
-//        /// Gets an optional source object associated to this <see cref="TransportMessage"/>.
-//        /// For an outgoing message, this typically references a data object that is serialized in the message.
-//        /// </summary>
-//        object? Source { get; }
 
 //        /// <summary>
 //        /// Gets whether this message is valid: it is not the <see cref="TransportMessage.Invalid"/> nor the <see cref="TransportMessage.Canceled"/> message

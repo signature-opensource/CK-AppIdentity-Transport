@@ -138,7 +138,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="otherVersion">The other version or -1 if prefix is missing.</param>
         public static bool TryParse( string endPointDescription,
                                      string remoteEndPointDescription,
-                                     TransportMessage m,
+                                     IncomingMessage m,
                                      [NotNullWhen(true)]out InitialMessage? initialMessage,
                                      out int otherVersion )
         {

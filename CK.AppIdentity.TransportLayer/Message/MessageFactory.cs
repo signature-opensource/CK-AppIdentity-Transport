@@ -1,39 +1,39 @@
 
-#pragma warning disable CA1816 // Dispose methods should call SuppressFinalize
+//#pragma warning disable CA1816 // Dispose methods should call SuppressFinalize
 
-namespace CK.AppIdentity.TransportLayer
-{
-    /// <summary>
-    /// Common base for message factories.
-    /// </summary>
-    public abstract class MessageFactory : IDisposable
-    {
-        internal const int _maxPrefixLength = 5;
+//namespace CK.AppIdentity.TransportLayer
+//{
+//    /// <summary>
+//    /// Common base for message factories.
+//    /// </summary>
+//    public abstract class MessageFactory : IDisposable
+//    {
+//        internal const int _maxPrefixLength = 5;
 
-        MutableSequence<byte>? _oneBuffer;
+//        MutableSequence<byte>? _oneBuffer;
 
-        private protected MessageFactory()
-        {
-        }
+//        private protected MessageFactory()
+//        {
+//        }
 
-        private protected MutableSequence<byte> GetBuffer()
-        {
-            return Interlocked.Exchange( ref _oneBuffer, null ) ?? new MutableSequence<byte>();
-        }
+//        private protected MutableSequence<byte> GetBuffer()
+//        {
+//            return Interlocked.Exchange( ref _oneBuffer, null ) ?? new MutableSequence<byte>();
+//        }
 
-        internal void Release( MutableSequence<byte> buffer )
-        {
-            buffer.Clear();
-            Interlocked.CompareExchange( ref _oneBuffer, buffer, null );
-        }
+//        internal void Release( MutableSequence<byte> buffer )
+//        {
+//            buffer.Clear();
+//            Interlocked.CompareExchange( ref _oneBuffer, buffer, null );
+//        }
 
-        /// <summary>
-        /// Disposes any internal resource.
-        /// </summary>
-        public void Dispose()
-        {
-            Interlocked.Exchange( ref _oneBuffer, null )?.Dispose();
-        }
-    }
+//        /// <summary>
+//        /// Disposes any internal resource.
+//        /// </summary>
+//        public void Dispose()
+//        {
+//            Interlocked.Exchange( ref _oneBuffer, null )?.Dispose();
+//        }
+//    }
 
-}
+//}

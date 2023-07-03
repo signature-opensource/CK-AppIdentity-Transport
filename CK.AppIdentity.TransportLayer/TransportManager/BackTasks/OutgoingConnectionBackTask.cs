@@ -166,7 +166,7 @@ namespace CK.AppIdentity.TransportLayer
             var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger, remote.TargetAddress, cancellation.Token );
             if( transport != null )
             {
-                TransportMessage? firstAnswer = null;
+                IncomingMessage? firstAnswer = null;
                 transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
                 try
@@ -180,7 +180,7 @@ namespace CK.AppIdentity.TransportLayer
                     bool retriedDowngrade = false;
                     retry:
                     firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
-                    if( !firstAnswer.IsValid || firstAnswer == TransportMessage.Empty )
+                    if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty )
                     {
                         if( _retryTickCount < 30 ) ++_retryTickCount;
                         transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'. Retrying in {_retryTickCount} seconds." );

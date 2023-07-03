@@ -92,7 +92,7 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static string? ReadUnknownRemoteReplyMessage( TransportMessage message )
+        public static string? ReadUnknownRemoteReplyMessage( IncomingMessage message )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -112,7 +112,7 @@ namespace CK.AppIdentity.TransportLayer
             return transport.SendAsync( _downgradeProtocolReplyMessage );
         }
 
-        public static int ReadDowngradeProtocolReplyMessage( TransportMessage message )
+        public static int ReadDowngradeProtocolReplyMessage( IncomingMessage message )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -138,7 +138,7 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, TransportMessage message, TransportFeature remote )
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -213,7 +213,7 @@ namespace CK.AppIdentity.TransportLayer
             return r;
         }
 
-        public static string[]? ReadMissingProtocolsMessage( IParallelLogger logger, TransportMessage message, TransportFeature remote )
+        public static string[]? ReadMissingProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();

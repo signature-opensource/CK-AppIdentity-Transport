@@ -40,7 +40,7 @@ namespace CK.AppIdentity.TransportLayer
 
         }
 
-        public static ByeByeMessage ReadByeByeMessage( TransportMessage message )
+        public static ByeByeMessage ReadByeByeMessage( IncomingMessage message )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();

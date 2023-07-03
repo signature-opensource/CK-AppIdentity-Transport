@@ -101,7 +101,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="monitor">The receiving monitor.</param>
         /// <param name="message">The message that must be disposed once done with it.</param>
         /// <returns>The awaitable.</returns>
-        internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message );
+        internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message );
 
         /// <summary>
         /// Called right before a message is sent to the remote. Does nothing by default (always returns true).

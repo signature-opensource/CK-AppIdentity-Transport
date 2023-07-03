@@ -9,19 +9,20 @@ using System.Runtime.InteropServices;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Factory for outgoing <see cref="TransportMessage"/>.
+    /// Factory for <see cref="OutgoingMessageBuilder"/>.
     /// There is only 2 ways to create an outgoing transport message:
     /// <list type="number">
-    /// <item><see cref="Create(Action{IBufferWriter{byte}}, int)"/> for messages that must be disposed</item>
+    /// <item><see cref="CreateBuilder()"/> (and then <see cref="OutgoingMessageBuilder.CreateMessage"/>) for regular messages (that must be disposed).</item>
     /// <item><see cref="CreateStatic(Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
     /// </list>
     /// <para>
     /// This class is thread safe.
     /// </para>
     /// </summary>
-    public sealed class OutgoingMessageFactory : MessageFactory
+    public sealed class OutgoingMessageFactory : IDisposable
     {
         readonly MessageProtocol _protocol;
+        MutableSequence<byte>? _cachedOneBuffer;
 
         /// <summary>
         /// Initializes a new message factory for a protocol and its protocol number.
@@ -39,27 +40,16 @@ namespace CK.AppIdentity.TransportLayer
         public MessageProtocol Protocol => _protocol;
 
         /// <summary>
-        /// Creates a <see cref="TransportMessage"/> by writing its content.
-        /// The <paramref name="writer"/> must write at least one byte: no protocol (other than the "0 Protocol")
-        /// is allowed to send empty messages.
+        /// Creates a new <see cref="OutgoingMessageBuilder"/>.
+        /// Either <see cref="OutgoingMessageBuilder.Dispose"/> or <see cref="OutgoingMessageBuilder.CreateMessage"/> must be called on the builder.
         /// </summary>
-        /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
-        /// <param name="isControl">True to set the <see cref="TransportMessage.IsControl"/> bit.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
-        /// <returns>A transport message.</returns>
-        public TransportMessage Create( Action<IBufferWriter<byte>> writer,
-                                        bool isControl = false,
-                                        int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        /// <returns>A message builder.</returns>
+        public OutgoingMessageBuilder Create( int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( this, writer, null, isControl, minSequenceBufferSize );
-        }
-
-        /// <inheritdoc cref="Create(Action{IBufferWriter{byte}}, bool, int)"/>
-        public TransportMessage Create( Action<MutableSequence<byte>> writer,
-                                        bool isControl = false,
-                                        int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
-        {
-            return DoCreate( this, null, writer, isControl, minSequenceBufferSize );
+            var buffer = GetBuffer();
+            buffer.MinimumBufferSize = minSequenceBufferSize;
+            return new OutgoingMessageBuilder( this, buffer );
         }
 
         /// <summary>
@@ -147,6 +137,26 @@ namespace CK.AppIdentity.TransportLayer
                 return (int)len + 2;
             }
         }
+
+        internal MutableSequence<byte> GetBuffer()
+        {
+            return Interlocked.Exchange( ref _cachedOneBuffer, null ) ?? new MutableSequence<byte>();
+        }
+
+        internal void Release( MutableSequence<byte> buffer )
+        {
+            buffer.Clear();
+            Interlocked.CompareExchange( ref _cachedOneBuffer, buffer, null );
+        }
+
+        /// <summary>
+        /// Disposes any internal resource.
+        /// </summary>
+        public void Dispose()
+        {
+            Interlocked.Exchange( ref _cachedOneBuffer, null )?.Dispose();
+        }
+
     }
 
 }

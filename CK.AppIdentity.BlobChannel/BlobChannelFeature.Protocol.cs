@@ -28,7 +28,7 @@ namespace CK.AppIdentity.BlobChannel
                 return message;
             }
 
-            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
+            protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
             {
                 // We take a snapshot of the data in a new array because a receiver must dispose the message
                 // and this is a simple channel: we don't want to expose a message that can be retained

@@ -151,14 +151,14 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Used during the initial negotiation.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
-        /// <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// <see cref="IsCondemned"/> has been set, in such case <see cref="IncomingMessage.Canceled"/> is returned.
         /// </summary>
         /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
         /// <returns>
-        /// A message that may be one of the special messages <see cref="TransportMessage.Invalid"/>, <see cref="TransportMessage.Canceled"/>,
-        /// <see cref="TransportMessage.Empty"/> or <see cref="TransportMessage.EmptyAck"/>.
+        /// A message that may be one of the special messages <see cref="IncomingMessage.Invalid"/>, <see cref="IncomingMessage.Canceled"/>,
+        /// <see cref="IncomingMessage.Empty"/> or <see cref="IncomingMessage.EmptyAck"/>.
         /// </returns>
-        internal Task<TransportMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
+        internal Task<IncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
             Debug.Assert( maxMessageLength > 0 );
             Debug.Assert( _controller == null, "Not started yet." );
@@ -166,41 +166,61 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// <see cref="TransportMessage.IsValid"/> must be true.
+        /// <see cref="OutgoingMessage.IsValid"/> must be true.
         /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/>
-        /// if <see cref="IsCondemned"/> has been set, in such case <see cref="TransportMessage.Canceled"/> is returned.
+        /// if <see cref="IsCondemned"/> has been set, in such case false is returned.
         /// </summary>
         /// <param name="message">The valid message to send.</param>
         /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
-        internal ValueTask<bool> SendAsync( TransportMessage message )
+        internal ValueTask<bool> SendAsync( OutgoingMessage message, CancellationToken cancellationToken )
         {
             Debug.Assert( message != null );
             Debug.Assert( message.IsValid );
-            DebugCheckMessageProtocolNumber( message );
+
             if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
-            return message.WireMessage.IsSingleSegment
-                    ? SendSingleBufferAsync( message.WireMessage.First, _cts.Token )
-                    : SendAsync( message.WireMessage, _cts.Token );
+
+            var header = ArrayPool<byte>.Shared.Rent( OutgoingMessage.MaxPrefixLength );
+            try
+            {
+                int len = message.WriteWireHeader( header );
+                var messagePrefix = header.AsMemory( 0, len );
+                return SendAsync( messagePrefix, message.Message, cancellationToken );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return( header );
+            }
         }
 
-        [Conditional("DEBUG")]
-        internal void DebugCheckMessageProtocolNumber( TransportMessage message )
+        /// <summary>
+        /// Root method that calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> with
+        /// the <paramref name="messagePrefix"/> and then <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/>
+        /// (mono buffer again) or <see cref="SendAsync(ReadOnlySequence{byte}, CancellationToken)"/> (when the message has multiple buffer).
+        /// <para>
+        /// Calls to this methods are serialized.
+        /// </para>
+        /// </summary>
+        /// <param name="message">The message body.</param>
+        /// <param name="messagePrefix">The message prefix.</param>
+        /// <returns>False if the <paramref name="cancellation"/> has been signaled, true otherwise.</returns>
+        protected virtual async ValueTask<bool> SendAsync( ReadOnlyMemory<byte> messagePrefix, ReadOnlySequence<byte> message, CancellationToken cancellation )
         {
-            var protocol = message.Protocol;
-            int protocolNumber = 0;
-            if( !protocol.IsZeroProtocol )
+            try
             {
-                protocolNumber = _receiveFactory.AllowedProtocols.GetProtocolIndex( protocol ) + 1;
-                if( protocolNumber == 0 )
+                await SendAsync( messagePrefix, _cts.Token );
+                if( message.IsSingleSegment )
                 {
-                    Throw.ArgumentException( $"Message Protocol is '{protocol}' but NegotiatedProtocols are '{_receiveFactory.AllowedProtocols}'." );
+                    await SendAsync( message.First, _cts.Token );
                 }
-
-                int num = message.GetProtocolNumber();
-                if( num != protocolNumber )
+                else
                 {
-                    Throw.ArgumentException( $"Message ProtocolNumber is '{num}' but number from NegotiatedProtocols is '{protocolNumber}' in NegotiatedProtocols '{_receiveFactory.AllowedProtocols}'." );
+                    await SendAsync( message, _cts.Token );
                 }
+                return true;
+            }
+            catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
+            {
+                return false;
             }
         }
 
@@ -277,19 +297,6 @@ namespace CK.AppIdentity.TransportLayer
                 if( len <= 0 ) Throw.InvalidDataException( $"End of stream reached on '{ToString()}'." );
                 if( len == readBuffer.Length ) return;
                 readBuffer = readBuffer.Slice( len );
-            }
-        }
-
-        async ValueTask<bool> SendSingleBufferAsync( ReadOnlyMemory<byte> single, CancellationToken cancellation )
-        {
-            try
-            {
-                await SendAsync( single, cancellation ).ConfigureAwait( false );
-                return true;
-            }
-            catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
-            {
-                return false;
             }
         }
 
