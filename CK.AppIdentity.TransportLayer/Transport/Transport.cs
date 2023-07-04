@@ -1,10 +1,15 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.SymbolStore;
+using System.Numerics;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 
 namespace CK.AppIdentity.TransportLayer
@@ -32,6 +37,12 @@ namespace CK.AppIdentity.TransportLayer
         // as soon as the Transport has been created.
         [AllowNull]
         CancellationTokenSource _cts;
+
+        // This is either known at the Transport creation time or set
+        // on a successful initial message negotiation.
+        ILocalKeys? _localKeys;
+        IRemoteKeys? _remoteKeys;
+
         // Settable at any time: this is a soft condemned that doesn't signal the
         // LifeTime token.
         ByeByeMessage? _byeByeMessage;
@@ -43,8 +54,20 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="remoteEndPointDescription">
         /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
         /// </param>
-        protected Transport( TransportListener listener, string? remoteEndPointDescription )
-            : this( (object)listener, remoteEndPointDescription )
+        /// <param name="localKeys">
+        /// When not null, it means that the TransportListener was able to resolve the remote party
+        /// among the <see cref="TransportListener.Parties"/>. This is possible for secured connections
+        /// where the SSL certificates were available.
+        /// <para>
+        /// When this is not null, then the <paramref name="remoteKeys"/> is also not null.
+        /// </para>
+        /// </param>
+        /// <param name="remoteKeys">See <paramref name="localKeys"/>.</param>
+        protected Transport( TransportListener listener,
+                             string? remoteEndPointDescription,
+                             ILocalKeys? localKeys = null,
+                             IRemoteKeys? remoteKeys = null )
+            : this( (object)listener, remoteEndPointDescription, localKeys, remoteKeys )
         {
             Throw.CheckNotNullArgument( listener );
         }
@@ -53,17 +76,27 @@ namespace CK.AppIdentity.TransportLayer
         /// Initializes a new Transport by an outgoing connection to <paramref name="targetAddress"/>.
         /// </summary>
         /// <param name="targetAddress">The target address.</param>
+        /// <param name="localKeys">Local key manager of this remote party.</param>
+        /// <param name="remoteKeys">Remote key manager of this remote party.</param>
         /// <param name="remoteEndPointDescription">
         /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
         /// </param>
-        protected Transport( TransportTypeAddress targetAddress, string? remoteEndPointDescription )
-            : this( (object)targetAddress, remoteEndPointDescription )
+        protected Transport( TransportTypeAddress targetAddress,
+                             ILocalKeys localKeys,
+                             IRemoteKeys remoteKeys,
+                             string? remoteEndPointDescription )
+            : this( (object)targetAddress, remoteEndPointDescription, localKeys, remoteKeys )
         {
+            Throw.CheckArgument( localKeys != null && remoteKeys != null );
             Throw.CheckNotNullArgument( targetAddress );
         }
 
-        Transport( object source, string? remoteEndPointDescription )
+        Transport( object source,
+                   string? remoteEndPointDescription,
+                   ILocalKeys? localKeys,
+                   IRemoteKeys? remoteKeys )
         {
+            Throw.CheckArgument( (localKeys != null ) == (remoteKeys != null ) );
             _remoteEndPointDescription = remoteEndPointDescription ?? "<No EndPoint description>";
             _listenerOrTargetAddress = source;
             _reader = ReadExactlyAsync;
@@ -71,6 +104,8 @@ namespace CK.AppIdentity.TransportLayer
             // Negotiated protocols are set by StartReceiveAsync.
             _receiveFactory = new IncomingMessageFactory();
             _cts = new CancellationTokenSource();
+            _localKeys = localKeys;
+            _remoteKeys = remoteKeys;
         }
 
         internal void SetCancellationSource( CancellationTokenSource cancellation )
@@ -127,6 +162,10 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public DateTime LastReceived => _receiveFactory.LastReceived;
 
+        internal ILocalKeys? LocalKeys => _localKeys;
+
+        internal IRemoteKeys? RemoteKeys => _remoteKeys;
+
         internal bool SetHardCondemned()
         {
             if( !_cts.IsCancellationRequested )
@@ -172,19 +211,19 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="message">The valid message to send.</param>
         /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
-        internal ValueTask<bool> SendAsync( OutgoingMessage message, CancellationToken cancellationToken )
+        internal ValueTask<bool> SendAsync( uint protocolNumber, IOutgoingMessage message )
         {
             Debug.Assert( message != null );
             Debug.Assert( message.IsValid );
 
             if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
 
-            var header = ArrayPool<byte>.Shared.Rent( OutgoingMessage.MaxPrefixLength );
+            var header = ArrayPool<byte>.Shared.Rent( IOutgoingMessage.MaxWirePrefixLength );
             try
             {
-                int len = message.WriteWireHeader( header );
+                int len = IOutgoingMessage.WriteWireHeader( protocolNumber, (uint)message.Message.Length, message.IsControl, header );
                 var messagePrefix = header.AsMemory( 0, len );
-                return SendAsync( messagePrefix, message.Message, cancellationToken );
+                return SendAsync( messagePrefix, message.Message, _cts.Token );
             }
             finally
             {

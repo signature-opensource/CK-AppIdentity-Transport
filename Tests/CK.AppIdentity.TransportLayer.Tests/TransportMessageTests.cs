@@ -54,15 +54,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
                     w.Commit();
                 } );
 
-                var reader = new BasicAsyncReader( m );
+                var reader = new BasicAsyncReader( m, incoming.AllowedProtocols );
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.Protocol.FullName.Should().Be( MessageProtocol.ZeroProtocol.FullName, "The OutgoingMessageFactory does not set the protocol number. " +
-                                                                                            "This is done internally by the TransportController." );
-                mBack.WireMessage.Length.Should().Be( m.WireMessage.Length );
-                mBack.Message.Length.Should().Be( m.Message.Length );
-                mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
+                mBack.Protocol.Should().Be( m.Protocol );
+                mBack.Message.ToArray().Should().BeEquivalentTo( m.Message.ToArray() );
             }
 
         }
@@ -94,13 +91,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
                     w.Commit();
                 } );
 
-                var reader = new BasicAsyncReader( m );
+                var reader = new BasicAsyncReader( m, incoming.AllowedProtocols );
                 using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync ).ConfigureAwait( false );
 
                 mBack.IsValid.Should().BeTrue();
-                mBack.Protocol.FullName.Should().Be( MessageProtocol.ZeroProtocol.FullName, "The OutgoingMessageFactory does not set the protocol number. " +
-                                                                                            "This is done internally by the TransportController." );
-                mBack.WireMessage.ToArray().Should().BeEquivalentTo( m.WireMessage.ToArray() );
+                mBack.Protocol.Should().Be( m.Protocol );
+                mBack.Message.ToArray().Should().BeEquivalentTo( m.Message.ToArray() );
             }
         }
     }

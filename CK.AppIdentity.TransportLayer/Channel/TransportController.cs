@@ -17,8 +17,8 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly TransportManager _transportManager;
         readonly TransportFeature _feature;
-        readonly Channel<TransportMessage?> _senderChannel;
-        readonly Channel<TransportMessage> _highPriorityChannel;
+        readonly Channel<IOutgoingMessage?> _senderChannel;
+        readonly Channel<IOutgoingMessage> _highPriorityChannel;
         Transport _transport;
         Task<IActivityMonitor>? _receiveTask;
         Task? _sendTask;
@@ -27,9 +27,9 @@ namespace CK.AppIdentity.TransportLayer
         {
             _transportManager = transportManager;
             _feature = feature;
-            _highPriorityChannel = Channel.CreateUnbounded<TransportMessage>( _unboundOptions );
+            _highPriorityChannel = Channel.CreateUnbounded<IOutgoingMessage>( _unboundOptions );
             // This channel should be bounded.
-            _senderChannel = Channel.CreateUnbounded<TransportMessage?>( _unboundOptions );
+            _senderChannel = Channel.CreateUnbounded<IOutgoingMessage?>( _unboundOptions );
             _transport = transport;
             _transport.SetController( this );
         }
@@ -52,9 +52,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public TransportFeature Feature => _feature;
 
-        public bool TryEnqueue( TransportMessage message ) => _senderChannel.Writer.TryWrite( message );
+        public bool TryEnqueue( IOutgoingMessage message ) => _senderChannel.Writer.TryWrite( message );
 
-        public bool TryEnqueueHighPriority( TransportMessage message )
+        public bool TryEnqueueHighPriority( IOutgoingMessage message )
         {
             if( _highPriorityChannel.Writer.TryWrite( message ) )
             {
@@ -73,7 +73,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </returns>
         public ValueTask<bool> WaitToEnqueueAsync( CancellationToken cancellationToken = default ) => _senderChannel.Writer.WaitToWriteAsync( cancellationToken );
 
-        public async ValueTask<bool> TryEnqueueAsync( TransportMessage message, CancellationToken cancellationToken = default )
+        public async ValueTask<bool> TryEnqueueAsync( IOutgoingMessage message, CancellationToken cancellationToken = default )
         {
             try
             {
@@ -152,8 +152,8 @@ namespace CK.AppIdentity.TransportLayer
         static async Task RunSendAsync( TransportManager transportManager,
                                         TransportController transportController,
                                         Transport transport,
-                                        ChannelReader<TransportMessage?> reader,
-                                        ChannelReader<TransportMessage> highPriorityReader )
+                                        ChannelReader<IOutgoingMessage?> reader,
+                                        ChannelReader<IOutgoingMessage> highPriorityReader )
         {
             try
             {
@@ -190,7 +190,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                         else
                         {
-                            if( !await SendMessageAsync( transportManager, transport, m, handlers).ConfigureAwait(false) )
+                            if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait(false) )
                             {
                                 // Breaks the send loop. The unsent message is let in the queue.
                                 break;
@@ -217,26 +217,25 @@ namespace CK.AppIdentity.TransportLayer
 
         static async ValueTask<bool> SendMessageAsync( TransportManager transportManager,
                                                        Transport transport,
-                                                       TransportMessage m,
+                                                       IOutgoingMessage m,
                                                        IReadOnlyList<PeerProtocolHandler> handlers )
         {
             if( m.Protocol.IsZeroProtocol )
             {
                 // Even if the send is canceled in "0 Protocol", always consume the message:
                 // the "0 Protocol" has no interest to interact with different transports.
-                await transport.SendAsync( m ).ConfigureAwait( false );
+                await transport.SendAsync( 0, m ).ConfigureAwait( false );
             }
             else
             {
-                int protocolIndex = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
-                if( protocolIndex == -1 )
+                int protocolNumber = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
+                if( protocolNumber == -1 )
                 {
                     transportManager.Logger.Error( $"Got a '{m.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
                 }
                 else
                 {
-                    m.SetProtocolNumber( protocolIndex + 1 );
-                    PeerProtocolHandler currentHandler = handlers[protocolIndex];
+                    PeerProtocolHandler currentHandler = handlers[protocolNumber];
                     if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
                     {
                         var toSend = replacement ?? m;
@@ -247,27 +246,27 @@ namespace CK.AppIdentity.TransportLayer
                         else
                         {
                             // If the send is canceled, ends this loop without consuming the message.
-                            if( !await transport.SendAsync( toSend ).ConfigureAwait( false ) )
+                            if( !await transport.SendAsync( (uint)protocolNumber, toSend ).ConfigureAwait( false ) )
                             {
-                                replacement?.Dispose();
+                                replacement?.Release();
                                 return false;
                             }
                         }
                     }
-                    replacement?.Dispose();
+                    replacement?.Release();
                 }
             }
-            m.Dispose();
+            m.Release();
             return true;
         }
 
-        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<TransportMessage>? action = null )
+        internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<IOutgoingMessage>? action = null )
         {
             int count = FlushAndClose( action, _highPriorityChannel.Reader! );
             count += FlushAndClose( action, _senderChannel.Reader );
             monitor.Trace( $"Cleanup {count} unsent messages for '{_transport.RemoteEndPointDescription}'." );
 
-            static int FlushAndClose( Action<TransportMessage>? action, ChannelReader<TransportMessage?> r )
+            static int FlushAndClose( Action<IOutgoingMessage>? action, ChannelReader<IOutgoingMessage?> r )
             {
                 int count = 0;
                 while( r.TryRead( out var m ) )
@@ -275,7 +274,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( m == null ) continue;
                     ++count;
                     action?.Invoke( m );
-                    m.Dispose();
+                    m.Release();
                 }
 
                 return count;
@@ -291,7 +290,7 @@ namespace CK.AppIdentity.TransportLayer
                 // the other side worries about us because we did not send it any message for some time.
                 // Let's reassure it.
                 receiveMonitor.Trace( $"Received KeepAlive request." );
-                if( !TryEnqueue( TransportMessage.EmptyAck ) )
+                if( !TryEnqueue( IOutgoingMessage.EmptyAck ) )
                 {
                     receiveMonitor.Warn( $"Received a KeepAlive from '{_transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" );
                 }

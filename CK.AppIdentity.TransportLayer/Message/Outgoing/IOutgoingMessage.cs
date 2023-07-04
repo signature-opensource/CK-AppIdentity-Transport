@@ -1,5 +1,10 @@
 using CK.Core;
 using System.Buffers;
+using System.Buffers.Binary;
+using System.Diagnostics;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -9,8 +14,13 @@ namespace CK.AppIdentity.TransportLayer
     /// Apart from the 4 static singletons defined here, instances can only be created
     /// by a <see cref="OutgoingMessageBuilder"/>.
     /// </summary>
-    public interface IOutgoingMessage : IOutgoingMessageData, IRefCounted
+    public interface IOutgoingMessage : IOutgoingMessageData, IRefCounted, IDisposable
     {
+        /// <summary>
+        /// The prefix length on the wire is between 1 (for empty messages) and 5 bytes.
+        /// </summary>
+        public const int MaxWirePrefixLength = 5;
+
         /// <summary>
         /// A purely invalid message singleton. It can be safely disposed and will remain invalid.
         /// <see cref="Canceled"/> is also invalid but conveys a cancellation of the process.
@@ -41,6 +51,38 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public static readonly IOutgoingMessage EmptyAck = new StaticEmpty( 2 );
 
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="protocolNumber">The protocol number between 0 and <see cref="MessageProtocolMap.MaxCount"/>.</param>
+        /// <param name="message">The message (must be <see cref="IOutgoingMessageData.IsValid"/>).</param>
+        /// <param name="header">Target buffer of at least <see cref="Max"/></param>
+        /// <returns></returns>
+        public static int WriteWireHeader( int protocolNumber, IOutgoingMessage message, Span<byte> header )
+        {
+            Throw.CheckArgument( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
+            Throw.CheckArgument( message.IsValid );
+            Throw.CheckArgument( header.Length >= MaxWirePrefixLength );
+            return WriteWireHeader( (uint)protocolNumber, (uint)message.Message.Length, message.IsControl, header );
+        }
+
+        internal static int WriteWireHeader( uint protocolNumber, uint length, bool isControl, Span<byte> header )
+        {
+            Debug.Assert( header.Length >= MaxWirePrefixLength );
+            Debug.Assert( length < int.MaxValue );
+            Debug.Assert( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
+            uint len = (uint)BitOperations.Log2( length ) / 8;
+            Debug.Assert( len >= 0 && len <= 3 );
+            var b = (len << 6) | protocolNumber;
+            if( isControl ) b |= OutgoingMessage.IsControlFlag;
+            Debug.Assert( b >= 0 && b <= 255 );
+            header[0] = (byte)b;
+            if( !BitConverter.IsLittleEndian ) length = BinaryPrimitives.ReverseEndianness( length );
+            Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( header ), 1 ), length );
+            return (int)len + 2;
+        }
+
         sealed class StaticEmpty : IOutgoingMessage
         {
             int _ackOrEmptyAck;
@@ -69,6 +111,10 @@ namespace CK.AppIdentity.TransportLayer
             }
 
             public void AddRef()
+            {
+            }
+
+            public void Dispose()
             {
             }
 

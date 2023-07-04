@@ -93,27 +93,22 @@ namespace CK.AppIdentity.TransportLayer
             //   the trusted identity and then the ILocalKeys to sign the response.
             // - If we are targeting, then we must have a ILocalKeys manager to sign the initial message and then
             //   the IRemoteKeys to assert the response and updated the trusted identity.
-            IRemoteKeys? remoteKeys = null;
-            ILocalKeys? localKeys = null;
-            if( listen != null )
+            IRemoteKeys? remoteKeys = r.GetFeature<IRemoteKeys>(); ;
+            ILocalKeys? localKeys = r.Owner.GetFeature<ILocalKeys>();
+            if( remoteKeys == null )
             {
-                remoteKeys = r.GetFeature<IRemoteKeys>();
-                if( remoteKeys == null )
-                {
-                    context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature. " +
-                                          $"It must be able to handle the Trusted Identity key of its peer." );
-                }
-                localKeys = r.Owner.GetFeature<ILocalKeys>();
-                if( localKeys == null )
-                {
-                    context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because its host '{r.Owner}' has a disallowed 'KeyManagement' feature. " +
-                                          $"It must be able to use identity keys of this local party." );
-                }
-                if( remoteKeys == null || localKeys == null )
-                {
-                    // This is not an error.
-                    return true;
-                }
+                context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature. " +
+                                        $"It must be able to handle the Trusted Identity key of its peer." );
+            }
+            if( localKeys == null )
+            {
+                context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because its host '{r.Owner}' has a disallowed 'KeyManagement' feature. " +
+                                        $"It must be able to use identity keys of this local party." );
+            }
+            if( remoteKeys == null || localKeys == null )
+            {
+                // This is not an error.
+                return true;
             }
             // If we are listening and cannot setup a listener on the local address, it's an error.
             TransportListener? listener = null;

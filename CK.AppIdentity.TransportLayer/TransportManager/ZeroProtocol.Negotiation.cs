@@ -14,13 +14,13 @@ namespace CK.AppIdentity.TransportLayer
 
         // Static messages use no initialization lock (we don't care of the rare case where 2 concurrent messages will be instantiated).
         // "1" followed by our version: it can be static.
-        static TransportMessage? _downgradeProtocolReplyMessage;
+        static IOutgoingMessage? _downgradeProtocolReplyMessage;
         // The DiscriminatorFinalMessage with a single "1": it can be static.
-        static TransportMessage? _finalSuccessMessage;
+        static IOutgoingMessage? _finalSuccessMessage;
         // The DiscriminatorFinalMessage with a single "0": it can be static.
-        static TransportMessage? _finalFailureMessage;
+        static IOutgoingMessage? _finalFailureMessage;
         // The DiscriminatorEvictionDisallowed: it can be static.
-        static TransportMessage? _evictionDisallowedMessage;
+        static IOutgoingMessage? _evictionDisallowedMessage;
 
         /// <summary>
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
@@ -31,44 +31,53 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>False if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
         public static async ValueTask<bool> SendInitialMessageAsync( TransportFeature remote, Transport transport, int version )
         {
-            // Captures the current initial message.
-            var initialMessage = remote.OutgoingInitialMessage;
-            Debug.Assert( initialMessage != null && initialMessage.LocalIdentities.Count > 0 );
-            var m = _zeroFactory.Create( bytes =>
+            var m = CreateAndSignMessage( remote, version );
+            bool r = await transport.SendAsync( 0, m ).ConfigureAwait( false );
+            m.Release();
+            return r;
+
+            static IOutgoingMessage CreateAndSignMessage( TransportFeature remote, int version )
             {
-                var w = new FastByteWriter( bytes );
+                var initialMessage = remote.OutgoingInitialMessage;
+                Debug.Assert( initialMessage != null && initialMessage.LocalIdentities.Count > 0 );
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
                 // There is currently only one version.
                 Throw.CheckArgument( version == CurrentVersion );
                 initialMessage.WriteCurrentVersion( ref w );
                 w.Commit();
-            } );
-            // TODO: The message must be signed by all the currently valid identities.
-            // But for this, we need to change the TransportMessage definition:
-            // - IncomingTransportMessage is read only.
-            // - OutgoingMessage is mutable.
-            // - Prefix is managed independently of the content message.
-            ComputeSHA512HashAndAppendSignatures( m, initialMessage.LocalIdentities );
-            bool r = await transport.SendAsync( m ).ConfigureAwait( false );
-            m.Dispose();
-            return r;
+                ComputeSHA512HashAndAppendAllSignatures( ref w, sequence, initialMessage.LocalIdentities );
+                return builder.CreateMessage( sequence );
+
+                static void ComputeSHA512HashAndAppendAllSignatures( ref FastByteWriter w, MutableSequence<byte> bytes, IReadOnlyList<LocalIdentityKey> localIdentities )
+                {
+                    Span<byte> messageHash = stackalloc byte[64];
+                    Span<byte> signature = stackalloc byte[256];
+                    ComputeHash( bytes.GetReadOnlySequence(), messageHash );
+                    foreach( var i in localIdentities )
+                    {
+                        Throw.CheckData( i.TrySignHash( messageHash, signature, out int byteWritten ) );
+                        w.WriteByte( (byte)byteWritten );
+                        w.WriteBytes( signature.Slice( 0, byteWritten ) );
+                    }
+                    w.Commit();
+                }
+            }
         }
 
-        static void ComputeSHA512HashAndAppendSignatures( TransportMessage m, IReadOnlyList<LocalIdentityKey> localIdentities )
+        static void ComputeSHA512HashAndAppendSignature( ref FastByteWriter w, MutableSequence<byte> bytes, LocalIdentityKey identityKey )
         {
             Span<byte> messageHash = stackalloc byte[64];
             Span<byte> signature = stackalloc byte[256];
-            ComputeHash( m.Message, messageHash );
-            var w = new FastByteWriter( m.GetBufferWriter() );
-            foreach( var i in localIdentities )
-            {
-                Throw.CheckData( i.TrySignHash( messageHash, signature, out int byteWritten ) );
-                w.WriteByte( (byte)byteWritten );
-                w.WriteBytes( signature );
-            }
+            ComputeHash( bytes.GetReadOnlySequence(), messageHash );
+            Throw.CheckData( identityKey.TrySignHash( messageHash, signature, out int byteWritten ) );
+            w.WriteByte( (byte)byteWritten );
+            w.WriteBytes( signature.Slice( 0, byteWritten ) );
             w.Commit();
         }
 
-        static void ComputeHash( ReadOnlySequence<byte> message, Span<byte> hash )
+        internal static void ComputeHash( ReadOnlySequence<byte> message, Span<byte> hash )
         {
             using var h = IncrementalHash.CreateHash( HashAlgorithmName.SHA512 );
             foreach( var s in message )
@@ -78,18 +87,45 @@ namespace CK.AppIdentity.TransportLayer
             h.GetCurrentHash( hash );
         }
 
-        public static async ValueTask<bool> SendUnknownRemoteReplyMessageAsync( Transport transport, string? userAcceptUri )
+        public static async ValueTask<bool> SendUnknownRemoteReplyMessageAsync( Transport transport,
+                                                                                string? userAcceptUri,
+                                                                                bool signatureVerificationFailed )
         {
-            var m = _zeroFactory.Create( bytes =>
-            {
-                var w = new FastByteWriter( bytes );
-                w.WriteByte( DNegoUnknownRemote );
-                w.WriteNullableString( userAcceptUri );
-                w.Commit();
-            } );
-            bool r = await transport.SendAsync( m ).ConfigureAwait( false );
-            m.Dispose();
+            IOutgoingMessage m = CreateMessage( transport, userAcceptUri, signatureVerificationFailed );
+            bool r = await transport.SendAsync( 0, m ).ConfigureAwait( false );
+            m.Release();
             return r;
+
+            static IOutgoingMessage CreateMessage( Transport transport, string? userAcceptUri, bool signatureVerificationFailed )
+            {
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+                w.WriteByte( DNegoUnknownRemote );
+                w.WriteBool( signatureVerificationFailed );
+                w.WriteNullableString( userAcceptUri );
+                LocalIdentityKey? keyForSigning = null;
+                if( !signatureVerificationFailed )
+                {
+                    if( transport.LocalKeys == null )
+                    {
+                        w.WriteSmallUInt32( 0 );
+                    }
+                    else
+                    {
+                        keyForSigning = transport.LocalKeys.CurrentIdentity;
+                        var publicKey = keyForSigning.PublicKeyRawData;
+                        w.WriteSmallUInt32( (uint)publicKey.Length );
+                        w.WriteBytes( publicKey.Span );
+                    }
+                }
+                w.Commit();
+                if( keyForSigning != null )
+                {
+                    ComputeSHA512HashAndAppendSignature( ref w, sequence, keyForSigning );
+                }
+                return builder.CreateMessage( sequence );
+            }
         }
 
         public static string? ReadUnknownRemoteReplyMessage( IncomingMessage message )
@@ -109,7 +145,7 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteSmallUInt32( CurrentVersion );
                 w.Commit();
             } );
-            return transport.SendAsync( _downgradeProtocolReplyMessage );
+            return transport.SendAsync( 0, _downgradeProtocolReplyMessage );
         }
 
         public static int ReadDowngradeProtocolReplyMessage( IncomingMessage message )
@@ -133,8 +169,8 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 w.Commit();
             } );
-            bool r = await transport.SendAsync( m ).ConfigureAwait( false );
-            m.Dispose();
+            bool r = await transport.SendAsync( 0, m ).ConfigureAwait( false );
+            m.Release();
             return r;
         }
 
@@ -185,7 +221,7 @@ namespace CK.AppIdentity.TransportLayer
                 var b = bytes.GetSpan( 1 );
                 b[0] = DNegoEvictionDisallowed;
             } );
-            return incoming.SendAsync( m );
+            return incoming.SendAsync( 0, m );
         }
 
         /// <summary>
@@ -208,8 +244,8 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 w.Commit();
             } );
-            bool r = await incoming.SendAsync( m ).ConfigureAwait( false );
-            m.Dispose();
+            bool r = await incoming.SendAsync( 0, m ).ConfigureAwait( false );
+            m.Release();
             return r;
         }
 
@@ -234,7 +270,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
         {
-            TransportMessage m = value
+            IOutgoingMessage m = value
                     ? _finalSuccessMessage ??= _zeroFactory.CreateStatic( bytes =>
                     {
                         var m = bytes.GetSpan( 2 );
@@ -249,7 +285,7 @@ namespace CK.AppIdentity.TransportLayer
                         m[1] = 0;
                         bytes.Advance( 1 );
                     } );
-            return transport.SendAsync( m );
+            return transport.SendAsync( 0, m );
         }
     }
 }

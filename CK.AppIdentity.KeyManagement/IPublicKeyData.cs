@@ -1,3 +1,4 @@
+using CK.Core;
 using System;
 using System.Security.Cryptography.X509Certificates;
 
@@ -37,5 +38,11 @@ namespace CK.AppIdentity.KeyManagement
         /// </para>
         /// </summary>
         string Name { get; }
+
+        /// <summary>
+        /// Creates or overwrites a file with this public key.
+        /// </summary>
+        /// <param name="fullPath">The target file path.</param>
+        void WriteFile( NormalizedPath fullPath );
     }
 }

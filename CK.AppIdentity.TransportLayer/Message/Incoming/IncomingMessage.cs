@@ -76,7 +76,7 @@ namespace CK.AppIdentity.TransportLayer
                                   int prefixLength )
         {
             Debug.Assert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 0 );
-            Debug.Assert( prefixLength >= 2 && prefixLength <= OutgoingMessage.MaxPrefixLength );
+            Debug.Assert( prefixLength >= 2 && prefixLength <= IOutgoingMessage.MaxWirePrefixLength );
             _messageFactory = messageFactory;
             _buffer = buffer;
             _protocol = protocol;

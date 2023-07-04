@@ -29,6 +29,7 @@ namespace CK.AppIdentity.KeyManagement
                 {
                     if( !PlugLocal( context, local ) ) return Task.FromResult( false );
                 }
+                if( !PlugLocalRemotes( context, local ) ) return Task.FromResult( false );
             }
             return Task.FromResult( true );
         }

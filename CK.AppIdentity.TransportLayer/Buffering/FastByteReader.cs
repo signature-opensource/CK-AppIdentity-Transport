@@ -27,10 +27,20 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
+        /// Gets the currently read sequence.
+        /// </summary>
+        /// <returns>The data read so far.</returns>
+        public ReadOnlySequence<byte> GetBeforeHead()
+        {
+            var start = _sequence.GetPosition( _bufferPos, _nextSequencePosition );
+            return _sequence.Slice( 0, start );
+        }
+
+        /// <summary>
         /// Gets the current remainder of the sequence.
         /// </summary>
         /// <returns>The remainder.</returns>
-        public ReadOnlySequence<byte> GetRemainder()
+        public ReadOnlySequence<byte> GetAfterHead()
         {
             var start = _sequence.GetPosition( _bufferPos, _nextSequencePosition );
             return _sequence.Slice( start );

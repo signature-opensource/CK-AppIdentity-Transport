@@ -133,7 +133,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( messageLength == 0 )
                     {
                         return protocolNumber == 0
-                                ? ((firstByte & TransportMessage.IsControlFlag) != 0 ? IncomingMessage.EmptyAck : IncomingMessage.Empty)
+                                ? ((firstByte & OutgoingMessage.IsControlFlag) != 0 ? IncomingMessage.EmptyAck : IncomingMessage.Empty)
                                 : Throw.InvalidDataException<IncomingMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
                     }
                     // The whole message (255 bytes max.) necessarily fits in the header.

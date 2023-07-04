@@ -34,10 +34,9 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteTimeSpan( message.ShutUp );
                 w.Commit();
             } );
-            bool r = await transport.SendAsync( m ).ConfigureAwait( false );
-            m.Dispose();
+            bool r = await transport.SendAsync( 0, m ).ConfigureAwait( false );
+            m.Release();
             return r;
-
         }
 
         public static ByeByeMessage ReadByeByeMessage( IncomingMessage message )

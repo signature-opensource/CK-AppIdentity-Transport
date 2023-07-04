@@ -1,6 +1,8 @@
 using CK.Core;
 using System;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -13,7 +15,7 @@ namespace CK.AppIdentity.KeyManagement
     {
         readonly X509Certificate2 _certificate;
         readonly ECDsa _privateKey;
-        readonly byte[] _publicRaw;
+        readonly internal byte[] _publicRaw;
         readonly string _name;
         readonly DateTime _timeName;
         readonly DateTime _notAfter;
@@ -59,6 +61,12 @@ namespace CK.AppIdentity.KeyManagement
         /// <param name="hash">The hash for which a signature must be computed.</param>
         /// <param name="signature">The buffer to receive the signature.</param>
         public bool TrySignHash( ReadOnlySpan<byte> hash, Span<byte> signature, out int bytesWritten ) => _privateKey.TrySignHash( hash, signature, out bytesWritten );
+
+        /// <inheritdoc />
+        public void WriteFile( NormalizedPath fullPath )
+        {
+            File.WriteAllBytes( fullPath, _publicRaw );
+        }
 
         /// <summary>
         /// Disposes the certificate and the internal private key.

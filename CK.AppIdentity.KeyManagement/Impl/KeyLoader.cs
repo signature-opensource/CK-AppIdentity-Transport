@@ -14,14 +14,18 @@ namespace CK.AppIdentity.KeyManagement
             _store = store;
         }
 
-        protected IEnumerable<(string Name, DateTime timeName, string Path)> FilterFileNames( IActivityMonitor monitor, DateTime now, IEnumerable<string> candidates )
+        protected IEnumerable<(string Name, DateTime TimeName, string Path)> FilterFileNames( IActivityMonitor monitor,
+                                                                                              DateTime now,
+                                                                                              IEnumerable<string> candidates,
+                                                                                              Func<string,string>? getTimeNamePart )
         {
             foreach( var path in candidates )
             {
                 var name = Path.GetFileNameWithoutExtension( path );
+                name = getTimeNamePart?.Invoke( name );
                 if( !FileUtil.TryParseFileNameUniqueTimeUtcFormat( name, out var timeName ) )
                 {
-                    LogAndCleanup( monitor, path, $"Invalid file name '{path}': the name must strictly be in '{FileUtil.FileNameUniqueTimeUtcFormat}' " +
+                    LogAndCleanup( monitor, path, $"Invalid file name '{path}': the \"time name\" must strictly be in '{FileUtil.FileNameUniqueTimeUtcFormat}' " +
                                                      $"format (based on the certificate's UTC creation time).", LogLevel.Error );
                 }
                 else if( timeName >= now )
@@ -34,7 +38,7 @@ namespace CK.AppIdentity.KeyManagement
 
         protected void LogAndCleanup( IActivityMonitor monitor, string path, string message, LogLevel level = LogLevel.Warn, Exception? ex = null, CKTrait? tags = null )
         {
-            monitor.Log( level, tags ?? ActivityMonitor.Tags.Empty, $"{message}. Skipping it and sending it to the '$TrashBin' folder.", ex );
+            monitor.Log( level, tags ?? ActivityMonitor.Tags.Empty, $"{message} Skipping it and sending it to the '$TrashBin' folder.", ex );
             DoTrash( monitor, path );
         }
 

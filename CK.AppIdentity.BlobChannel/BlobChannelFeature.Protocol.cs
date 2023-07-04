@@ -19,13 +19,15 @@ namespace CK.AppIdentity.BlobChannel
                 _feature = feature;
             }
 
-            public TransportMessage CreateMessage( byte[] data )
+            public IOutgoingMessage CreateMessage( byte[] data )
             {
                 // Here we are using the MutableSequence<byte>.AddSegment( byte[] ): there
                 // is no copy at all, the data is simply referenced by the sequence.
-                var message = MessageFactory.Create( bytes => bytes.AddSegment( data ) );
-                message.Source = data;
-                return message;
+                var builder = MessageFactory.CreateBuilder();
+                var w = builder.ObtainSequence();
+                w.AddSegment( data );
+                builder.Source = data;
+                return builder.CreateMessage( w );
             }
 
             protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )

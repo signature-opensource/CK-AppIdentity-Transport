@@ -11,7 +11,6 @@ namespace CK.AppIdentity.TransportLayer
 {
     sealed class OutgoingMessage : IOutgoingMessage
     {
-        internal const int MaxPrefixLength = 5;
         internal const int IsControlFlag = 0b00100000;
 
         readonly OutgoingMessageFactory _messageFactory;
@@ -20,7 +19,6 @@ namespace CK.AppIdentity.TransportLayer
         readonly ReadOnlySequence<byte> _message;
         readonly bool _isControl;
         int _refCount;
-        int _protocolNumber;
 
         internal OutgoingMessage( OutgoingMessageFactory factory, MutableSequence<byte> buffer, object? source, bool isControl )
         {
@@ -43,8 +41,6 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsControl => _isControl;
 
         public bool IsData => !_isControl;
-
-        public int Length => (int)_buffer.Length;
 
         public ReadOnlySequence<byte> Message
         {
@@ -87,30 +83,5 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         public void Dispose() => Release();
-
-        internal void SetProtocolNumber( int protocolNumber )
-        {
-            Debug.Assert( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
-            _protocolNumber = protocolNumber;
-        }
-
-        internal int GetProtocolNumber() => _protocolNumber;
-
-        internal int WriteWireHeader( Span<byte> header )
-        {
-            Debug.Assert( header.Length >= MaxPrefixLength );
-            var messageLength = (uint)_buffer.Length;
-            uint len = (uint)BitOperations.Log2( (uint)_buffer.Length ) / 8;
-            Debug.Assert( len >= 0 && len <= 3 );
-            var b = (len << 6) | (uint)_protocolNumber;
-            if( _isControl ) b |= IsControlFlag;
-            Debug.Assert( b >= 0 && b <= 255 );
-            header[0] = (byte)b;
-            if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );
-            Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( header ), 1 ), messageLength );
-            return (int)len + 2;
-        }
-
-
     }
 }

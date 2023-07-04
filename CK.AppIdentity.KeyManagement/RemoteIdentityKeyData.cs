@@ -1,5 +1,6 @@
 using CK.Core;
 using System;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 
@@ -19,7 +20,7 @@ namespace CK.AppIdentity.KeyManagement
         readonly DateTime _timeName;
 
         /// <summary>
-        /// Initializes a remote public key.
+        /// Initializes a remote public key data.
         /// </summary>
         /// <param name="timeName">The key's time name.</param>
         /// <param name="publicKey">The public key.</param>
@@ -31,6 +32,19 @@ namespace CK.AppIdentity.KeyManagement
             _timeName = timeName;
             _publicKey = publicKey;
             _publicRaw = publicKey.ExportSubjectPublicKeyInfo();
+        }
+
+        /// <summary>
+        /// Initializes a remote public key data from a <see cref="LocalIdentityKey"/>.
+        /// </summary>
+        /// <param name="localIdentity">A local identity.</param>
+        public RemoteIdentityKeyData( LocalIdentityKey localIdentity )
+        {
+            Throw.CheckNotNullArgument( localIdentity );
+            _name = localIdentity.Name;
+            _timeName = localIdentity.TimeName;
+            _publicKey = localIdentity.PublicKey;
+            _publicRaw = localIdentity._publicRaw;
         }
 
         /// <inheritdoc />
@@ -46,7 +60,7 @@ namespace CK.AppIdentity.KeyManagement
         public DateTime TimeName => _timeName;
 
         /// <summary>
-        /// Challenges <see cref="TimeName"/> and <see cref="PublicKeyRawData"/>.
+        /// Challenges <see cref="IPublicKeyData.TimeName"/> and <see cref="IPublicKeyData.PublicKeyRawData"/>.
         /// <para>
         /// The <paramref name="other"/> must be a non null <see cref="RemoteIdentityKey"/>,
         /// <see cref="RemoteIdentityKeyData"/> or <see cref="LocalIdentityKey"/>.
@@ -62,5 +76,12 @@ namespace CK.AppIdentity.KeyManagement
                     && _publicRaw.AsSpan().SequenceEqual( other.PublicKeyRawData.Span )
                     && (other is RemoteIdentityKey || other is RemoteIdentityKeyData || other is LocalIdentityKey );
         }
+
+        /// <inheritdoc />
+        public void WriteFile( NormalizedPath fullPath )
+        {
+            File.WriteAllBytes( fullPath, _publicRaw );
+        }
+
     }
 }

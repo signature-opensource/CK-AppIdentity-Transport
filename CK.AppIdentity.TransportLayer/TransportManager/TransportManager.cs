@@ -102,9 +102,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( t );
         }
 
-        internal void UnknownIncomingRemote( InitialMessage m, RemoteIdentityKey? trustedIdentity )
+        internal void UnknownIncomingRemote( InitialMessage m, RemoteIdentityKey? trustedIdentity, bool signatureVerficationFailed )
         {
-            PushTypedJob( new UnknownIncomingRemoteJob( m, trustedIdentity ) );
+            PushTypedJob( new UnknownIncomingRemoteJob( m, trustedIdentity, signatureVerficationFailed ) );
         }
 
         internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap )
@@ -140,7 +140,7 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
-        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, RemoteIdentityKey? TrustedIdentity );
+        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, RemoteIdentityKey? TrustedIdentity, bool SignatureVerficationFailed );
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // The heart beat (timer) is DBNull.Value instance.
         // SwitchOn of a TransportFeature is the transport feature itself.

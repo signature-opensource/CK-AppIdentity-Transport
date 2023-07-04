@@ -45,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
         /// <returns>A message builder.</returns>
-        public OutgoingMessageBuilder Create( int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        public OutgoingMessageBuilder CreateBuilder( int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
             var buffer = GetBuffer();
             buffer.MinimumBufferSize = minSequenceBufferSize;
@@ -53,88 +53,88 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Creates a static snapshot <see cref="TransportMessage"/>, its content is a single independent segment (not pooled).
-        /// <see cref="TransportMessage.Dispose()"/> on a static message does nothing.
+        /// Creates a message that must be <see cref="IRefCounted.Release"/> once done with it.
         /// </summary>
         /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
-        /// <param name="isControl">True to set the <see cref="TransportMessage.IsControl"/> bit.</param>
+        /// <param name="isControl">True to set the <see cref="IOutgoingMessage.IsControl"/> bit.</param>
         /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
-        /// <returns>A static transport message.</returns>
-        public TransportMessage CreateStatic( Action<IBufferWriter<byte>> writer,
+        /// <returns>An immutable message.</returns>
+        public IOutgoingMessage Create( Action<MutableSequence<byte>> writer,
+                                        bool isControl = false,
+                                        int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        {
+            var b = CreateBuilder( minSequenceBufferSize );
+            try
+            {
+                b.IsControl = isControl;
+                var sequence = b.ObtainSequence();
+                writer( sequence );
+                return b.CreateMessage( sequence );
+            }
+            catch
+            {
+                b.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Creates a static snapshot <see cref="IOutgoingMessage"/>, its content is a single independent segment (not pooled).
+        /// Disposing/releasing a static message does nothing.
+        /// </summary>
+        /// <param name="writer">The writer function. Must write at least one byte otherwise an <see cref="InvalidOperationException"/> is throw.</param>
+        /// <param name="isControl">True to set the <see cref="IOutgoingMessage.IsControl"/> bit.</param>
+        /// <param name="minSequenceBufferSize">Optional setting of the <see cref="MutableSequence{T}.MinimumBufferSize"/>.</param>
+        /// <returns>A static outgoing message.</returns>
+        public IOutgoingMessage CreateStatic( Action<MutableSequence<byte>> writer,
                                               bool isControl = false,
                                               int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            return DoCreate( null, writer, null, isControl, minSequenceBufferSize );
-        }
-
-        /// <inheritdoc cref="CreateStatic(Action{IBufferWriter{byte}}, bool, int)"/>
-        public TransportMessage CreateStatic( Action<MutableSequence<byte>> writer,
-                                              bool isControl = false,
-                                              int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
-        {
-            return DoCreate( null, null, writer, isControl, minSequenceBufferSize );
-        }
-
-        TransportMessage DoCreate( MessageFactory? factory,
-                                   Action<IBufferWriter<byte>>? bufferwriter,
-                                   Action<MutableSequence<byte>>? sequenceWriter,
-                                   bool isControl,
-                                   int minSequenceBufferSize )
-        {
-            Debug.Assert( (bufferwriter == null) != (sequenceWriter == null) );
-            bool releaseBuffer = true;
             var buffer = GetBuffer();
             buffer.MinimumBufferSize = minSequenceBufferSize;
             try
             {
-                int prefixLength;
-                // Reserves 5 bytes: this is the maximal prefix length.
-                // We do not preallocate a 4K buffer here like we do while receiving:
-                // It is up to the caller to specify this thanks to minSequenceBufferSize if she wants.
-                var header = buffer.GetMemory( _maxPrefixLength );
-                buffer.Advance( _maxPrefixLength );
-
-                if( bufferwriter != null ) bufferwriter( buffer );
-                else sequenceWriter!( buffer );
-
-                if( buffer.Length > int.MaxValue ) Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum TransportMessage size." );
-                var messageLength = (uint)buffer.Length - _maxPrefixLength;
-                if( messageLength == 0 )
-                {
-                    Throw.InvalidOperationException( $"A TransportMessage cannot be empty (protocol '{_protocol.FullName}')." );
-                }
-                Span<byte> prefix = stackalloc byte[_maxPrefixLength];
-                prefixLength = WritePrefix( isControl, messageLength, prefix );
-                Debug.Assert( prefixLength <= _maxPrefixLength );
-                int offset = _maxPrefixLength - prefixLength;
-                prefix.Slice( 0, prefixLength ).CopyTo( header.Span.Slice( offset, prefixLength ) );
-                if( factory == null )
-                {
-                    var content = new ReadOnlySequence<byte>( buffer.GetReadOnlySequence( offset ).ToArray() );
-                    return new TransportMessage( _protocol, content, prefixLength );
-                }
-                releaseBuffer = false;
-                return new TransportMessage( factory, _protocol, buffer, offset, prefixLength );
+                writer( buffer );
+                if( buffer.Length > int.MaxValue ) Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum message size." );
+                return new StaticMessage( _protocol, isControl, buffer.GetReadOnlySequence().ToArray() );
             }
             finally
             {
-                if( releaseBuffer ) Release( buffer );
+                Release( buffer );
+            }
+        }
+
+        sealed class StaticMessage : IOutgoingMessage
+        {
+            public StaticMessage( MessageProtocol protocol, bool isControl, byte[] content )
+            {
+                Protocol = protocol;
+                IsControl = isControl;
+                Message = new ReadOnlySequence<byte>( content );
             }
 
+            public MessageProtocol Protocol { get; }
 
-            static int WritePrefix( bool isControl, uint messageLength, Span<byte> memory )
+            public object? Source => null;
+
+            public bool IsValid => true;
+
+            public bool IsControl { get; }
+
+            public bool IsData => !IsData;
+
+            public ReadOnlySequence<byte> Message { get; }
+
+            public void AddRef()
             {
-                Debug.Assert( memory.Length >= _maxPrefixLength );
-                Debug.Assert( messageLength >= 0 );
-                uint len = (uint)BitOperations.Log2( messageLength ) / 8;
-                Debug.Assert( len >= 0 && len <= 3 );
-                var b = (len << 6);
-                if( isControl ) b |= TransportMessage.IsControlFlag;
-                Debug.Assert( b >= 0 && b <= 255 );
-                memory[0] = (byte)b;
-                if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );
-                Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( memory ), 1 ), messageLength );
-                return (int)len + 2;
+            }
+
+            public void Dispose()
+            {
+            }
+
+            public void Release()
+            {
             }
         }
 

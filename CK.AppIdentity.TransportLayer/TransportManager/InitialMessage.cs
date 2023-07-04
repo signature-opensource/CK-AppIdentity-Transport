@@ -39,17 +39,20 @@ namespace CK.AppIdentity.TransportLayer
                                    + MaxPublicKeyCount * (4 + MaxPublicKeySize)
                                    + MaxPublicKeyCount * MaxSignatureSize;
 
-        readonly string _incomingFullName;
         readonly string _endPointDescription;
         readonly string _remoteEndPointDescription;
+        readonly string _domainName;
+        readonly string _partyName;
+        readonly string _environmentName;
+        readonly string _fullName;
         readonly string _instanceId;
         readonly int _version;
 
         // Prefix is "CK-AppId" in ASCII.
-        static ReadOnlySpan<byte> _prefix => new byte[]{ 0x43, 0x4b, 0x2d, 0x41, 0x70, 0x70, 0x49, 0x64 }; 
+        static ReadOnlySpan<byte> _prefix => new byte[]{ 0x43, 0x4b, 0x2d, 0x41, 0x70, 0x70, 0x49, 0x64 };
 
-        // For an outgoing message, TransportFeature.AvailableProtocols is
-        // adapted: no concurrency issues here, see TransportFeature.AvailableProtocols
+        // For an outgoing message:
+        // TransportFeature.AvailableProtocols is adapted: no concurrency issues here, see TransportFeature.AvailableProtocols
         // code comments.
         // For an ingoing message, this is an array.
         readonly IReadOnlyCollection<string> _availableProtocols;
@@ -57,6 +60,7 @@ namespace CK.AppIdentity.TransportLayer
 
         // Incoming message specific data:
         readonly IReadOnlyList<RemoteIdentityKeyData> _remoteIdentities;
+        readonly byte[]? _hashMessage;
         readonly byte[][]? _signatures;
 
         sealed class ProtocolAdapter : IReadOnlyCollection<string>
@@ -80,7 +84,11 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( !f.IsListening );
             Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
-            _incomingFullName = f.Party.Owner.FullName;
+            var local = f.Party.Owner;
+            _domainName = local.DomainName;
+            _partyName = local.PartyName;
+            _environmentName = local.EnvironmentName;
+            _fullName = local.FullName;
             // This acts as the nonce: one instance can initiate a connexion only once.
             _instanceId = CoreApplicationIdentity.InstanceId;
             _endPointDescription = string.Empty;
@@ -101,24 +109,32 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="incomingFullName"></param>
         /// <param name="protocols"></param>
         /// <param name="identities"></param>
-        /// <param name="hashData"></param>
+        /// <param name="hashMessage"></param>
         /// <param name="signatures"></param>
         InitialMessage( string endPointDescription,
                         string remoteEndPointDescription,
                         int version,
                         string instanceId,
+                        string incomingDomainName,
+                        string incomingPartyName,
+                        string incomingEnvironmentName,
                         string incomingFullName,
                         string[] protocols,
                         RemoteIdentityKeyData[] identities,
+                        byte[] hashMessage,
                         byte[][] signatures )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
             _version = version;
             _instanceId = instanceId;
-            _incomingFullName = incomingFullName;
+            _domainName = incomingDomainName;
+            _partyName = incomingPartyName;
+            _environmentName= incomingEnvironmentName;
+            _fullName = incomingFullName;
             _availableProtocols = protocols;
             _remoteIdentities = identities;
+            _hashMessage = hashMessage;
             _signatures = signatures;
             _localIdentities = Array.Empty<LocalIdentityKey>();
         }
@@ -142,8 +158,9 @@ namespace CK.AppIdentity.TransportLayer
                                      [NotNullWhen(true)]out InitialMessage? initialMessage,
                                      out int otherVersion )
         {
+            var ros = m.Message;
             initialMessage = null;
-            var r = new FastByteReader( m.Message );
+            var r = new FastByteReader( ros );
             Span<byte> header = stackalloc byte[8];
             r.ReadBytes( header );
             if( !header.SequenceEqual( _prefix ) )
@@ -155,7 +172,12 @@ namespace CK.AppIdentity.TransportLayer
             if( otherVersion > ZeroProtocol.CurrentVersion ) return false;
 
             var instanceId = r.ReadString( InstanceIdMaxLength );
+            Throw.CheckData( instanceId.Length > 3 );
+
             var fullName = r.ReadString( CoreApplicationIdentity.FullNameMaxLength );
+            Throw.CheckData( CoreApplicationIdentity.TryParseFullName( fullName, out var domainName, out var partyName, out var environmentName )
+                             && domainName != null && partyName != null && environmentName != null );
+
             var protocolCount = r.ReadSmallUInt32();
             Throw.CheckData( protocolCount <= MaxProtocolFullNameCount );
             string[] protocols = new string[protocolCount];
@@ -177,14 +199,17 @@ namespace CK.AppIdentity.TransportLayer
                 keys[i] = new RemoteIdentityKeyData( timeName, publicKey );
             }
             // The message data itself has been read. Now comes the keyCount signatures.
+            // It's time to compute the hash of the message.
+            var messageHash = new byte[64];
+            ZeroProtocol.ComputeHash( r.GetBeforeHead(), messageHash );
             var signatures = new byte[keyCount][];
             Debug.Assert( signatures.Length == keyCount );
             for( int i = 0; i < keys.Length; i++ )
             {
                 // We could have settled the signature size (we use DSASignatureFormat.IeeeP1363FixedFieldConcatenation)
                 // but it doesn't cost much (1 byte) to let it variable so that are free to use different key size (the
-                // current default is 256 bits and this should be enough but who knows, so let the max signature size be
-                // 256 bytes).
+                // current default is 256 bits (ECDsa creates signatures of 2 x KeySize: this is 2 * 256 / 8 = 64 bytes for
+                // current key size) and this should be enough... but who knows, so let the max signature size be 256 bytes).
                 var lenSignature = r.ReadByte();
                 signatures[i] = r.ReadBytes( lenSignature );
             }
@@ -192,9 +217,13 @@ namespace CK.AppIdentity.TransportLayer
                                                  remoteEndPointDescription,
                                                  otherVersion,
                                                  instanceId,
+                                                 domainName,
+                                                 partyName,
+                                                 environmentName,
                                                  fullName,
                                                  protocols,
                                                  keys,
+                                                 messageHash,
                                                  signatures );
             return true;
         }
@@ -204,7 +233,7 @@ namespace CK.AppIdentity.TransportLayer
             w.WriteBytes( _prefix );
             w.WriteSmallUInt32( ZeroProtocol.CurrentVersion );
             w.WriteString( _instanceId );
-            w.WriteString( _incomingFullName );
+            w.WriteString( _fullName );
             w.WriteSmallUInt32( (uint)_availableProtocols.Count );
             foreach( var protocol in _availableProtocols )
             {
@@ -243,13 +272,40 @@ namespace CK.AppIdentity.TransportLayer
         public string InstanceId => _instanceId;
 
         /// <summary>
-        /// Gets the incoming party name: it is the <see cref="ILocalParty.Name"/> of the 
-        /// <see cref="ApplicationIdentityBase.Local"/> that sends the message.
+        /// Gets the domain name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.DomainName"/>
+        /// of the remote that sends the message.
         /// <para>
-        /// It can be the root local name, or a <see cref="DomainApplicationIdentity"/> local name.
+        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
         /// </para>
         /// </summary>
-        public string IncomingFullName => _incomingFullName;
+        public string DomainName => _domainName;
+
+        /// <summary>
+        /// Gets the party name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.PartyName"/>
+        /// of the remote that sends the message.
+        /// <para>
+        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
+        /// </para>
+        /// </summary>
+        public string PartyName => _partyName;
+
+        /// <summary>
+        /// Gets the environment name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.EnvironmentName"/>
+        /// of the remote that sends the message.
+        /// <para>
+        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
+        /// </para>
+        /// </summary>
+        public string EnvironmentName => _environmentName;
+
+        /// <summary>
+        /// Gets the party full name: it is the <see cref="ILocalParty"/> full name of
+        /// the remote that sends the message.
+        /// <para>
+        /// It can be the root local name, or a <see cref="TenantDomainParty"/> full name.
+        /// </para>
+        /// </summary>
+        public string FullName => _fullName;
 
         /// <summary>
         /// Gets the list of protocols with their versions that are supported.
@@ -267,6 +323,11 @@ namespace CK.AppIdentity.TransportLayer
         /// This is empty for an outgoing message.
         /// </summary>
         public IReadOnlyList<RemoteIdentityKeyData> RemoteIdentities => _remoteIdentities;
+
+        /// <summary>
+        /// Incoming message only: contains the hash of the message (without the <see cref="Signatures"/>).
+        /// </summary>
+        public byte[]? HashMessage => _hashMessage;
 
         /// <summary>
         /// Incoming message only: contains the signatures for each <see cref="RemoteIdentities"/>.

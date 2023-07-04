@@ -163,7 +163,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
             Debug.Assert( remote.TargetAddress != null );
-            var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger, remote.TargetAddress, cancellation.Token );
+            var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger, remote.TargetAddress, remote.LocalKeys, remote.RemoteKeys, cancellation.Token );
             if( transport != null )
             {
                 IncomingMessage? firstAnswer = null;

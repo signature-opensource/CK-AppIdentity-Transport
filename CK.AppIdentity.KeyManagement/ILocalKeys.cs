@@ -42,6 +42,11 @@ namespace CK.AppIdentity.KeyManagement
         int AllowedOfflineDays { get; }
 
         /// <summary>
+        /// Gets the current identity key (the first one of <see cref="Identities"/>).
+        /// </summary>
+        LocalIdentityKey CurrentIdentity { get; }
+
+        /// <summary>
         /// Gets the identity keys. The first one is the current one,
         /// the other ones are still valid but obsolete.
         /// </summary>

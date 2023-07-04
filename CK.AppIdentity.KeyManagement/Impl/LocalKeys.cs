@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement
 {
-
     sealed partial class LocalKeys : ILocalKeys
     {
         private const string PasswordExtension = ".pwd";
@@ -33,6 +32,8 @@ namespace CK.AppIdentity.KeyManagement
         public int AllowedOfflineDays => _allowedOfflineDays;
 
         public IDataProtector Protector => _protector;
+
+        public LocalIdentityKey CurrentIdentity => _identities[0];
 
         public IReadOnlyList<LocalIdentityKey> Identities => _identities;
 

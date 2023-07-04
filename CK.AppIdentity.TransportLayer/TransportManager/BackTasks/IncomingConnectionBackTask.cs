@@ -53,36 +53,52 @@ namespace CK.AppIdentity.TransportLayer
 
             InitialMessage? initialMessage = await HandleInitialMessageAsync( transportManager, incoming );
             if( initialMessage == null ) return;
+            Debug.Assert( initialMessage.HashMessage != null && initialMessage.Signatures != null );
 
             // Accessing the Parties is thread safe.
-            TransportFeature? remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.IncomingFullName );
+            TransportFeature? remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.FullName );
             Debug.Assert( remote == null || remote.IsListening );
             // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
             // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
+            //
+            // If the remote is known BUT the signature cannot be verified, acts the same regarding the caller (rejecting it), but
+            // propagate the knowledge of this failure.
+            //
+            // When we know the remote full name and we trust one of its public keys (idxTrustedIdentity >= 0), it is time to verify the
+            // message signatures. The message is signed by each of its identities but it would be useless and costly to verify each of
+            // them (we will have to instantiate a ECDsa for each of the RemotePublicKeyData). We just have to check the signature against
+            // our trustedIdentity that already has a ECDsa key up and running.
+            //
+            // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
+            //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
+            //            initial message as if it was on a non confidential channel.
+            //
             var trustedIdentity = remote?.RemoteKeys.TrustedIdentity;
-            if( trustedIdentity == null || !initialMessage.RemoteIdentities.Any( i => i.Equals( trustedIdentity ) ) )
+            int idxTrustedIdentity = -1;
+            if( trustedIdentity == null
+                || (idxTrustedIdentity = initialMessage.RemoteIdentities.IndexOf( i => i.Equals( trustedIdentity ) )) < 0
+                || !trustedIdentity.VerifyHash( initialMessage.HashMessage, initialMessage.Signatures[idxTrustedIdentity] ) )
             {
+                bool signatureVerificationFailed = idxTrustedIdentity >= 0;
                 // Before awaking the TransportManager, we send the deny message:
                 // If this is a bad remote guy that tries to timeout us, this will be cleanup by the heart beat:
                 // no need for a cancellation token here.
-                // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party if it is configured.
-                // TODO:
-                string? userAcceptUri = null; // _transportManager.ApplicationIdentityAgent.GetAcceptUriFor( initialMessage.FullName );
-                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri ) )
+                // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party.
+                // If the signature verification failed, we send a null enlist url and don't lose any cpu/time to sign
+                // the reply message.
+                string? userAcceptUri = signatureVerificationFailed
+                                        ? null
+                                        : transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
+                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri, signatureVerificationFailed ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the trusted identity (if any) considered at the
                     // time of the decision.
-                    transportManager.UnknownIncomingRemote( initialMessage, trustedIdentity );
+                    transportManager.UnknownIncomingRemote( initialMessage, trustedIdentity, signatureVerificationFailed );
                 }
                 return;
             }
-            // We know the remote full name and we trust one of its public keys: it is time to verify the message signatures.
-            // The message is signed by each of its identities but it would be useless and costly to verify each of them (we will have to
-            // instantiate a ECDsa for each of the RemotePublicKeyData). We just have to check the signature against our trustedIdentity
-            // that already has a ECDsa up and running.
-
-
+            Debug.Assert( remote != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
@@ -107,7 +123,7 @@ namespace CK.AppIdentity.TransportLayer
                 var texts = missingGroups.Select( g => $"'{g.Key}': '{g.Select( p => p.FullName ).Concatenate( "', '" )}')" )
                                          .Concatenate( Environment.NewLine );
 
-                transportManager.Logger.Error( $"Remote '{initialMessage.IncomingFullName}' at '{incoming.RemoteEndPointDescription}' "
+                transportManager.Logger.Error( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' "
                                               + $"misses support for {missingGroups.Count()} protocols:{Environment.NewLine}{texts}." );
 
                 // If this message cannot be sent, we don't care.
@@ -148,7 +164,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.IncomingFullName}' at '{incoming.RemoteEndPointDescription}' didn't confirm." );
+                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' didn't confirm." );
                 }
             }
         }

@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using FluentAssertions;
 using NUnit.Framework;
@@ -12,6 +13,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
     public class BasicExchangeTests
     {
         [Test]
+        [Timeout( 2000 )]
         public async Task demo_BlobChannel_is_an_optin_Feature_Async()
         {
             // BlobChannel is an opt-in feature: it must be explicitly allowed.
@@ -30,6 +32,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
             } );
             var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
             var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
+
+            // We need to configure the keys otherwise the parties won't accept to talk to each other.
+            var senderIdentity = new RemoteIdentityKey( senderChannel.Transport.LocalKeys.CurrentIdentity );
+            listenerChannel.Transport.RemoteKeys.SetTrustedIdentity( TestHelper.Monitor, senderIdentity );
+
+            var listenerIdentity = new RemoteIdentityKey( listenerChannel.Transport.LocalKeys.CurrentIdentity );
+            senderChannel.Transport.RemoteKeys.SetTrustedIdentity( TestHelper.Monitor, listenerIdentity );
 
             // Setup Listener reception.
             var listenerReceived = new List<byte[]>();

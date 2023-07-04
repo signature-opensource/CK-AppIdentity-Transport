@@ -39,7 +39,7 @@ namespace CK.AppIdentity.BlobChannel
             {
                 var message = h.CreateMessage( data );
                 if( h.TryEnqueue( message ) ) return true;
-                message.Dispose();
+                message.Release();
             }
             return false;
         }
@@ -57,7 +57,7 @@ namespace CK.AppIdentity.BlobChannel
             {
                 var message = h.CreateMessage( data );
                 if( await h.TryEnqueueAsync( message ) ) return true;
-                message.Dispose();
+                message.Release();
             }
             return false;
         }

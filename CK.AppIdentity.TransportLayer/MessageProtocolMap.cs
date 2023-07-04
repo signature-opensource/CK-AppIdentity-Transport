@@ -28,7 +28,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="protocols">
         /// The list of supported protocols that has been negotiated with the other party.
         /// Must not be empty, contain more than <see cref="MaxCount"/> protocols, contain duplicates <see cref="MessageProtocol.Name"/>
-        /// or any invalid or "0 Protocol".
+        /// or any invalid or the "0 Protocol".
         /// </param>
         /// <returns>The map to use.</returns>
         public static MessageProtocolMap Get( IEnumerable<MessageProtocol> protocols )
@@ -65,12 +65,14 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsValid => _protocols != null;
 
         /// <summary>
-        /// Gets the ordered list of protocols. This "0 Protocol" is not in this list. 
+        /// Gets the ordered list of protocols. The "0 Protocol" is not in this list. 
         /// </summary>
         public IReadOnlyList<MessageProtocol> Protocols => _protocols ?? Array.Empty<MessageProtocol>();
 
         /// <summary>
-        /// Gets the index of the protocol in the <see cref="Protocols"/>. 
+        /// Gets the index of the protocol in the <see cref="Protocols"/>.
+        /// The "0 Protocol" is not in this list: when this returns the 0 index (the first protocol), the protocol
+        /// number is 1.
         /// </summary>
         /// <param name="protocol">The protocol.</param>
         /// <returns>The protocol index or -1 if not found.</returns>

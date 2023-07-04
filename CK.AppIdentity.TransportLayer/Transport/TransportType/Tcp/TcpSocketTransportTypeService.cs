@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Diagnostics;
 using System.Net;
@@ -43,14 +44,18 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        internal protected override async Task<Transport?> TryConnectAsync( IParallelLogger logger, TransportTypeAddress typedAddress, CancellationToken cancellation )
+        internal protected override async Task<Transport?> TryConnectAsync( IParallelLogger logger,
+                                                                            TransportTypeAddress typedAddress,
+                                                                            ILocalKeys localKeys,
+                                                                            IRemoteKeys remoteKeys,
+                                                                            CancellationToken cancellation )
         {
             var ipEndPoint = (IPEndPoint)typedAddress.TypedAddress;
             var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
             try
             {
                 await socket.ConnectAsync( ipEndPoint ).ConfigureAwait( false );
-                return new TcpSocketTransport( typedAddress, socket );
+                return new TcpSocketTransport( typedAddress, socket, localKeys, remoteKeys );
             }
             catch( Exception ex )
             {

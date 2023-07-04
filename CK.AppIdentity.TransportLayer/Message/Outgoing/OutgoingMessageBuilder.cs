@@ -1,4 +1,6 @@
 using CK.Core;
+using CommunityToolkit.HighPerformance.Buffers;
+using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 
@@ -13,7 +15,7 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly OutgoingMessageFactory _messageFactory;
         readonly MutableSequence<byte> _buffer;
-        MutableSequence<byte>? _writer;
+        MutableSequence<byte>? _sequence;
         object? _source;
         int _state;
         bool _isControl;
@@ -21,7 +23,7 @@ namespace CK.AppIdentity.TransportLayer
         internal OutgoingMessageBuilder( OutgoingMessageFactory messageFactory, MutableSequence<byte> buffer )
         {
             _messageFactory = messageFactory;
-            _buffer = buffer;
+            _sequence = _buffer = buffer;
         }
 
         /// <summary>
@@ -82,26 +84,26 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Obtains the mutable sequence that is a buffer writer.
-        /// <see cref="ReleaseWriter"/> must be called.
+        /// Obtains the mutable sequence that is a <see cref="IBufferWriter{T}"/>.
+        /// <see cref="ReleaseSequence"/> must be called.
         /// </summary>
-        /// <returns></returns>
-        public MutableSequence<byte> ObtainWriter()
+        /// <returns>The mutable sequence.</returns>
+        public MutableSequence<byte> ObtainSequence()
         {
             Throw.CheckState( !IsDisposed );
-            var writer = Interlocked.Exchange( ref _writer, null );
-            Throw.CheckState( writer != null );
-            return writer;
+            var sequence = Interlocked.Exchange( ref _sequence, null );
+            Throw.CheckState( sequence != null );
+            return sequence;
         }
 
         /// <summary>
-        /// Releases the writer obtained by <see cref="ObtainWriter"/>.
+        /// Releases the sequence obtained by <see cref="ObtainSequence"/>.
         /// </summary>
-        /// <param name="writer">The writer to release.</param>
-        public void ReleaseWriter( MutableSequence<byte> writer )
+        /// <param name="sequence">The sequence to release.</param>
+        public void ReleaseSequence( MutableSequence<byte> sequence )
         {
-            Throw.CheckArgument( writer == _buffer );
-            var anotherReleased = Interlocked.CompareExchange( ref _writer, writer, null );
+            Throw.CheckArgument( sequence == _buffer );
+            var anotherReleased = Interlocked.CompareExchange( ref _sequence, sequence, null );
             Throw.CheckState( anotherReleased == null );
         }
 
@@ -122,22 +124,50 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Creates an immutable message. This can be called once and only once and only
-        /// if at least one byte has been written to the internal writer (thanks to <see cref="ObtainWriter"/>).
+        /// Releases the previously obtained sequence, creates an immutable message and disposes this builder.
+        /// This can be called once and only once and only if at least one byte has been written to the
+        /// sequence (thanks to <see cref="ObtainSequence"/>).
+        /// </summary>
+        /// <param name="sequence">The writer previously obtained by <see cref="ObtainSequence"/>.</param>
+        public IOutgoingMessage CreateMessage( MutableSequence<byte> sequence )
+        {
+            Throw.CheckArgument( sequence == _buffer && _sequence == null );
+            if( sequence.Length == 0 )
+            {
+                Throw.InvalidOperationException( "No data has been written to the outgoing message." );
+            }
+            if( sequence.Length > int.MaxValue )
+            {
+                Throw.InvalidOperationException( $"Buffered {sequence.Length} bytes exceeds {int.MaxValue} maximum message size." );
+            }
+            // We have a unique access to the buffer. We can easily detect that Dispose has
+            // been called (and the buffer should not be used).
+            if( Interlocked.Exchange( ref _state, 1 ) != 0 )
+            {
+                Throw.ObjectDisposedException();
+            }
+            // Unique access to the non disposed buffer is now guaranteed.
+            // We let this builder in its "disposed" state and with its the writer "unreleased".
+            return new OutgoingMessage( _messageFactory, sequence, _source, _isControl );
+        }
+
+        /// <summary>
+        /// Creates an immutable message and dispose this builder.
+        /// This can be called once and only once and only if at least one byte has been written to the internal writer (thanks to <see cref="ObtainSequence"/>).
         /// </summary>
         public IOutgoingMessage CreateMessage()
         {
             // By obtaining the buffer, we preserve any future change and
             // if the writer has not been released, then this fails.
-            var buffer = ObtainWriter();
+            var buffer = ObtainSequence();
             if( buffer.Length == 0 )
             {
-                ReleaseWriter( buffer );
+                ReleaseSequence( buffer );
                 Throw.InvalidOperationException( "No data has been written to the outgoing message." );
             }
             if( buffer.Length > int.MaxValue )
             {
-                ReleaseWriter( buffer );
+                ReleaseSequence( buffer );
                 Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum message size." );
             }
             // We have a unique access to the buffer. We can easily detect that Dispose has

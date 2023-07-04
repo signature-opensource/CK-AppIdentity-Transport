@@ -76,6 +76,7 @@ namespace CK.AppIdentity
             await _service.OnShutdownAsync( monitor ).ConfigureAwait( false );
         }
 
+
         record class InitializeDynamicPartiesJob( AddedDynamicParties Added, TaskCompletionSource<bool> Result );
 
         internal void OnDestroy( IOwnedPartyInternal owned ) => PushTypedJob( owned );
@@ -167,7 +168,6 @@ namespace CK.AppIdentity
                 await _service.OnDestroyedAsync( monitor, destroyed ).ConfigureAwait( false );
             }
         }
-
     }
 
 }

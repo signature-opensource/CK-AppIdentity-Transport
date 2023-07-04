@@ -1,3 +1,4 @@
+using FluentAssertions;
 using System;
 using System.Buffers;
 using System.Threading;
@@ -7,19 +8,23 @@ namespace CK.AppIdentity.TransportLayer.Tests
 {
     class BasicAsyncReader
     {
-        readonly ReadOnlySequence<byte> _seq;
-        SequencePosition _position;
+        byte[] _data;
+        int _offset;
 
-        public BasicAsyncReader( TransportMessage m )
+        public BasicAsyncReader( IOutgoingMessage m, MessageProtocolMap protocols )
         {
-            _seq = m.WireMessage;
-            _position = _seq.Start;
+            var bytes = new byte[m.Message.Length + 5];
+            var protocolNumber = protocols.GetProtocolIndex( m.Protocol );
+            protocolNumber.Should().NotBe( -1 );
+            int lenHeader = IOutgoingMessage.WriteWireHeader( protocolNumber + 1, m, bytes.AsSpan( 0, 5 ) );
+            m.Message.CopyTo( bytes.AsSpan( lenHeader ) );
+            _data = bytes;
         }
 
         public ValueTask ReadExactlyAsync( Memory<byte> memory, CancellationToken cancellation )
         {
-            _seq.Slice( _position, memory.Length ).CopyTo( memory.Span );
-            _position = _seq.GetPosition( memory.Length, _position );
+            _data.AsSpan( _offset, memory.Length ).CopyTo( memory.Span );
+            _offset += memory.Length;
             return ValueTask.CompletedTask;
         }
     }

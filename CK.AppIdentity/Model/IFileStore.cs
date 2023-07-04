@@ -23,6 +23,7 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Tries to move a file that must be in <see cref="FolderPath"/> to the <see cref="TrashBinPath"/>.
+        /// This returns true (no error) if the file doesn't exist.
         /// <para>
         /// The <paramref name="fullPath"/> must starts with <see cref="FolderPath"/> but not
         /// with <see cref="TrashBinPath"/> otherwise an <see cref="ArgumentException"/> is thrown.

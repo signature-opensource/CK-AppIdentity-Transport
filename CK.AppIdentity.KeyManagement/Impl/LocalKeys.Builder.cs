@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Xml.Linq;
 
 namespace CK.AppIdentity.KeyManagement
 {
@@ -48,10 +49,10 @@ namespace CK.AppIdentity.KeyManagement
                 {
                     var newOne = CreateIdentityCertificate( _local.FullName, today.AddDays( 2 * allowedOfflineDays ) );
                     if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
-                    else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {newOne.NotAfter:yyyy-MM-dd}." +
+                    else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {newOne.NotAfter:yyyy-MM-dd}. " +
                                        $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
 
-                    var (name,filePath) = SaveIdentityFileAndPassword( monitor, protector, now, identityPath, newOne );
+                    var (name, filePath) = SaveIdentityFileAndPassword( monitor, protector, now, identityPath, newOne );
 
                     // It's not a bad idea to reuse the validation here to obtain the private key.
                     var privateKey = ValidateIdentityAndGetPrivateKey( monitor, now, filePath, newOne );
@@ -65,14 +66,53 @@ namespace CK.AppIdentity.KeyManagement
                         identities.Insert( 0, new LocalIdentityKey( name, now, newOne, privateKey ) );
                     }
                 }
-                return new LocalKeys( _local, protector, identities.ToArray() );
+                var ids = identities.ToArray();
+                HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
+                return new LocalKeys( _local, protector, ids );
             }
 
-            static (string Name, string FilPath) SaveIdentityFileAndPassword( IActivityMonitor monitor,
-                                                                              IDataProtector protector,
-                                                                              DateTime now,
-                                                                              NormalizedPath identityPath,
-                                                                              X509Certificate2 currentIdentity )
+            void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )
+            {
+                try
+                {
+                    var currentPath = $"{identityPath}/Identity.{current.Name}.public";
+                    string? foundCurrent = null;
+                    foreach( var f in Directory.EnumerateFiles( identityPath, RemoteKeys.PublicIdentityFilePattern ) )
+                    {
+                        NormalizedPath fNormalized = f;
+                        if( StringComparer.OrdinalIgnoreCase.Equals( fNormalized, currentPath ) )
+                        {
+                            foundCurrent = fNormalized;
+                        }
+                        else
+                        {
+                            LogAndCleanup( monitor, fNormalized, $"Obsolete Identity public key '{fNormalized}'." );
+                        }
+                    }
+                    if( foundCurrent != null )
+                    {
+                        if( !File.ReadAllBytes( foundCurrent ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
+                        {
+                            monitor.Warn( $"Invalid file content '{foundCurrent}' (does not contain the public key). Rewriting it." );
+                            current.WriteFile( currentPath );
+                        }
+                    }
+                    else
+                    {
+                        current.WriteFile( currentPath );
+                    }
+                }
+                catch( Exception ex )
+                {
+                    monitor.Error( $"While handling '{RemoteKeys.PublicIdentityFilePattern}' in '{identityPath}'.", ex );
+                }
+            }
+
+            static (string Name, string FilePath) SaveIdentityFileAndPassword( IActivityMonitor monitor,
+                                                                               IDataProtector protector,
+                                                                               DateTime now,
+                                                                               NormalizedPath identityPath,
+                                                                               X509Certificate2 currentIdentity )
             {
                 var name = now.ToString( FileUtil.FileNameUniqueTimeUtcFormat );
                 var fileName = name + ".pfx";
@@ -81,7 +121,7 @@ namespace CK.AppIdentity.KeyManagement
                 var pwd = protector.Protect( Util.GetRandomBase64UrlString( 20 ) );
                 var fullName = identityPath.AppendPart( fileName );
                 File.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
-                File.WriteAllText( fileName + PasswordExtension, pwd );
+                File.WriteAllText( fullName + PasswordExtension, pwd );
                 return (name, fullName);
             }
 
@@ -111,7 +151,7 @@ namespace CK.AppIdentity.KeyManagement
             {
                 var result = new List<LocalIdentityKey>();
                 Directory.CreateDirectory( folderPath );
-                foreach( var (name,timeName,pfxPath) in FilterFileNames( monitor, now, Directory.EnumerateFiles( folderPath, "*.pfx" ) ) )
+                foreach( var (name,timeName,pfxPath) in FilterFileNames( monitor, now, Directory.EnumerateFiles( folderPath, "*.pfx" ), null ) )
                 {
                     var pwd = TryLoadPassword( monitor, protector, pfxPath );
                     if( pwd != null )

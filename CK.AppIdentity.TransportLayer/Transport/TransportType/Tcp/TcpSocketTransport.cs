@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Net.Sockets;
 
@@ -13,8 +14,8 @@ namespace CK.AppIdentity.TransportLayer
             _socket = socket;
         }
 
-        public TcpSocketTransport( TransportTypeAddress targetAddress, Socket socket )
-            : base( targetAddress, socket.RemoteEndPoint?.ToString() ?? targetAddress.TypedAddress.ToString() )
+        public TcpSocketTransport( TransportTypeAddress targetAddress, Socket socket, ILocalKeys localKeys, IRemoteKeys remoteKeys )
+            : base( targetAddress, localKeys, remoteKeys, socket.RemoteEndPoint?.ToString() ?? targetAddress.TypedAddress.ToString() )
         {
             _socket = socket;
         }
