@@ -1,4 +1,5 @@
 using CK.AppIdentity.KeyManagement;
+using CK.Core;
 using System.Diagnostics;
 using System.Text;
 
@@ -24,6 +25,12 @@ namespace CK.AppIdentity.TransportLayer
 
         internal static readonly OutgoingMessageFactory _zeroFactory = MessageProtocol.ZeroProtocol.MessageFactory;
 
+        /// <summary>
+        /// ByeBye message is a signed message with the local identities.
+        /// </summary>
+        /// <param name="transport">The transport.</param>
+        /// <param name="message">The message.</param>
+        /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
             Debug.Assert( transport.LocalKeys != null );
@@ -45,12 +52,25 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static ByeByeMessage ReadByeByeMessage( IncomingMessage message )
+        public static ByeByeMessage? ReadByeByeMessage( IParallelLogger logger, Transport transport, IncomingMessage message )
         {
+            Debug.Assert( transport.RemoteKeys != null );
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DRunByeBye );
-            return new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
+            var m = new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                                     transport.RemoteKeys.TrustedIdentity,
+                                                     out var foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
+            {
+                logger.Info( $"Received verified bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
+                transport.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return m;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
+            return null;
         }
 
     }

@@ -76,6 +76,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 return;
             }
+            // The remote is who it pretends to be.
             Debug.Assert( incoming.LocalKeys != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
@@ -83,7 +84,7 @@ namespace CK.AppIdentity.TransportLayer
                 await ZeroProtocol.SendCreateByeByeMessageAsync( incoming, new ByeByeMessage( "IsOff", TimeSpan.FromSeconds( 2 ) ) );
                 return;
             }
-            // The remote is who it pretends to be, let's check the full protocol list we received by intersecting it
+            // Let's check the full protocol list we received by intersecting it
             // with our declared protocol (and selecting the highest common version for each of them).
             MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )
                                                                      .GroupBy( p => p.Name )
@@ -130,8 +131,12 @@ namespace CK.AppIdentity.TransportLayer
             {
                 // Wait for the final message.
                 // It must be a single "1" byte.
-                using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 1 );
-                if( finalMessage.IsValid && finalMessage.Protocol == MessageProtocol.ZeroProtocol && finalMessage.Message.FirstSpan[0] == 1 )
+                using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 2 );
+                if( finalMessage.IsValid
+                    && finalMessage.Protocol == MessageProtocol.ZeroProtocol
+                    && finalMessage.Message.FirstSpan.Length == 2
+                    && finalMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalMessage
+                    && finalMessage.Message.FirstSpan[1] == 1 )
                 {
                     // Final message is received: we condemn the current transport if there is one.
                     var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 5 ) );
@@ -261,7 +266,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                     }
                     // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
-                    foundTrustKey = remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustKey, currentKeyData, currentKey );
+                    foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustKey, currentKeyData, currentKey );
                 }
                 return new InitialMessage( incoming.Listener.EndPointDescription,
                                            incoming.RemoteEndPointDescription,

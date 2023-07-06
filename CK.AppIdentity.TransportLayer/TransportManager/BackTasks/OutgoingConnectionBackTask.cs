@@ -164,16 +164,21 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
             Debug.Assert( remote.TargetAddress != null );
-            var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger, remote.TargetAddress, remote.LocalKeys, remote.RemoteKeys, cancellation.Token );
+            var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger,
+                                                                             remote.TargetAddress,
+                                                                             remote.LocalKeys,
+                                                                             remote.RemoteKeys,
+                                                                             cancellation.Token );
             if( transport != null )
             {
+                Debug.Assert( transport.LocalKeys == remote.LocalKeys && transport.RemoteKeys == remote.RemoteKeys );
                 IncomingMessage? firstAnswer = null;
                 transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
                 try
                 {
                     // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, ZeroProtocol.CurrentVersion ) )
+                    if( !await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion ) )
                     {
                         // If we are canceled, let the finally destroy the new transport.
                         return null;
@@ -241,9 +246,8 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DRunByeBye:
                             {
-                                var m = ZeroProtocol.ReadByeByeMessage( firstAnswer );
-                                transportManager.Logger.Error( $"Received bye-bye message from '{remote.Party.FullName}': {m}" );
-                                _retryTickCount = (int)Math.Floor( m.ShutUp.TotalSeconds );
+                                var m = ZeroProtocol.ReadByeByeMessage( transportManager.Logger, transport, firstAnswer );
+                                _retryTickCount = m != null ? (int)Math.Floor( m.ShutUp.TotalSeconds ) : 30;
                                 return null;
                             }
                         case ZeroProtocol.DNegoDowngradeProtocol: 
@@ -251,7 +255,7 @@ namespace CK.AppIdentity.TransportLayer
                                 int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                                 if( !retriedDowngrade )
                                 {
-                                    if( !await ZeroProtocol.SendInitialMessageAsync( remote, transport, otherVersion ) )
+                                    if( !await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, otherVersion ) )
                                     {
                                         if( !cancellation.IsCancellationRequested )
                                         {
@@ -299,7 +303,7 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoMissingProtocols: 
                             {
-                                var missingProtocols = ZeroProtocol.ReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                var missingProtocols = ZeroProtocol.TryReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
                                 if( missingProtocols == null )
                                 {
                                     return null;
@@ -309,9 +313,8 @@ namespace CK.AppIdentity.TransportLayer
                                 return null;
                             }
                         default:
-                            transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'." );
                             if( _retryTickCount < 30 ) ++_retryTickCount;
-                            transportManager.Logger.Error( $"Invalid discriminator from remote '{remote.Party.FullName}'. Retrying in {_retryTickCount} seconds." ); return null;
+                            transportManager.Logger.Error( $"Invalid discriminator from remote '{remote.Party}'. Retrying in {_retryTickCount} seconds." ); return null;
                     }
                 }
                 finally

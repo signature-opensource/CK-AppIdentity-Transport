@@ -195,19 +195,18 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
         /// </summary>
-        /// <param name="remote">The target remote.</param>
         /// <param name="transport">The newly created transport.</param>
+        /// <param name="initialMessage">The <see cref="TransportFeature.OutgoingInitialMessage"/>.</param>
         /// <param name="version">The serialization version.</param>
         /// <returns>False if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-        public static async ValueTask<bool> SendInitialMessageAsync( TransportFeature remote, Transport transport, int version )
+        public static async ValueTask<bool> SendInitialMessageAsync( Transport transport, InitialMessage initialMessage, int version )
         {
-            using var m = CreateAndSignMessage( remote, version );
+            using var m = CreateAndSignMessage( initialMessage, version );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( TransportFeature remote, int version )
+            static IOutgoingMessage CreateAndSignMessage( InitialMessage initialMessage, int version )
             {
-                var initialMessage = remote.OutgoingInitialMessage;
-                Debug.Assert( initialMessage != null && initialMessage.LocalIdentities.Count > 0 );
+                Debug.Assert( initialMessage.LocalIdentities.Count > 0 );
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
@@ -217,7 +216,6 @@ namespace CK.AppIdentity.TransportLayer
                 initialMessage.WriteCurrentVersion( ref w );
                 WriteIdentityKeysAndSign( ref w, sequence, initialMessage.LocalIdentities );
                 return builder.CreateMessage( sequence );
-
             }
         }
 
@@ -394,7 +392,20 @@ namespace CK.AppIdentity.TransportLayer
                 logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate("' ,'")}'." );
                 return default;
             }
-            return MessageProtocolMap.InternalGet( protocols );
+            var map = MessageProtocolMap.InternalGet( protocols );
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                         remote.RemoteKeys.TrustedIdentity,
+                                         out var foundTrustedKey,
+                                         out var currentKeyData,
+                                         out var currentKey ) )
+            {
+                logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
+                remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return map;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
+            return default;
+
         }
 
         /// <summary>
@@ -445,7 +456,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static string[]? ReadMissingProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
+        public static string[]? TryReadMissingProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
@@ -461,7 +472,18 @@ namespace CK.AppIdentity.TransportLayer
             {
                 missingProtocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
-            return missingProtocols;
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                             remote.RemoteKeys.TrustedIdentity,
+                                             out var foundTrustedKey,
+                                             out var currentKeyData,
+                                             out var currentKey ) )
+            {
+                logger.Info( $"Received verified MissingProtocols message from '{remote.Party}'." );
+                remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return missingProtocols;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable MissingProtocols message from '{remote.Party}'." );
+            return null;
         }
 
         public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )

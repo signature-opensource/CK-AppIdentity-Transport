@@ -302,9 +302,8 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     case ZeroProtocol.DRunByeBye:
                         {
-                            var message = ZeroProtocol.ReadByeByeMessage( m );
-                            receiveMonitor.Trace( $"Received bye-bye message: {message}" );
-                            _transportManager.KillTransport( _transport, message.ShutUp );
+                            var message = ZeroProtocol.ReadByeByeMessage( receiveMonitor.ParallelLogger, _transport, m );
+                            _transportManager.KillTransport( _transport, message?.ShutUp ?? TimeSpan.FromSeconds( 30 ) );
                             return false;
                         }
                     default:
