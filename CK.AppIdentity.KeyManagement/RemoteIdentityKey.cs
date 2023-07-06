@@ -58,6 +58,15 @@ namespace CK.AppIdentity.KeyManagement
         /// <inheritdoc cref="RemoteIdentityKeyData.Equals(IPublicKeyData?)" />
         public bool Equals( IPublicKeyData? other ) => _keyData.Equals( other );
 
+        /// <inheritdoc cref="RemoteIdentityKeyData.Equals(DateTime, Span{byte})" />
+        public bool Equals( DateTime timeName, Span<byte> publicRawData ) => _keyData.Equals( timeName, publicRawData );
+
+        /// <summary>
+        /// Gets the key data of this key.
+        /// </summary>
+        /// <returns>The key data.</returns>
+        public RemoteIdentityKeyData GetKeyData() => _keyData;
+
         /// <summary>
         /// Verifies that a digital signature is valid for the provided hash.
         /// </summary>

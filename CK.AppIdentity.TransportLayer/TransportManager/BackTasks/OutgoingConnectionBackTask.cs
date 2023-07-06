@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Buffers;
 using System.Diagnostics;
@@ -190,17 +191,53 @@ namespace CK.AppIdentity.TransportLayer
                     Debug.Assert( head.Length > 0, "The message is not empty (handled above)." );
                     switch( head.Span[0] )
                     {
-                        case ZeroProtocol.DNegoUnknownRemote: 
+                        case ZeroProtocol.DNegoUnknownRemote:
                             {
-                                string? userAcceptUri = ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer );
-                                transportManager.Logger.Warn( $"The remote '{remote.Party.FullName}' doesn't know us. UserAcceptUri='{userAcceptUri}'. Retrying in 5 seconds." );
-                                if( userAcceptUri != null )
+                                RemoteIdentityKey? trustedIdentity = remote.RemoteKeys.TrustedIdentity;
+                                ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer,
+                                                                            trustedIdentity,
+                                                                            out bool remoteVerificationFailure,
+                                                                            out string? enlistUrl,
+                                                                            out RemoteIdentityKeyData? currentKeyData,
+                                                                            out bool foundTrustedKey,
+                                                                            out RemoteIdentityKey? currentKey,
+                                                                            out bool signatureVerified );
+                                if( remoteVerificationFailure )
+                                {
+                                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                                   $"The remote '{remote.Party}' was unable to verify our signature. Retrying in 10 seconds." );
+                                    _retryTickCount = 10;
+                                    return null;
+                                }
+                                if( currentKeyData == null )
+                                {
+                                    transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us at all. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
+                                    if( enlistUrl != null )
+                                    {
+                                        // TODO:
+                                        // transportManager.InformUserAcceptUri( remote, enlistUrl );
+                                    }
+                                    _retryTickCount = 5;
+                                    return null;
+                                }
+                                if( !signatureVerified )
+                                {
+                                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                                   $"Unable to verify the signature's reply message from '{remote.Party}'. Retrying in 10 seconds." );
+                                    _retryTickCount = 10;
+                                    return null;
+                                }
+                                remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
+                                transportManager.Logger.Warn( $"The remote '{remote.Party}' knows about us but doesn't trust our identity. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
+                                if( enlistUrl != null )
                                 {
                                     // TODO:
-                                    // transportManager.InformUserAcceptUri( remote, userAcceptUri );
+                                    // transportManager.InformUserAcceptUri( remote, enlistUrl );
                                 }
                                 _retryTickCount = 5;
                                 return null;
+
+
                             }
                         case ZeroProtocol.DRunByeBye:
                             {
@@ -289,6 +326,5 @@ namespace CK.AppIdentity.TransportLayer
             }
             return transport;
         }
-
     }
 }

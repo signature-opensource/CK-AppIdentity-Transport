@@ -27,6 +27,11 @@ namespace CK.AppIdentity.KeyManagement
         const int MaxIdentityCount = 8;
 
         /// <summary>
+        /// The maximum public key size (actual ECDsa public key sizes are far smaller).
+        /// </summary>
+        const int MaxPublicKeySize = 2048;
+
+        /// <summary>
         /// Gets the local party.
         /// </summary>
         ILocalParty Party { get; }

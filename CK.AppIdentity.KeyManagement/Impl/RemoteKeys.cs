@@ -1,6 +1,7 @@
 using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Principal;
 using System.Threading;
@@ -13,18 +14,22 @@ namespace CK.AppIdentity.KeyManagement
 
         readonly IRemoteParty _remote;
         RemoteIdentityKey? _identity;
+        AutoTrustKey _autoTrustKey;
 
-        RemoteKeys( IRemoteParty remote, RemoteIdentityKey? identity )
+        RemoteKeys( IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey )
         {
             _remote = remote;
             _identity = identity;
+            _autoTrustKey = autoTrustKey;
         }
 
         public IRemoteParty Party => _remote;
 
         public RemoteIdentityKey? TrustedIdentity => _identity;
 
-        public bool SetTrustedIdentity( IActivityMonitor monitor, RemoteIdentityKey? identity )
+        public AutoTrustKey AutoTrustKey => _autoTrustKey;
+
+        public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
         {
             var current = _identity;
             if( (current == null && identity == null)
@@ -36,14 +41,14 @@ namespace CK.AppIdentity.KeyManagement
             {
                 if( identity == null )
                 {
-                    monitor.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}'. This remote has no more trusted identity." );
+                    logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}'. This remote has no more trusted identity." );
                 }
                 else
                 {
-                    monitor.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}', replaced by '{identity.Name}'." );
+                    logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}', replaced by '{identity.Name}'." );
                 }
                 var cPath = _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{current.Name}.public" );
-                _remote.SharedFileStore.TryTrash( monitor, cPath );
+                _remote.SharedFileStore.TryTrash( logger, cPath );
             }
             _identity = identity;
             if( identity != null )

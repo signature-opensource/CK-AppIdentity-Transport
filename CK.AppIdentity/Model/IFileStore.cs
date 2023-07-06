@@ -33,6 +33,6 @@ namespace CK.AppIdentity
         /// <param name="fullPath">The full path of the file to trash.</param>
         /// <param name="immediateDelete">Optionally deletes the file immediately instead of moving it to the bin.</param>
         /// <returns>True on success, false on error.</returns>
-        bool TryTrash( IActivityLineEmitter logger, NormalizedPath fullPath, bool immediateDelete = false );
+        bool TryTrash( IActivityLineEmitter logger, in NormalizedPath fullPath, bool immediateDelete = false );
     }
 }

@@ -20,7 +20,7 @@ namespace CK.AppIdentity
 
         public NormalizedPath TrashBinPath => _binPath;
 
-        public bool TryTrash( IActivityLineEmitter logger, NormalizedPath fullPath, bool immediateDelete = false )
+        public bool TryTrash( IActivityLineEmitter logger, in NormalizedPath fullPath, bool immediateDelete = false )
         {
             Throw.CheckArgument( fullPath.StartsWith( FolderPath ) && !fullPath.StartsWith( TrashBinPath ) );
             if( !File.Exists( fullPath ) ) return true;

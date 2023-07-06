@@ -1,8 +1,10 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using Microsoft.Extensions.Hosting;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
@@ -51,54 +53,30 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( incoming?.Listener != null );
 
-            InitialMessage? initialMessage = await HandleInitialMessageAsync( transportManager, incoming );
-            if( initialMessage == null ) return;
-            Debug.Assert( initialMessage.HashMessage != null && initialMessage.Signatures != null );
+            var initialResult = await HandleInitialMessageAsync( transportManager, incoming );
+            if( !initialResult.HasValue ) return;
 
-            // Accessing the Parties is thread safe.
-            TransportFeature? remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == initialMessage.FullName );
-            Debug.Assert( remote == null || remote.IsListening );
+            var (initialMessage, remote, foundTrustKey) = initialResult.Value;
+
             // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
             // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
-            //
-            // If the remote is known BUT the signature cannot be verified, acts the same regarding the caller (rejecting it), but
-            // propagate the knowledge of this failure.
-            //
-            // When we know the remote full name and we trust one of its public keys (idxTrustedIdentity >= 0), it is time to verify the
-            // message signatures. The message is signed by each of its identities but it would be useless and costly to verify each of
-            // them (we will have to instantiate a ECDsa for each of the RemotePublicKeyData). We just have to check the signature against
-            // our trustedIdentity that already has a ECDsa key up and running.
-            //
-            // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
-            //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
-            //            initial message as if it was on a non confidential channel.
-            //
-            var trustedIdentity = remote?.RemoteKeys.TrustedIdentity;
-            int idxTrustedIdentity = -1;
-            if( trustedIdentity == null
-                || (idxTrustedIdentity = initialMessage.RemoteIdentities.IndexOf( i => i.Equals( trustedIdentity ) )) < 0
-                || !trustedIdentity.VerifyHash( initialMessage.HashMessage, initialMessage.Signatures[idxTrustedIdentity] ) )
+            if( remote == null || !foundTrustKey )
             {
-                bool signatureVerificationFailed = idxTrustedIdentity >= 0;
                 // Before awaking the TransportManager, we send the deny message:
                 // If this is a bad remote guy that tries to timeout us, this will be cleanup by the heart beat:
                 // no need for a cancellation token here.
                 // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party.
-                // If the signature verification failed, we send a null enlist url and don't lose any cpu/time to sign
-                // the reply message.
-                string? userAcceptUri = signatureVerificationFailed
-                                        ? null
-                                        : transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
-                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, userAcceptUri, signatureVerificationFailed ) )
+                string? enlistUrl = transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
+                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, signatureVerificationFailed: false ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the trusted identity (if any) considered at the
                     // time of the decision.
-                    transportManager.UnknownIncomingRemote( initialMessage, trustedIdentity, signatureVerificationFailed );
+                    transportManager.UnknownIncomingRemote( initialMessage, remote?.RemoteKeys.TrustedIdentity );
                 }
                 return;
             }
-            Debug.Assert( remote != null );
+            Debug.Assert( incoming.LocalKeys != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
@@ -148,7 +126,7 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( remote, incoming, protocolMap ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap ) )
             {
                 // Wait for the final message.
                 // It must be a single "1" byte.
@@ -169,12 +147,13 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        static async Task<InitialMessage?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
+        static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( incoming?.Listener != null );
-            InitialMessage? initialMessage;
-
+            Debug.Assert( incoming.Listener != null );
+            InitialMessage? initialMessage = null;
             IncomingMessage? message = null;
+            TransportFeature? remote = null;
+            bool foundTrustKey = false;
             try
             {
                 bool downgradedVersion = false;
@@ -186,13 +165,21 @@ namespace CK.AppIdentity.TransportLayer
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
-                bool success = InitialMessage.TryParse( incoming.Listener.EndPointDescription, incoming.RemoteEndPointDescription, message, out initialMessage, out var otherVersion );
-                if( !success )
+                initialMessage = TryParse( transportManager.Logger, incoming, message, out var otherVersion, out remote, out foundTrustKey );
+                if( initialMessage == null )
                 {
                     if( otherVersion == -1 )
                     {
                         // Nothing to do: this is not a remote!
                         transportManager.Logger.Warn( $"Initial message received from '{incoming.RemoteEndPointDescription}' miss the 'CK-AppId' prefix." );
+                        return null;
+                    }
+                    if( otherVersion <= ZeroProtocol.CurrentVersion )
+                    {
+                        // We have read the first part of the message.
+                        // If the initialMessage is null it is because its signature has failed the verification (this has been logged).
+                        // We send a null enlist url and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
+                        await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, signatureVerificationFailed: true );
                         return null;
                     }
                     // The remote's version of the InitialMessage is greater than ours.
@@ -202,17 +189,90 @@ namespace CK.AppIdentity.TransportLayer
                         await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming );
                         // If the other can downgrade, it's cool. But do this only once.
                         downgradedVersion = true;
+                        message.Release();
                         goto retry;
                     }
                     transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{incoming.RemoteEndPointDescription}'." );
-                    return null;
+                    return default;
                 }
             }
             finally
             {
                 message?.Dispose();
             }
-            return initialMessage;
+            return (initialMessage, remote, foundTrustKey);
+
+            static InitialMessage? TryParse( IParallelLogger logger,
+                                             Transport incoming,
+                                             IncomingMessage message,
+                                             out int otherVersion,
+                                             out TransportFeature? remote,
+                                             out bool foundTrustKey )
+            {
+                Debug.Assert( incoming.Listener != null, "We are listening." );
+                var r = new FastByteReader( message.Message );
+                if( !InitialMessage.TryParse( ref r,
+                                              out otherVersion,
+                                              out var instanceId,
+                                              out var domainName,
+                                              out var partyName,
+                                              out var environmentName,
+                                              out var fullName,
+                                              out var protocols ) )
+                {
+                    remote = null;
+                    foundTrustKey = false;
+                    return null;
+                }
+                // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
+                // Accessing the Parties is thread safe.
+                // This COULD have been done by the TransportListener (lookup based on SSL certificates).
+                remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == fullName );
+                Debug.Assert( remote == null || remote.IsListening );
+                // We may know the remote (or not). If we do, we may have a trusted identity for it.
+                var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
+                if( !ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out foundTrustKey, out var currentKeyData, out var currentKey ) )
+                {
+                    // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
+                    // This is a serious issue and we cannot do a lot here.
+                    logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unable to verify the signature's incoming message from '{fullName}'." );
+                    return null;
+                }
+                // The message's signature is verified. If we have a known remote, we update its TrustedIdentity: AutoTrustKey may
+                // make us immediately accept the remote...
+                Debug.Assert( (incoming.LocalKeys == null) == (incoming.RemoteKeys == null), "They are both known (TransportListener resolved them) or not." );
+                if( remote != null )
+                {
+                    // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
+                    //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
+                    //            initial message as if it was on a non confidential channel.
+                    //            Moreover, we check here the work of the TransportListener and throws if a mismatch of keys happened: our source
+                    //            of truth is the incoming message's FullName.
+                    if( incoming.LocalKeys == null )
+                    {
+                        incoming.SetKeys( remote.LocalKeys, remote.RemoteKeys );
+                    }
+                    else
+                    {
+                        if( incoming.LocalKeys != remote.LocalKeys || incoming.RemoteKeys != remote.RemoteKeys )
+                        {
+                            Throw.InvalidOperationException( $"Buggy TransportListener: local/remote keys are not the right ones. " +
+                                                             $"Expected keys for '{remote.LocalKeys.Party}/{remote.RemoteKeys.Party}', got '{incoming.LocalKeys.Party}/{incoming.RemoteKeys!.Party}.'" );
+                        }
+                    }
+                    // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
+                    foundTrustKey = remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustKey, currentKeyData, currentKey );
+                }
+                return new InitialMessage( incoming.Listener.EndPointDescription,
+                                           incoming.RemoteEndPointDescription,
+                                           otherVersion,
+                                           instanceId,
+                                           domainName,
+                                           partyName,
+                                           environmentName,
+                                           fullName,
+                                           protocols );
+            }
         }
     }
 }

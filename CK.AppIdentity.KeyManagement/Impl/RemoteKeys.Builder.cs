@@ -22,11 +22,18 @@ namespace CK.AppIdentity.KeyManagement
             {
                 DateTime now = DateTime.UtcNow;
 
+                AutoTrustKey autoTrust = AutoTrustKey.Never;
+                var a = _remote.Configuration.Configuration.TryLookupValue( nameof( AutoTrustKey ) );
+                if( a != null && !Enum.TryParse( a, true, out autoTrust ) )
+                {
+                    monitor.Warn( $"Unable to parse {nameof( AutoTrustKey )} value, expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. Using default '{AutoTrustKey.Never}'." );
+                }
+
                 RemoteIdentityKeyData? c = null;
                 foreach( var f in FilterFileNames( monitor,
                                                    DateTime.UtcNow,
                                                    Directory.EnumerateFiles( _store.FolderPath, PublicIdentityFilePattern ),
-                                                   ExctractTimeName ) )
+                                                   ExtractTimeName ) )
                 {
                     if( c == null || f.TimeName > c.TimeName )
                     {
@@ -35,26 +42,24 @@ namespace CK.AppIdentity.KeyManagement
                     }
                     else
                     {
-                        LogAndCleanup( monitor, f.Path, $"Obsolete public identity found ('{c.TimeName}' is more recent)." );
+                        LogAndCleanup( monitor, f.Path, $"Obsolete public identity found ('{c.Name}' is more recent)." );
                     }
                 }
                 if( c != null )
                 {
-                    monitor.Info( $"Found trusted identity key '{c.TimeName}' for remote '{_remote}'." );
-                    return new RemoteKeys( _remote, new RemoteIdentityKey( c ) );
+                    monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
+                    return new RemoteKeys( _remote, new RemoteIdentityKey( c ), autoTrust );
                 }
                 monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-                return new RemoteKeys( _remote, null );
+                return new RemoteKeys( _remote, null, autoTrust );
 
-                static string ExctractTimeName( string s )
+                static string ExtractTimeName( string s )
                 {
-                    int start = s.IndexOf( '.' ) + 1;
-                    return s.Substring( start, s.LastIndexOf( '.' ) - start );
+                    return s.Substring( s.IndexOf( '.' ) + 1 );
                 }
-
             }
 
-            RemoteIdentityKeyData? TryLoad( IActivityMonitor monitor, DateTime timeName, string path )
+            RemoteIdentityKeyData? TryLoad( IActivityMonitor monitor, DateTime timeName, in NormalizedPath path )
             {
                 try
                 {
@@ -62,7 +67,7 @@ namespace CK.AppIdentity.KeyManagement
                 }
                 catch ( Exception ex )
                 {
-                    monitor.Error( $"While loading '{path}'.", ex );
+                    LogAndCleanup( monitor, path, $"While loading '{path}'", LogLevel.Error, ex );
                     return null;
                 }
             }

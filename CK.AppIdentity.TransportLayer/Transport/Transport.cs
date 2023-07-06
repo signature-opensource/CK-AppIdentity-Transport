@@ -74,6 +74,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Initializes a new Transport by an outgoing connection to <paramref name="targetAddress"/>.
+        /// We are on a known remote: the local and remote keys are known in this case.
         /// </summary>
         /// <param name="targetAddress">The target address.</param>
         /// <param name="localKeys">Local key manager of this remote party.</param>
@@ -165,6 +166,13 @@ namespace CK.AppIdentity.TransportLayer
         internal ILocalKeys? LocalKeys => _localKeys;
 
         internal IRemoteKeys? RemoteKeys => _remoteKeys;
+
+        internal void SetKeys( ILocalKeys localKeys, IRemoteKeys remoteKeys )
+        {
+            Debug.Assert( _localKeys == null && _remoteKeys == null );
+            _localKeys = localKeys;
+            _remoteKeys = remoteKeys;
+        }
 
         internal bool SetHardCondemned()
         {

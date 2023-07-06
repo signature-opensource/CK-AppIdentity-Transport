@@ -67,6 +67,7 @@ namespace CK.AppIdentity.KeyManagement
                     }
                 }
                 var ids = identities.ToArray();
+                monitor.Info( $"Local '{_local.FullName}' has {ids.Length} identity keys. Current expires on {ids[0].NotAfter:yyyy-MM-dd}." );
                 HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
                 return new LocalKeys( _local, protector, ids );
             }
@@ -180,7 +181,7 @@ namespace CK.AppIdentity.KeyManagement
                 return result;
             }
 
-            string? TryLoadPassword( IActivityMonitor monitor, IDataProtector protector, string pfxPath )
+            string? TryLoadPassword( IActivityMonitor monitor, IDataProtector protector, in NormalizedPath pfxPath )
             {
                 var pwdPath = pfxPath + PasswordExtension;
                 if( !File.Exists( pwdPath ) )
@@ -199,7 +200,7 @@ namespace CK.AppIdentity.KeyManagement
                 }
             }
 
-            ECDsa? ValidateIdentityAndGetPrivateKey( IActivityMonitor monitor, DateTime now, string filePath, X509Certificate2 c )
+            ECDsa? ValidateIdentityAndGetPrivateKey( IActivityMonitor monitor, DateTime now, in NormalizedPath filePath, X509Certificate2 c )
             {
                 ECDsa? privateKey = null;
                 bool success = true;
@@ -234,7 +235,7 @@ namespace CK.AppIdentity.KeyManagement
                 return privateKey;
             }
 
-            protected override void DoTrash( IActivityMonitor monitor, string path )
+            protected override void DoTrash( IActivityMonitor monitor, in NormalizedPath path )
             {
                 base.DoTrash( monitor, path );
                 _store.TryTrash( monitor, path + PasswordExtension );

@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using System.Diagnostics;
 using System.Text;
 
@@ -25,18 +26,23 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
+            Debug.Assert( transport.LocalKeys != null );
             Debug.Assert( message != null );
-            var m = _zeroFactory.Create( bytes =>
+            using var m = CreateAndSignMessage( message, transport.LocalKeys.Identities );
+            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ByeByeMessage message, IReadOnlyList<LocalIdentityKey> localIdentities )
             {
-                var w = new FastByteWriter( bytes );
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
                 w.WriteByte( DRunByeBye );
                 w.WriteString( message.Reason );
                 w.WriteTimeSpan( message.ShutUp );
                 w.Commit();
-            } );
-            bool r = await transport.SendAsync( 0, m ).ConfigureAwait( false );
-            m.Release();
-            return r;
+                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
+                return builder.CreateMessage( sequence );
+            }
         }
 
         public static ByeByeMessage ReadByeByeMessage( IncomingMessage message )

@@ -77,6 +77,17 @@ namespace CK.AppIdentity.KeyManagement
                     && (other is RemoteIdentityKey || other is RemoteIdentityKeyData || other is LocalIdentityKey );
         }
 
+        /// <summary>
+        /// Checks whether the name and raw data are equals to the provided ones.
+        /// </summary>
+        /// <param name="timeName">The <see cref="TimeName"/>.</param>
+        /// <param name="publicRawData">The <see cref="PublicKeyRawData"/>.</param>
+        /// <returns>True if the provided data is the same as this one.</returns>
+        public bool Equals( DateTime timeName, Span<byte> publicRawData )
+        {
+            return _timeName == timeName && publicRawData.SequenceEqual( _publicRaw );
+        }
+
         /// <inheritdoc />
         public void WriteFile( NormalizedPath fullPath )
         {

@@ -246,7 +246,7 @@ namespace CK.AppIdentity.TransportLayer
                         else
                         {
                             // If the send is canceled, ends this loop without consuming the message.
-                            if( !await transport.SendAsync( (uint)protocolNumber, toSend ).ConfigureAwait( false ) )
+                            if( !await transport.SendAsync( (uint)protocolNumber + 1, toSend ).ConfigureAwait( false ) )
                             {
                                 replacement?.Release();
                                 return false;

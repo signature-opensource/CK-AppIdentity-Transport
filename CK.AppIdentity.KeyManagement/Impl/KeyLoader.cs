@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace CK.AppIdentity.KeyManagement
 {
@@ -14,15 +15,15 @@ namespace CK.AppIdentity.KeyManagement
             _store = store;
         }
 
-        protected IEnumerable<(string Name, DateTime TimeName, string Path)> FilterFileNames( IActivityMonitor monitor,
-                                                                                              DateTime now,
-                                                                                              IEnumerable<string> candidates,
-                                                                                              Func<string,string>? getTimeNamePart )
+        protected IEnumerable<(string Name, DateTime TimeName, NormalizedPath Path)> FilterFileNames( IActivityMonitor monitor,
+                                                                                                      DateTime now,
+                                                                                                      IEnumerable<string> candidates,
+                                                                                                      Func<string,string>? getTimeNamePart )
         {
-            foreach( var path in candidates )
+            foreach( var path in candidates.Select( p => new NormalizedPath( p ) ) )
             {
-                var name = Path.GetFileNameWithoutExtension( path );
-                name = getTimeNamePart?.Invoke( name );
+                var name = Path.GetFileNameWithoutExtension( path.LastPart );
+                if( getTimeNamePart != null ) name = getTimeNamePart( name );
                 if( !FileUtil.TryParseFileNameUniqueTimeUtcFormat( name, out var timeName ) )
                 {
                     LogAndCleanup( monitor, path, $"Invalid file name '{path}': the \"time name\" must strictly be in '{FileUtil.FileNameUniqueTimeUtcFormat}' " +
@@ -36,13 +37,13 @@ namespace CK.AppIdentity.KeyManagement
             }
         }
 
-        protected void LogAndCleanup( IActivityMonitor monitor, string path, string message, LogLevel level = LogLevel.Warn, Exception? ex = null, CKTrait? tags = null )
+        protected void LogAndCleanup( IActivityMonitor monitor, in NormalizedPath path, string message, LogLevel level = LogLevel.Warn, Exception? ex = null, CKTrait? tags = null )
         {
             monitor.Log( level, tags ?? ActivityMonitor.Tags.Empty, $"{message} Skipping it and sending it to the '$TrashBin' folder.", ex );
             DoTrash( monitor, path );
         }
 
-        protected virtual void DoTrash( IActivityMonitor monitor, string path )
+        protected virtual void DoTrash( IActivityMonitor monitor, in NormalizedPath path )
         {
             _store.TryTrash( monitor, path );
         }
