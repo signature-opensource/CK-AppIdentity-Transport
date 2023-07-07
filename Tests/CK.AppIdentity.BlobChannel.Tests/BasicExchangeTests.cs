@@ -16,6 +16,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
         [Timeout( 2000 )]
         public async Task demo_BlobChannel_is_an_optin_Feature_Async()
         {
+            TestHelper.GetCleanTestStoreFolder();
+
             // BlobChannel is an opt-in feature: it must be explicitly allowed.
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
@@ -86,8 +88,11 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
         [TestCase( "Reverted" )]
         [TestCase( "Regular" )]
-        public async Task Listener_then_Sender_setup_Async( string mode )
+        [Timeout( 2000 )]
+        public async Task Listener_then_Sender_setup_using_AutoTrustKey_Async( string mode )
         {
+            TestHelper.GetCleanTestStoreFolder();
+
             bool regular = mode == "Regular";
             ApplicationIdentityService listener;
             ApplicationIdentityService sender;
@@ -146,6 +151,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
+                    c["AutoTrustKey"] = "Once";
                     c["FullName"] = "Test/$Listener";
                     c["Parties:0:PartyName"] = "$Sender";
                     c["AllowFeatures"] = "BlobChannel";
@@ -156,6 +162,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 return await TestHelper.CreateApplicationServiceAsync( c =>
                 {
+                    c["AutoTrustKey"] = "Once";
                     c["FullName"] = "Test/$Sender";
                     c["Parties:0:PartyName"] = "$Listener";
                     c["Parties:0:Address"] = "tcp:127.0.0.1";

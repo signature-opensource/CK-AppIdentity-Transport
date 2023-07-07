@@ -28,7 +28,10 @@ namespace CK.AppIdentity.KeyManagement
                 {
                     monitor.Warn( $"Unable to parse {nameof( AutoTrustKey )} value, expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. Using default '{AutoTrustKey.Never}'." );
                 }
-
+                if( autoTrust != AutoTrustKey.Never )
+                {
+                    monitor.Info( $"Remote '{_remote}' uses {nameof( AutoTrustKey )}: \"{autoTrust}\"." );
+                }
                 RemoteIdentityKeyData? c = null;
                 foreach( var f in FilterFileNames( monitor,
                                                    DateTime.UtcNow,

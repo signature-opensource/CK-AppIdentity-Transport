@@ -145,7 +145,7 @@ namespace CK.AppIdentity
             var s = this;
             do
             {
-                if( (result = TryGetSection( key )) != null ) break;
+                if( (result = s.TryGetSection( key )) != null ) break;
             }
             while( (s = s._lookupParent) != null );
             return result;

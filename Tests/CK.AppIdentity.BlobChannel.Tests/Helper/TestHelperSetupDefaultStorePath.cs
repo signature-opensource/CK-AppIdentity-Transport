@@ -10,9 +10,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
         [OneTimeSetUp]
         public void RunBeforeAnyTests()
         {
-            var testDefault = TestHelper.TestProjectFolder.AppendPart( "TestStore" );
-            ApplicationIdentityServiceConfiguration.DefaultStoreRootPath = testDefault;
-            Throw.CheckState( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath == testDefault );
+            ApplicationIdentityServiceConfiguration.DefaultStoreRootPath = TestHelperExtension.TestStoreFolder;
+            Throw.CheckState( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath == TestHelperExtension.TestStoreFolder );
         }
     }
 }

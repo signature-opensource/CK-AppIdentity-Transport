@@ -19,7 +19,7 @@ namespace CK.AppIdentity
         readonly IServiceProvider _serviceProvider;
 
         internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider )
-            : base( $"ApplicationIdentityService Agent for {service}" )
+            : base( $"ApplicationIdentityService Agent for '{service}'" )
         {
             _service = service;
             _serviceProvider = serviceProvider;

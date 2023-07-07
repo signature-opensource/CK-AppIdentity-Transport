@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
+using CK.Core;
 using CK.Testing;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
     static class TestHelperExtension
     {
+        public static NormalizedPath TestStoreFolder = TestHelper.TestProjectFolder.AppendPart( "TestStore" );
+
+        public static NormalizedPath GetCleanTestStoreFolder( this IBasicTestHelper helper )
+        {
+            return helper.CleanupFolder( TestStoreFolder );
+        }
+
         /// <summary>
         /// Creates a <see cref="ApplicationIdentityService"/> from a configuration builder.
         /// It must be disposed once done with it to stop its micro agent.
