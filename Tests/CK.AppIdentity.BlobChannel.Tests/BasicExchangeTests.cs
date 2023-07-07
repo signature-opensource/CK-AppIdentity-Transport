@@ -13,7 +13,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
     public class BasicExchangeTests
     {
         [Test]
-        [Timeout( 2000 )]
+        // The timeout must be enough for back task to be checked and exceptions to be dumped.
+        [Timeout( 4000 )]
         public async Task demo_BlobChannel_is_an_optin_Feature_Async()
         {
             TestHelper.GetCleanTestStoreFolder();

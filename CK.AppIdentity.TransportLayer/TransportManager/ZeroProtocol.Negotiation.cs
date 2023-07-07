@@ -214,6 +214,13 @@ namespace CK.AppIdentity.TransportLayer
                 Throw.CheckArgument( version == CurrentVersion );
                 // Writes the message content.
                 initialMessage.WriteCurrentVersion( ref w );
+                // Writes the nonce (64 bits).
+                Span<byte> nonce = stackalloc byte[8];
+                RandomNumberGenerator.Fill( nonce );
+                w.WriteBytes( nonce );
+                // Writes the DateTime.UtcNow of this system.
+                w.WriteDateTime( DateTime.UtcNow );
+                // Writes the identity keys and sign the message with them.
                 WriteIdentityKeysAndSign( ref w, sequence, initialMessage.LocalIdentities );
                 return builder.CreateMessage( sequence );
             }

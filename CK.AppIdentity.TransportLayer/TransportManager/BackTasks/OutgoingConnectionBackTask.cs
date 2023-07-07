@@ -189,7 +189,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty )
                     {
                         if( _retryTickCount < 30 ) ++_retryTickCount;
-                        transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party.FullName}'. Retrying in {_retryTickCount} seconds." );
+                        transportManager.Logger.Error( $"Invalid first answer from remote '{remote.Party}'. Retrying in {_retryTickCount} seconds." );
                         return null;
                     }
                     var head = firstAnswer.Message.First;
@@ -241,8 +241,6 @@ namespace CK.AppIdentity.TransportLayer
                                 }
                                 _retryTickCount = 5;
                                 return null;
-
-
                             }
                         case ZeroProtocol.DRunByeBye:
                             {
@@ -259,7 +257,7 @@ namespace CK.AppIdentity.TransportLayer
                                     {
                                         if( !cancellation.IsCancellationRequested )
                                         {
-                                            transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' expects the ZeroProtocol version '{otherVersion}'. "
+                                            transportManager.Logger.Error( $"The remote '{remote.Party}' expects the ZeroProtocol version '{otherVersion}'. "
                                                                          + $"Local '{ZeroProtocol.CurrentVersion}' cannot handle it. Retrying in 30 seconds." );
                                             _retryTickCount = 30;
                                         }
@@ -270,7 +268,7 @@ namespace CK.AppIdentity.TransportLayer
                                     retriedDowngrade = true;
                                     goto retry;
                                 }
-                                transportManager.Logger.Error( $"The remote '{remote.Party.FullName}' sent 2 downgrade protocol request. Retrying in 30 seconds." );
+                                transportManager.Logger.Error( $"The remote '{remote.Party}' sent 2 downgrade protocol request. Retrying in 30 seconds." );
                                 _retryTickCount = 30;
                                 return null;
                             }
@@ -297,7 +295,7 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoEvictionDisallowed: 
                             {
-                                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' is already connected and its DisallowEviction is true. Retrying in 20 seconds." );
+                                transportManager.Logger.Error( $"Remote '{remote.Party}' is already connected and its DisallowEviction is true. Retrying in 20 seconds." );
                                 _retryTickCount = 20;
                                 return null;
                             }
@@ -308,7 +306,7 @@ namespace CK.AppIdentity.TransportLayer
                                 {
                                     return null;
                                 }
-                                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' expects protocols: '{missingProtocols.Concatenate( "', '" )}'. Retrying in 30 seconds." );
+                                transportManager.Logger.Error( $"Remote '{remote.Party}' expects protocols: '{missingProtocols.Concatenate( "', '" )}'. Retrying in 30 seconds." );
                                 _retryTickCount = 30;
                                 return null;
                             }

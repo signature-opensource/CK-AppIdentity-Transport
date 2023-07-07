@@ -34,6 +34,11 @@ namespace CK.AppIdentity.TransportLayer
                 monitor.Warn( $"Incoming connection timeout for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
                 transportManager.KillTransport( _incoming );
             }
+            else if( _result.IsFaulted )
+            {
+                monitor.Warn( $"Error while handling incoming connection for '{_incoming.RemoteEndPointDescription}'. Destroying the transport.", _result.Exception );
+                transportManager.KillTransport( _incoming );
+            }
         }
 
         public override void Reset()
@@ -229,6 +234,10 @@ namespace CK.AppIdentity.TransportLayer
                     foundTrustKey = false;
                     return null;
                 }
+                // Reads the nonce and computes the remote's ClockDrift.
+                var nonce = r.ReadUInt64();
+                var remoteClockDrift = DateTime.UtcNow - r.ReadDateTime();
+                
                 // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
                 // Accessing the Parties is thread safe.
                 // This COULD have been done by the TransportListener (lookup based on SSL certificates).
@@ -243,7 +252,13 @@ namespace CK.AppIdentity.TransportLayer
                     logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unable to verify the signature's incoming message from '{fullName}'." );
                     return null;
                 }
-                // The message's signature is verified. If we have a known remote, we update its TrustedIdentity: AutoTrustKey may
+                // The message's signature is verified. Before locating the remote and continue, we should check the nonce but
+                // managing nonce is not that easy. To avoid keeping too much nonce in memory housekeeping is required but removing
+                // "old nonce" kills the very idea of nonce...
+                // To handle this efficiently, we defer the nonce check up to the point that the incoming message has an impact: when the new Transport
+                // is about to be validated. At this future point we know the remote and it manages its nonce pool.
+
+                // If we have a known remote, we update its TrustedIdentity: AutoTrustKey may
                 // make us immediately accept the remote...
                 Debug.Assert( (incoming.LocalKeys == null) == (incoming.RemoteKeys == null), "They are both known (TransportListener resolved them) or not." );
                 if( remote != null )
@@ -276,7 +291,9 @@ namespace CK.AppIdentity.TransportLayer
                                            partyName,
                                            environmentName,
                                            fullName,
-                                           protocols );
+                                           protocols,
+                                           nonce,
+                                           remoteClockDrift );
             }
         }
     }

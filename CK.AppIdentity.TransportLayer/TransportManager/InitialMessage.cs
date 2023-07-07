@@ -56,8 +56,13 @@ namespace CK.AppIdentity.TransportLayer
         // code comments.
         // For an ingoing message, this is an array.
         readonly IReadOnlyCollection<string> _availableProtocols;
+
         // Local identities is empty for incoming message.
         readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
+
+        // Relevant only for incoming messages.
+        readonly TimeSpan _remoteClockDrift;
+        readonly ulong _nonce;
 
         sealed class ProtocolAdapter : IReadOnlyCollection<string>
         {
@@ -105,7 +110,9 @@ namespace CK.AppIdentity.TransportLayer
                                string incomingPartyName,
                                string incomingEnvironmentName,
                                string incomingFullName,
-                               string[] protocols )
+                               string[] protocols,
+                               ulong nonce,
+                               TimeSpan remoteClockDrift )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
@@ -116,6 +123,8 @@ namespace CK.AppIdentity.TransportLayer
             _environmentName= incomingEnvironmentName;
             _fullName = incomingFullName;
             _availableProtocols = protocols;
+            _nonce = nonce;
+            _remoteClockDrift = remoteClockDrift;
             _localIdentities = Array.Empty<LocalIdentityKey>();
         }
 
@@ -264,5 +273,16 @@ namespace CK.AppIdentity.TransportLayer
         /// This is empty for an incoming message.
         /// </summary>
         public IReadOnlyList<LocalIdentityKey> LocalIdentities => _localIdentities;
+
+        /// <summary>
+        /// Relevant only for incoming messages.
+        /// </summary>
+        public TimeSpan RemoteClockDrift => _remoteClockDrift;
+
+        /// <summary>
+        /// Relevant only for incoming messages.
+        /// </summary>
+        public ulong Nonce => _nonce;
+
     }
 }
