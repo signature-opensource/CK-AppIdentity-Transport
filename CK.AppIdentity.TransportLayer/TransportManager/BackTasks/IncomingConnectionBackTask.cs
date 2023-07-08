@@ -72,7 +72,7 @@ namespace CK.AppIdentity.TransportLayer
                 // no need for a cancellation token here.
                 // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party.
                 string? enlistUrl = transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
-                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, signatureVerificationFailed: false ) )
+                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the trusted identity (if any) considered at the
@@ -86,7 +86,7 @@ namespace CK.AppIdentity.TransportLayer
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
-                await ZeroProtocol.SendCreateByeByeMessageAsync( incoming, new ByeByeMessage( "IsOff", TimeSpan.FromSeconds( 2 ) ) );
+                await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, TimeSpan.FromSeconds( 5 ) );
                 return;
             }
             // Let's check the full protocol list we received by intersecting it
@@ -189,7 +189,7 @@ namespace CK.AppIdentity.TransportLayer
                         // We have read the first part of the message.
                         // If the initialMessage is null it is because its signature has failed the verification (this has been logged).
                         // We send a null enlist url and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
-                        await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, signatureVerificationFailed: true );
+                        await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, 0, signatureVerificationFailed: true );
                         return null;
                     }
                     // The remote's version of the InitialMessage is greater than ours.

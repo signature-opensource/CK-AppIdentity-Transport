@@ -20,6 +20,7 @@ namespace CK.AppIdentity.TransportLayer
         internal const byte DNegoAcceptedProtocolsMessage = 3;
         internal const byte DNegoMissingProtocols = 4;
         internal const byte DNegoEvictionDisallowed = 5;
+        internal const byte DNegoOffRemote = 6;
         // Run discriminators:
         internal const byte DRunByeBye = 255;
 

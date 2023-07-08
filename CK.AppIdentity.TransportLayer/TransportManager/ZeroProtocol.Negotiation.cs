@@ -3,6 +3,8 @@ using CK.Core;
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -193,18 +195,20 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version.
+        /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version
+        /// and returns a random nonce on success.
         /// </summary>
         /// <param name="transport">The newly created transport.</param>
         /// <param name="initialMessage">The <see cref="TransportFeature.OutgoingInitialMessage"/>.</param>
         /// <param name="version">The serialization version.</param>
-        /// <returns>False if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-        public static async ValueTask<bool> SendInitialMessageAsync( Transport transport, InitialMessage initialMessage, int version )
+        /// <returns>A nonce or null if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
+        public static async ValueTask<ulong?> SendInitialMessageAsync( Transport transport, InitialMessage initialMessage, int version )
         {
-            using var m = CreateAndSignMessage( initialMessage, version );
-            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+            using var m = CreateAndSignMessage( initialMessage, version, out var nonce );
+            if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
+            return nonce;
 
-            static IOutgoingMessage CreateAndSignMessage( InitialMessage initialMessage, int version )
+            static IOutgoingMessage CreateAndSignMessage( InitialMessage initialMessage, int version, out ulong nonce )
             {
                 Debug.Assert( initialMessage.LocalIdentities.Count > 0 );
                 var builder = _zeroFactory.CreateBuilder();
@@ -215,9 +219,10 @@ namespace CK.AppIdentity.TransportLayer
                 // Writes the message content.
                 initialMessage.WriteCurrentVersion( ref w );
                 // Writes the nonce (64 bits).
-                Span<byte> nonce = stackalloc byte[8];
-                RandomNumberGenerator.Fill( nonce );
-                w.WriteBytes( nonce );
+                Span<byte> bNonce = stackalloc byte[8];
+                RandomNumberGenerator.Fill( bNonce );
+                w.WriteBytes( bNonce );
+                nonce = BitConverter.ToUInt64( bNonce );
                 // Writes the DateTime.UtcNow of this system.
                 w.WriteDateTime( DateTime.UtcNow );
                 // Writes the identity keys and sign the message with them.
@@ -249,12 +254,13 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendUnknownRemoteReplyMessageAsync( Transport transport,
                                                                                 string? enlistUrl,
+                                                                                ulong nonce,
                                                                                 bool signatureVerificationFailed )
         {
-            using var m = CreateMessage( transport, enlistUrl, signatureVerificationFailed );
+            using var m = CreateMessage( transport, enlistUrl, nonce, signatureVerificationFailed );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateMessage( Transport transport, string? userAcceptUri, bool signatureVerificationFailed )
+            static IOutgoingMessage CreateMessage( Transport transport, string? userAcceptUri, ulong nonce, bool signatureVerificationFailed )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
@@ -267,6 +273,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
+                    w.WriteUInt64( nonce );
                     w.WriteNullableString( userAcceptUri );
                     // When the incoming remote is not known at all, we don't have local
                     // keys (we cannot locate the local party to use so we take no risk: selecting the root
@@ -287,7 +294,9 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         public static void ReadUnknownRemoteReplyMessage( IncomingMessage message,
+                                                          ulong expectedNonce,
                                                           RemoteIdentityKey? trustedIdentity,
+                                                          out bool nonceFailure,
                                                           out bool remoteVerificationFailure,
                                                           out string? enlistUrl,
                                                           out RemoteIdentityKeyData? currentKeyData,
@@ -301,6 +310,7 @@ namespace CK.AppIdentity.TransportLayer
             remoteVerificationFailure = r.ReadBool();
             if( remoteVerificationFailure )
             {
+                nonceFailure = false;
                 enlistUrl = null;
                 signatureVerified = false;
                 foundTrustedKey = false;
@@ -308,6 +318,7 @@ namespace CK.AppIdentity.TransportLayer
                 currentKey = null;
                 return;
             }
+            nonceFailure = expectedNonce != r.ReadUInt64();
             enlistUrl = r.ReadNullableString();
             // Do we have the identity keys and the signatures?
             if( r.ReadBool() )
@@ -322,6 +333,64 @@ namespace CK.AppIdentity.TransportLayer
                 currentKey = null;
             }
         }
+
+
+        /// <summary>
+        /// ByeBye message is a signed message with the local identities.
+        /// </summary>
+        /// <param name="transport">The transport.</param>
+        /// <param name="shutUp">Delay the remote should wait before trying again.</param>
+        /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
+        public static async ValueTask<bool> SendOffRemoteMessageAsync( Transport transport, ulong nonce, TimeSpan shutUp )
+        {
+            Debug.Assert( transport.LocalKeys != null );
+            using var m = CreateAndSignMessage( nonce, shutUp, transport.LocalKeys.Identities );
+            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan shutUp, IReadOnlyList<LocalIdentityKey> localIdentities )
+            {
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+                w.WriteByte( DNegoOffRemote );
+                w.WriteUInt64( nonce );
+                w.WriteTimeSpan( shutUp );
+                w.Commit();
+                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
+                return builder.CreateMessage( sequence );
+            }
+        }
+
+        public static TimeSpan? ReadOffRemoteMessage( IParallelLogger logger,
+                                                      Transport transport,
+                                                      IncomingMessage message,
+                                                      ulong expectedNonce )
+        {
+            Debug.Assert( transport.RemoteKeys != null );
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == DNegoOffRemote );
+            if( expectedNonce != r.ReadUInt64() )
+            {
+                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"The remote '{transport.RemoteKeys.Party}' sent an invalid Nonce." );
+                return null;
+            }
+            var shutUp = r.ReadTimeSpan();
+            var m = new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                                     transport.RemoteKeys.TrustedIdentity,
+                                                     out var foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
+            {
+                logger.Info( $"Received verified Remote Off message from '{transport.RemoteKeys.Party}'." );
+                transport.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return shutUp;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{transport.RemoteKeys.Party}'." );
+            return null;
+        }
+
 
         public static ValueTask<bool> SendDowngradeProtocolReplyAsync( Transport transport )
         {

@@ -178,7 +178,8 @@ namespace CK.AppIdentity.TransportLayer
                 try
                 {
                     // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-                    if( !await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion ) )
+                    var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion );
+                    if( !sentNonce.HasValue )
                     {
                         // If we are canceled, let the finally destroy the new transport.
                         return null;
@@ -200,7 +201,9 @@ namespace CK.AppIdentity.TransportLayer
                             {
                                 RemoteIdentityKey? trustedIdentity = remote.RemoteKeys.TrustedIdentity;
                                 ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer,
+                                                                            sentNonce.Value,
                                                                             trustedIdentity,
+                                                                            out bool nonceFailure,
                                                                             out bool remoteVerificationFailure,
                                                                             out string? enlistUrl,
                                                                             out RemoteIdentityKeyData? currentKeyData,
@@ -212,6 +215,13 @@ namespace CK.AppIdentity.TransportLayer
                                     transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                                    $"The remote '{remote.Party}' was unable to verify our signature. Retrying in 10 seconds." );
                                     _retryTickCount = 10;
+                                    return null;
+                                }
+                                if( nonceFailure )
+                                {
+                                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                                   $"The remote '{remote.Party}' sent an invalid Nonce. Retrying in 30 seconds." );
+                                    _retryTickCount = 30;
                                     return null;
                                 }
                                 if( currentKeyData == null )
@@ -242,10 +252,12 @@ namespace CK.AppIdentity.TransportLayer
                                 _retryTickCount = 5;
                                 return null;
                             }
-                        case ZeroProtocol.DRunByeBye:
+                        case ZeroProtocol.DNegoOffRemote:
                             {
-                                var m = ZeroProtocol.ReadByeByeMessage( transportManager.Logger, transport, firstAnswer );
-                                _retryTickCount = m != null ? (int)Math.Floor( m.ShutUp.TotalSeconds ) : 30;
+                                var shutUp = ZeroProtocol.ReadOffRemoteMessage( transportManager.Logger, transport, firstAnswer, sentNonce.Value );
+                                // If the nonce or the verification failed, retries in 30 seconds.
+                                _retryTickCount = shutUp.HasValue ? (int)Math.Floor( shutUp.Value.TotalSeconds ) : 30;
+                                transportManager.Logger.Trace( $"Retrying in {_retryTickCount} seconds." );
                                 return null;
                             }
                         case ZeroProtocol.DNegoDowngradeProtocol: 
@@ -253,13 +265,14 @@ namespace CK.AppIdentity.TransportLayer
                                 int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                                 if( !retriedDowngrade )
                                 {
-                                    if( !await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, otherVersion ) )
+                                    sentNonce = await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, otherVersion );
+                                    if( !sentNonce.HasValue )
                                     {
                                         if( !cancellation.IsCancellationRequested )
                                         {
                                             transportManager.Logger.Error( $"The remote '{remote.Party}' expects the ZeroProtocol version '{otherVersion}'. "
-                                                                         + $"Local '{ZeroProtocol.CurrentVersion}' cannot handle it. Retrying in 30 seconds." );
-                                            _retryTickCount = 30;
+                                                                         + $"Local '{ZeroProtocol.CurrentVersion}' cannot handle it. Retrying in 60 seconds." );
+                                            _retryTickCount = 60;
                                         }
                                         // Canceled or bad version: let the finally condemn the new transport.
                                         return null;
