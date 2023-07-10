@@ -132,7 +132,7 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce ) )
             {
                 // Wait for the final message.
                 // It must be a single "1" byte.

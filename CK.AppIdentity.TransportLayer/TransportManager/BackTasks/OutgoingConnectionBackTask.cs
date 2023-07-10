@@ -294,7 +294,7 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoAcceptedProtocolsMessage: 
                             {
-                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger, firstAnswer, remote, sentNonce.Value );
                                 if( !protocolMap.IsValid )
                                 {
                                     await ZeroProtocol.SendFinalMessageAsync( transport, remote, false );

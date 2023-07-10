@@ -422,19 +422,20 @@ namespace CK.AppIdentity.TransportLayer
             return (int)r.ReadSmallUInt32();
         }
 
-        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( Transport transport, MessageProtocolMap protocolMap )
+        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( Transport transport, MessageProtocolMap protocolMap, ulong nonce )
         {
             Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( protocolMap, transport.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( protocolMap, nonce, transport.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( in MessageProtocolMap protocolMap, IReadOnlyList<LocalIdentityKey> localIdentities )
+            static IOutgoingMessage CreateAndSignMessage( in MessageProtocolMap protocolMap, ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
 
                 w.WriteByte( DNegoAcceptedProtocolsMessage );
+                w.WriteUInt64( nonce );
                 w.WriteSmallUInt32( (uint)protocolMap.Protocols.Count );
                 foreach( var p in protocolMap.Protocols )
                 {
@@ -447,11 +448,15 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote, ulong expectedNonce )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                return default;
+            }
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {
@@ -472,12 +477,6 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 protocols[i] = p;
             }
-            var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
-            if( missing.Any() )
-            {
-                logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate("' ,'")}'." );
-                return default;
-            }
             var map = MessageProtocolMap.InternalGet( protocols );
             if( ReadIdentityKeysAndVerifySignatures( ref r,
                                                      remote.RemoteKeys.TrustedIdentity,
@@ -487,6 +486,12 @@ namespace CK.AppIdentity.TransportLayer
             {
                 logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
                 remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
+                if( missing.Any() )
+                {
+                    logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate("' ,'")}'." );
+                    return default;
+                }
                 return map;
             }
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
