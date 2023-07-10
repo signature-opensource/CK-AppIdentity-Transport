@@ -111,7 +111,7 @@ namespace CK.AppIdentity.TransportLayer
                                               + $"misses support for {missingGroups.Count()} protocols:{Environment.NewLine}{texts}." );
 
                 // If this message cannot be sent, we don't care.
-                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, missing );
+                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, initialMessage.Nonce, missing );
                 return;
             }
             // This Transport is now valid (up to us).
@@ -123,7 +123,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     transportManager.Logger.Warn( $"Remote '{remote.Party.FullName}' while already connected to '{current.CurrentTransport}'. DisallowEviction is true: sending EvictionDisallowedMessage and closing." );
                     // If this message cannot be sent, we don't care.
-                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming );
+                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming, initialMessage.Nonce );
                     return;
                 }
             }

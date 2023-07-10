@@ -265,6 +265,8 @@ namespace CK.AppIdentity.TransportLayer
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
+                // No DateTimeUts.Now here: there will be no TransportFeature, computing
+                // any clock drift is irrelevant.
                 w.WriteByte( DNegoUnknownRemote );
                 w.WriteBool( signatureVerificationFailed );
                 if( signatureVerificationFailed )
@@ -296,8 +298,8 @@ namespace CK.AppIdentity.TransportLayer
         public static void ReadUnknownRemoteReplyMessage( IncomingMessage message,
                                                           ulong expectedNonce,
                                                           RemoteIdentityKey? trustedIdentity,
-                                                          out bool nonceFailure,
                                                           out bool remoteVerificationFailure,
+                                                          out bool nonceFailure,
                                                           out string? enlistUrl,
                                                           out RemoteIdentityKeyData? currentKeyData,
                                                           out bool foundTrustedKey,
@@ -336,7 +338,7 @@ namespace CK.AppIdentity.TransportLayer
 
 
         /// <summary>
-        /// ByeBye message is a signed message with the local identities.
+        /// Off remote message is a signed message with the local identities.
         /// </summary>
         /// <param name="transport">The transport.</param>
         /// <param name="shutUp">Delay the remote should wait before trying again.</param>
@@ -362,33 +364,41 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         public static TimeSpan? ReadOffRemoteMessage( IParallelLogger logger,
-                                                      Transport transport,
+                                                      TransportFeature remote,
                                                       IncomingMessage message,
                                                       ulong expectedNonce )
         {
-            Debug.Assert( transport.RemoteKeys != null );
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoOffRemote );
-            if( expectedNonce != r.ReadUInt64() )
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
-                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"The remote '{transport.RemoteKeys.Party}' sent an invalid Nonce." );
                 return null;
             }
             var shutUp = r.ReadTimeSpan();
-            var m = new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
             if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                     transport.RemoteKeys.TrustedIdentity,
+                                                     remote.RemoteKeys.TrustedIdentity,
                                                      out var foundTrustedKey,
                                                      out var currentKeyData,
                                                      out var currentKey ) )
             {
-                logger.Info( $"Received verified Remote Off message from '{transport.RemoteKeys.Party}'." );
-                transport.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}'." );
+                remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
                 return shutUp;
             }
-            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{transport.RemoteKeys.Party}'." );
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{remote.RemoteKeys.Party}'." );
             return null;
+        }
+
+
+        static bool CheckNonce( IParallelLogger logger, ref FastByteReader r, TransportFeature remote, ulong expectedNonce )
+        {
+            if( expectedNonce != r.ReadUInt64() )
+            {
+                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"The remote '{remote.RemoteKeys.Party}' sent an invalid Nonce." );
+                return false;
+            }
+            return true;
         }
 
 
@@ -470,10 +480,10 @@ namespace CK.AppIdentity.TransportLayer
             }
             var map = MessageProtocolMap.InternalGet( protocols );
             if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                         remote.RemoteKeys.TrustedIdentity,
-                                         out var foundTrustedKey,
-                                         out var currentKeyData,
-                                         out var currentKey ) )
+                                                     remote.RemoteKeys.TrustedIdentity,
+                                                     out var foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
             {
                 logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
                 remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
@@ -489,16 +499,55 @@ namespace CK.AppIdentity.TransportLayer
         /// but <see cref="TransportFeature.DisallowEviction"/> is false.
         /// </summary>
         /// <param name="incoming">The transport.</param>
-        /// <returns>The awaitable.</returns>
-        public static ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming )
+        /// <returns>True on success, false if transport has been canceled.</returns>
+        public static async ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming, ulong nonce )
         {
-            var m = _evictionDisallowedMessage ??= _zeroFactory.CreateStatic( bytes =>
+            Debug.Assert( incoming.LocalKeys != null );
+            using var m = CreateAndSignMessage( nonce, incoming.LocalKeys.Identities );
+            return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
             {
-                var b = bytes.GetSpan( 1 );
-                b[0] = DNegoEvictionDisallowed;
-            } );
-            return incoming.SendAsync( 0, m );
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+
+                w.WriteByte( DNegoEvictionDisallowed );
+                w.WriteUInt64( nonce );
+                w.Commit();
+
+                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
+                return builder.CreateMessage( sequence );
+            }
         }
+
+        public static bool ReadEvictionDisallowedMessage( IParallelLogger logger,
+                                                          TransportFeature remote,
+                                                          IncomingMessage message,
+                                                          ulong expectedNonce )
+        {
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == DNegoEvictionDisallowed );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                return false;
+            }
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                                     remote.RemoteKeys.TrustedIdentity,
+                                                     out var foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
+            {
+                logger.Info( $"Received verified Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
+                remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return true;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
+            return false;
+        }
+
+
 
         /// <summary>
         /// Message sent by the <see cref="IncomingConnectionBackTask"/> when the initial message of the remote misses some
@@ -507,19 +556,20 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="incoming">The transport.</param>
         /// <param name="missingProtocols">The missing protocols.</param>
         /// <returns>The awaitable.</returns>
-        public static async ValueTask<bool> SendMissingProtocolsMessageAsync( Transport incoming, IReadOnlyList<MessageProtocol> missingProtocols )
+        public static async ValueTask<bool> SendMissingProtocolsMessageAsync( Transport incoming, ulong nonce, IReadOnlyList<MessageProtocol> missingProtocols )
         {
             Debug.Assert( incoming.LocalKeys != null );
-            using var m = CreateAndSignMessage( missingProtocols, incoming.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( missingProtocols, nonce, incoming.LocalKeys.Identities );
             return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( IReadOnlyList<MessageProtocol> missingProtocols, IReadOnlyList<LocalIdentityKey> localIdentities )
+            static IOutgoingMessage CreateAndSignMessage( IReadOnlyList<MessageProtocol> missingProtocols, ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
 
                 w.WriteByte( DNegoMissingProtocols );
+                w.WriteUInt64( nonce );
                 w.WriteSmallUInt32( (uint)missingProtocols.Count );
                 foreach( var p in missingProtocols )
                 {
@@ -532,11 +582,15 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static string[]? TryReadMissingProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote )
+        public static string[]? TryReadMissingProtocolsMessage( IParallelLogger logger, IncomingMessage message, ulong expectedNonce, TransportFeature remote )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoMissingProtocols );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                return null;
+            }
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {

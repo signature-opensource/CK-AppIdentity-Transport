@@ -203,13 +203,15 @@ namespace CK.AppIdentity.TransportLayer
                                 ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer,
                                                                             sentNonce.Value,
                                                                             trustedIdentity,
-                                                                            out bool nonceFailure,
                                                                             out bool remoteVerificationFailure,
+                                                                            out bool nonceFailure,
                                                                             out string? enlistUrl,
                                                                             out RemoteIdentityKeyData? currentKeyData,
                                                                             out bool foundTrustedKey,
                                                                             out RemoteIdentityKey? currentKey,
                                                                             out bool signatureVerified );
+                                // Weird case: the remote couldn't verify our signature.
+                                // We don't have any other available data.
                                 if( remoteVerificationFailure )
                                 {
                                     transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -217,6 +219,7 @@ namespace CK.AppIdentity.TransportLayer
                                     _retryTickCount = 10;
                                     return null;
                                 }
+                                // We have data but if the nonce we sent is not the one we have in reply, this is a serious issue.
                                 if( nonceFailure )
                                 {
                                     transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -224,8 +227,11 @@ namespace CK.AppIdentity.TransportLayer
                                     _retryTickCount = 30;
                                     return null;
                                 }
+
+                                // We are totally unknown to the target.
                                 if( currentKeyData == null )
                                 {
+                                    Debug.Assert( !signatureVerified );
                                     transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us at all. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
                                     if( enlistUrl != null )
                                     {
@@ -235,6 +241,7 @@ namespace CK.AppIdentity.TransportLayer
                                     _retryTickCount = 5;
                                     return null;
                                 }
+                                // Weird: the sent signatures cannot be verified.
                                 if( !signatureVerified )
                                 {
                                     transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -254,7 +261,7 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoOffRemote:
                             {
-                                var shutUp = ZeroProtocol.ReadOffRemoteMessage( transportManager.Logger, transport, firstAnswer, sentNonce.Value );
+                                var shutUp = ZeroProtocol.ReadOffRemoteMessage( transportManager.Logger, remote, firstAnswer, sentNonce.Value );
                                 // If the nonce or the verification failed, retries in 30 seconds.
                                 _retryTickCount = shutUp.HasValue ? (int)Math.Floor( shutUp.Value.TotalSeconds ) : 30;
                                 transportManager.Logger.Trace( $"Retrying in {_retryTickCount} seconds." );
@@ -308,15 +315,26 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoEvictionDisallowed: 
                             {
-                                transportManager.Logger.Error( $"Remote '{remote.Party}' is already connected and its DisallowEviction is true. Retrying in 20 seconds." );
-                                _retryTickCount = 20;
+                                var valid = ZeroProtocol.ReadEvictionDisallowedMessage( transportManager.Logger, remote, firstAnswer, sentNonce.Value );
+                                if( valid )
+                                {
+                                    transportManager.Logger.Error( $"Remote '{remote.Party}' is already connected and its DisallowEviction is true. Retrying in 20 seconds." );
+                                    _retryTickCount = 20;
+                                }
+                                else
+                                {
+                                    transportManager.Logger.Info( "Retrying in 30 seconds." );
+                                    _retryTickCount = 30;
+                                }
                                 return null;
                             }
                         case ZeroProtocol.DNegoMissingProtocols: 
                             {
-                                var missingProtocols = ZeroProtocol.TryReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, remote );
+                                var missingProtocols = ZeroProtocol.TryReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, sentNonce.Value, remote );
                                 if( missingProtocols == null )
                                 {
+                                    transportManager.Logger.Info( "Retrying in 30 seconds." );
+                                    _retryTickCount = 30;
                                     return null;
                                 }
                                 transportManager.Logger.Error( $"Remote '{remote.Party}' expects protocols: '{missingProtocols.Concatenate( "', '" )}'. Retrying in 30 seconds." );
@@ -324,7 +342,7 @@ namespace CK.AppIdentity.TransportLayer
                                 return null;
                             }
                         default:
-                            if( _retryTickCount < 30 ) ++_retryTickCount;
+                            if( _retryTickCount < 60 ) ++_retryTickCount;
                             transportManager.Logger.Error( $"Invalid discriminator from remote '{remote.Party}'. Retrying in {_retryTickCount} seconds." ); return null;
                     }
                 }
