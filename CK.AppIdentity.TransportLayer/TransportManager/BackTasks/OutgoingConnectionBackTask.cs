@@ -216,7 +216,7 @@ namespace CK.AppIdentity.TransportLayer
                                 if( remoteVerificationFailure )
                                 {
                                     transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                                   $"The remote '{remote.Party}' was unable to verify our signature. Retrying in 10 seconds." );
+                                                                   $"The remote '{remote.Party}' was unable to verify our signature or the nonce check failed. Retrying in 10 seconds." );
                                     _retryTickCount = 10;
                                     return null;
                                 }
@@ -289,7 +289,7 @@ namespace CK.AppIdentity.TransportLayer
                                     retriedDowngrade = true;
                                     goto retry;
                                 }
-                                transportManager.Logger.Error( $"The remote '{remote.Party}' sent 2 downgrade protocol request. Retrying in 30 seconds." );
+                                transportManager.Logger.Error( $"The remote '{remote.Party}' sent 2 downgrade protocol requests. Retrying in 30 seconds." );
                                 _retryTickCount = 30;
                                 return null;
                             }

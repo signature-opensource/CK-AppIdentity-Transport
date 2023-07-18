@@ -10,13 +10,18 @@ using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {
+
     /// <summary>
-    /// Centralizes communication between a party and its remote.
-    /// This feature is available only on a leaf <see cref="IRemoteParty"/>: locals
-    /// and remote that define 
+    /// Centralizes communication feature for a remote.
+    /// This feature is available only on a <see cref="IRemoteParty"/>. 
     /// </summary>
     public sealed class TransportFeature
     {
+        /// <summary>
+        /// Maximal allowed clock offset between parties is 10 minutes.
+        /// </summary>
+        public static readonly TimeSpan MaxClockOffset = TimeSpan.FromMinutes( 10 );
+
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
 
@@ -373,7 +378,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the initial message to send when this is a caller.
         /// This will be used each time a new connection must be established.
         /// <para>
-        /// To support dynamic key renewal, we check that the <see cref="InitialMessage.LocalIdentities"/>
+        /// To support dynamic key renewal, we check that the <see cref="IncomingMessage.LocalIdentities"/>
         /// is the same as the <see cref="ILocalKeys.Identities"/>.
         /// </para>
         /// </summary>

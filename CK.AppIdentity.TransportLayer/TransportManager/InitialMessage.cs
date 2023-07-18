@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer
     /// <summary>
     /// Internal immutable initial message.
     /// </summary>
-    sealed class InitialMessage
+    sealed class InitialMessage : IIncomingRequest
     {
         // The maximum number of possible versions per protocol.
         const int MaxVersionPerProtocolCount = 4;
@@ -61,8 +61,10 @@ namespace CK.AppIdentity.TransportLayer
         readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
 
         // Relevant only for incoming messages.
-        readonly TimeSpan _initialClockDrift;
+        readonly RemoteIdentityKeyData? _currentRemoteIdentity;
+        readonly TimeSpan _clockOffset;
         readonly ulong _nonce;
+        readonly bool _validClockOffset;
 
         sealed class ProtocolAdapter : IReadOnlyCollection<string>
         {
@@ -90,7 +92,6 @@ namespace CK.AppIdentity.TransportLayer
             _partyName = local.PartyName;
             _environmentName = local.EnvironmentName;
             _fullName = local.FullName;
-            // This acts as the nonce: one instance can initiate a connexion only once.
             _instanceId = CoreApplicationIdentity.InstanceId;
             _endPointDescription = string.Empty;
             _remoteEndPointDescription = string.Empty;
@@ -99,8 +100,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Ingoing message constructor: the <see cref="RemoteIdentityKeyData"/> keys,
-        /// the SHA1 hash of the data and the signatures for each key.
+        /// Incoming message constructor.
         /// </summary>
         public InitialMessage( string endPointDescription,
                                string remoteEndPointDescription,
@@ -112,7 +112,9 @@ namespace CK.AppIdentity.TransportLayer
                                string incomingFullName,
                                string[] protocols,
                                ulong nonce,
-                               TimeSpan initialClockDrift )
+                               bool validClockOffset,
+                               TimeSpan clockOffset,
+                               RemoteIdentityKeyData currentRemoteIdentity )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
@@ -120,11 +122,13 @@ namespace CK.AppIdentity.TransportLayer
             _instanceId = instanceId;
             _domainName = incomingDomainName;
             _partyName = incomingPartyName;
-            _environmentName= incomingEnvironmentName;
+            _environmentName = incomingEnvironmentName;
             _fullName = incomingFullName;
             _availableProtocols = protocols;
             _nonce = nonce;
-            _initialClockDrift = initialClockDrift;
+            _validClockOffset = validClockOffset;
+            _clockOffset = clockOffset;
+            _currentRemoteIdentity = currentRemoteIdentity;
             _localIdentities = Array.Empty<LocalIdentityKey>();
         }
 
@@ -204,72 +208,44 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        /// <summary>
-        /// Gets the "0 Protocol" version.
-        /// </summary>
+        /// <inheritdoc />
         public int Version => _version;
 
-        /// <summary>
-        /// Gets the <see cref="TransportListener.EndPointDescription"/> that received this message.
+        /// <inheritdoc />
+        /// <remarks>
         /// It's the empty string for an outgoing message.
-        /// </summary>
+        /// </remarks>
         public string IncomingEndPointDescription => _endPointDescription;
 
-        /// <summary>
-        /// Gets the <see cref="Transport.RemoteEndPointDescription"/> of the transport.
+        /// <inheritdoc />
+        /// <remarks>
         /// It's the empty string for an outgoing message.
-        /// </summary>
+        /// </remarks>
         public string RemoteEndPointDescription => _remoteEndPointDescription;
 
-        /// <summary>
-        /// Gets the instance identifier of the calling process.
+        /// <inheritdoc />
+        /// <remarks>
         /// It's this <see cref="Core.CoreApplicationIdentity.InstanceId"/> for an outgoing message.
-        /// </summary>
+        /// </remarks>
         public string InstanceId => _instanceId;
 
-        /// <summary>
-        /// Gets the domain name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.DomainName"/>
-        /// of the remote that sends the message.
-        /// <para>
-        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
-        /// </para>
-        /// </summary>
+        /// <inheritdoc />
         public string DomainName => _domainName;
 
-        /// <summary>
-        /// Gets the party name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.PartyName"/>
-        /// of the remote that sends the message.
-        /// <para>
-        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
-        /// </para>
-        /// </summary>
+        /// <inheritdoc />
         public string PartyName => _partyName;
 
-        /// <summary>
-        /// Gets the environment name: it is the <see cref="ILocalParty"/>'s <see cref="IParty.EnvironmentName"/>
-        /// of the remote that sends the message.
-        /// <para>
-        /// It can be the root local name, or a <see cref="TenantDomainParty"/> name.
-        /// </para>
-        /// </summary>
+        /// <inheritdoc />
         public string EnvironmentName => _environmentName;
 
-        /// <summary>
-        /// Gets the party full name: it is the <see cref="ILocalParty"/> full name of
-        /// the remote that sends the message.
-        /// <para>
-        /// It can be the root local name, or a <see cref="TenantDomainParty"/> full name.
-        /// </para>
-        /// </summary>
+        /// <inheritdoc />
         public string FullName => _fullName;
 
-        /// <summary>
-        /// Gets the list of protocols with their versions that are supported.
-        /// </summary>
+        /// <inheritdoc />
         public IReadOnlyCollection<string> AvailableProtocols => _availableProtocols;
 
         /// <summary>
-        /// Gets the list of public keys that identify this local party to the target.
+        /// Gets the list of public keys that identify this local party.
         /// This is empty for an incoming message.
         /// </summary>
         public IReadOnlyList<LocalIdentityKey> LocalIdentities => _localIdentities;
@@ -277,12 +253,25 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Relevant only for incoming messages.
         /// </summary>
-        public TimeSpan InitialClockOffset => _initialClockDrift;
+        public TimeSpan ClockOffset => _clockOffset;
+
+        /// <summary>
+        /// Relevant only for incoming messages.
+        /// </summary>
+        public bool ValidClockOffset => _validClockOffset;
 
         /// <summary>
         /// Relevant only for incoming messages.
         /// </summary>
         public ulong Nonce => _nonce;
 
+        RemoteIdentityKeyData IIncomingRequest.CurrentRemoteIdentity
+        {
+            get
+            {
+                Debug.Assert( _currentRemoteIdentity != null, "Called only from public IIncomingRequest facade." );
+                return _currentRemoteIdentity;
+            }
+        }
     }
 }

@@ -63,6 +63,13 @@ namespace CK.AppIdentity.TransportLayer
 
             var (initialMessage, remote, foundTrustKey) = initialResult.Value;
 
+            // First, we handle invalid clock offset. This has been logged, but nothing has been
+            // impacted (even the nonce has not been checked).
+            if( !initialMessage.ValidClockOffset )
+            {
+                transportManager.InvalidClockOffset( initialMessage, remote );
+                return;
+            }
             // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
             // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
             if( remote == null || !foundTrustKey )
@@ -75,9 +82,8 @@ namespace CK.AppIdentity.TransportLayer
                 if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ) )
                 {
                     // if the transport has not been condemned, tell the Transport manager about
-                    // this potential new UnknownRemote party with the trusted identity (if any) considered at the
-                    // time of the decision.
-                    transportManager.UnknownIncomingRemote( initialMessage, remote?.RemoteKeys.TrustedIdentity );
+                    // this potential new UnknownRemote party with the TransportFeature found (if any).
+                    transportManager.UnknownIncomingRemote( initialMessage, remote );
                 }
                 return;
             }
@@ -132,7 +138,7 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce, initialMessage.InitialClockOffset ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce, initialMessage.ClockOffset ) )
             {
                 // Wait for the final message, either:
                 //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
@@ -206,7 +212,7 @@ namespace CK.AppIdentity.TransportLayer
                     if( otherVersion <= ZeroProtocol.CurrentVersion )
                     {
                         // We have read the first part of the message.
-                        // If the initialMessage is null it is because its signature has failed the verification (this has been logged).
+                        // If the initialMessage is null it is because its signature has failed the verification or the Nonce check failed (this has been logged).
                         // We send a null enlist url and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
                         await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, 0, signatureVerificationFailed: true );
                         return null;
@@ -253,7 +259,7 @@ namespace CK.AppIdentity.TransportLayer
                     foundTrustKey = false;
                     return null;
                 }
-                // Reads the nonce and computes the remote's ClockOffset.
+                // Reads the nonce and computes the ClockOffset.
                 var nonce = r.ReadUInt64();
                 var clockOffset = DateTime.UtcNow - r.ReadDateTime();
                 
@@ -271,17 +277,23 @@ namespace CK.AppIdentity.TransportLayer
                     logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unable to verify the signature's incoming message from '{fullName}'." );
                     return null;
                 }
-                // The message's signature is verified. Before locating the remote and continue, we should check the nonce but
-                // managing nonce is not that easy. To avoid keeping too much nonce in memory housekeeping is required but removing
-                // "old nonce" kills the very idea of nonce...
-                // To handle this efficiently, we defer the nonce check up to the point that the incoming message has an impact: when the new Transport
-                // is about to be validated. At this future point we know the remote and it manages its nonce pool.
+                // The message's signature is verified.
+                // Before impacting anything we check the clock offset. A too large clock offset must not impact anything.
+                bool validClockOffset = clockOffset > TimeSpan.Zero
+                                            ? clockOffset < TransportFeature.MaxClockOffset
+                                            : clockOffset > -TransportFeature.MaxClockOffset;
 
-                // If we have a known remote, we update its TrustedIdentity: AutoTrustKey may
-                // make us immediately accept the remote...
+                // If we have a known remote and the clock offset is fine, we first chack the nonce cache and
+                // update its TrustedIdentity: AutoTrustKey may make us immediately accept the remote...
                 Debug.Assert( (incoming.LocalKeys == null) == (incoming.RemoteKeys == null), "They are both known (TransportListener resolved them) or not." );
-                if( remote != null )
+                if( remote != null && validClockOffset )
                 {
+                    // Nonce is checked only with a valid clock offset: this enables a rather small nonce cache.
+                    if( !remote.RemoteKeys.CheckAndUpdateNonceCache( logger, nonce ) )
+                    {
+                        logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Invalid Nonce value received from '{fullName}'." );
+                        return null;
+                    }
                     // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
                     //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
                     //            initial message as if it was on a non confidential channel.
@@ -312,7 +324,9 @@ namespace CK.AppIdentity.TransportLayer
                                            fullName,
                                            protocols,
                                            nonce,
-                                           clockOffset );
+                                           validClockOffset,
+                                           clockOffset,
+                                           currentKeyData );
             }
         }
     }

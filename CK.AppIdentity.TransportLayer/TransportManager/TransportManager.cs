@@ -28,25 +28,19 @@ namespace CK.AppIdentity.TransportLayer
         bool _inHeartBeat;
         int _heartBeatReentrantCount;
 
-        readonly List<InitialMessage> _waitingList;
-        readonly PerfectEventSender<InitialMessage> _waitingListChanged;
-
         internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
             : base( $"TransportManager for {agent.ApplicationIdentityService}" )
         {
             _agent = agent;
             _protocolDirectory = protocolDirectory;
             _listeners = new List<TransportListener>();
-            _exposedFeature = new TransportManagerFeature();
+            _exposedFeature = new TransportManagerFeature( this );
             agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
             _backTasks = new BackTask.List( this );
             _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
             _headOutgoingConnection = BackTask.Head.Create<OutgoingConnectionBackTask>();
             _heartbeat = new Timer( OnTimer, this, 1000, 1000 );
-
-            _waitingList = new List<InitialMessage>();
-            _waitingListChanged = new PerfectEventSender<InitialMessage>();
         }
 
         public TransportManagerFeature Feature => _exposedFeature;
@@ -102,9 +96,20 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( t );
         }
 
-        internal void UnknownIncomingRemote( InitialMessage m, RemoteIdentityKey? trustedIdentity )
+        internal void UnknownIncomingRemote( InitialMessage m, TransportFeature? remote )
         {
-            PushTypedJob( new UnknownIncomingRemoteJob( m, trustedIdentity ) );
+            PushTypedJob( new UnknownIncomingRemoteJob( m, remote ) );
+        }
+
+        /// <summary>
+        /// When called from a Listener (incoming) we have a <paramref name="initialMessage"/> and may be a <paramref name="remote"/>.
+        /// When called from an initiator (outgoing), we have a null initialMessage but necessarily a known remote.
+        /// </summary>
+        /// <param name="initialMessage">Initial message. Never null when listening, always null when calling.</param>
+        /// <param name="remote">Locally defined remote. Never null when calling, may be null when listening.</param>
+        internal void InvalidClockOffset( InitialMessage? initialMessage, TransportFeature? remote )
+        {
+            PushTypedJob( new InvalidClockOffsetJob( initialMessage, remote ) );
         }
 
         internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap, TimeSpan clockDrift )
@@ -140,7 +145,8 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
-        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, RemoteIdentityKey? TrustedIdentity );
+        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, TransportFeature? Remote );
+        sealed record class InvalidClockOffsetJob( InitialMessage? Message, TransportFeature? Remote );
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // The heart beat (timer) is DBNull.Value instance.
         // SwitchOn of a TransportFeature is the transport feature itself.
@@ -195,6 +201,8 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
+                case InvalidClockOffsetJob o:
+                    return HandleInvalidClockOffset( monitor, o );
                 case UnknownIncomingRemoteJob m:
                     return HandleUnknownIncomingRemote( monitor, m );
                 case NewValidTransportJob j:
@@ -258,10 +266,14 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
+        async ValueTask HandleInvalidClockOffset( IActivityMonitor monitor, InvalidClockOffsetJob job )
+        {
+            await _exposedFeature.OnInvalidClockOffsetAsync( monitor, job.Message, job.Remote );
+        }
+
         async ValueTask HandleUnknownIncomingRemote( IActivityMonitor monitor, UnknownIncomingRemoteJob job )
         {
-            _waitingList.Add( job.Message );
-            await _waitingListChanged.SafeRaiseAsync( monitor, job.Message );
+            await _exposedFeature.OnUnknownIncomingRemoteAsync( monitor, job.Message, job.Remote );
         }
 
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
