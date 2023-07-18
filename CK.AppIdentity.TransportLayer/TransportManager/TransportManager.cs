@@ -107,9 +107,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new UnknownIncomingRemoteJob( m, trustedIdentity ) );
         }
 
-        internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap )
+        internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap, TimeSpan clockDrift )
         {
-            PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap ) );
+            PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockDrift ) );
         }
 
         internal void KillTransport( Transport transport )
@@ -145,7 +145,7 @@ namespace CK.AppIdentity.TransportLayer
         // The heart beat (timer) is DBNull.Value instance.
         // SwitchOn of a TransportFeature is the transport feature itself.
         sealed record class TryConnectToJob( TransportFeature Remote );
-        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols );
+        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan clockDrift );
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
         sealed record class SwitchOffJob( TransportFeature Feature, string Reason );
 

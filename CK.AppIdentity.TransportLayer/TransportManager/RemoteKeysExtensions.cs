@@ -33,8 +33,13 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="logger">The logger to use.</param>
         /// <param name="foundTrustedKey">Whether our TrustedIdentity has been found in the message.</param>
         /// <param name="currentKeyData">Current remote's identity key data.</param>
+        /// <param name="currentKey">The current key if it is known (already instantiated).</param>
         /// <returns>True if the <see cref="TrustedIdentity"/> has been updated, false otherwise.</returns>
-        public static bool OnReadIdentityKeys( this IRemoteKeys @this, IParallelLogger logger, bool foundTrustedKey, RemoteIdentityKeyData currentKeyData, RemoteIdentityKey? currentKey )
+        public static bool OnReadIdentityKeys( this IRemoteKeys @this,
+                                               IParallelLogger logger,
+                                               bool foundTrustedKey,
+                                               RemoteIdentityKeyData currentKeyData,
+                                               RemoteIdentityKey? currentKey )
         {
             if( foundTrustedKey )
             {

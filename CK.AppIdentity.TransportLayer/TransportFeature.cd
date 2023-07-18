@@ -11,10 +11,12 @@
       <Field Name="_controller" Hidden="true" />
       <Field Name="_disallowEviction" Hidden="true" />
       <Field Name="_listener" Hidden="true" />
+      <Field Name="_localKeys" Hidden="true" />
       <Field Name="_outgoingInitialMessage" Hidden="true" />
       <Field Name="_party" Hidden="true" />
       <Field Name="_readyTask" Hidden="true" />
       <Field Name="_registeredProtocols" Hidden="true" />
+      <Field Name="_remoteKeys" Hidden="true" />
       <Field Name="_switchOffReason" Hidden="true" />
       <Field Name="_target" Hidden="true" />
       <Field Name="_transportManager" Hidden="true" />
@@ -34,7 +36,7 @@
       <Method Name="UpdateConnectionAvailabilityAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>CkQAAAgIAQBDBQwMAAAABBAkRKCAIAAAEQRAMEABAEA=</HashCode>
+      <HashCode>CkQgAAgIAQBDBQwMAAAARBAlZKCAIAAAEQRAMEABAEA=</HashCode>
       <FileName>TransportFeature.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>

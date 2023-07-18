@@ -15,12 +15,14 @@ namespace CK.AppIdentity.TransportLayer
         // Discriminator byte is the first byte of the payload.
         // Negotiation discriminators:
         internal const byte DNegoUnknownRemote = 0;
-        internal const byte DNegoFinalMessage = 1;
+        internal const byte DNegoFinalFailureMessage = 1;
         internal const byte DNegoDowngradeProtocol = 2;
         internal const byte DNegoAcceptedProtocolsMessage = 3;
         internal const byte DNegoMissingProtocols = 4;
         internal const byte DNegoEvictionDisallowed = 5;
         internal const byte DNegoOffRemote = 6;
+        internal const byte DNegoInitiatorSuccessMessage = 7;
+        internal const byte DNegoFinalSuccessMessage = 8;
         // Run discriminators:
         internal const byte DRunByeBye = 255;
 

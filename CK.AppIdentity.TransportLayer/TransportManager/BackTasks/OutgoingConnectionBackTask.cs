@@ -184,6 +184,7 @@ namespace CK.AppIdentity.TransportLayer
                         // If we are canceled, let the finally destroy the new transport.
                         return null;
                     }
+                    // Retrying is done only once when a DonwgradeProtocolVersion is received.
                     bool retriedDowngrade = false;
                     retry:
                     firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength );
@@ -294,22 +295,32 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoAcceptedProtocolsMessage: 
                             {
-                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger, firstAnswer, remote, sentNonce.Value );
+                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger,
+                                                                                                firstAnswer,
+                                                                                                remote,
+                                                                                                sentNonce.Value,
+                                                                                                out var currentClockOffset );
                                 if( !protocolMap.IsValid )
                                 {
-                                    await ZeroProtocol.SendFinalMessageAsync( transport, remote, false );
-                                    transportManager.Logger.Error( "Retrying in 30 seconds." );
-                                    _retryTickCount = 30;
+                                    await ZeroProtocol.SendFinalFailureMessageAsync( transport );
+                                    transportManager.Logger.Error( "Retrying in 60 seconds." );
+                                    _retryTickCount = 60;
                                     return null;
                                 }
-                                // Sends the Ack.
-                                if( await ZeroProtocol.SendFinalMessageAsync( transport, remote, true ) )
+                                // We are ready to accept the transport.
+                                // We are the initiator, we sent the nonce: we don't need to challenge any previous nonces, it is up to the
+                                // listener to check its nonce cache and return a FinalFailureMessage if a previous nonce has been found.
+                                // Sends the Initiator (Outgoing) Ack.
+                                if( await ZeroProtocol.SendInitiatorSuccessMessageAsync( transport, remote, sentNonce.Value, currentClockOffset ) )
                                 {
+                                    using var finalMessage = await transport.ReadNextAsync();
+
                                     // Accepts the transport.
                                     disposeTransport = false;
-                                    transportManager.NewValidTransport( remote.Party, transport, protocolMap );
+                                    transportManager.NewValidTransport( remote.Party, transport, protocolMap, (thisClockDrift - currentClockOffset)/2 );
                                 }
-                                // Either we succeed or the successful SendFinalMessageAsync has been canceled: retry asap.
+                                // Either we succeed or the successful SendFinalMessageAsync has been canceled: retry asap (on success, the BackTask will
+                                // be reset).
                                 _retryTickCount = 1;
                                 break;
                             }

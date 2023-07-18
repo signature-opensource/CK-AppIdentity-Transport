@@ -132,27 +132,46 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce, initialMessage.InitialClockOffset ) )
             {
-                // Wait for the final message.
-                // It must be a single "1" byte.
-                using var finalMessage = await incoming.ReadNextAsync( maxMessageLength: 2 );
-                if( finalMessage.IsValid
-                    && finalMessage.Protocol == MessageProtocol.ZeroProtocol
-                    && finalMessage.Message.FirstSpan.Length == 2
-                    && finalMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalMessage
-                    && finalMessage.Message.FirstSpan[1] == 1 )
+                // Wait for the final message, either:
+                //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
+                //  - A DNegoInitiatorSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA512 hash (64 bytes) and
+                //    the signtature (its length on one byte and up to 255 bytes).
+                const int MaxInitiatorSuccessMessageLength = 1 + 8 + 8 + 64 + 1 + 255;
+                using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength );
+                if( !finalInitiatorMessage.IsValid
+                    || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
+                    || finalInitiatorMessage.Message.FirstSpan.Length == 0
+                    || (finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalFailureMessage && finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoInitiatorSuccessMessage) )
                 {
-                    // Final message is received: we condemn the current transport if there is one.
-                    var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 5 ) );
-                    current?.CurrentTransport.SetSoftCondemned( m );
-                    // By providing the party here instead of the transport feature, we'll check
-                    // that the RemoteParty is not destroyed and the existence of the TransportFeature.
-                    transportManager.NewValidTransport( remote.Party, incoming, protocolMap );
+                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid InitiatorSuccess message." );
+                }
+                else if( finalInitiatorMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalFailureMessage )
+                {
+                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
+                }
+                else if( ZeroProtocol.TryReadInitiatorSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
+                {
+                    // We're almost done: before validating the new Transport, we check the nonce unicity.
+                    if( remote.RemoteKeys.CheckAndUpdateNonceCache( transportManager.Logger, initialMessage.Nonce )
+                        && await ZeroProtocol.SendFinalSuccessMessageAsync( incoming, remote, initialMessage.Nonce, finalClockOffset ) )
+                    {
+                        // Final message is sent: we condemn the current transport if there is one.
+                        var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 60 ) );
+                        current?.CurrentTransport.SetSoftCondemned( m );
+                        // By providing the party here instead of the transport feature, we'll check
+                        // that the RemoteParty is not destroyed and the existence of the TransportFeature.
+                        transportManager.NewValidTransport( remote.Party, incoming, protocolMap, finalClockOffset );
+                    }
+                    else
+                    {
+                        // Nonce check failed (this has been logged) or send has been canceled: let this transport die.
+                    }
                 }
                 else
                 {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' didn't confirm." );
+                    // Either the nonce or the signature failed: let this transport die.
                 }
             }
         }
@@ -234,9 +253,9 @@ namespace CK.AppIdentity.TransportLayer
                     foundTrustKey = false;
                     return null;
                 }
-                // Reads the nonce and computes the remote's ClockDrift.
+                // Reads the nonce and computes the remote's ClockOffset.
                 var nonce = r.ReadUInt64();
-                var remoteClockDrift = DateTime.UtcNow - r.ReadDateTime();
+                var clockOffset = DateTime.UtcNow - r.ReadDateTime();
                 
                 // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
                 // Accessing the Parties is thread safe.
@@ -293,7 +312,7 @@ namespace CK.AppIdentity.TransportLayer
                                            fullName,
                                            protocols,
                                            nonce,
-                                           remoteClockDrift );
+                                           clockOffset );
             }
         }
     }

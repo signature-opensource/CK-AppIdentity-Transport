@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using Microsoft.VisualBasic;
 using System;
 using System.Buffers;
 using System.Diagnostics;
@@ -7,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -23,8 +25,6 @@ namespace CK.AppIdentity.TransportLayer
         static IOutgoingMessage? _finalSuccessMessage;
         // The DiscriminatorFinalMessage with a single "0": it can be static.
         static IOutgoingMessage? _finalFailureMessage;
-        // The DiscriminatorEvictionDisallowed: it can be static.
-        static IOutgoingMessage? _evictionDisallowedMessage;
 
         /// <summary>
         /// Writes the identity keys (public parts), computes a SHA512 hash and writes the computed
@@ -242,6 +242,16 @@ namespace CK.AppIdentity.TransportLayer
             w.Commit();
         }
 
+        static bool ComputeSHA512HashAndVerifySignature( ref FastByteReader r, RemoteIdentityKey key )
+        {
+            Span<byte> messageHash = stackalloc byte[64];
+            ComputeHash( r.GetBeforeHead(), messageHash );
+            var lenSignature = r.ReadByte();
+            Span<byte> signature = stackalloc byte[lenSignature];
+            r.ReadBytes( signature );
+            return key.VerifyHash( messageHash, signature );
+        }
+
         internal static void ComputeHash( ReadOnlySequence<byte> message, Span<byte> hash )
         {
             using var h = IncrementalHash.CreateHash( HashAlgorithmName.SHA512 );
@@ -325,7 +335,7 @@ namespace CK.AppIdentity.TransportLayer
             // Do we have the identity keys and the signatures?
             if( r.ReadBool() )
             {
-                signatureVerified = ReadIdentityKeysAndVerifySignatures( ref r, trustedIdentity, out foundTrustedKey, out currentKeyData, out currentKey ); 
+                signatureVerified = ReadIdentityKeysAndVerifySignatures( ref r, trustedIdentity, out foundTrustedKey, out currentKeyData, out currentKey );
             }
             else
             {
@@ -422,13 +432,16 @@ namespace CK.AppIdentity.TransportLayer
             return (int)r.ReadSmallUInt32();
         }
 
-        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( Transport transport, MessageProtocolMap protocolMap, ulong nonce )
+        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( Transport transport, MessageProtocolMap protocolMap, ulong nonce, TimeSpan initialClockDrift )
         {
             Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( protocolMap, nonce, transport.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( protocolMap, nonce, initialClockDrift, transport.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( in MessageProtocolMap protocolMap, ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
+            static IOutgoingMessage CreateAndSignMessage( in MessageProtocolMap protocolMap,
+                                                          ulong nonce,
+                                                          TimeSpan initialClockDrift,
+                                                          IReadOnlyList<LocalIdentityKey> localIdentities )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
@@ -436,6 +449,8 @@ namespace CK.AppIdentity.TransportLayer
 
                 w.WriteByte( DNegoAcceptedProtocolsMessage );
                 w.WriteUInt64( nonce );
+                w.WriteTimeSpan( initialClockDrift );
+                w.WriteDateTime( DateTime.UtcNow );
                 w.WriteSmallUInt32( (uint)protocolMap.Protocols.Count );
                 foreach( var p in protocolMap.Protocols )
                 {
@@ -448,15 +463,22 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger, IncomingMessage message, TransportFeature remote, ulong expectedNonce )
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger,
+                                                                          IncomingMessage message,
+                                                                          TransportFeature remote,
+                                                                          ulong expectedNonce,
+                                                                          out TimeSpan currentClockDrift )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
+                currentClockDrift = TimeSpan.Zero;
                 return default;
             }
+            var otherClockDrift = r.ReadTimeSpan();
+            currentClockDrift = ((DateTime.UtcNow - r.ReadDateTime()) - otherClockDrift) / 2;
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {
@@ -489,7 +511,7 @@ namespace CK.AppIdentity.TransportLayer
                 var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
                 if( missing.Any() )
                 {
-                    logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate("' ,'")}'." );
+                    logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
                     return default;
                 }
                 return map;
@@ -552,8 +574,6 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
-
-
         /// <summary>
         /// Message sent by the <see cref="IncomingConnectionBackTask"/> when the initial message of the remote misses some
         /// of our protocols.
@@ -608,10 +628,10 @@ namespace CK.AppIdentity.TransportLayer
                 missingProtocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
             if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                             remote.RemoteKeys.TrustedIdentity,
-                                             out var foundTrustedKey,
-                                             out var currentKeyData,
-                                             out var currentKey ) )
+                                                     remote.RemoteKeys.TrustedIdentity,
+                                                     out var foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
             {
                 logger.Info( $"Received verified MissingProtocols message from '{remote.Party}'." );
                 remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
@@ -621,24 +641,81 @@ namespace CK.AppIdentity.TransportLayer
             return null;
         }
 
-        public static ValueTask<bool> SendFinalMessageAsync( Transport transport, TransportFeature remote, bool value )
+        public static ValueTask<bool> SendFinalFailureMessageAsync( Transport transport )
         {
-            IOutgoingMessage m = value
-                    ? _finalSuccessMessage ??= _zeroFactory.CreateStatic( bytes =>
-                    {
-                        var m = bytes.GetSpan( 2 );
-                        m[0] = DNegoFinalMessage;
-                        m[1] = 1;
-                        bytes.Advance( 2 );
-                    } )
-                    : _finalFailureMessage ??= _zeroFactory.CreateStatic( bytes =>
-                    {
-                        var m = bytes.GetSpan( 2 );
-                        m[0] = DNegoFinalMessage;
-                        m[1] = 0;
-                        bytes.Advance( 2 );
-                    } );
+            IOutgoingMessage m = _finalFailureMessage ??= _zeroFactory.CreateStatic( bytes =>
+                                                                {
+                                                                    var m = bytes.GetSpan( 1 );
+                                                                    m[0] = DNegoFinalFailureMessage;
+                                                                    bytes.Advance( 1 );
+                                                                } );
             return transport.SendAsync( 0, m );
+        }
+
+        public static async ValueTask<bool> SendInitiatorSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan currentClockDrift )
+        {
+            using var m = CreateAndSignMessage( nonce, currentClockDrift, remote.LocalKeys.CurrentIdentity );
+            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan currentClockDrift, LocalIdentityKey currentIdentity )
+            {
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+
+                w.WriteByte( DNegoInitiatorSuccessMessage );
+                w.WriteUInt64( nonce );
+                w.WriteTimeSpan( currentClockDrift );
+                w.WriteDateTime( DateTime.UtcNow );
+                w.Commit();
+                ComputeSHA512HashAndAppendSignature( ref w, sequence, currentIdentity );
+                return builder.CreateMessage( sequence );
+            }
+        }
+
+        public static bool TryReadInitiatorSuccessMessage( IParallelLogger logger,
+                                                           IncomingMessage message,
+                                                           ulong expectedNonce,
+                                                           TransportFeature remote,
+                                                           out TimeSpan finalClockDrift )
+        {
+            Debug.Assert( remote.RemoteKeys.TrustedIdentity != null );
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == DNegoInitiatorSuccessMessage );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                finalClockDrift = TimeSpan.Zero;
+                return false;
+            }
+            var otherClockDrift = r.ReadTimeSpan();
+            finalClockDrift = ((DateTime.UtcNow - r.ReadDateTime()) - otherClockDrift) / 2;
+            if( !ComputeSHA512HashAndVerifySignature( ref r, remote.RemoteKeys.TrustedIdentity ) )
+            {
+                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable FinalSuccess message from '{remote.Party}'." );
+                return false;
+            }
+            return true;
+        }
+
+        public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockDrift )
+        {
+            using var m = CreateAndSignMessage( nonce, finalClockDrift, remote.LocalKeys.CurrentIdentity );
+            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockDrift, LocalIdentityKey currentIdentity )
+            {
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+
+                w.WriteByte( DNegoFinalSuccessMessage );
+                w.WriteUInt64( nonce );
+                w.WriteTimeSpan( finalClockDrift );
+                w.Commit();
+                ComputeSHA512HashAndAppendSignature( ref w, sequence, currentIdentity );
+                return builder.CreateMessage( sequence );
+            }
         }
     }
 }

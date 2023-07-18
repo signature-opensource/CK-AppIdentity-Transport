@@ -1,3 +1,4 @@
+using CK.Core;
 using FluentAssertions;
 using NUnit.Framework;
 using System;
@@ -99,5 +100,6 @@ namespace CK.AppIdentity.TransportLayer.Tests
                 mBack.Message.ToArray().Should().BeEquivalentTo( m.Message.ToArray() );
             }
         }
+
     }
 }

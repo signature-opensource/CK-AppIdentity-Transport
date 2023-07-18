@@ -49,7 +49,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly int _version;
 
         // Prefix is "CK-AppId" in ASCII.
-        static ReadOnlySpan<byte> _prefix => new byte[]{ 0x43, 0x4b, 0x2d, 0x41, 0x70, 0x70, 0x49, 0x64 };
+        static ReadOnlySpan<byte> _prefix => "CK-AppId"u8;
 
         // For an outgoing message:
         // TransportFeature.AvailableProtocols is adapted: no concurrency issues here, see TransportFeature.AvailableProtocols
@@ -61,7 +61,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
 
         // Relevant only for incoming messages.
-        readonly TimeSpan _remoteClockDrift;
+        readonly TimeSpan _initialClockDrift;
         readonly ulong _nonce;
 
         sealed class ProtocolAdapter : IReadOnlyCollection<string>
@@ -112,7 +112,7 @@ namespace CK.AppIdentity.TransportLayer
                                string incomingFullName,
                                string[] protocols,
                                ulong nonce,
-                               TimeSpan remoteClockDrift )
+                               TimeSpan initialClockDrift )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
@@ -124,7 +124,7 @@ namespace CK.AppIdentity.TransportLayer
             _fullName = incomingFullName;
             _availableProtocols = protocols;
             _nonce = nonce;
-            _remoteClockDrift = remoteClockDrift;
+            _initialClockDrift = initialClockDrift;
             _localIdentities = Array.Empty<LocalIdentityKey>();
         }
 
@@ -277,7 +277,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Relevant only for incoming messages.
         /// </summary>
-        public TimeSpan RemoteClockDrift => _remoteClockDrift;
+        public TimeSpan InitialClockOffset => _initialClockDrift;
 
         /// <summary>
         /// Relevant only for incoming messages.
