@@ -46,7 +46,8 @@ namespace CK.AppIdentity.KeyManagement
         /// </summary>
         /// <param name="logger">The logger to use.</param>
         /// <param name="nonce">The nonce.</param>
+        /// <param name="addNonce">True to add the nonce to the cache.</param>
         /// <returns>True on success, false if this nonce is already known.</returns>
-        bool CheckAndUpdateNonceCache( IActivityLineEmitter logger, ulong nonce );
+        bool CheckAndUpdateNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce );
     }
 }

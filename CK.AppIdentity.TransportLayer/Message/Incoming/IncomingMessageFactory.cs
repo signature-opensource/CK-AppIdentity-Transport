@@ -22,6 +22,7 @@ namespace CK.AppIdentity.TransportLayer
         MessageProtocolMap _protocols;
         DateTime _lastReceived;
         MutableSequence<byte>? _cachedOneBuffer;
+        readonly ISystemClock _systemClock;
 
         /// <summary>
         /// We work with an initial and first buffer of 4K. This is enough for small messages and
@@ -34,9 +35,10 @@ namespace CK.AppIdentity.TransportLayer
         /// Internally, a factory starts in this mode and is "upgraded" once the protocols
         /// have been negotiated and the Transport takes control of this factory (Bound mode).
         /// </summary>
-        internal IncomingMessageFactory()
+        internal IncomingMessageFactory( ISystemClock systemClock )
         {
             _protocols = new MessageProtocolMap();
+            _systemClock = systemClock;
         }
 
         internal void SetAllowedProtocols( MessageProtocolMap protocols )
@@ -61,6 +63,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Throw.CheckArgument( protocols.IsValid );
             _protocols = protocols;
+            _systemClock = SystemClock.Default;
         }
 
         /// <summary>
@@ -122,7 +125,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     protocol = _protocols.Protocols[(int)protocolNumber - 1];
                 }
-                _lastReceived = DateTime.UtcNow;
+                _lastReceived = _systemClock.UtcNow;
                 int messageLength;
                 int lenSize = firstByte >> 6;
                 if( lenSize == 0 )

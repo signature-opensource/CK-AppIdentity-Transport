@@ -33,7 +33,8 @@ namespace CK.AppIdentity.KeyManagement
                 var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
                 int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
 
-                var now = DateTime.UtcNow;
+                var systemClock = _local.ApplicationIdentityService.SystemClock;
+                var now = systemClock.UtcNow;
                 var today = now.Date;
                 var identityPath = _store.FolderPath.AppendPart( "Keys" );
                 // File name matters:
@@ -47,7 +48,7 @@ namespace CK.AppIdentity.KeyManagement
                 // from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
                 if( identities.Count == 0 || identities[0].NotAfter < today.AddDays( allowedOfflineDays + 1 ) )
                 {
-                    var newOne = CreateIdentityCertificate( _local.FullName, today.AddDays( 2 * allowedOfflineDays ) );
+                    var newOne = CreateIdentityCertificate( _local.FullName, today.AddDays( 2 * allowedOfflineDays ), now );
                     if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
                     else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {newOne.NotAfter:yyyy-MM-dd}. " +
                                        $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
@@ -241,9 +242,9 @@ namespace CK.AppIdentity.KeyManagement
                 _store.TryTrash( monitor, path + PasswordExtension );
             }
 
-            static X509Certificate2 CreateIdentityCertificate( string commonName, DateTime notAfter )
+            static X509Certificate2 CreateIdentityCertificate( string commonName, DateTime notAfter, DateTime now )
             {
-                Debug.Assert( notAfter > DateTime.UtcNow );
+                Debug.Assert( notAfter > now );
                 using( var ecdsa = ECDsa.Create( "ECDsa" ) )
                 {
                     Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );
@@ -266,7 +267,7 @@ namespace CK.AppIdentity.KeyManagement
                     request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, critical: true ) );
 
                     // certificate expiry: Valid from yesterday to notAfter.
-                    var notBefore = DateTime.UtcNow.AddDays( -1 );
+                    var notBefore = now.AddDays( -1 );
                     return request.CreateSelfSigned( notBefore, notAfter );
                 }
             }

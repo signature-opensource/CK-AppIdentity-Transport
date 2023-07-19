@@ -67,7 +67,11 @@ namespace CK.AppIdentity.TransportLayer
                              string? remoteEndPointDescription,
                              ILocalKeys? localKeys = null,
                              IRemoteKeys? remoteKeys = null )
-            : this( (object)listener, remoteEndPointDescription, localKeys, remoteKeys )
+            : this( listener._transportManager.SystemClock,
+                    (object)listener,
+                    remoteEndPointDescription,
+                    localKeys,
+                    remoteKeys )
         {
             Throw.CheckNotNullArgument( listener );
         }
@@ -86,13 +90,18 @@ namespace CK.AppIdentity.TransportLayer
                              ILocalKeys localKeys,
                              IRemoteKeys remoteKeys,
                              string? remoteEndPointDescription )
-            : this( (object)targetAddress, remoteEndPointDescription, localKeys, remoteKeys )
+            : this( localKeys.Party.ApplicationIdentityService.SystemClock,
+                    (object)targetAddress,
+                    remoteEndPointDescription,
+                    localKeys,
+                    remoteKeys )
         {
             Throw.CheckArgument( localKeys != null && remoteKeys != null );
             Throw.CheckNotNullArgument( targetAddress );
         }
 
-        Transport( object source,
+        Transport( ISystemClock systemClock,
+                   object source,
                    string? remoteEndPointDescription,
                    ILocalKeys? localKeys,
                    IRemoteKeys? remoteKeys )
@@ -103,7 +112,7 @@ namespace CK.AppIdentity.TransportLayer
             _reader = ReadExactlyAsync;
             // Starts with the "0 Protocol" support only.
             // Negotiated protocols are set by StartReceiveAsync.
-            _receiveFactory = new IncomingMessageFactory();
+            _receiveFactory = new IncomingMessageFactory( systemClock );
             _cts = new CancellationTokenSource();
             _localKeys = localKeys;
             _remoteKeys = remoteKeys;

@@ -19,6 +19,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly MessageProtocolDirectoryService _protocolDirectory;
         readonly List<TransportListener> _listeners;
         readonly TransportManagerFeature _exposedFeature;
+        readonly ISystemClock _systemClock;
 
         // Heart beats handles the BackTask list.
         readonly Timer _heartbeat;
@@ -34,6 +35,7 @@ namespace CK.AppIdentity.TransportLayer
             _agent = agent;
             _protocolDirectory = protocolDirectory;
             _listeners = new List<TransportListener>();
+            _systemClock = agent.ApplicationIdentityService.SystemClock;
             _exposedFeature = new TransportManagerFeature( this );
             agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
@@ -43,7 +45,12 @@ namespace CK.AppIdentity.TransportLayer
             _heartbeat = new Timer( OnTimer, this, 1000, 1000 );
         }
 
+        /// <summary>
+        /// Gets the exposed TransportManager feature.
+        /// </summary>
         public TransportManagerFeature Feature => _exposedFeature;
+
+        public ISystemClock SystemClock => _systemClock;
 
         static void OnTimer( object? state ) => Unsafe.As<TransportManager>( state! ).PushTypedJob( DBNull.Value );
 
@@ -96,20 +103,40 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( t );
         }
 
-        internal void UnknownIncomingRemote( InitialMessage m, TransportFeature? remote )
-        {
-            PushTypedJob( new UnknownIncomingRemoteJob( m, remote ) );
-        }
-
         /// <summary>
         /// When called from a Listener (incoming) we have a <paramref name="initialMessage"/> and may be a <paramref name="remote"/>.
         /// When called from an initiator (outgoing), we have a null initialMessage but necessarily a known remote.
         /// </summary>
         /// <param name="initialMessage">Initial message. Never null when listening, always null when calling.</param>
         /// <param name="remote">Locally defined remote. Never null when calling, may be null when listening.</param>
-        internal void InvalidClockOffset( InitialMessage? initialMessage, TransportFeature? remote )
+        /// <param name="invalidClockOffset">The invalid clock offset.</param>
+        internal void InvalidClockOffset( InitialMessage? initialMessage, TransportFeature? remote, TimeSpan invalidClockOffset )
         {
-            PushTypedJob( new InvalidClockOffsetJob( initialMessage, remote ) );
+            Debug.Assert( initialMessage == null || (!initialMessage.ValidClockOffset && invalidClockOffset == initialMessage.ClockOffset) );
+            PushTypedJob( new PeeringIssueJob( PeeringIssueKind.InvalidClockOffset, initialMessage, remote, null, invalidClockOffset ) );
+        }
+
+        /// <summary>
+        /// Listener only. The remote may be known or not (it is then untrusted).
+        /// </summary>
+        /// <param name="m">The initial message received.</param>
+        /// <param name="remote">The remote if knwon.</param>
+        internal void UnknownOrUntrustedIncomingRemote( InitialMessage m, TransportFeature? remote )
+        {
+            var kind = remote != null ? PeeringIssueKind.UntrustedIncoming : PeeringIssueKind.UnknwonIncoming;
+            PushTypedJob( new PeeringIssueJob( kind, m, remote, null, null ) );
+        }
+
+        /// <summary>
+        /// Initiator only.
+        /// </summary>
+        /// <param name="remote">The calling remote.</param>
+        /// <param name="enlistUrl">The remote enlist url if provided.</param>
+        /// <param name="created">True if we exist in the remote system but are not yet trusted.</param>
+        internal void TargetRequiresCreationOrApproval( TransportFeature remote, string? enlistUrl, bool created )
+        {
+            var kind = created ? PeeringIssueKind.WaitingRemoteApproval: PeeringIssueKind.WaitingRemoteCreation;
+            PushTypedJob( new PeeringIssueJob( kind, null, remote, enlistUrl, null ) );
         }
 
         internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap, TimeSpan clockDrift )
@@ -145,8 +172,7 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
-        sealed record class UnknownIncomingRemoteJob( InitialMessage Message, TransportFeature? Remote );
-        sealed record class InvalidClockOffsetJob( InitialMessage? Message, TransportFeature? Remote );
+        sealed record class PeeringIssueJob( PeeringIssueKind Kind, InitialMessage? Message, TransportFeature? Remote, string? EnlistUrl, TimeSpan? InvalidClockOffset );
         // A new incoming Transport from a TransportListener is directly the Transport object.
         // The heart beat (timer) is DBNull.Value instance.
         // SwitchOn of a TransportFeature is the transport feature itself.
@@ -201,10 +227,8 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
-                case InvalidClockOffsetJob o:
-                    return HandleInvalidClockOffset( monitor, o );
-                case UnknownIncomingRemoteJob m:
-                    return HandleUnknownIncomingRemote( monitor, m );
+                case PeeringIssueJob p:
+                    return HandlePeeringIssue( monitor, p );
                 case NewValidTransportJob j:
                     return HandleNewValidTransport( monitor, j );
                 case TransportFeature switchOn:
@@ -266,14 +290,9 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async ValueTask HandleInvalidClockOffset( IActivityMonitor monitor, InvalidClockOffsetJob job )
+        async ValueTask HandlePeeringIssue( IActivityMonitor monitor, PeeringIssueJob job )
         {
-            await _exposedFeature.OnInvalidClockOffsetAsync( monitor, job.Message, job.Remote );
-        }
-
-        async ValueTask HandleUnknownIncomingRemote( IActivityMonitor monitor, UnknownIncomingRemoteJob job )
-        {
-            await _exposedFeature.OnUnknownIncomingRemoteAsync( monitor, job.Message, job.Remote );
+            await _exposedFeature.AddOrUpdateIssueAsync( monitor, job.Kind, job.Message, job.Remote, job.EnlistUrl, job.InvalidClockOffset );
         }
 
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )

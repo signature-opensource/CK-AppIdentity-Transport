@@ -20,7 +20,7 @@ namespace CK.AppIdentity.KeyManagement
 
             internal RemoteKeys Build( IActivityMonitor monitor )
             {
-                DateTime now = DateTime.UtcNow;
+                DateTime now = _remote.ApplicationIdentityService.SystemClock.UtcNow;
 
                 AutoTrustKey autoTrust = AutoTrustKey.Never;
                 var a = _remote.Configuration.Configuration.TryLookupValue( nameof( AutoTrustKey ) );
@@ -34,7 +34,7 @@ namespace CK.AppIdentity.KeyManagement
                 }
                 RemoteIdentityKeyData? c = null;
                 foreach( var f in FilterFileNames( monitor,
-                                                   DateTime.UtcNow,
+                                                   now,
                                                    Directory.EnumerateFiles( _store.FolderPath, PublicIdentityFilePattern ),
                                                    ExtractTimeName ) )
                 {

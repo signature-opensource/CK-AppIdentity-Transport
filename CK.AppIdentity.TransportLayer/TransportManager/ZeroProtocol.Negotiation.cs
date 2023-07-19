@@ -167,7 +167,7 @@ namespace CK.AppIdentity.TransportLayer
                     // We could have settled the signature size (we use DSASignatureFormat.IeeeP1363FixedFieldConcatenation)
                     // but it doesn't cost much (1 byte) to let it variable so that are free to use different key size (the
                     // current default is 256 bits (ECDsa creates signatures of 2 x KeySize: this is 2 * 256 / 8 = 64 bytes for
-                    // current key size) and this should be enough... but who knows, so let the max signature size be 256 bytes).
+                    // current key size) and this should be enough... but who knows, so let the max signature size be 255 bytes).
                     var lenSignature = r.ReadByte();
                     signature = signatureBuffer.Slice( 0, lenSignature );
                     r.ReadBytes( signature );
@@ -198,17 +198,18 @@ namespace CK.AppIdentity.TransportLayer
         /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version
         /// and returns a random nonce on success.
         /// </summary>
+        /// <param name="systemClock">The system clock to use.</param>
         /// <param name="transport">The newly created transport.</param>
         /// <param name="initialMessage">The <see cref="TransportFeature.OutgoingInitialMessage"/>.</param>
         /// <param name="version">The serialization version.</param>
         /// <returns>A nonce or null if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-        public static async ValueTask<ulong?> SendInitialMessageAsync( Transport transport, InitialMessage initialMessage, int version )
+        public static async ValueTask<ulong?> SendInitialMessageAsync( ISystemClock systemClock, Transport transport, InitialMessage initialMessage, int version )
         {
-            using var m = CreateAndSignMessage( initialMessage, version, out var nonce );
+            using var m = CreateAndSignMessage( systemClock, initialMessage, version, out var nonce );
             if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
             return nonce;
 
-            static IOutgoingMessage CreateAndSignMessage( InitialMessage initialMessage, int version, out ulong nonce )
+            static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock, InitialMessage initialMessage, int version, out ulong nonce )
             {
                 Debug.Assert( initialMessage.LocalIdentities.Count > 0 );
                 var builder = _zeroFactory.CreateBuilder();
@@ -223,8 +224,8 @@ namespace CK.AppIdentity.TransportLayer
                 RandomNumberGenerator.Fill( bNonce );
                 w.WriteBytes( bNonce );
                 nonce = BitConverter.ToUInt64( bNonce );
-                // Writes the DateTime.UtcNow of this system.
-                w.WriteDateTime( DateTime.UtcNow );
+                // Writes the SystemClock.UtcNow of this system.
+                w.WriteDateTime( systemClock.UtcNow );
                 // Writes the identity keys and sign the message with them.
                 WriteIdentityKeysAndSign( ref w, sequence, initialMessage.LocalIdentities );
                 return builder.CreateMessage( sequence );
@@ -276,7 +277,7 @@ namespace CK.AppIdentity.TransportLayer
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
                 // No DateTimeUts.Now here: there will be no TransportFeature, computing
-                // any clock drift is irrelevant.
+                // any clock offset is irrelevant.
                 w.WriteByte( DNegoUnknownRemote );
                 w.WriteBool( signatureVerificationFailed );
                 if( signatureVerificationFailed )
@@ -348,9 +349,10 @@ namespace CK.AppIdentity.TransportLayer
 
 
         /// <summary>
-        /// Off remote message is a signed message with the local identities.
+        /// Off remote reply message is a signed message with the local identities.
         /// </summary>
         /// <param name="transport">The transport.</param>
+        /// <param name="nonce">The received nonce.</param>
         /// <param name="shutUp">Delay the remote should wait before trying again.</param>
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendOffRemoteMessageAsync( Transport transport, ulong nonce, TimeSpan shutUp )
@@ -401,6 +403,70 @@ namespace CK.AppIdentity.TransportLayer
         }
 
 
+        /// <summary>
+        /// InvalidClockOffset reply message is a signed message with the local identities.
+        /// If the remote has a AutoTrustKey, this reply will also automatically make the remote trust us.
+        /// If the remote trusts us, it will be able to update its clock (if its "AllowClockSet" configuration is true).
+        /// </summary>
+        /// <param name="transport">The transport.</param>
+        /// <param name="offset">The invalid clock offset.</param>
+        /// <param name="nonce">The received nonce.</param>
+        /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
+        public static async ValueTask<bool> SendInvalidClockOffsetMessageAsync( ISystemClock systemClock, Transport transport, TimeSpan offset, ulong nonce )
+        {
+            Debug.Assert( transport.LocalKeys != null );
+            using var m = CreateAndSignMessage( systemClock, nonce, offset, transport.LocalKeys.Identities );
+            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
+
+            static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock, ulong nonce, TimeSpan offset, IReadOnlyList<LocalIdentityKey> localIdentities )
+            {
+                var builder = _zeroFactory.CreateBuilder();
+                var sequence = builder.ObtainSequence();
+                var w = new FastByteWriter( sequence );
+                w.WriteByte( DNegoInvalidClockOffset );
+                w.WriteUInt64( nonce );
+                w.WriteTimeSpan( offset );
+                w.WriteDateTime( systemClock.UtcNow );
+                w.Commit();
+                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
+                return builder.CreateMessage( sequence );
+            }
+        }
+
+        public static bool ReadInvalidClockOffsetMessage( IParallelLogger logger,
+                                                          TransportFeature remote,
+                                                          IncomingMessage message,
+                                                          ulong expectedNonce,
+                                                          out TimeSpan remoteClockOffset,
+                                                          out DateTime remoteTime,
+                                                          out bool foundTrustedKey )
+        {
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == DNegoInvalidClockOffset );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                foundTrustedKey = false;
+                remoteClockOffset = TimeSpan.Zero;
+                remoteTime = Util.UtcMinValue;
+                return false;
+            }
+            remoteClockOffset = r.ReadTimeSpan();
+            remoteTime = r.ReadDateTime();
+            if( ReadIdentityKeysAndVerifySignatures( ref r,
+                                                     remote.RemoteKeys.TrustedIdentity,
+                                                     out foundTrustedKey,
+                                                     out var currentKeyData,
+                                                     out var currentKey ) )
+            {
+                logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}'." );
+                foundTrustedKey |= remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                return true;
+            }
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{remote.RemoteKeys.Party}'." );
+            return false;
+        }
+
         static bool CheckNonce( IParallelLogger logger, ref FastByteReader r, TransportFeature remote, ulong expectedNonce )
         {
             if( expectedNonce != r.ReadUInt64() )
@@ -432,15 +498,20 @@ namespace CK.AppIdentity.TransportLayer
             return (int)r.ReadSmallUInt32();
         }
 
-        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( Transport transport, MessageProtocolMap protocolMap, ulong nonce, TimeSpan initialClockDrift )
+        public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( ISystemClock systemClock,
+                                                                               Transport transport,
+                                                                               MessageProtocolMap protocolMap,
+                                                                               ulong nonce,
+                                                                               TimeSpan initialClockOffset )
         {
             Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( protocolMap, nonce, initialClockDrift, transport.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset, transport.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( in MessageProtocolMap protocolMap,
+            static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock,
+                                                          in MessageProtocolMap protocolMap,
                                                           ulong nonce,
-                                                          TimeSpan initialClockDrift,
+                                                          TimeSpan initialClockOffset,
                                                           IReadOnlyList<LocalIdentityKey> localIdentities )
             {
                 var builder = _zeroFactory.CreateBuilder();
@@ -449,8 +520,8 @@ namespace CK.AppIdentity.TransportLayer
 
                 w.WriteByte( DNegoAcceptedProtocolsMessage );
                 w.WriteUInt64( nonce );
-                w.WriteTimeSpan( initialClockDrift );
-                w.WriteDateTime( DateTime.UtcNow );
+                w.WriteTimeSpan( initialClockOffset );
+                w.WriteDateTime( systemClock.UtcNow );
                 w.WriteSmallUInt32( (uint)protocolMap.Protocols.Count );
                 foreach( var p in protocolMap.Protocols )
                 {
@@ -463,26 +534,26 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( IParallelLogger logger,
+        public static MessageProtocolMap TryReadAcceptedProtocolsMessage( TransportManager transportManager,
                                                                           IncomingMessage message,
                                                                           TransportFeature remote,
                                                                           ulong expectedNonce,
-                                                                          out TimeSpan currentClockDrift )
+                                                                          out TimeSpan currentClockOffset )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
-            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            if( !CheckNonce( transportManager.Logger, ref r, remote, expectedNonce ) )
             {
-                currentClockDrift = TimeSpan.Zero;
+                currentClockOffset = TimeSpan.Zero;
                 return default;
             }
             var otherClockDrift = r.ReadTimeSpan();
-            currentClockDrift = ((DateTime.UtcNow - r.ReadDateTime()) - otherClockDrift) / 2;
+            currentClockOffset = ((transportManager.SystemClock.UtcNow - r.ReadDateTime()) - otherClockDrift) / 2;
             uint count = r.ReadSmallUInt32();
             if( count > MessageProtocolMap.MaxCount )
             {
-                logger.Error( $"Remote '{remote.Party.FullName}' returned {count} protocols, MessageProtocolMap.MaxCount is {MessageProtocolMap.MaxCount}." );
+                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' returned {count} protocols, MessageProtocolMap.MaxCount is {MessageProtocolMap.MaxCount}." );
                 return default;
             }
             // A valid answer is composed only of different protocol names (a single version per protocol) and
@@ -494,7 +565,7 @@ namespace CK.AppIdentity.TransportLayer
                 var p = remote.RegisteredProtocols.FirstOrDefault( p => p.FullName.Equals( fullName, StringComparison.OrdinalIgnoreCase ) );
                 if( p == null )
                 {
-                    logger.Error( $"Remote '{remote.Party.FullName}' returned an unwanted protocol '{fullName}'." );
+                    transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' returned an unwanted protocol '{fullName}'." );
                     return default;
                 }
                 protocols[i] = p;
@@ -506,17 +577,17 @@ namespace CK.AppIdentity.TransportLayer
                                                      out var currentKeyData,
                                                      out var currentKey ) )
             {
-                logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
-                remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
+                transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
+                remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
                 var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
                 if( missing.Any() )
                 {
-                    logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
+                    transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
                     return default;
                 }
                 return map;
             }
-            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
+            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
             return default;
 
         }
@@ -652,58 +723,12 @@ namespace CK.AppIdentity.TransportLayer
             return transport.SendAsync( 0, m );
         }
 
-        public static async ValueTask<bool> SendInitiatorSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan currentClockDrift )
+        public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockOffset )
         {
-            using var m = CreateAndSignMessage( nonce, currentClockDrift, remote.LocalKeys.CurrentIdentity );
+            using var m = CreateAndSignMessage( nonce, finalClockOffset, remote.LocalKeys.CurrentIdentity );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan currentClockDrift, LocalIdentityKey currentIdentity )
-            {
-                var builder = _zeroFactory.CreateBuilder();
-                var sequence = builder.ObtainSequence();
-                var w = new FastByteWriter( sequence );
-
-                w.WriteByte( DNegoInitiatorSuccessMessage );
-                w.WriteUInt64( nonce );
-                w.WriteTimeSpan( currentClockDrift );
-                w.WriteDateTime( DateTime.UtcNow );
-                w.Commit();
-                ComputeSHA512HashAndAppendSignature( ref w, sequence, currentIdentity );
-                return builder.CreateMessage( sequence );
-            }
-        }
-
-        public static bool TryReadInitiatorSuccessMessage( IParallelLogger logger,
-                                                           IncomingMessage message,
-                                                           ulong expectedNonce,
-                                                           TransportFeature remote,
-                                                           out TimeSpan finalClockDrift )
-        {
-            Debug.Assert( remote.RemoteKeys.TrustedIdentity != null );
-            var r = new FastByteReader( message.Message );
-            var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoInitiatorSuccessMessage );
-            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
-            {
-                finalClockDrift = TimeSpan.Zero;
-                return false;
-            }
-            var otherClockDrift = r.ReadTimeSpan();
-            finalClockDrift = ((DateTime.UtcNow - r.ReadDateTime()) - otherClockDrift) / 2;
-            if( !ComputeSHA512HashAndVerifySignature( ref r, remote.RemoteKeys.TrustedIdentity ) )
-            {
-                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable FinalSuccess message from '{remote.Party}'." );
-                return false;
-            }
-            return true;
-        }
-
-        public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockDrift )
-        {
-            using var m = CreateAndSignMessage( nonce, finalClockDrift, remote.LocalKeys.CurrentIdentity );
-            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
-
-            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockDrift, LocalIdentityKey currentIdentity )
+            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, LocalIdentityKey currentIdentity )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
@@ -711,11 +736,35 @@ namespace CK.AppIdentity.TransportLayer
 
                 w.WriteByte( DNegoFinalSuccessMessage );
                 w.WriteUInt64( nonce );
-                w.WriteTimeSpan( finalClockDrift );
+                w.WriteTimeSpan( finalClockOffset );
                 w.Commit();
                 ComputeSHA512HashAndAppendSignature( ref w, sequence, currentIdentity );
                 return builder.CreateMessage( sequence );
             }
+        }
+
+        public static bool TryReadFinalSuccessMessage( IParallelLogger logger,
+                                                       IncomingMessage message,
+                                                       ulong expectedNonce,
+                                                       TransportFeature remote,
+                                                       out TimeSpan finalClockOffset )
+        {
+            Debug.Assert( remote.RemoteKeys.TrustedIdentity != null );
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            Debug.Assert( discriminator == DNegoFinalSuccessMessage );
+            if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
+            {
+                finalClockOffset = TimeSpan.Zero;
+                return false;
+            }
+            finalClockOffset = r.ReadTimeSpan();
+            if( !ComputeSHA512HashAndVerifySignature( ref r, remote.RemoteKeys.TrustedIdentity ) )
+            {
+                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable FinalSuccess message from '{remote.Party}'." );
+                return false;
+            }
+            return true;
         }
     }
 }

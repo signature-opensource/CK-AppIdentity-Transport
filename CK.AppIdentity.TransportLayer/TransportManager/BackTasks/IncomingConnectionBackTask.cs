@@ -67,11 +67,15 @@ namespace CK.AppIdentity.TransportLayer
             // impacted (even the nonce has not been checked).
             if( !initialMessage.ValidClockOffset )
             {
-                transportManager.InvalidClockOffset( initialMessage, remote );
+                // Signals the InvalidClockOffset peering issue before sending the message.
+                transportManager.InvalidClockOffset( initialMessage, remote, initialMessage.ClockOffset );
+                // Replies the InvalidClockOffset. If this fails, we don't care.
+                await ZeroProtocol.SendInvalidClockOffsetMessageAsync( transportManager.SystemClock, incoming, initialMessage.ClockOffset, initialMessage.Nonce );
                 return;
             }
-            // If the remote is not known, either intrinsically or because it has no trusted identity yet, signals this InitialMessage
-            // to the TransportManager: the incoming Remote may be accepted later but for now, we reject the connection.
+            // If the remote is not known, either intrinsically or because it has no trusted identity yet or our trusted identity key
+            // doesn't appear in the message, signals this InitialMessage to the TransportManager: the incoming Remote may be accepted
+            // later but for now, we reject the connection.
             if( remote == null || !foundTrustKey )
             {
                 // Before awaking the TransportManager, we send the deny message:
@@ -81,9 +85,9 @@ namespace CK.AppIdentity.TransportLayer
                 string? enlistUrl = transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
                 if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ) )
                 {
-                    // if the transport has not been condemned, tell the Transport manager about
+                    // Only if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the TransportFeature found (if any).
-                    transportManager.UnknownIncomingRemote( initialMessage, remote );
+                    transportManager.UnknownOrUntrustedIncomingRemote( initialMessage, remote );
                 }
                 return;
             }
@@ -138,7 +142,7 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( incoming, protocolMap, initialMessage.Nonce, initialMessage.ClockOffset ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock, incoming, protocolMap, initialMessage.Nonce, initialMessage.ClockOffset ) )
             {
                 // Wait for the final message, either:
                 //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
@@ -149,22 +153,23 @@ namespace CK.AppIdentity.TransportLayer
                 if( !finalInitiatorMessage.IsValid
                     || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
                     || finalInitiatorMessage.Message.FirstSpan.Length == 0
-                    || (finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalFailureMessage && finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoInitiatorSuccessMessage) )
+                    || (finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalFailureMessage
+                        && finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalSuccessMessage) )
                 {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid InitiatorSuccess message." );
+                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid final message." );
                 }
                 else if( finalInitiatorMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalFailureMessage )
                 {
                     transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
                 }
-                else if( ZeroProtocol.TryReadInitiatorSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
+                else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
                 {
-                    // We're almost done: before validating the new Transport, we check the nonce unicity.
-                    if( remote.RemoteKeys.CheckAndUpdateNonceCache( transportManager.Logger, initialMessage.Nonce )
-                        && await ZeroProtocol.SendFinalSuccessMessageAsync( incoming, remote, initialMessage.Nonce, finalClockOffset ) )
+                    // We're almost done.
+                    if( await ZeroProtocol.SendFinalSuccessMessageAsync( incoming, remote, initialMessage.Nonce, finalClockOffset ) )
                     {
                         // Final message is sent: we condemn the current transport if there is one.
-                        var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.", TimeSpan.FromSeconds( 60 ) );
+                        var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.",
+                                                   TimeSpan.FromSeconds( 60 ) );
                         current?.CurrentTransport.SetSoftCondemned( m );
                         // By providing the party here instead of the transport feature, we'll check
                         // that the RemoteParty is not destroyed and the existence of the TransportFeature.
@@ -200,7 +205,7 @@ namespace CK.AppIdentity.TransportLayer
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
-                initialMessage = TryParse( transportManager.Logger, incoming, message, out var otherVersion, out remote, out foundTrustKey );
+                initialMessage = TryParse( transportManager, incoming, message, out var otherVersion, out remote, out foundTrustKey );
                 if( initialMessage == null )
                 {
                     if( otherVersion == -1 )
@@ -237,7 +242,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             return (initialMessage, remote, foundTrustKey);
 
-            static InitialMessage? TryParse( IParallelLogger logger,
+            static InitialMessage? TryParse( TransportManager transportManager,
                                              Transport incoming,
                                              IncomingMessage message,
                                              out int otherVersion,
@@ -261,7 +266,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 // Reads the nonce and computes the ClockOffset.
                 var nonce = r.ReadUInt64();
-                var clockOffset = DateTime.UtcNow - r.ReadDateTime();
+                var clockOffset = transportManager.SystemClock.UtcNow - r.ReadDateTime();
                 
                 // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
                 // Accessing the Parties is thread safe.
@@ -274,7 +279,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
                     // This is a serious issue and we cannot do a lot here.
-                    logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unable to verify the signature's incoming message from '{fullName}'." );
+                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unable to verify the signature's incoming message from '{fullName}'." );
                     return null;
                 }
                 // The message's signature is verified.
@@ -283,15 +288,16 @@ namespace CK.AppIdentity.TransportLayer
                                             ? clockOffset < TransportFeature.MaxClockOffset
                                             : clockOffset > -TransportFeature.MaxClockOffset;
 
-                // If we have a known remote and the clock offset is fine, we first chack the nonce cache and
+                // If we have a known remote and the clock offset is fine, we first check the nonce cache and
                 // update its TrustedIdentity: AutoTrustKey may make us immediately accept the remote...
                 Debug.Assert( (incoming.LocalKeys == null) == (incoming.RemoteKeys == null), "They are both known (TransportListener resolved them) or not." );
                 if( remote != null && validClockOffset )
                 {
                     // Nonce is checked only with a valid clock offset: this enables a rather small nonce cache.
-                    if( !remote.RemoteKeys.CheckAndUpdateNonceCache( logger, nonce ) )
+                    // We update the nonce cache only if we already trust the remote (AutoTrustKey is not yet applied here).
+                    if( !remote.RemoteKeys.CheckAndUpdateNonceCache( transportManager.Logger, nonce, foundTrustKey ) )
                     {
-                        logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Invalid Nonce value received from '{fullName}'." );
+                        transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Invalid Nonce value received from '{fullName}'." );
                         return null;
                     }
                     // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
@@ -312,7 +318,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                     }
                     // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
-                    foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustKey, currentKeyData, currentKey );
+                    foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustKey, currentKeyData, currentKey );
                 }
                 return new InitialMessage( incoming.Listener.EndPointDescription,
                                            incoming.RemoteEndPointDescription,

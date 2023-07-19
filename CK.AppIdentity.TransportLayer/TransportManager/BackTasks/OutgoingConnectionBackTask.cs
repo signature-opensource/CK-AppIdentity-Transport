@@ -6,7 +6,6 @@ using System.Text;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// Handles calls to <see cref="TransportTypeService.TryConnectToAsync(IActivityLogger, IRemoteParty, object, CancellationToken)"/>.
     /// This BackTask is always retried until a valid (tested) outgoing connection is obtained or the remote party is destroyed.
@@ -178,7 +177,7 @@ namespace CK.AppIdentity.TransportLayer
                 try
                 {
                     // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-                    var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion );
+                    var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion );
                     if( !sentNonce.HasValue )
                     {
                         // If we are canceled, let the finally destroy the new transport.
@@ -211,7 +210,7 @@ namespace CK.AppIdentity.TransportLayer
                                                                             out bool foundTrustedKey,
                                                                             out RemoteIdentityKey? currentKey,
                                                                             out bool signatureVerified );
-                                // Weird case: the remote couldn't verify our signature.
+                                // Weird case: the remote couldn't verify our signature or the nonce check failed.
                                 // We don't have any other available data.
                                 if( remoteVerificationFailure )
                                 {
@@ -228,20 +227,17 @@ namespace CK.AppIdentity.TransportLayer
                                     _retryTickCount = 30;
                                     return null;
                                 }
-
-                                // We are totally unknown to the target.
+                                // We are totally unknown to the target (the message is not signed in this case because the remote system must not
+                                // pick a Localkeys provider at random among its root and potential TenantDomains).
                                 if( currentKeyData == null )
                                 {
                                     Debug.Assert( !signatureVerified );
                                     transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us at all. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
-                                    if( enlistUrl != null )
-                                    {
-                                        // TODO:
-                                        // transportManager.InformUserAcceptUri( remote, enlistUrl );
-                                    }
+                                    transportManager.TargetRequiresCreationOrApproval( remote, enlistUrl, false );
                                     _retryTickCount = 5;
                                     return null;
                                 }
+                                // The remote knowns our existence but doesn't trust us.
                                 // Weird: the sent signatures cannot be verified.
                                 if( !signatureVerified )
                                 {
@@ -252,11 +248,7 @@ namespace CK.AppIdentity.TransportLayer
                                 }
                                 remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
                                 transportManager.Logger.Warn( $"The remote '{remote.Party}' knows about us but doesn't trust our identity. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
-                                if( enlistUrl != null )
-                                {
-                                    // TODO:
-                                    // transportManager.InformUserAcceptUri( remote, enlistUrl );
-                                }
+                                transportManager.TargetRequiresCreationOrApproval( remote, enlistUrl, true );
                                 _retryTickCount = 5;
                                 return null;
                             }
@@ -268,12 +260,44 @@ namespace CK.AppIdentity.TransportLayer
                                 transportManager.Logger.Trace( $"Retrying in {_retryTickCount} seconds." );
                                 return null;
                             }
+                        case ZeroProtocol.DNegoInvalidClockOffset:
+                            {
+                                DateTime msgReceivedTime = transportManager.SystemClock.UtcNow;
+                                if( !ZeroProtocol.ReadInvalidClockOffsetMessage( transportManager.Logger,
+                                                                                 remote,
+                                                                                 firstAnswer,
+                                                                                 sentNonce.Value,
+                                                                                 out var remoteClockOffset,
+                                                                                 out var remoteTime,
+                                                                                 out var foundTrustedKey ) )
+                                {
+                                    // If the nonce or the verification failed, retries in 10 seconds.
+                                    transportManager.Logger.Trace( $"Retrying in 10 seconds." );
+                                    _retryTickCount = 10;
+                                    return null;
+                                }
+                                // If we trust the remote and the "AllowClockSet" configuration is true, update our clock.
+                                if( foundTrustedKey && remote.RemoteKeys.AllowClockSet )
+                                {
+                                    bool success = await transportManager.SetLocalClockAsync( remote.Party, remoteTime, msgReceivedTime );
+                                    if( success )
+                                    {
+                                        // On success, retry quickly.
+                                        transportManager.Logger.Trace( $"Retrying in 1 second." );
+                                        _retryTickCount = 1;
+                                        return null;
+                                    }
+                                }
+                                _retryTickCount = 20;
+                                transportManager.Logger.Trace( $"Retrying in 20 seconds." );
+                                return null;
+                            }
                         case ZeroProtocol.DNegoDowngradeProtocol: 
                             {
                                 int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                                 if( !retriedDowngrade )
                                 {
-                                    sentNonce = await ZeroProtocol.SendInitialMessageAsync( transport, remote.OutgoingInitialMessage, otherVersion );
+                                    sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion );
                                     if( !sentNonce.HasValue )
                                     {
                                         if( !cancellation.IsCancellationRequested )
@@ -295,11 +319,11 @@ namespace CK.AppIdentity.TransportLayer
                             }
                         case ZeroProtocol.DNegoAcceptedProtocolsMessage: 
                             {
-                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager.Logger,
+                                var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager,
                                                                                                 firstAnswer,
                                                                                                 remote,
                                                                                                 sentNonce.Value,
-                                                                                                out var currentClockOffset );
+                                                                                                out var finalClockOffset );
                                 if( !protocolMap.IsValid )
                                 {
                                     await ZeroProtocol.SendFinalFailureMessageAsync( transport );
@@ -308,16 +332,12 @@ namespace CK.AppIdentity.TransportLayer
                                     return null;
                                 }
                                 // We are ready to accept the transport.
-                                // We are the initiator, we sent the nonce: we don't need to challenge any previous nonces, it is up to the
-                                // listener to check its nonce cache and return a FinalFailureMessage if a previous nonce has been found.
                                 // Sends the Initiator (Outgoing) Ack.
-                                if( await ZeroProtocol.SendInitiatorSuccessMessageAsync( transport, remote, sentNonce.Value, currentClockOffset ) )
+                                if( await ZeroProtocol.SendFinalSuccessMessageAsync( transport, remote, sentNonce.Value, finalClockOffset ) )
                                 {
-                                    using var finalMessage = await transport.ReadNextAsync();
-
                                     // Accepts the transport.
                                     disposeTransport = false;
-                                    transportManager.NewValidTransport( remote.Party, transport, protocolMap, (thisClockDrift - currentClockOffset)/2 );
+                                    transportManager.NewValidTransport( remote.Party, transport, protocolMap, finalClockOffset );
                                 }
                                 // Either we succeed or the successful SendFinalMessageAsync has been canceled: retry asap (on success, the BackTask will
                                 // be reset).

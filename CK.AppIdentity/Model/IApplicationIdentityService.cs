@@ -77,6 +77,11 @@ namespace CK.AppIdentity
         Task InitializationTask { get; }
 
         /// <summary>
+        /// Gets the <see cref="ISystemClock"/> that must be used by all code related to application identities.
+        /// </summary>
+        ISystemClock SystemClock { get; }
+
+        /// <summary>
         /// Tries to create and initialize one or more new parties that can be tenant domains or simple
         /// remotes from a configuration section.
         /// These parties will be <see cref="IOwnedParty.IsDynamic"/> and can be destroyed.

@@ -1,6 +1,7 @@
 using CK.Core;
 using CK.PerfectEvent;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
@@ -24,6 +25,7 @@ namespace CK.AppIdentity
         internal TaskCompletionSource _initialization;
         readonly internal PerfectEventSender<IOwnedParty> _allPartyChanged;
         internal TenantDomainParty[] _domains;
+        readonly ISystemClock _systemClock;
 
         /// <summary>
         /// Initializes a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
@@ -36,6 +38,7 @@ namespace CK.AppIdentity
             Throw.CheckNotNullArgument( serviceProvider );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
+            _systemClock = serviceProvider.GetService<ISystemClock>() ?? CK.Core.SystemClock.Default;
             _agent = new AppIdentityAgent( this, serviceProvider );
             _allPartyChanged = (PerfectEventSender<IOwnedParty>)_remotesChangedBridge.Target;
             _domains = configuration.TenantDomains.Select( c => new TenantDomainParty( c, false, this ) ).ToArray();
@@ -98,6 +101,9 @@ namespace CK.AppIdentity
 
         /// <inheritdoc />
         public Task InitializationTask => _initialization.Task;
+
+        /// <inheritdoc />
+        public ISystemClock SystemClock => _systemClock;
 
         /// <inheritdoc />
         public Task<AddedDynamicParties?> AddPartiesAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )

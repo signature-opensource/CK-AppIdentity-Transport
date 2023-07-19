@@ -84,14 +84,19 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public PerfectEvent<PeeringIssue> EventAppeared => _peeringIssueChanged.PerfectEvent;
 
-        internal Task AddOrUpdateIssueAsync( IActivityMonitor monitor, PeeringIssueKind kind, InitialMessage? message, TransportFeature? remote )
+        internal Task AddOrUpdateIssueAsync( IActivityMonitor monitor,
+                                             PeeringIssueKind kind,
+                                             InitialMessage? message,
+                                             TransportFeature? remote,
+                                             string? enlistUrl,
+                                             TimeSpan? invalidClockOffset )
         {
             // Use the remote (long-living) full name if possible.
             var fullName = remote?.Party.FullName ?? message!.FullName;
             if( _peeringIssues.TryGetValue( fullName, out var exist ) )
             {
                 // Updates the existing issue and removes it from the dictionary if it's now None.
-                exist.Update( kind, message, remote, ref _unknwonRemoteCount );
+                exist.Update( kind, _transportManager.SystemClock.UtcNow, message, remote, enlistUrl, invalidClockOffset, ref _unknwonRemoteCount );
                 if( kind == PeeringIssueKind.None )
                 {
                     lock( _peeringIssues )
@@ -125,7 +130,13 @@ namespace CK.AppIdentity.TransportLayer
                     }
                 }
                 // Add the new issue.
-                exist = new PeeringIssue( fullName, kind, message, remote );
+                exist = new PeeringIssue( fullName,
+                                          _transportManager.ApplicationIdentityAgent.ApplicationIdentityService.SystemClock.UtcNow,
+                                          kind,
+                                          message,
+                                          remote,
+                                          enlistUrl,
+                                          invalidClockOffset );
                 lock( _peeringIssues )
                 {
                     _peeringIssues.Add( fullName, exist );
