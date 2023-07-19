@@ -14,7 +14,8 @@ namespace CK.AppIdentity.KeyManagement
         IRemoteParty Party { get; }
 
         /// <summary>
-        /// Gets the <see cref="AutoTrustKey"/> configuration option.
+        /// Gets the "AutoTrustKey" configuration option.
+        /// See <see cref="KeyManagement.AutoTrustKey"/>.
         /// </summary>
         AutoTrustKey AutoTrustKey { get; }
 
@@ -27,6 +28,16 @@ namespace CK.AppIdentity.KeyManagement
         /// connection when the trusted remote renews its identity key.
         /// </summary>
         RemoteIdentityKey? TrustedIdentity { get; }
+
+        /// <summary>
+        /// Gets the "AllowClockSet" configuration option.
+        /// When true the system clock may be updated based on the remote's time whenever
+        /// the remote system and this local clock are too different.
+        /// <para>
+        /// Defaults to false and applies only to initiators.
+        /// </para>
+        /// </summary>
+        bool AllowClockSet { get; }
 
         /// <summary>
         /// Sets or clears the trusted identity.
@@ -48,6 +59,6 @@ namespace CK.AppIdentity.KeyManagement
         /// <param name="nonce">The nonce.</param>
         /// <param name="addNonce">True to add the nonce to the cache.</param>
         /// <returns>True on success, false if this nonce is already known.</returns>
-        bool CheckAndUpdateNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce );
+        bool CheckNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce );
     }
 }

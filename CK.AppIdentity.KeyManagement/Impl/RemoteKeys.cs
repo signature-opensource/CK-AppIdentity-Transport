@@ -20,13 +20,15 @@ namespace CK.AppIdentity.KeyManagement
 
         readonly IRemoteParty _remote;
         RemoteIdentityKey? _identity;
-        AutoTrustKey _autoTrustKey;
+        readonly AutoTrustKey _autoTrustKey;
+        readonly bool _allowClockSet;
 
-        RemoteKeys( IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey )
+        RemoteKeys( IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey, bool allowClockSet )
         {
             _remote = remote;
             _identity = identity;
             _autoTrustKey = autoTrustKey;
+            _allowClockSet = allowClockSet;
         }
 
         public IRemoteParty Party => _remote;
@@ -34,6 +36,8 @@ namespace CK.AppIdentity.KeyManagement
         public RemoteIdentityKey? TrustedIdentity => _identity;
 
         public AutoTrustKey AutoTrustKey => _autoTrustKey;
+
+        public bool AllowClockSet => _allowClockSet;
 
         public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
         {
@@ -65,7 +69,7 @@ namespace CK.AppIdentity.KeyManagement
             return true;
         }
 
-        public bool CheckAndUpdateNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce )
+        public bool CheckNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce )
         {
             var noncePath = _remote.SharedFileStore.FolderPath.AppendPart( "Nonce.cache" );
             //var buffer = ArrayPool<byte>.Shared.Rent( 8192 );

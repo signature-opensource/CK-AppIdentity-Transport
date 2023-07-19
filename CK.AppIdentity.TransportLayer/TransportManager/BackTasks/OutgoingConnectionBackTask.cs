@@ -279,7 +279,7 @@ namespace CK.AppIdentity.TransportLayer
                                 // If we trust the remote and the "AllowClockSet" configuration is true, update our clock.
                                 if( foundTrustedKey && remote.RemoteKeys.AllowClockSet )
                                 {
-                                    bool success = await transportManager.SetLocalClockAsync( remote.Party, remoteTime, msgReceivedTime );
+                                    bool success = await transportManager.TrySetSystemTimeAsync( remote.Party, remoteTime, msgReceivedTime );
                                     if( success )
                                     {
                                         // On success, retry quickly.

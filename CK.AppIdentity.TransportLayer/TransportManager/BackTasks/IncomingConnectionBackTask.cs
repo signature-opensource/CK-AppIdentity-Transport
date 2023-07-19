@@ -295,7 +295,7 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     // Nonce is checked only with a valid clock offset: this enables a rather small nonce cache.
                     // We update the nonce cache only if we already trust the remote (AutoTrustKey is not yet applied here).
-                    if( !remote.RemoteKeys.CheckAndUpdateNonceCache( transportManager.Logger, nonce, foundTrustKey ) )
+                    if( !remote.RemoteKeys.CheckNonceCache( transportManager.Logger, nonce, foundTrustKey ) )
                     {
                         transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Invalid Nonce value received from '{fullName}'." );
                         return null;
