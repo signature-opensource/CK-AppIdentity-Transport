@@ -46,7 +46,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <inheritdoc />
         internal protected override async Task<Transport?> TryConnectAsync( IParallelLogger logger,
                                                                             TransportTypeAddress typedAddress,
-                                                                            ILocalKeys localKeys,
                                                                             IRemoteKeys remoteKeys,
                                                                             CancellationToken cancellation )
         {
@@ -55,7 +54,7 @@ namespace CK.AppIdentity.TransportLayer
             try
             {
                 await socket.ConnectAsync( ipEndPoint ).ConfigureAwait( false );
-                return new TcpSocketTransport( typedAddress, socket, localKeys, remoteKeys );
+                return new TcpSocketTransport( typedAddress, socket, remoteKeys );
             }
             catch( Exception ex )
             {

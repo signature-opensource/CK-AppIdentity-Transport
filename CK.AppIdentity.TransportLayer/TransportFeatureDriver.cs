@@ -6,8 +6,8 @@ using System.IO;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Drives the <see cref="TransportFeature"/> remote's lifetime.
-    /// The <see cref="TransportManager"/> is added in the <see cref="ApplicationIdentityService"/>'s features.
+    /// Drives the <see cref="TransportFeature"/> remote's and <see cref="TransportManagerFeature"/> lifetime.
+    /// The <see cref="TransportManagerFeature"/> is added to the <see cref="ApplicationIdentityService"/>'s features.
     /// </summary>
     public class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
@@ -16,7 +16,15 @@ namespace CK.AppIdentity.TransportLayer
         readonly MessageProtocolDirectoryService _protocolDirectory;
         TransportManager? _transportManager;
 
-        public TransportFeatureDriver( ApplicationIdentityService s, IEnumerable<ITransportTypeService> transportTypes, MessageProtocolDirectoryService protocolDirectory )
+        /// <summary>
+        /// Initializes a new transport driver.
+        /// </summary>
+        /// <param name="s">The application identity service.</param>
+        /// <param name="transportTypes">The available type of transports.</param>
+        /// <param name="protocolDirectory">The transport protocol directory.</param>
+        public TransportFeatureDriver( ApplicationIdentityService s,
+                                       IEnumerable<ITransportTypeService> transportTypes,
+                                       MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )
         {
             _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
@@ -32,8 +40,8 @@ namespace CK.AppIdentity.TransportLayer
             {
                 context.Monitor.Error( "Unable to start the Transport Manager." );
             }
-            // Even if initialization fails, register the features: it may be required by others.
-            ApplicationIdentityService.AddFeature( _transportManager );
+            // Even if initialization fails, register the feature: it may be required by others.
+            ApplicationIdentityService.AddFeature( _transportManager.Feature );
             // Local and External remote parties have no Transport.
             foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
@@ -92,21 +100,11 @@ namespace CK.AppIdentity.TransportLayer
             // - If we are listening, then we must have a IRemoteKeys manager to assert the incoming message update
             //   the trusted identity and then the ILocalKeys to sign the response.
             // - If we are targeting, then we must have a ILocalKeys manager to sign the initial message and then
-            //   the IRemoteKeys to assert the response and updated the trusted identity.
+            //   the IRemoteKeys to assert the response and update the trusted identity.
             IRemoteKeys? remoteKeys = r.GetFeature<IRemoteKeys>(); ;
-            ILocalKeys? localKeys = r.Owner.GetFeature<ILocalKeys>();
             if( remoteKeys == null )
             {
-                context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature. " +
-                                        $"It must be able to handle the Trusted Identity key of its peer." );
-            }
-            if( localKeys == null )
-            {
-                context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because its host '{r.Owner}' has a disallowed 'KeyManagement' feature. " +
-                                        $"It must be able to use identity keys of this local party." );
-            }
-            if( remoteKeys == null || localKeys == null )
-            {
+                context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature." );
                 // This is not an error.
                 return true;
             }
@@ -120,14 +118,14 @@ namespace CK.AppIdentity.TransportLayer
                     return false;
                 }
                 var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
-                disallowEviction = a != null && a.Equals( "True", StringComparison.OrdinalIgnoreCase );
+                disallowEviction = bool.TryParse( a, out var b ) && b;
             }
             // No direct initialization error: add the TransportFeature to the party.
             // The initialization is not finished: if the party is listening it must be registered in its
             // listener and if the party is the initiator it must start to try to connect.
             // However, to be able to start exchanging with others, we must know the message protocols
             // that are supported.
-            var t = new TransportFeature( _transportManager, r, listener, target, localKeys, remoteKeys, disallowEviction );
+            var t = new TransportFeature( _transportManager, r, listener, target, remoteKeys, disallowEviction );
             // We add the feature here to the remote so that channels can use it.
             // And we wait a successful initialization to "publish" the new TransportFeature to the
             // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature

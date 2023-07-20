@@ -92,7 +92,7 @@ namespace CK.AppIdentity.TransportLayer
                 return;
             }
             // The remote is who it pretends to be.
-            Debug.Assert( incoming.LocalKeys != null );
+            Debug.Assert( incoming.RemoteKeys != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
@@ -266,7 +266,8 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 // Reads the nonce and computes the ClockOffset.
                 var nonce = r.ReadUInt64();
-                var clockOffset = transportManager.SystemClock.UtcNow - r.ReadDateTime();
+                DateTime now = transportManager.SystemClock.UtcNow;
+                var clockOffset = now - r.ReadDateTime();
                 
                 // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
                 // Accessing the Parties is thread safe.
@@ -290,35 +291,40 @@ namespace CK.AppIdentity.TransportLayer
 
                 // If we have a known remote and the clock offset is fine, we first check the nonce cache and
                 // update its TrustedIdentity: AutoTrustKey may make us immediately accept the remote...
-                Debug.Assert( (incoming.LocalKeys == null) == (incoming.RemoteKeys == null), "They are both known (TransportListener resolved them) or not." );
                 if( remote != null && validClockOffset )
                 {
                     // Nonce is checked only with a valid clock offset: this enables a rather small nonce cache.
                     // We update the nonce cache only if we already trust the remote (AutoTrustKey is not yet applied here).
-                    if( !remote.RemoteKeys.CheckNonceCache( transportManager.Logger, nonce, foundTrustKey ) )
+                    if( !remote.RemoteKeys.CheckNonceCache( transportManager.Logger, now, nonce, foundTrustKey ) )
                     {
                         transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Invalid Nonce value received from '{fullName}'." );
                         return null;
                     }
-                    // Important: The Transport MAY already know the Local and RemoteKeys if the TransportListener was able to
+                    // Important: The Transport MAY already know the RemoteKeys if the TransportListener was able to
                     //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
                     //            initial message as if it was on a non confidential channel.
                     //            Moreover, we check here the work of the TransportListener and throws if a mismatch of keys happened: our source
                     //            of truth is the incoming message's FullName.
-                    if( incoming.LocalKeys == null )
+                    if( incoming.RemoteKeys == null )
                     {
-                        incoming.SetKeys( remote.LocalKeys, remote.RemoteKeys );
+                        incoming.SetKeys( remote.RemoteKeys );
                     }
                     else
                     {
-                        if( incoming.LocalKeys != remote.LocalKeys || incoming.RemoteKeys != remote.RemoteKeys )
+                        if( incoming.RemoteKeys != remote.RemoteKeys )
                         {
-                            Throw.InvalidOperationException( $"Buggy TransportListener: local/remote keys are not the right ones. " +
-                                                             $"Expected keys for '{remote.LocalKeys.Party}/{remote.RemoteKeys.Party}', got '{incoming.LocalKeys.Party}/{incoming.RemoteKeys!.Party}.'" );
+                            Throw.InvalidOperationException( $"Buggy TransportListener: remote keys are not the right ones. " +
+                                                             $"Expected keys for '{remote.RemoteKeys.Party}', got '{incoming.RemoteKeys.Party}.'" );
                         }
                     }
                     // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
+                    bool isalreadyTrusted = foundTrustKey;
                     foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustKey, currentKeyData, currentKey );
+                    // And if we did, then we add the nonce to the cache.
+                    if( !isalreadyTrusted && foundTrustKey )
+                    {
+                        remote.RemoteKeys.AddNonce( transportManager.Logger, now, nonce );
+                    }
                 }
                 return new InitialMessage( incoming.Listener.EndPointDescription,
                                            incoming.RemoteEndPointDescription,

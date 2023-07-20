@@ -16,20 +16,22 @@ namespace CK.AppIdentity.KeyManagement
     sealed partial class RemoteKeys : IRemoteKeys
     {
         internal const string PublicIdentityFilePattern = "Identity.*.public";
-        const int NonceCacheCount = 1024;
-
+        readonly LocalKeys _localKeys;
         readonly IRemoteParty _remote;
         RemoteIdentityKey? _identity;
         readonly AutoTrustKey _autoTrustKey;
         readonly bool _allowClockSet;
 
-        RemoteKeys( IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey, bool allowClockSet )
+        RemoteKeys( LocalKeys localKeys, IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey, bool allowClockSet )
         {
+            _localKeys = localKeys;
             _remote = remote;
             _identity = identity;
             _autoTrustKey = autoTrustKey;
             _allowClockSet = allowClockSet;
         }
+
+        public ILocalKeys LocalKeys => _localKeys;
 
         public IRemoteParty Party => _remote;
 
@@ -69,28 +71,16 @@ namespace CK.AppIdentity.KeyManagement
             return true;
         }
 
-        public bool CheckNonceCache( IActivityLineEmitter logger, ulong nonce, bool addNonce )
+        public bool CheckNonceCache( IActivityLineEmitter logger, DateTime utcNow, ulong nonce, bool addNonce )
         {
-            var noncePath = _remote.SharedFileStore.FolderPath.AppendPart( "Nonce.cache" );
-            //var buffer = ArrayPool<byte>.Shared.Rent( 8192 );
-            //var ulongs = MemoryMarshal.Cast<byte, ulong>( buffer );
-            //try
-            //{
-            //    using var hFile = File.OpenHandle( noncePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, FileOptions.None, 8192 );
-            //    var len = RandomAccess.Read( hFile, buffer, 0 );
-            //    if( len == 0 )
-            //    {
-            //        logger.Trace( $"Creating '{noncePath}' file." );
-            //        ulongs[0] = 0;
-            //        ulongs[1] = nonce;
-            //    }
-            //}
-            //finally
-            //{
-            //    ArrayPool<byte>.Shared.Return( buffer );
-            //}
+            if( _localKeys.NonceCache.Find( nonce ) ) return false;
+            if( addNonce ) _localKeys.NonceCache.Add( nonce );
             return true;
         }
 
+        public void AddNonce( IActivityLineEmitter logger, DateTime utcNow, ulong nonce )
+        {
+            _localKeys.NonceCache.Add( nonce );
+        }
     }
 }

@@ -38,9 +38,8 @@ namespace CK.AppIdentity.TransportLayer
         [AllowNull]
         CancellationTokenSource _cts;
 
-        // This is either known at the Transport creation time or set
-        // on a successful initial message negotiation.
-        ILocalKeys? _localKeys;
+        // This is either known at the Transport creation time (initiator) or set
+        // on a initial message if the remote party exists.
         IRemoteKeys? _remoteKeys;
 
         // Settable at any time: this is a soft condemned that doesn't signal the
@@ -54,23 +53,17 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="remoteEndPointDescription">
         /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
         /// </param>
-        /// <param name="localKeys">
+        /// <param name="remoteKeys">
         /// When not null, it means that the TransportListener was able to resolve the remote party
         /// among the <see cref="TransportListener.Parties"/>. This is possible for secured connections
-        /// where the SSL certificates were available.
-        /// <para>
-        /// When this is not null, then the <paramref name="remoteKeys"/> is also not null.
-        /// </para>
+        /// when a SSL certificates is available.
         /// </param>
-        /// <param name="remoteKeys">See <paramref name="localKeys"/>.</param>
         protected Transport( TransportListener listener,
                              string? remoteEndPointDescription,
-                             ILocalKeys? localKeys = null,
                              IRemoteKeys? remoteKeys = null )
             : this( listener._transportManager.SystemClock,
                     (object)listener,
                     remoteEndPointDescription,
-                    localKeys,
                     remoteKeys )
         {
             Throw.CheckNotNullArgument( listener );
@@ -81,32 +74,27 @@ namespace CK.AppIdentity.TransportLayer
         /// We are on a known remote: the local and remote keys are known in this case.
         /// </summary>
         /// <param name="targetAddress">The target address.</param>
-        /// <param name="localKeys">Local key manager of this remote party.</param>
         /// <param name="remoteKeys">Remote key manager of this remote party.</param>
         /// <param name="remoteEndPointDescription">
         /// Target address of this Transport. When null <c>"&lt;No EndPoint description&gt;"</c> is used.
         /// </param>
         protected Transport( TransportTypeAddress targetAddress,
-                             ILocalKeys localKeys,
                              IRemoteKeys remoteKeys,
                              string? remoteEndPointDescription )
-            : this( localKeys.Party.ApplicationIdentityService.SystemClock,
+            : this( remoteKeys.Party.ApplicationIdentityService.SystemClock,
                     (object)targetAddress,
                     remoteEndPointDescription,
-                    localKeys,
                     remoteKeys )
         {
-            Throw.CheckArgument( localKeys != null && remoteKeys != null );
+            Throw.CheckArgument( remoteKeys != null );
             Throw.CheckNotNullArgument( targetAddress );
         }
 
         Transport( ISystemClock systemClock,
                    object source,
                    string? remoteEndPointDescription,
-                   ILocalKeys? localKeys,
                    IRemoteKeys? remoteKeys )
         {
-            Throw.CheckArgument( (localKeys != null ) == (remoteKeys != null ) );
             _remoteEndPointDescription = remoteEndPointDescription ?? "<No EndPoint description>";
             _listenerOrTargetAddress = source;
             _reader = ReadExactlyAsync;
@@ -114,7 +102,6 @@ namespace CK.AppIdentity.TransportLayer
             // Negotiated protocols are set by StartReceiveAsync.
             _receiveFactory = new IncomingMessageFactory( systemClock );
             _cts = new CancellationTokenSource();
-            _localKeys = localKeys;
             _remoteKeys = remoteKeys;
         }
 
@@ -172,14 +159,11 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public DateTime LastReceived => _receiveFactory.LastReceived;
 
-        internal ILocalKeys? LocalKeys => _localKeys;
-
         internal IRemoteKeys? RemoteKeys => _remoteKeys;
 
-        internal void SetKeys( ILocalKeys localKeys, IRemoteKeys remoteKeys )
+        internal void SetKeys( IRemoteKeys remoteKeys )
         {
-            Debug.Assert( _localKeys == null && _remoteKeys == null );
-            _localKeys = localKeys;
+            Debug.Assert( _remoteKeys == null );
             _remoteKeys = remoteKeys;
         }
 

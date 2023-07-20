@@ -19,30 +19,24 @@ namespace CK.AppIdentity.TransportLayer
         readonly MessageProtocolDirectoryService _protocolDirectory;
         readonly List<TransportListener> _listeners;
         readonly TransportManagerFeature _exposedFeature;
-        readonly ISystemClock _systemClock;
 
-        // Heart beats handles the BackTask list.
-        readonly Timer _heartbeat;
+        // ApplicationIdentityService's heart beat handles the BackTask list.
         readonly BackTask.List _backTasks;
         readonly BackTask.Head _headIncomingConnection;
         readonly BackTask.Head _headOutgoingConnection;
-        bool _inHeartBeat;
-        int _heartBeatReentrantCount;
 
         internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
-            : base( $"TransportManager for {agent.ApplicationIdentityService}" )
+            : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeatBeatPeriod )
         {
             _agent = agent;
             _protocolDirectory = protocolDirectory;
             _listeners = new List<TransportListener>();
-            _systemClock = agent.ApplicationIdentityService.SystemClock;
             _exposedFeature = new TransportManagerFeature( this );
             agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
             _backTasks = new BackTask.List( this );
             _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
             _headOutgoingConnection = BackTask.Head.Create<OutgoingConnectionBackTask>();
-            _heartbeat = new Timer( OnTimer, this, 1000, 1000 );
         }
 
         /// <summary>
@@ -50,9 +44,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public TransportManagerFeature Feature => _exposedFeature;
 
-        public ISystemClock SystemClock => _systemClock;
-
-        static void OnTimer( object? state ) => Unsafe.As<TransportManager>( state! ).PushTypedJob( DBNull.Value );
+        public ISystemClock SystemClock => _agent.ApplicationIdentityService.SystemClock;
 
         internal bool Start() => TryStart() == RunningStatus.Running;
 
@@ -87,9 +79,28 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public MessageProtocolDirectoryService MessageProtocolDirectory => _protocolDirectory;
 
+        protected override Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount )
+        {
+            int c = _backTasks.AliveCount;
+            if( c > 0 )
+            {
+                using( monitor.OpenTrace( $"TransportManager heartbeat ({c} active background tasks out of {_backTasks.TotalCount})." ) )
+                {
+                    var (handled, done) = _backTasks.OnHeartBeat( monitor );
+                    monitor.CloseGroup( $"{done} completed out of {handled} handled." );
+                }
+            }
+            return Task.CompletedTask;
+        }
+
         internal Task RaiseFeatureAppearsEventAsync( IActivityMonitor monitor, TransportFeature t )
         {
             Debug.Assert( IsInApplicationIdentityLoop( monitor ) );
+            // When a new feature is created, we immediately raise the Feature.TransportChanged event
+            // from the ApplicationIdentity loop but we push a job to update the possible peering issue
+            // for the unknwon remote (only the full name is none from an incoming message) because
+            // the peering issues are managed only from the TransportManager loop.
+            PushTypedJob( t );
             return _exposedFeature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, t );
         }
 
@@ -139,9 +150,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new PeeringIssueJob( kind, null, remote, enlistUrl, null ) );
         }
 
-        internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap, TimeSpan clockDrift )
+        internal void NewValidTransport( IRemoteParty remote, Transport transport, MessageProtocolMap protocolMap, TimeSpan clockOffset )
         {
-            PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockDrift ) );
+            PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockOffset ) );
         }
 
         internal void KillTransport( Transport transport )
@@ -161,7 +172,14 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SwitchOn( TransportFeature feature )
         {
-            PushTypedJob( feature );
+            PushTypedJob( new SwitchOnJob( feature ) );
+        }
+
+        internal Task<bool> TryAdjustSystemTimeAsync( IRemoteParty party, TimeSpan offset )
+        {
+            var task = new TaskCompletionSource<bool>();
+            PushTypedJob( new TryAdjustSystemTimeJob( task, party, offset ) );
+            return task.Task;
         }
 
         internal void TearDown( TransportFeature feature )
@@ -172,48 +190,21 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
         }
 
-        sealed record class PeeringIssueJob( PeeringIssueKind Kind, InitialMessage? Message, TransportFeature? Remote, string? EnlistUrl, TimeSpan? InvalidClockOffset );
         // A new incoming Transport from a TransportListener is directly the Transport object.
+        // A new TransportFeature is directly the TransportFeature object.
         // The heart beat (timer) is DBNull.Value instance.
-        // SwitchOn of a TransportFeature is the transport feature itself.
+        sealed record class PeeringIssueJob( PeeringIssueKind Kind, InitialMessage? Message, TransportFeature? Remote, string? EnlistUrl, TimeSpan? InvalidClockOffset );
         sealed record class TryConnectToJob( TransportFeature Remote );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan clockDrift );
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
         sealed record class SwitchOffJob( TransportFeature Feature, string Reason );
+        sealed record class SwitchOnJob( TransportFeature Feature );
+        sealed record class TryAdjustSystemTimeJob( TaskCompletionSource<bool> Task, IRemoteParty Party, TimeSpan Offset );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
             switch( job )
             {
-                case DBNull: // Heartbeat.
-                    {
-                        // This is mainly when debugging. In practice, no back tasks check
-                        // should be longer than 1 second.
-                        if( _inHeartBeat )
-                        {
-                            ++_heartBeatReentrantCount;
-                            if( !Debugger.IsAttached )
-                            {
-                                monitor.Warn( $"Heartbeat blocked for {_heartBeatReentrantCount} count." );
-                            }
-                        }
-                        else
-                        {
-                            _heartBeatReentrantCount = 0;
-                            _inHeartBeat = true;
-                            int c = _backTasks.AliveCount;
-                            if( c > 0 )
-                            {
-                                using( monitor.OpenTrace( $"TransportManager heartbeat ({c} active background tasks out of {_backTasks.TotalCount})." ) )
-                                {
-                                    var (handled, done) = _backTasks.OnHeartBeat( monitor );
-                                    monitor.CloseGroup( $"{done} completed out of {handled} handled." );
-                                }
-                            }
-                            _inHeartBeat = false;
-                        }
-                        return default;
-                    }
                 case KillTransportJob j:
                     return HandleKillTransport( monitor, j );
                 case TryConnectToJob c:
@@ -227,14 +218,18 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
                     return default;
+                case TransportFeature newFeature:
+                    return HandleNewRemoteTransportFeature( monitor, newFeature );
                 case PeeringIssueJob p:
                     return HandlePeeringIssue( monitor, p );
                 case NewValidTransportJob j:
                     return HandleNewValidTransport( monitor, j );
-                case TransportFeature switchOn:
-                    return switchOn.DoSwitchOnAsync( monitor );
+                case SwitchOnJob on:
+                    return on.Feature.DoSwitchOnAsync( monitor );
                 case SwitchOffJob off:
                     return off.Feature.DoSwitchOffAsync( monitor, off.Reason );
+                case TryAdjustSystemTimeJob time:
+                    return HandleTryAdjustSystemTime( monitor, time.Task, time.Party, time.Offset );
             }
             if( job == this )
             {
@@ -243,13 +238,35 @@ namespace CK.AppIdentity.TransportLayer
             return base.ExecuteTypedJobAsync( monitor, job );
         }
 
+        ValueTask HandleTryAdjustSystemTime( IActivityMonitor monitor, TaskCompletionSource<bool> task, IRemoteParty party, TimeSpan offset )
+        {
+            using( monitor.OpenWarn( $"Trying to adjust system time by '{offset}' from remote '{party}'." ) )
+            {
+                try
+                {
+                    bool success = _agent.SystemClock.TryAdjustCurrentTime( monitor, offset );
+                    task.SetResult( success );
+                }
+                catch( Exception ex )
+                {
+                    monitor.Error( "While trying to adjust system time.", ex );
+                    task.SetResult( false );
+                }
+                return default;
+            }
+        }
+
         async ValueTask HandleStopAsync( IActivityMonitor monitor )
         {
-            _heartbeat.Dispose();
             _backTasks.Destroy( monitor );
             await DisposeListenersAsync( monitor );
             // Sends the MicroAgent stop marker.
             SendStop();
+        }
+
+        async ValueTask HandleNewRemoteTransportFeature( IActivityMonitor monitor, TransportFeature newFeature )
+        {
+            await _exposedFeature.OnRemoteAppearedAsync( monitor, newFeature );
         }
 
         async ValueTask HandleKillTransport( IActivityMonitor monitor, KillTransportJob j )

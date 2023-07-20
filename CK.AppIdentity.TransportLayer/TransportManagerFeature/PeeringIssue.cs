@@ -50,17 +50,25 @@ namespace CK.AppIdentity.TransportLayer
         [Conditional( "DEBUG" )]
         static void CheckInvariants( PeeringIssueKind kind, InitialMessage? initialMessage, TransportFeature? remote, string? enlistUrl, TimeSpan? invalidClockOffset )
         {
+            // For None, we keep the data as-is: no invariant exist. 
+            if( kind == PeeringIssueKind.None ) return;
+
             Debug.Assert( kind != PeeringIssueKind.InvalidClockOffset || invalidClockOffset.HasValue, "InvalidClockOffset => a non null value for the offset" );
+
             Debug.Assert( !(kind == PeeringIssueKind.InvalidClockOffset && initialMessage != null)
                                 || (!initialMessage.ValidClockOffset && invalidClockOffset!.Value == initialMessage.ClockOffset),
                           "Listener InvalidClockOffset => Invalid clock offset is the one of the initialMessage" );
+
             Debug.Assert( enlistUrl == null
                             || ((kind == PeeringIssueKind.WaitingRemoteApproval || kind == PeeringIssueKind.WaitingRemoteCreation) && initialMessage == null && remote != null),
                           "EnlistUrl => WaitingRemoteApproval/Creation and IsInitiator" );
+
             Debug.Assert( kind != PeeringIssueKind.WaitingRemoteApproval && kind != PeeringIssueKind.WaitingRemoteCreation
                             || initialMessage == null,
                             "WaitingRemoteApproval/Creation => IsInitiator" );
+
             Debug.Assert( kind != PeeringIssueKind.UnknwonIncoming || remote == null, "UnknwonIncoming => null remote" );
+
             Debug.Assert( kind != PeeringIssueKind.UntrustedIncoming
                             || initialMessage != null && remote != null && initialMessage.ValidClockOffset,
                           "UntrustedIncoming => remote is known, clock offset is valid. This is all we can say (our remote may have a TrustedIdentity " +
@@ -204,6 +212,43 @@ namespace CK.AppIdentity.TransportLayer
                 _remote = remote;
                 _enlistUrl = enlistUrl;
                 _invalidClockOffset = invalidClockOffset;
+            }
+        }
+
+        internal void EjectUnknown()
+        {
+            Debug.Assert( _remote == null );
+            lock( _lock )
+            {
+                _kind = PeeringIssueKind.None;
+            }
+        }
+
+        internal void OnRemoteTornDown()
+        {
+            Debug.Assert( _remote != null );
+            lock( _lock )
+            {
+                if( _kind == PeeringIssueKind.UntrustedIncoming )
+                {
+                    _kind = PeeringIssueKind.UnknwonIncoming;
+                }
+                _remote = null;
+                CheckInvariants( _kind, _initialMessage, _remote, _enlistUrl, _invalidClockOffset );
+            }
+        }
+
+        internal void OnRemoteAppeared( TransportFeature remote )
+        {
+            Debug.Assert( _remote == null );
+            lock( _lock )
+            {
+                if( _kind == PeeringIssueKind.UnknwonIncoming )
+                {
+                    _kind = PeeringIssueKind.UntrustedIncoming;
+                }
+                _remote = remote;
+                CheckInvariants( _kind, _initialMessage, _remote, _enlistUrl, _invalidClockOffset );
             }
         }
     }

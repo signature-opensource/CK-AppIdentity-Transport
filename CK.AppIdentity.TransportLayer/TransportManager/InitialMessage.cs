@@ -96,7 +96,7 @@ namespace CK.AppIdentity.TransportLayer
             _endPointDescription = string.Empty;
             _remoteEndPointDescription = string.Empty;
             _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
-            _localIdentities = f.LocalKeys.Identities;
+            _localIdentities = f.RemoteKeys.LocalKeys.Identities;
         }
 
         /// <summary>

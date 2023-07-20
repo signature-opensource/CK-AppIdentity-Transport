@@ -31,7 +31,7 @@ namespace CK.AppIdentity
         /// </summary>
         /// <param name="logger">A <see cref="IActivityMonitor"/>, a <see cref="IParallelLogger"/> and even the <see cref="ActivityMonitor.StaticLogger"/> can be used.</param>
         /// <param name="fullPath">The full path of the file to trash.</param>
-        /// <param name="immediateDelete">Optionally deletes the file immediately instead of moving it to the bin.</param>
+        /// <param name="immediateDelete">Optionally tries to delete the file immediately instead of moving it to the bin.</param>
         /// <returns>True on success, false on error.</returns>
         bool TryTrash( IActivityLineEmitter logger, in NormalizedPath fullPath, bool immediateDelete = false );
     }

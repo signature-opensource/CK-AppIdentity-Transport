@@ -291,7 +291,7 @@ namespace CK.AppIdentity.TransportLayer
                     // When the incoming remote is not known at all, we don't have local
                     // keys (we cannot locate the local party to use so we take no risk: selecting the root
                     // ApplicationIdentityService local is not a good idea).
-                    if( transport.LocalKeys == null )
+                    if( transport.RemoteKeys == null )
                     {
                         w.WriteBool( false );
                         w.Commit();
@@ -299,7 +299,7 @@ namespace CK.AppIdentity.TransportLayer
                     else
                     {
                         w.WriteBool( true );
-                        WriteIdentityKeysAndSign( ref w, sequence, transport.LocalKeys.Identities );
+                        WriteIdentityKeysAndSign( ref w, sequence, transport.RemoteKeys.LocalKeys.Identities );
                     }
                 }
                 return builder.CreateMessage( sequence );
@@ -357,8 +357,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendOffRemoteMessageAsync( Transport transport, ulong nonce, TimeSpan shutUp )
         {
-            Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( nonce, shutUp, transport.LocalKeys.Identities );
+            Debug.Assert( transport.RemoteKeys != null );
+            using var m = CreateAndSignMessage( nonce, shutUp, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan shutUp, IReadOnlyList<LocalIdentityKey> localIdentities )
@@ -414,8 +414,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendInvalidClockOffsetMessageAsync( ISystemClock systemClock, Transport transport, TimeSpan offset, ulong nonce )
         {
-            Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( systemClock, nonce, offset, transport.LocalKeys.Identities );
+            Debug.Assert( transport.RemoteKeys != null );
+            using var m = CreateAndSignMessage( systemClock, nonce, offset, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock, ulong nonce, TimeSpan offset, IReadOnlyList<LocalIdentityKey> localIdentities )
@@ -504,8 +504,8 @@ namespace CK.AppIdentity.TransportLayer
                                                                                ulong nonce,
                                                                                TimeSpan initialClockOffset )
         {
-            Debug.Assert( transport.LocalKeys != null );
-            using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset, transport.LocalKeys.Identities );
+            Debug.Assert( transport.RemoteKeys != null );
+            using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock,
@@ -600,8 +600,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True on success, false if transport has been canceled.</returns>
         public static async ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming, ulong nonce )
         {
-            Debug.Assert( incoming.LocalKeys != null );
-            using var m = CreateAndSignMessage( nonce, incoming.LocalKeys.Identities );
+            Debug.Assert( incoming.RemoteKeys != null );
+            using var m = CreateAndSignMessage( nonce, incoming.RemoteKeys.LocalKeys.Identities );
             return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
@@ -654,8 +654,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The awaitable.</returns>
         public static async ValueTask<bool> SendMissingProtocolsMessageAsync( Transport incoming, ulong nonce, IReadOnlyList<MessageProtocol> missingProtocols )
         {
-            Debug.Assert( incoming.LocalKeys != null );
-            using var m = CreateAndSignMessage( missingProtocols, nonce, incoming.LocalKeys.Identities );
+            Debug.Assert( incoming.RemoteKeys != null );
+            using var m = CreateAndSignMessage( missingProtocols, nonce, incoming.RemoteKeys.LocalKeys.Identities );
             return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( IReadOnlyList<MessageProtocol> missingProtocols, ulong nonce, IReadOnlyList<LocalIdentityKey> localIdentities )
@@ -725,7 +725,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockOffset )
         {
-            using var m = CreateAndSignMessage( nonce, finalClockOffset, remote.LocalKeys.CurrentIdentity );
+            using var m = CreateAndSignMessage( nonce, finalClockOffset, remote.RemoteKeys.LocalKeys.CurrentIdentity );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, LocalIdentityKey currentIdentity )

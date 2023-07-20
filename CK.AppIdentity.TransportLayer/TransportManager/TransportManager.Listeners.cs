@@ -82,7 +82,5 @@ namespace CK.AppIdentity.TransportLayer
             }
             return l;
         }
-
-
     }
 }

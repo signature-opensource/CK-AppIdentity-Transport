@@ -18,7 +18,7 @@ namespace CK.AppIdentity
     /// <summary>
     /// Singleton hosted service that is the local party and the root collection of <see cref="IOwnedParty"/>.
     /// </summary>
-    public sealed class ApplicationIdentityService : LocalParty, IApplicationIdentityService, ISingletonAutoService, IHostedService, IAsyncDisposable
+    public sealed partial class ApplicationIdentityService : LocalParty, IApplicationIdentityService, ISingletonAutoService, IHostedService, IAsyncDisposable
     {
         readonly AppIdentityAgent _agent;
         internal readonly List<ApplicationIdentityFeatureDriver> _builders;
@@ -26,6 +26,7 @@ namespace CK.AppIdentity
         readonly internal PerfectEventSender<IOwnedParty> _allPartyChanged;
         internal TenantDomainParty[] _domains;
         readonly ISystemClock _systemClock;
+        internal readonly PerfectEventSender<int> _heartbeat;
 
         /// <summary>
         /// Initializes a new <see cref="ApplicationIdentityService"/> bound to a required configuration.
@@ -38,8 +39,9 @@ namespace CK.AppIdentity
             Throw.CheckNotNullArgument( serviceProvider );
             _builders = new List<ApplicationIdentityFeatureDriver>();
             _initialization = new TaskCompletionSource();
-            _systemClock = serviceProvider.GetService<ISystemClock>() ?? CK.Core.SystemClock.Default;
-            _agent = new AppIdentityAgent( this, serviceProvider );
+            _systemClock = serviceProvider.GetService<ISystemClock>() ?? DefaultClock;
+            _agent = new AppIdentityAgent( this, serviceProvider, _systemClock.HeatBeatPeriod );
+            _heartbeat = new PerfectEventSender<int>();
             _allPartyChanged = (PerfectEventSender<IOwnedParty>)_remotesChangedBridge.Target;
             _domains = configuration.TenantDomains.Select( c => new TenantDomainParty( c, false, this ) ).ToArray();
         }
@@ -103,7 +105,10 @@ namespace CK.AppIdentity
         public Task InitializationTask => _initialization.Task;
 
         /// <inheritdoc />
-        public ISystemClock SystemClock => _systemClock;
+        public PerfectEvent<int> Heartbeat => _heartbeat.PerfectEvent;
+
+        /// <inheritdoc />
+        public Core.ISystemClock SystemClock => _systemClock;
 
         /// <inheritdoc />
         public Task<AddedDynamicParties?> AddPartiesAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )

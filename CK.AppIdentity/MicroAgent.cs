@@ -20,6 +20,7 @@ namespace CK.AppIdentity
     public abstract class MicroAgent
     {
         readonly ActivityMonitor _monitor;
+        readonly Timer? _heartbeat;
         // We use null as the final close signal (after the _stopSignal instance).
         // No need for a cancellation token source.
         // We use the channel object as the lock (it is the single private object).
@@ -27,20 +28,35 @@ namespace CK.AppIdentity
         readonly string _name;
         Task? _runningTask;
         RunningStatus _status;
+        int _heartbeatPeriod;
+        int _heartbeatCount;
+        int _heartbeatReentrantCount;
+        bool _inHeartBeat;
+
+        static readonly object _heartbeatSignal = new object();
         static readonly object _stopSignal = new object();
 
         /// <summary>
         /// Initializes a new Micro Agent.
         /// </summary>
         /// <param name="name">The required name of this micro agent.</param>
-        protected MicroAgent( string name )
+        /// <param name="heartbeatPeriod"></param>
+        protected MicroAgent( string name, int heartbeatPeriod = 0 )
         {
             Throw.CheckNotNullArgument( name );
+            Throw.CheckArgument( heartbeatPeriod >= 0 );
             _monitor = new ActivityMonitor( name );
             Debug.Assert( _monitor.ParallelLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _name = name;
+            if( heartbeatPeriod > 0 )
+            {
+                _heartbeatPeriod = heartbeatPeriod;
+                _heartbeat = new Timer( OnTimer, this, Timeout.Infinite, Timeout.Infinite );
+            }
         }
+
+        static void OnTimer( object? state ) => Unsafe.As<MicroAgent>( state! ).PushTypedJob( _heartbeatSignal );
 
         /// <summary>
         /// The agent status.
@@ -135,6 +151,7 @@ namespace CK.AppIdentity
                 {
                     return _status;
                 }
+                _heartbeat?.Change( _heartbeatPeriod, _heartbeatPeriod );
                 _status = RunningStatus.Running;
                 _runningTask = Task.Run( RunAsync );
                 return _status;
@@ -207,8 +224,36 @@ namespace CK.AppIdentity
                     {
                         using( _monitor.OpenInfo( $"Stopping {ToString()}." ) )
                         {
+                            // The heartbeat is disposed when sending the stop signal.
                             await OnStopAsync( _monitor );
                             if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
+                        }
+                    }
+                    else if( o == _heartbeatSignal )
+                    {
+                        // This is mainly when debugging. In practice, heart beat handling
+                        // should not be longer than 1 second.
+                        if( _inHeartBeat )
+                        {
+                            ++_heartbeatReentrantCount;
+                            if( !Debugger.IsAttached )
+                            {
+                                _monitor.Warn( $"Heartbeat blocked for {_heartbeatReentrantCount} count." );
+                            }
+                        }
+                        else
+                        {
+                            _heartbeatReentrantCount = 0;
+                            _inHeartBeat = true;
+                            try
+                            {
+                                await OnHeartbeatAsync( _monitor, _heartbeatCount++ );
+                            }
+                            catch( Exception ex )
+                            {
+                                _monitor.Error( $"{_name}'s heartbeat unhandled error.", ex );
+                            }
+                            _inHeartBeat = false;
                         }
                     }
                     else if( o is IJob job )
@@ -237,13 +282,13 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
-        /// Emits "Unhandled job type" error.
+        /// Emits "Unhandled job type" log error.
         /// </summary>
         /// <param name="monitor">The monitor.</param>
         /// <param name="job">The unknown job.</param>
         protected virtual ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
-            monitor.Error( $"Unhandled job type '{job.GetType()}'." );
+            monitor.Error( $"Unhandled job type '{job.GetType():C}'." );
             return default;
         }
 
@@ -255,6 +300,18 @@ namespace CK.AppIdentity
         /// <param name="monitor">The agent monitor.</param>
         /// <returns>True allow the agent to run, false to prevent it to start.</returns>
         protected virtual bool OnTryStart( IActivityMonitor monitor ) => true;
+
+        /// <summary>
+        /// Optional heartbeat implementation. Exceptions are caught and logged, reentrancy
+        /// is already checked.
+        /// <para>
+        /// Does nothing by default.
+        /// </para>
+        /// </summary>
+        /// <param name="monitor">The agent's monitor.</param>
+        /// <param name="callCount">The current call count. Starts at 0.</param>
+        /// <returns>The awaitable.</returns>
+        protected virtual Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount ) => Task.CompletedTask;
 
         /// <summary>
         /// Called at the start of the running the loop.
@@ -278,6 +335,7 @@ namespace CK.AppIdentity
             {
                 if( _status == RunningStatus.Running )
                 {
+                    _heartbeat?.Dispose();
                     _status = RunningStatus.Stopped;
                     _channel.Writer.TryWrite( _stopSignal );
                     return true;

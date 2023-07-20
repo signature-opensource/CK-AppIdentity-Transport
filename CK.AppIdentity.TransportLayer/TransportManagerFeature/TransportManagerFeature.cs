@@ -84,6 +84,31 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public PerfectEvent<PeeringIssue> EventAppeared => _peeringIssueChanged.PerfectEvent;
 
+        internal Task OnRemoteTornDownAsync( IActivityMonitor monitor, TransportFeature remote )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) && issue.Remote != null )
+            {
+                _unknwonRemoteCount++;
+                issue.OnRemoteTornDown();
+                return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
+            }
+            return Task.CompletedTask;
+        }
+
+        internal Task OnRemoteAppearedAsync( IActivityMonitor monitor, TransportFeature remote )
+        {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) )
+            {
+                Debug.Assert( issue.Remote == null );
+                _unknwonRemoteCount--;
+                issue.OnRemoteAppeared( remote );
+                return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
+            }
+            return Task.CompletedTask;
+        }
+
         internal Task AddOrUpdateIssueAsync( IActivityMonitor monitor,
                                              PeeringIssueKind kind,
                                              InitialMessage? message,
@@ -91,6 +116,9 @@ namespace CK.AppIdentity.TransportLayer
                                              string? enlistUrl,
                                              TimeSpan? invalidClockOffset )
         {
+            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Debug.Assert( kind != PeeringIssueKind.None );
+
             // Use the remote (long-living) full name if possible.
             var fullName = remote?.Party.FullName ?? message!.FullName;
             if( _peeringIssues.TryGetValue( fullName, out var exist ) )
@@ -105,45 +133,66 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     _exposedIssues = null;
                 }
+                return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
             }
-            else
+            // If there is no remote then cleanup in excess unknwon remotes if any
+            // before adding the new one.
+            if( remote == null )
             {
-                if( kind == PeeringIssueKind.None )
+                int inExcess = ++_unknwonRemoteCount - _maxUnknownRemoteCount;
+                if( inExcess > 0 )
                 {
-                    // This should not happen (defensive programming).
-                    return Task.CompletedTask;
+                    return AddNewUnknownAndTrimExcess( monitor, kind, message, enlistUrl, invalidClockOffset, fullName, inExcess );
                 }
-                // If there is no remote then cleaup in excess unknwon if any
-                // before adding the new one.
-                if( remote == null )
-                {
-                    int inExcess = ++_unknwonRemoteCount - _maxUnknownRemoteCount;
-                    if( inExcess > 0 )
-                    {
-                        var toRemove = _peeringIssues.Values.Where( i => i.Remote == null ).OrderByDescending( i => i.LastUpdated ).Take( inExcess ).ToArray();
-                        monitor.Info( $"Removing peering issues for unknown remotes: '{toRemove.Select( i => i.FullName ).Concatenate( "', '")}'. Max {_maxUnknownRemoteCount} has been reached." );
-                        lock( _peeringIssues )
-                        {
-                            foreach( var i in toRemove ) _peeringIssues.Remove( i.FullName );
-                        }
-                        _exposedIssues = null;
-                    }
-                }
-                // Add the new issue.
-                exist = new PeeringIssue( fullName,
+            }
+            return AddNewPeeringIssue( monitor, kind, message, remote, enlistUrl, invalidClockOffset, fullName );
+        }
+
+        async Task AddNewUnknownAndTrimExcess( IActivityMonitor monitor,
+                                               PeeringIssueKind kind,
+                                               InitialMessage? message,
+                                               string? enlistUrl,
+                                               TimeSpan? invalidClockOffset,
+                                               NormalizedPath fullName,
+                                               int inExcess )
+        {
+            var toRemove = _peeringIssues.Values.Where( i => i.Remote == null ).OrderByDescending( i => i.LastUpdated ).Take( inExcess ).ToArray();
+            monitor.Info( $"Removing peering issues for unknown remotes: '{toRemove.Select( i => i.FullName ).Concatenate( "', '" )}'. Max {_maxUnknownRemoteCount} has been reached." );
+            lock( _peeringIssues )
+            {
+                foreach( var i in toRemove ) _peeringIssues.Remove( i.FullName );
+            }
+            _exposedIssues = null;
+            foreach( var i in toRemove )
+            {
+                i.EjectUnknown();
+                await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
+            }
+            await AddNewPeeringIssue( monitor, kind, message, null, enlistUrl, invalidClockOffset, fullName );
+        }
+
+        Task AddNewPeeringIssue( IActivityMonitor monitor,
+                                 PeeringIssueKind kind,
+                                 InitialMessage? message,
+                                 TransportFeature? remote,
+                                 string? enlistUrl,
+                                 TimeSpan? invalidClockOffset,
+                                 NormalizedPath fullName )
+        {
+            // Add the new issue.
+            var issue = new PeeringIssue( fullName,
                                           _transportManager.ApplicationIdentityAgent.ApplicationIdentityService.SystemClock.UtcNow,
                                           kind,
                                           message,
                                           remote,
                                           enlistUrl,
                                           invalidClockOffset );
-                lock( _peeringIssues )
-                {
-                    _peeringIssues.Add( fullName, exist );
-                }
-                _exposedIssues = null;
+            lock( _peeringIssues )
+            {
+                _peeringIssues.Add( fullName, issue );
             }
-            return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
+            _exposedIssues = null;
+            return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
         }
     }
 }

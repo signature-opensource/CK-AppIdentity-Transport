@@ -48,7 +48,7 @@ namespace CK.AppIdentity
         public IReadOnlyCollection<IRemoteParty> Remotes => _remotes;
 
         /// <inheritdoc />
-        public IFileStore PrivateFileStore => _privateStore;
+        public IFileStore LocalFileStore => _privateStore;
 
         /// <inheritdoc />
         public async Task<IReadOnlyCollection<IRemoteParty>?> AddMultipleRemotesAsync( IActivityMonitor monitor, Action<MutableConfigurationSection> configuration )

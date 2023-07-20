@@ -82,6 +82,14 @@ namespace CK.AppIdentity
         ISystemClock SystemClock { get; }
 
         /// <summary>
+        /// Raises an approximative 1 second, non reentrant, heart beat signal.
+        /// <para>
+        /// The period can be changed by using a specialized <see cref="ApplicationIdentityService.ISystemClock"/>.
+        /// </para>
+        /// </summary>
+        PerfectEvent<int> Heartbeat { get; }
+
+        /// <summary>
         /// Tries to create and initialize one or more new parties that can be tenant domains or simple
         /// remotes from a configuration section.
         /// These parties will be <see cref="IOwnedParty.IsDynamic"/> and can be destroyed.

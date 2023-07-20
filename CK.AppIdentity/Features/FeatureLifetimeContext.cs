@@ -11,6 +11,9 @@ namespace CK.AppIdentity
     /// <summary>
     /// Context provided to <see cref="ApplicationIdentityFeatureDriver.SetupAsync(FeatureLifetimeContext)"/>
     /// and to <see cref="ApplicationIdentityFeatureDriver.SetupDynamicRemoteAsync(FeatureLifetimeContext, IRemoteParty)"/>.
+    /// <para>
+    /// This runs in the ApplicationIdentity agent's loop context.
+    /// </para>
     /// </summary>
     public sealed class FeatureLifetimeContext
     {

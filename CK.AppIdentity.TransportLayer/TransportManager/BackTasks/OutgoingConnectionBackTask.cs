@@ -165,12 +165,11 @@ namespace CK.AppIdentity.TransportLayer
             Debug.Assert( remote.TargetAddress != null );
             var transport = await remote.TargetAddress.Type.TryConnectAsync( transportManager.Logger,
                                                                              remote.TargetAddress,
-                                                                             remote.LocalKeys,
                                                                              remote.RemoteKeys,
                                                                              cancellation.Token );
             if( transport != null )
             {
-                Debug.Assert( transport.LocalKeys == remote.LocalKeys && transport.RemoteKeys == remote.RemoteKeys );
+                Debug.Assert( transport.RemoteKeys == remote.RemoteKeys );
                 IncomingMessage? firstAnswer = null;
                 transport.SetCancellationSource( cancellation );
                 bool disposeTransport = true;
@@ -279,7 +278,7 @@ namespace CK.AppIdentity.TransportLayer
                                 // If we trust the remote and the "AllowClockSet" configuration is true, update our clock.
                                 if( foundTrustedKey && remote.RemoteKeys.AllowClockSet )
                                 {
-                                    bool success = await transportManager.TrySetSystemTimeAsync( remote.Party, remoteTime, msgReceivedTime );
+                                    bool success = await transportManager.TryAdjustSystemTimeAsync( remote.Party, msgReceivedTime - remoteTime );
                                     if( success )
                                     {
                                         // On success, retry quickly.

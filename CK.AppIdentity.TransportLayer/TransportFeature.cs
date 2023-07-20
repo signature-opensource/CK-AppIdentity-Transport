@@ -30,7 +30,6 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly TransportTypeAddress? _target;
 
-        readonly ILocalKeys _localKeys;
         readonly IRemoteKeys _remoteKeys;
 
         readonly PerfectEventSender<TransportFeature> _connectionAvailabilityChanged;
@@ -57,7 +56,6 @@ namespace CK.AppIdentity.TransportLayer
                                    IRemoteParty remote,
                                    TransportListener? listener,
                                    TransportTypeAddress? target,
-                                   ILocalKeys localKeys,
                                    IRemoteKeys remoteKeys,
                                    bool disallowEviction )
         {
@@ -67,7 +65,6 @@ namespace CK.AppIdentity.TransportLayer
             _listener = listener;
             _remoteKeys = remoteKeys;
             _target = target;
-            _localKeys = localKeys;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
 
             _connectionAvailabilityChanged = new PerfectEventSender<TransportFeature>();
@@ -200,7 +197,8 @@ namespace CK.AppIdentity.TransportLayer
         internal void SetTornDownSwitchOff() => Interlocked.Exchange( ref _switchOffReason, string.Empty );
 
         /// <summary>
-        /// Gets the last received time (<see cref="DateTimeKind.Utc"/>).
+        /// Gets the last received time.
+        /// Defaults to <see cref="Util.UtcMinValue"/>.
         /// </summary>
         public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
 
@@ -354,12 +352,7 @@ namespace CK.AppIdentity.TransportLayer
         public TransportTypeAddress? TargetAddress => _target;
 
         /// <summary>
-        /// Gets the local keys manager.
-        /// </summary>
-        public ILocalKeys LocalKeys => _localKeys;
-
-        /// <summary>
-        /// Gets the remote keys manager.
+        /// Gets the remote keys manager that gives access to the <see cref="IRemoteKeys.LocalKeys"/>.
         /// </summary>
         public IRemoteKeys RemoteKeys => _remoteKeys;
 
@@ -387,7 +380,7 @@ namespace CK.AppIdentity.TransportLayer
             get
             {
                 var m = _outgoingInitialMessage;
-                if( m != null && m.LocalIdentities != _localKeys.Identities )
+                if( m != null && m.LocalIdentities != _remoteKeys.LocalKeys.Identities )
                 {
                     m = _outgoingInitialMessage = new InitialMessage( this );
                 }
@@ -462,6 +455,8 @@ namespace CK.AppIdentity.TransportLayer
             if( offReason.Length == 0 )
             {
                 Debug.Assert( _switchOffReason != null && _switchOffReason.Length == 0 );
+                // Update the possible PeeringIssue if any.
+                await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this );
                 _connectionEventBridge.Dispose();
             }
         }

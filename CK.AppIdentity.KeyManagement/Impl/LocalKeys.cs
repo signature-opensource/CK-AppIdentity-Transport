@@ -15,17 +15,23 @@ namespace CK.AppIdentity.KeyManagement
         private const string PasswordExtension = ".pwd";
         readonly ILocalParty _local;
         readonly IDataProtector _protector;
+        readonly LocalNonceCache _nonceCache;
         LocalIdentityKey[] _identities;
         int _allowedOfflineDays;
 
         LocalKeys( ILocalParty local,
                    IDataProtector protector,
-                   LocalIdentityKey[] identities )
+                   LocalIdentityKey[] identities,
+                   LocalNonceCache nonceCache )
         {
             _local = local;
             _identities = identities;
+            _nonceCache = nonceCache;
             _protector = protector;
+            local.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
         }
+
+        void OnHeartbeat( IActivityMonitor monitor, int callCount ) => _nonceCache.Save( monitor );
 
         public ILocalParty Party => _local;
 
@@ -37,6 +43,8 @@ namespace CK.AppIdentity.KeyManagement
 
         public IReadOnlyList<LocalIdentityKey> Identities => _identities;
 
+        internal LocalNonceCache NonceCache => _nonceCache;
+
         internal void OnTearDown( IActivityMonitor monitor )
         {
             var identities = _identities;
@@ -44,6 +52,8 @@ namespace CK.AppIdentity.KeyManagement
             {
                 key.OnTeardown();
             }
+            _local.ApplicationIdentityService.Heartbeat.Sync -= OnHeartbeat;
+            _nonceCache.Save( monitor );
         }
 
         // Not used yet.

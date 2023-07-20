@@ -10,7 +10,7 @@ ZeroProtocolVersion (byte)
 CoreApplicationIdentity.InstanceId (string)
 FullName (string)
 Protocols: count (byte) + protocol full names.
-Nonce (UInt64)
-DateTime.UtcNow
+Nonce (ulong)
+SystemClock.UtcNow
 Identity keys and signatures
 

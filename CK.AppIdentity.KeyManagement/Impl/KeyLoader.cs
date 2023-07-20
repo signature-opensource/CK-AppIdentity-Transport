@@ -6,6 +6,9 @@ using System.Linq;
 
 namespace CK.AppIdentity.KeyManagement
 {
+    /// <summary>
+    /// Base class for <see cref="LocalKeys.Builder"/> and <see cref="RemoteKeys.Builder"/>.
+    /// </summary>
     abstract class KeyLoader
     {
         protected IFileStore _store;

@@ -1,6 +1,7 @@
 using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,7 +9,6 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System.Threading;
 using System.Xml.Linq;
 
 namespace CK.AppIdentity.KeyManagement
@@ -22,7 +22,7 @@ namespace CK.AppIdentity.KeyManagement
             readonly IDataProtectionProvider _protectionProvider;
 
             public Builder( ILocalParty local, IDataProtectionProvider protectionProvider )
-                : base( local.PrivateFileStore )
+                : base( local.LocalFileStore )
             {
                 _local = local;
                 _protectionProvider = protectionProvider;
@@ -67,10 +67,16 @@ namespace CK.AppIdentity.KeyManagement
                         identities.Insert( 0, new LocalIdentityKey( name, now, newOne, privateKey ) );
                     }
                 }
+                // We now have our identities, we can handle the public key files: any obsolete
+                // keys are trashed, the current one is checked or created, only one public key file
+                // is exposed.
+                // Public key files are currently direct binary content of the public key (not a standard format).
                 var ids = identities.ToArray();
                 monitor.Info( $"Local '{_local.FullName}' has {ids.Length} identity keys. Current expires on {ids[0].NotAfter:yyyy-MM-dd}." );
                 HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
-                return new LocalKeys( _local, protector, ids );
+                // We load the nonce cache.
+                var nonceCache = LocalNonceCache.Create( monitor, _store.FolderPath.AppendPart( "Nonce.cache" ) );
+                return new LocalKeys( _local, protector, ids, nonceCache );
             }
 
             void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )

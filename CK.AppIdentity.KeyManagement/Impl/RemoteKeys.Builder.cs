@@ -11,11 +11,13 @@ namespace CK.AppIdentity.KeyManagement
     {
         internal sealed class Builder : KeyLoader
         {
+            readonly LocalKeys _localKeys;
             readonly IRemoteParty _remote;
 
-            public Builder( IRemoteParty remote )
+            public Builder( LocalKeys localKeys, IRemoteParty remote )
                 : base( remote.SharedFileStore )
             {
+                _localKeys = localKeys;
                 _remote = remote;
             }
 
@@ -45,10 +47,10 @@ namespace CK.AppIdentity.KeyManagement
                 if( c != null )
                 {
                     monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
-                    return new RemoteKeys( _remote, new RemoteIdentityKey( c ), autoTrust, allowClockSet );
+                    return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, allowClockSet );
                 }
                 monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-                return new RemoteKeys( _remote, null, autoTrust, allowClockSet );
+                return new RemoteKeys( _localKeys, _remote, null, autoTrust, allowClockSet );
 
                 static string ExtractTimeName( string s )
                 {

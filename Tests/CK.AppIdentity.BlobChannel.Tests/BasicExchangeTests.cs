@@ -9,6 +9,7 @@ using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
+
     [TestFixture]
     public class BasicExchangeTests
     {
@@ -37,10 +38,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 
             // We need to configure the keys otherwise the parties won't accept to talk to each other.
-            var senderIdentity = new RemoteIdentityKey( senderChannel.Transport.LocalKeys.CurrentIdentity );
+            var senderIdentity = new RemoteIdentityKey( senderChannel.Transport.RemoteKeys.LocalKeys.CurrentIdentity );
             listenerChannel.Transport.RemoteKeys.SetTrustedIdentity( TestHelper.Monitor, senderIdentity );
 
-            var listenerIdentity = new RemoteIdentityKey( listenerChannel.Transport.LocalKeys.CurrentIdentity );
+            var listenerIdentity = new RemoteIdentityKey( listenerChannel.Transport.RemoteKeys.LocalKeys.CurrentIdentity );
             senderChannel.Transport.RemoteKeys.SetTrustedIdentity( TestHelper.Monitor, listenerIdentity );
 
             // Setup Listener reception.

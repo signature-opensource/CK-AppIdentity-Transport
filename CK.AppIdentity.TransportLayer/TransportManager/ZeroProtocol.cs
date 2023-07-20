@@ -36,9 +36,9 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
-            Debug.Assert( transport.LocalKeys != null );
+            Debug.Assert( transport.RemoteKeys != null );
             Debug.Assert( message != null );
-            using var m = CreateAndSignMessage( message, transport.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( message, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
             static IOutgoingMessage CreateAndSignMessage( ByeByeMessage message, IReadOnlyList<LocalIdentityKey> localIdentities )

@@ -46,13 +46,11 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="logger">The logger to use.</param>
         /// <param name="typedAddress">The target end point (that has been successfully parsed by this service).</param>
-        /// <param name="localKeys">Local key manager of this calling party.</param>
         /// <param name="remoteKeys">Remote key manager of this calling party.</param>
         /// <param name="cancellation">Cancellation token that will be signaled if the connection attempt timeout is reached.</param>
         /// <returns>A Transport or null.</returns>
         internal protected abstract Task<Transport?> TryConnectAsync( IParallelLogger logger,
                                                                       TransportTypeAddress typedAddress,
-                                                                      ILocalKeys localKeys,
                                                                       IRemoteKeys remoteKeys,
                                                                       CancellationToken cancellation );
     }

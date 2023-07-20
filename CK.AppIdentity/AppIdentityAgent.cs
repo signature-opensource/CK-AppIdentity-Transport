@@ -1,15 +1,16 @@
 using CK.Core;
+using CK.PerfectEvent;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity
 {
-
     /// <summary>
     /// Application identity micro agent.
     /// </summary>
@@ -18,8 +19,8 @@ namespace CK.AppIdentity
         readonly ApplicationIdentityService _service;
         readonly IServiceProvider _serviceProvider;
 
-        internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider )
-            : base( $"ApplicationIdentityService Agent for '{service}'" )
+        internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider, int heartBeatPeriod )
+            : base( $"ApplicationIdentityService Agent for '{service}'", heartBeatPeriod )
         {
             _service = service;
             _serviceProvider = serviceProvider;
@@ -34,6 +35,11 @@ namespace CK.AppIdentity
         /// Gets the <see cref="ApplicationIdentityService"/>.
         /// </summary>
         public ApplicationIdentityService ApplicationIdentityService => _service;
+
+        /// <summary>
+        /// Gets the <see cref="ApplicationIdentityService.ISystemClock"/>.
+        /// </summary>
+        public ApplicationIdentityService.ISystemClock SystemClock => Unsafe.As<ApplicationIdentityService.ISystemClock>( _service.SystemClock );
 
         internal void Start() => Throw.CheckState( TryStart() == RunningStatus.Running );
 
@@ -76,6 +82,11 @@ namespace CK.AppIdentity
             await _service.OnShutdownAsync( monitor ).ConfigureAwait( false );
         }
 
+        protected override Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount )
+        {
+            // Exceptions are caught by the MicroAgent.
+            return _service._heartbeat.RaiseAsync( monitor, callCount );
+        }
 
         record class InitializeDynamicPartiesJob( AddedDynamicParties Added, TaskCompletionSource<bool> Result );
 

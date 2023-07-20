@@ -27,9 +27,8 @@ namespace CK.AppIdentity.KeyManagement
             {
                 if( IsAllowedFeature( local ) )
                 {
-                    if( !PlugLocal( context, local ) ) return Task.FromResult( false );
+                    if( !PlugLocalAndRemotes( context, local ) ) return Task.FromResult( false );
                 }
-                if( !PlugLocalRemotes( context, local ) ) return Task.FromResult( false );
             }
             return Task.FromResult( true );
         }
@@ -41,16 +40,19 @@ namespace CK.AppIdentity.KeyManagement
             {
                 if( IsAllowedFeature( local ) )
                 {
-                    success = PlugLocal( context, local );
+                    success = PlugLocalAndRemotes( context, local );
                 }
-                success &= PlugLocalRemotes( context, local );
             }
             else
             {
                 IRemoteParty remote = (IRemoteParty)party;
                 if( IsAllowedFeature( remote ) )
                 {
-                    success = PlugRemote( context, remote );
+                    var localKeys = remote.Owner.GetFeature<LocalKeys>();
+                    if( localKeys != null )
+                    {
+                        success = PlugRemote( context, localKeys, remote );
+                    }
                 }
             }
             return Task.FromResult( success );
@@ -58,8 +60,7 @@ namespace CK.AppIdentity.KeyManagement
 
         protected override Task TeardownAsync( FeatureLifetimeContext context )
         {
-            var locals = ((IEnumerable<ILocalParty>)ApplicationIdentityService.TenantDomains)
-                                                    .Prepend( ApplicationIdentityService );
+            var locals = ((IEnumerable<ILocalParty>)ApplicationIdentityService.TenantDomains).Prepend( ApplicationIdentityService );
             foreach( var local in locals )
             {
                 UnplugLocalAndRemotes( context, local );
@@ -80,23 +81,27 @@ namespace CK.AppIdentity.KeyManagement
             return Task.CompletedTask;
         }
 
-        bool PlugLocal( FeatureLifetimeContext context, ILocalParty local )
+        bool PlugLocalAndRemotes( FeatureLifetimeContext context, ILocalParty local )
         {
-            var localKeys = new LocalKeys.Builder( local, _protectorProvider ).Build( context.Monitor );
-            local.AddFeature( localKeys );
-            return true;
-        }
-
-        bool PlugLocalRemotes( FeatureLifetimeContext context, ILocalParty local )
-        {
-            foreach( var r in local.Remotes )
+            bool success = true;
+            try
             {
-                if( IsAllowedFeature( r ) )
+                var localKeys = new LocalKeys.Builder( local, _protectorProvider ).Build( context.Monitor );
+                local.AddFeature( localKeys );
+                foreach( var r in local.Remotes )
                 {
-                    if( !PlugRemote( context, r ) ) return false;
+                    if( IsAllowedFeature( r ) )
+                    {
+                        success &= PlugRemote( context, localKeys, r );
+                    }
                 }
+                return success;
             }
-            return true;
+            catch( Exception ex )
+            {
+                context.Monitor.Error( $"While initializing LocalKeys feature for '{local}'.", ex );
+                return false;
+            }
         }
 
         static void UnplugLocalAndRemotes( FeatureLifetimeContext context, ILocalParty local )
@@ -112,11 +117,19 @@ namespace CK.AppIdentity.KeyManagement
             }
         }
 
-        bool PlugRemote( FeatureLifetimeContext context, IRemoteParty remote )
+        bool PlugRemote( FeatureLifetimeContext context, LocalKeys localKeys, IRemoteParty remote )
         {
-            var remoteKeys = new RemoteKeys.Builder( remote ).Build( context.Monitor );
-            remote.AddFeature( remoteKeys );
-            return true;
+            try
+            {
+                var remoteKeys = new RemoteKeys.Builder( localKeys, remote ).Build( context.Monitor );
+                remote.AddFeature( remoteKeys );
+                return true;
+            }
+            catch( Exception ex )
+            {
+                context.Monitor.Error( $"While initializing RemoteKeys feature for '{remote}'.", ex );
+                return false;
+            }
         }
 
         static void UnplugRemote( FeatureLifetimeContext context, IRemoteParty r )
