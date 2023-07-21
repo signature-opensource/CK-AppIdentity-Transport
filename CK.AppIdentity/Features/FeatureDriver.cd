@@ -9,10 +9,11 @@
       <Field Name="_featureName" Hidden="true" />
       <Field Name="_isRootAllowed" Hidden="true" />
       <Field Name="_s" Hidden="true" />
+      <Method Name="ApplicationIdentityFeatureDriver" Hidden="true" />
     </Members>
     <TypeIdentifier>
       <HashCode>AAAIAAAAIAAAAAUAAAAAAAEgAAEAACAAAAAAIAAAAEA=</HashCode>
-      <FileName>ApplicationIdentityFeatureDriver.cs</FileName>
+      <FileName>Features\ApplicationIdentityFeatureDriver.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
@@ -20,7 +21,7 @@
     <Position X="2" Y="0.5" Width="2.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAAAAAAAA=</HashCode>
-      <FileName>IApplicationIdentityFeatureDriver.cs</FileName>
+      <FileName>Features\IApplicationIdentityFeatureDriver.cs</FileName>
     </TypeIdentifier>
   </Interface>
   <Font Name="Segoe UI" Size="9" />

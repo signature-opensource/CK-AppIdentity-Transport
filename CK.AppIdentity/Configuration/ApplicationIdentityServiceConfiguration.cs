@@ -54,8 +54,8 @@ namespace CK.AppIdentity
         /// Gets the file storage root path. Defaults to <see cref="DefaultStoreRootPath"/>.
         /// <para>
         /// This folder is de facto shared by all applications (parties) that use CK.AppIdentity and run on this computer.
-        /// Such installed parties can use <see cref="ApplicationIdentityService.PrivateStorePath"/> folder to store any application 
-        /// specific data. All installed parties can use <see cref="IOwnedParty.SharedStorePath"/> to store and share data related to parties.
+        /// Such installed parties can use <see cref="ILocalParty.LocalFileStore"/> to store any application 
+        /// specific data. All installed parties can use <see cref="IParty.SharedFileStore"/> to store and share data related to parties.
         /// </para>
         /// </summary>
         public NormalizedPath StoreRootPath => _storeRootPath;

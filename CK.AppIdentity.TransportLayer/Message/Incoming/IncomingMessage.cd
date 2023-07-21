@@ -6,6 +6,7 @@
       <Field Name="_cachedOneBuffer" Hidden="true" />
       <Field Name="_lastReceived" Hidden="true" />
       <Field Name="_protocols" Hidden="true" />
+      <Field Name="_systemClock" Hidden="true" />
       <Method Name="Dispose" Hidden="true" />
       <Method Name="DoReadAsync" Hidden="true" />
       <Field Name="FirstSegmentLength" Hidden="true" />
@@ -49,13 +50,9 @@
       <Field Name="_protocol" Hidden="true" />
       <Field Name="_refCount" Hidden="true" />
       <Field Name="_wireMessage" Hidden="true" />
-      <Field Name="Canceled" Hidden="true" />
       <Method Name="Dispose" Hidden="true" />
-      <Field Name="Empty" Hidden="true" />
-      <Field Name="EmptyAck" Hidden="true" />
       <Method Name="GetProtocolNumber" Hidden="true" />
       <Method Name="IncomingMessage" Hidden="true" />
-      <Field Name="Invalid" Hidden="true" />
       <Field Name="IsControlFlag" Hidden="true" />
     </Members>
     <TypeIdentifier>

@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1">
   <Class Name="CK.AppIdentity.ImmutableConfigurationSection" BaseTypeListCollapsed="true">
-    <Position X="4.25" Y="0.5" Width="3.25" />
+    <Position X="5.5" Y="0.5" Width="3.25" />
     <Members>
       <Field Name="_children" Hidden="true" />
       <Field Name="_key" Hidden="true" />
@@ -33,7 +33,7 @@
       <Method Name="ReadParties" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAIAAICAAgAACIAAAAAAAAAAAAQAAUAAEAIAAAAAAAQ=</HashCode>
+      <HashCode>AAIAAICAAgAACAAAAAAAAAAABAQAAUAAEAIAAAAAAAQ=</HashCode>
       <FileName>Configuration\ApplicationIdentityServiceConfiguration.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -49,7 +49,7 @@
     </TypeIdentifier>
   </Class>
   <Class Name="CK.AppIdentity.ApplicationIdentityPartyConfiguration">
-    <Position X="0.5" Y="0.5" Width="2.75" />
+    <Position X="2.25" Y="0.5" Width="2.75" />
     <Members>
       <Field Name="_allowFeatures" Hidden="true" />
       <Field Name="_configuration" Hidden="true" />

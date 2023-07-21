@@ -5,13 +5,13 @@
     <Members>
       <Field Name="_bestRegisteredProtocols" Hidden="true" />
       <Field Name="_channels" Hidden="true" />
+      <Field Name="_clockOffset" Hidden="true" />
       <Field Name="_connectionAvailabilityChanged" Hidden="true" />
       <Field Name="_connectionAvailabilty" Hidden="true" />
       <Field Name="_connectionEventBridge" Hidden="true" />
       <Field Name="_controller" Hidden="true" />
       <Field Name="_disallowEviction" Hidden="true" />
       <Field Name="_listener" Hidden="true" />
-      <Field Name="_localKeys" Hidden="true" />
       <Field Name="_outgoingInitialMessage" Hidden="true" />
       <Field Name="_party" Hidden="true" />
       <Field Name="_readyTask" Hidden="true" />
@@ -36,7 +36,7 @@
       <Method Name="UpdateConnectionAvailabilityAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>CkQgAAgIAQBDBQwMAAAARBAlZKCAIAAAEQRAMEABAEA=</HashCode>
+      <HashCode>CkQgAAgIAQBDBQwMAQQABJAkZKCAIAAAEQRAMEABAEA=</HashCode>
       <FileName>TransportFeature.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>

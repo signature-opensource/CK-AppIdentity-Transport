@@ -195,7 +195,7 @@ namespace CK.AppIdentity.TransportLayer
         // The heart beat (timer) is DBNull.Value instance.
         sealed record class PeeringIssueJob( PeeringIssueKind Kind, InitialMessage? Message, TransportFeature? Remote, string? EnlistUrl, TimeSpan? InvalidClockOffset );
         sealed record class TryConnectToJob( TransportFeature Remote );
-        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan clockDrift );
+        sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset );
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
         sealed record class SwitchOffJob( TransportFeature Feature, string Reason );
         sealed record class SwitchOnJob( TransportFeature Feature );
@@ -315,13 +315,13 @@ namespace CK.AppIdentity.TransportLayer
         static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
         {
             Transport t = remoteTransport.Transport;
-            using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote.FullName}'." ) )
+            using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote}'." ) )
             {
                 var remote = remoteTransport.Remote;
                 var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
                 if( feature != null && !feature.IsOff )
                 {
-                    await feature.OnTransportAppearAsync( monitor, t, remoteTransport.Protocols );
+                    await feature.OnTransportAppearAsync( monitor, t, remoteTransport.Protocols, remoteTransport.ClockOffset );
                 }
                 else
                 {

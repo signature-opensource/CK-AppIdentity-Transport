@@ -121,7 +121,7 @@ namespace CK.AppIdentity.TransportLayer
             // stopped at any time (eviction uses this).
             if( _sendTask != null && !_sendTask.IsCompleted )
             {
-                // This is rather improbable.
+                // This is highly improbable.
                 return WaitToStartSendAsync( monitor );
             }
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
@@ -163,7 +163,7 @@ namespace CK.AppIdentity.TransportLayer
                 transportManager.Logger.Trace( $"Starting sending loop for '{transport.RemoteEndPointDescription}'." );
                 while( await reader.WaitToReadAsync().ConfigureAwait( false ) )
                 {
-                    // Handle all response messages (use label/goto for code inlining: break is for the top send loop).
+                    // Handle all high priority messages (use label/goto for code inlining: break is for the top send loop).
                     responseHandling:
                     if( transport.IsCondemned )
                     {
@@ -190,7 +190,7 @@ namespace CK.AppIdentity.TransportLayer
                         }
                         else
                         {
-                            if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait(false) )
+                            if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
                             {
                                 // Breaks the send loop. The unsent message is let in the queue.
                                 break;

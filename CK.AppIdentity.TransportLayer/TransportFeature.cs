@@ -1,16 +1,11 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.PerfectEvent;
-using System;
-using System.Collections;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Net;
-using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// Centralizes communication feature for a remote.
     /// This feature is available only on a <see cref="IRemoteParty"/>. 
@@ -50,6 +45,7 @@ namespace CK.AppIdentity.TransportLayer
         TransportController? _controller;
         TaskCompletionSource _readyTask;
         ConnectionAvailability _connectionAvailabilty;
+        TimeSpan? _clockOffset;
         bool _disallowEviction;
 
         internal TransportFeature( TransportManager transportManager,
@@ -76,7 +72,7 @@ namespace CK.AppIdentity.TransportLayer
             _disallowEviction = disallowEviction;
         }
 
-        internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols )
+        internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols, TimeSpan clockOffset )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
             Debug.Assert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
@@ -95,6 +91,8 @@ namespace CK.AppIdentity.TransportLayer
                 _controller.Rebind( monitor, transport );
             }
             Debug.Assert( _controller.Feature == this );
+            // Sets the ClockOffset.
+            _clockOffset = clockOffset;
             // Second, ensures that protocol handlers for the right version are available
             // and are set to be the current one.
             var protocolHandlers = new PeerProtocolHandler[_bestRegisteredProtocols.Count];
@@ -155,6 +153,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Gets a non null string if this remote is off.
+        /// This is "Torn down" when this <see cref="Party"/> is destroyed. 
         /// </summary>
         public string? SwitchOffReason => ReferenceEquals( _switchOffReason, string.Empty ) ? "Torn down." : _switchOffReason;
 
@@ -208,10 +207,14 @@ namespace CK.AppIdentity.TransportLayer
         public ConnectionAvailability ConnectionAvailability => _connectionAvailabilty;
 
         /// <summary>
+        /// Gets the last known clock offset between us and the remote.
+        /// </summary>
+        public TimeSpan? ClockOffset => _clockOffset;
+
+        /// <summary>
         /// Raised whenever this <see cref="ConnectionAvailability"/> changed.
         /// </summary>
         public PerfectEvent<TransportFeature> ConnectionAvailabilityChanged => _connectionAvailabilityChanged.PerfectEvent;
-
 
         /// <summary>
         /// Gets the registered protocols with their best respective version among the

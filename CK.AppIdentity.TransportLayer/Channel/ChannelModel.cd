@@ -33,8 +33,8 @@
       <Path>
         <Point X="2.75" Y="2.812" />
         <Point X="3.125" Y="2.812" />
-        <Point X="3.125" Y="1.75" />
-        <Point X="4.5" Y="1.75" />
+        <Point X="3.125" Y="1.275" />
+        <Point X="4.5" Y="1.275" />
       </Path>
     </AssociationLine>
     <AssociationLine Name="CurrentHandler" Type="CK.AppIdentity.TransportLayer.PeerProtocolHandler">
@@ -68,7 +68,7 @@
       </Struct>
     </NestedTypes>
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAQAACAAAAAAAAABBAACSAAAEABAAAEAgAAA=</HashCode>
+      <HashCode>AAAAAEAAAQAACAAAAAAAAABBAACSAAAAABAAAEAgAAA=</HashCode>
       <FileName>Channel\PeerProtocolHandler.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -76,15 +76,19 @@
     <Position X="4.5" Y="0.5" Width="1.5" />
     <Members>
       <Field Name="_fullName" Hidden="true" />
+      <Field Name="_isZeroProtocol" Hidden="true" />
+      <Field Name="_messageFactory" Hidden="true" />
       <Field Name="_name" Hidden="true" />
       <Field Name="_version" Hidden="true" />
       <Field Name="FullNameMaxLength" Hidden="true" />
+      <Property Name="MessageFactory" Hidden="true" />
       <Method Name="MessageProtocol" Hidden="true" />
       <Method Name="ToString" Hidden="true" />
       <Field Name="ZeroProtocol" Hidden="true" />
+      <Field Name="ZeroProtocolName" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>IAAAIAAACAAAIIAEAAAAAAYIAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <HashCode>IAAAIAAgCAAAKIAEAAAAAAYIAAACAAAAAACAAAAAAAA=</HashCode>
       <FileName>MessageProtocol.cs</FileName>
     </TypeIdentifier>
   </Class>
