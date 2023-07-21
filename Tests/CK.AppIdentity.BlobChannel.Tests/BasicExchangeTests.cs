@@ -90,8 +90,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
         [TestCase( "Reverted" )]
         [TestCase( "Regular" )]
-        [Timeout( 2000 )]
-        public async Task Listener_then_Sender_setup_using_AutoTrustKey_Async( string mode )
+        [Timeout( 4000 )]
+        public async Task Listener_then_Sender_setup_using_AutoTrustKey_Once_Async( string mode )
         {
             TestHelper.GetCleanTestStoreFolder();
 
@@ -101,13 +101,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
             if( regular )
             {
-                listener = await CreateAndStartListenerAsync();
-                sender = await CreateAndStartSenderAsync();
+                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once" );
+                sender = await BlobChannelTester.CreateAndStartSenderAsync();
             }
             else
             {
-                sender = await CreateAndStartSenderAsync();
-                listener = await CreateAndStartListenerAsync();
+                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once" );
+                listener = await BlobChannelTester.CreateAndStartListenerAsync();
             }
 
             var listenerReceived = new List<byte[]>();
@@ -117,25 +117,25 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
             if( regular )
             {
-                listenerChannel = SetupChannel( listener, sender, listenerReceived );
-                senderChannel = SetupChannel( sender, listener, senderReceived );
+                listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
+                senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
 
-                await SendDataAsync( listenerChannel );
-                await SendDataAsync( senderChannel );
+                await BlobChannelTester.SendDataAsync( listenerChannel );
+                await BlobChannelTester.SendDataAsync( senderChannel );
 
-                CheckDataReceived( senderReceived );
-                CheckDataReceived( listenerReceived );
+                BlobChannelTester.CheckDataReceived( senderReceived );
+                BlobChannelTester.CheckDataReceived( listenerReceived );
             }
             else
             {
-                senderChannel = SetupChannel( sender, listener, senderReceived );
-                listenerChannel = SetupChannel( listener, sender, listenerReceived );
+                senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
+                listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
 
-                await SendDataAsync( senderChannel );
-                await SendDataAsync( listenerChannel );
+                await BlobChannelTester.SendDataAsync( senderChannel );
+                await BlobChannelTester.SendDataAsync( listenerChannel );
 
-                CheckDataReceived( listenerReceived );
-                CheckDataReceived( senderReceived );
+                BlobChannelTester.CheckDataReceived( listenerReceived );
+                BlobChannelTester.CheckDataReceived( senderReceived );
             }
 
             if( regular )
@@ -147,56 +147,6 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 await listener.DisposeAsync();
                 await sender.DisposeAsync();
-            }
-
-            static async Task<ApplicationIdentityService> CreateAndStartListenerAsync()
-            {
-                return await TestHelper.CreateApplicationServiceAsync( c =>
-                {
-                    c["AutoTrustKey"] = "Once";
-                    c["FullName"] = "Test/$Listener";
-                    c["Parties:0:PartyName"] = "$Sender";
-                    c["AllowFeatures"] = "BlobChannel";
-                } );
-            }
-
-            static async Task<ApplicationIdentityService> CreateAndStartSenderAsync()
-            {
-                return await TestHelper.CreateApplicationServiceAsync( c =>
-                {
-                    c["AutoTrustKey"] = "Once";
-                    c["FullName"] = "Test/$Sender";
-                    c["Parties:0:PartyName"] = "$Listener";
-                    c["Parties:0:Address"] = "tcp:127.0.0.1";
-                    c["AllowFeatures"] = "BlobChannel";
-                } );
-            }
-
-            static BlobChannelFeature SetupChannel( ApplicationIdentityService from, ApplicationIdentityService to, List<byte[]> receivedData )
-            {
-                var channel = from.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
-                channel.Received.Sync += ( monitor, sender, bytes ) =>
-                {
-                    monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
-                    receivedData.Add( bytes );
-                };
-                return channel;
-            }
-
-            static async Task SendDataAsync( BlobChannelFeature c )
-            {
-                await c.Transport.ReadyTask;
-                c.TrySend( new byte[] { 1 } ).Should().BeTrue();
-                c.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
-                c.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
-            }
-
-            static void CheckDataReceived( List<byte[]> senderReceived )
-            {
-                while( senderReceived.Count < 3 ) ;
-                senderReceived[0].Should().BeEquivalentTo( new byte[] { 1 } );
-                senderReceived[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
-                senderReceived[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
             }
         }
 

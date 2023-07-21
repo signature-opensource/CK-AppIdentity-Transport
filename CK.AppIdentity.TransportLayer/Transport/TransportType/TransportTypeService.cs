@@ -12,15 +12,22 @@ namespace CK.AppIdentity.TransportLayer
     [CKTypeDefiner]
     public abstract class TransportTypeService : ITransportTypeService
     {
+        readonly string _typeName;
+
         /// <summary>
         /// Initializes a new <see cref="TransportTypeService"/>.
         /// </summary>
-        protected TransportTypeService()
+        /// <param name="typeName">Must be short, contain only ASCII characters and full lowercase. Must not be "all".</param>
+        protected TransportTypeService( string typeName )
         {
+            Throw.CheckArgument( !String.IsNullOrWhiteSpace( typeName )
+                                 && typeName.All( c => char.IsAscii( c ) && char.IsLetterOrDigit( c ) && char.IsLower( c ) ) );
+            Throw.CheckArgument( typeName != "all" );
+            _typeName = typeName;
         }
 
         /// <inheritdoc/>
-        public abstract string AddressProtocolName { get; }
+        public string TypeName => _typeName;
 
         /// <inheritdoc/>
         public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );

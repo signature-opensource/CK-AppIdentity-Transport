@@ -61,7 +61,7 @@ namespace CK.AppIdentity.KeyManagement
             static bool GetAllowClockSet( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
             {
                 var a = configuration.TryLookupValue( nameof( AllowClockSet ) );
-                if( !bool.TryParse( a, out var allowClockSet ) )
+                if( !bool.TryParse( a, out var allowClockSet ) && a != null )
                 {
                     Debug.Assert( !allowClockSet );
                     monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AllowClockSet )}' value, expected 'true' or 'false' but got '{a}'. Using default false." );

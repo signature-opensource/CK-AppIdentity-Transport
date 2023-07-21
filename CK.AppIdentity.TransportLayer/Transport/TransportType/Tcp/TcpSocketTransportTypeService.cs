@@ -16,14 +16,10 @@ namespace CK.AppIdentity.TransportLayer
         readonly IPEndPoint _defaultEndPoint;
 
         public TcpSocketTransportTypeService()
+            : base( "tcp" )
         {
             _defaultEndPoint = new IPEndPoint( IPAddress.Any, DefaultPort );
         }
-
-        /// <summary>
-        /// Gets "tcp" string.
-        /// </summary>
-        public override string AddressProtocolName => "tcp";
 
         /// <summary>
         /// Gets the default listening address on any interface, port 37120.

@@ -14,13 +14,15 @@ An `Address` or a `ListeningAddress` are mere strings: their exact syntax depend
 must be used. This type can be specified with the standard URI protocol syntax: 'tcp:', 'quic:', 'pipe:', etc. and when
 not specified, it defaults to 'tcp:'.
 
-When a `IRemoteParty.Address` is not specified, a third and last property can be used to disambiguate the type of
-transport listener to use: the `UseTransport` property is a string that must be the transport protocol name of
-one of the `ListeningAddress` defined above.
-
 A `ListeningAddress` property at one level can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. This is valid
 `"ListeningAddress": [ "tcp:127.0.0.1:37120", "pipe:TheNamedPipe" ]`.
+
+When a `IRemoteParty.Address` is not specified, a third and last property can be used to choose which type of
+transport listener must be used: the `ListeningTypes`:
+  - It can be a simple string: 'all' to allow all the  `ListeningAddress` defined above, or one of the types (like 'tcp').
+  - A comma separated string or an array of strings that are the transport type names to use.
+This `ListeningTypes` property defaults to 'all': the remote can freely choose the transport type to use.
 
 ## TransportMessage
 A [`TransportMessage`](Message/TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.

@@ -24,6 +24,7 @@ namespace CK.AppIdentity.TransportLayer
         TimeSpan? _invalidClockOffset;
         // We don't have internal alternative.
         object _lock;
+        PeeringIssue? _cloneSource;
 
         internal PeeringIssue( string fullName,
                                DateTime now,      
@@ -141,16 +142,20 @@ namespace CK.AppIdentity.TransportLayer
         /// <see cref="AcceptRemoteIdentity(IActivityMonitor)"/> may return false if conditions are not met when it is called.
         /// </para>
         /// </summary>
-        public bool CanAcceptRemoteIdentity => _kind == PeeringIssueKind.UntrustedIncoming;
+        public bool CanAcceptRemoteIdentity => _cloneSource?.CanAcceptRemoteIdentity ?? _kind == PeeringIssueKind.UntrustedIncoming;
 
         /// <summary>
         /// Accepts the current <see cref="IIncomingRequest.CurrentRemoteIdentity"/> for this remote.
         /// This information is persited: from now on, the remote incoming connections will be accepted.
+        /// <para>
+        /// 
+        /// </para>
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <returns>True on success, false if <see cref="Kind"/> is not <see cref="PeeringIssueKind.UntrustedIncoming"/>.</returns>
         public bool AcceptRemoteIdentity( IActivityMonitor monitor )
         {
+            if( _cloneSource != null ) return _cloneSource.AcceptRemoteIdentity( monitor );
             lock( _lock )
             {
                 if( _kind == PeeringIssueKind.UntrustedIncoming )
@@ -163,6 +168,23 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
+        /// <summary>
+        /// Gets whether this issue is an immutable <see cref="Clone"/>.
+        /// </summary>
+        public bool IsClone => _cloneSource != null;
+
+        /// <summary>
+        /// Creates a snapshot clone of this issue. This clone will not be updated.
+        /// </summary>
+        /// <returns>An immutable clone</returns>
+        public PeeringIssue Clone()
+        {
+            if( _cloneSource != null ) return this;
+            var c = (PeeringIssue)MemberwiseClone();
+            c._cloneSource = this;
+            return c;
+        }
+
         internal void Update( PeeringIssueKind kind,
                               DateTime now,
                               InitialMessage? message,
@@ -171,6 +193,7 @@ namespace CK.AppIdentity.TransportLayer
                               TimeSpan? invalidClockOffset,
                               ref int unknwonRemoteCount )
         {
+            Debug.Assert( _cloneSource == null );
             // Maintain unknwon remote count and check invariants.
             if( kind == PeeringIssueKind.None )
             {

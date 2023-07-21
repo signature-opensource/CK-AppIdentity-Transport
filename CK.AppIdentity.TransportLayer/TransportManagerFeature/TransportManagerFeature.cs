@@ -25,6 +25,7 @@ namespace CK.AppIdentity.TransportLayer
         int _maxUnknownRemoteCount;
         int _unknwonRemoteCount;
         PeeringIssue[]? _exposedIssues;
+        PeeringIssue[]? _exposedClonedIssues;
 
         internal TransportManagerFeature( TransportManager transportManager )
         {
@@ -63,13 +64,16 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Gets a snapshot of the peering issues.
-        /// This is a dynamic set that can be updated at any time. 
+        /// Gets a snapshot of the peering issues. Issues are dynamic, they can be updated at any time.
+        /// <para>
+        /// Use <see cref="GetClonedPeeringIssues"/> for a non dynamic snapshot: an array of immutable <see cref="Clone"/> is returned.
+        /// </para>
         /// </summary>
+        /// <returns>An array containing the current issues.</returns>
         public PeeringIssue[] GetPeeringIssues()
         {
             var r = _exposedIssues;
-            if( r == null  )
+            if( r == null )
             {
                 lock( _peeringIssues )
                 {
@@ -80,9 +84,37 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Raised when a new <see cref="PeeringIssue"/> appears. 
+        /// Gets a snapshot of the peering issues. Returned issues are immutable <see cref="Clone"/>.
         /// </summary>
-        public PerfectEvent<PeeringIssue> EventAppeared => _peeringIssueChanged.PerfectEvent;
+        /// <returns>An array containing the cloned issues.</returns>
+        public PeeringIssue[] GetClonedPeeringIssues()
+        {
+            var r = _exposedClonedIssues;
+            if( r == null )
+            {
+                lock( _peeringIssues )
+                {
+                    r = _exposedClonedIssues;
+                    if( r == null )
+                    {
+                        var cloned = new PeeringIssue[_peeringIssues.Count];
+                        int i = 0;
+                        foreach( var issue in _peeringIssues.Values )
+                        {
+                            cloned[i++] = issue.Clone();
+                        }
+                        r = _exposedClonedIssues = cloned;
+                    }
+                }
+            }
+            return r;
+        }
+
+        /// <summary>
+        /// Raised when a new <see cref="PeeringIssue"/> appears, disappears or is updated.
+        /// The <see cref="PeeringIssue.Kind"/> is <see cref="PeeringIssueKind.None"/> when disappearing.
+        /// </summary>
+        public PerfectEvent<PeeringIssue> PeeringIssueChanged => _peeringIssueChanged.PerfectEvent;
 
         internal Task OnRemoteTornDownAsync( IActivityMonitor monitor, TransportFeature remote )
         {
@@ -91,6 +123,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 _unknwonRemoteCount++;
                 issue.OnRemoteTornDown();
+                _exposedClonedIssues = null;
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
             }
             return Task.CompletedTask;
@@ -104,6 +137,7 @@ namespace CK.AppIdentity.TransportLayer
                 Debug.Assert( issue.Remote == null );
                 _unknwonRemoteCount--;
                 issue.OnRemoteAppeared( remote );
+                _exposedClonedIssues = null;
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
             }
             return Task.CompletedTask;
@@ -133,6 +167,7 @@ namespace CK.AppIdentity.TransportLayer
                     }
                     _exposedIssues = null;
                 }
+                _exposedClonedIssues = null;
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
             }
             // If there is no remote then cleanup in excess unknwon remotes if any
@@ -145,6 +180,7 @@ namespace CK.AppIdentity.TransportLayer
                     return AddNewUnknownAndTrimExcess( monitor, kind, message, enlistUrl, invalidClockOffset, fullName, inExcess );
                 }
             }
+            _exposedClonedIssues = null;
             return AddNewPeeringIssue( monitor, kind, message, remote, enlistUrl, invalidClockOffset, fullName );
         }
 
@@ -168,6 +204,7 @@ namespace CK.AppIdentity.TransportLayer
                 i.EjectUnknown();
                 await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
             }
+            _exposedClonedIssues = null;
             await AddNewPeeringIssue( monitor, kind, message, null, enlistUrl, invalidClockOffset, fullName );
         }
 

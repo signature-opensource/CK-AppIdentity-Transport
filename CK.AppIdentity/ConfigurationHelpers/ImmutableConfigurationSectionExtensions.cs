@@ -2,6 +2,7 @@ using CK.Core;
 using System.Collections.Generic;
 using System.Linq;
 using System;
+using System.Diagnostics;
 
 namespace CK.AppIdentity
 {
@@ -78,6 +79,28 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
+        /// Calls <see cref="ReadStringArray(ImmutableConfigurationSection, IActivityMonitor)"/> and ensures that
+        /// strings are unique.
+        /// </summary>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="s">The section.</param>
+        /// <param name="comparer">Optional comparer.</param>
+        /// <returns>A set of unique strings or null on error.</returns>
+        public static HashSet<string>? ReadUniqueStringSet( this ImmutableConfigurationSection? s, IActivityMonitor monitor, StringComparer? comparer = null )
+        {
+            var a = ReadStringArray( s, monitor );
+            if( a == null ) return null;
+            var set = new HashSet<string>( a, comparer );
+            if( set.Count != a.Length )
+            {
+                Debug.Assert( s != null, "Since we found something." );
+                monitor.Error( $"Duplicate found in '{s.Path}': {a.Except( set ).Concatenate()}." );
+                return null;
+            }
+            return set;
+        }
+
+        /// <summary>
         /// Calls <see cref="ReadStringArray(ImmutableConfigurationSection, IActivityMonitor, string)"/> and ensures that
         /// strings are unique.
         /// </summary>
@@ -88,17 +111,7 @@ namespace CK.AppIdentity
         /// <returns>A set of unique strings or null on error.</returns>
         public static HashSet<string>? ReadUniqueStringSet( this ImmutableConfigurationSection s, IActivityMonitor monitor, string key, StringComparer? comparer = null )
         {
-            var a = ReadStringArray( s, monitor, key );
-            if( a == null ) return null;
-            var set = new HashSet<string>( a, comparer );
-            if( set.Count != a.Length )
-            {
-                monitor.Error( $"Duplicate found in '{s.Path}:{key}': {a.Except( set ).Concatenate()}." );
-                return null;
-            }
-            return set;
+            return s.TryGetSection( key ).ReadUniqueStringSet( monitor, comparer );
         }
-
-
     }
 }

@@ -20,8 +20,8 @@ namespace CK.AppIdentity.TransportLayer
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
 
-        // Either listener or target is not null.
-        readonly TransportListener? _listener;
+        // Either listeners or target is not null.
+        readonly TransportListener[]? _listeners;
 
         readonly TransportTypeAddress? _target;
 
@@ -50,15 +50,15 @@ namespace CK.AppIdentity.TransportLayer
 
         internal TransportFeature( TransportManager transportManager,
                                    IRemoteParty remote,
-                                   TransportListener? listener,
+                                   TransportListener[]? listeners,
                                    TransportTypeAddress? target,
                                    IRemoteKeys remoteKeys,
                                    bool disallowEviction )
         {
-            Debug.Assert( (listener == null) != (target == null), "Either we are listening or we are targeting." );
+            Debug.Assert( (listeners == null) != (target == null), "Either we are listening or we are targeting." );
             _transportManager = transportManager;
             _party = remote;
-            _listener = listener;
+            _listeners = listeners;
             _remoteKeys = remoteKeys;
             _target = target;
             _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
@@ -347,7 +347,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets whether we are listening or targeting the remote.
         /// </summary>
         [MemberNotNullWhen( false, nameof( TargetAddress ) )]
-        public bool IsListening => _listener != null;
+        public bool IsListening => _listeners != null;
 
         /// <summary>
         /// Gets the non null target address if <see cref="IsListening"/> is false.
@@ -418,9 +418,9 @@ namespace CK.AppIdentity.TransportLayer
             else
             {
                 monitor.Trace( $"Switching remote '{Party.FullName}' on." );
-                if( _listener != null )
+                if( _listeners != null )
                 {
-                    _listener.AddParty( this );
+                    foreach( var l in _listeners ) l.AddParty( this );
                 }
                 else
                 {
@@ -441,7 +441,10 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
             monitor.Trace( $"Switching remote '{Party.FullName}' off (reason: '{offReason}')." );
-            _listener?.RemoveParty( this );
+            if( _listeners != null )
+            {
+                foreach( var l in _listeners ) l.RemoveParty( this );
+            }
             var c = _controller;
             _controller = null;
             if( c != null )

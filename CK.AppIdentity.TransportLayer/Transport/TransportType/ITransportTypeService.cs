@@ -4,7 +4,7 @@ using CK.Core;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Defines a type of transport.
+    /// Defines a type of transport (singleton auto service).
     /// Implementations must specialize the abstract <see cref="TransportTypeService"/> (this
     /// interface cannot be implemented by any other types).
     /// </summary>
@@ -13,12 +13,12 @@ namespace CK.AppIdentity.TransportLayer
     {
         /// <summary>
         /// Defines this type of communication protocol that <see cref="IRemoteParty.Address"/> can use as a prefix.
-        /// Must be in lower case, short and not contain ':'.
+        /// Must be in lower case, be short and not contain ':'.
         /// <para>
-        /// When no prefix is used, "tcp" is assumed and the embedded <see cref="TcpSocketTransportTypeService"/> is used.
+        /// When no prefix is used in an address, "tcp" is assumed and the embedded <see cref="TcpSocketTransportTypeService"/> is used.
         /// </para>
         /// </summary>
-        string AddressProtocolName { get; }
+        string TypeName { get; }
 
         /// <summary>
         /// Tries to parse a specific address string.

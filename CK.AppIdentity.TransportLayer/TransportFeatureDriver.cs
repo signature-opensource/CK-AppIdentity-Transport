@@ -1,6 +1,7 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 
 namespace CK.AppIdentity.TransportLayer
@@ -90,8 +91,8 @@ namespace CK.AppIdentity.TransportLayer
         {
             Debug.Assert( _transportManager != null );
             Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
-            // If we cannot resolve the listening or target address, it's an error.
-            if( !ResolveAdresses( context.Monitor, r, out TransportTypeAddress? listen, out TransportTypeAddress? target ) )
+            // If we cannot resolve the listening addresses or the target address, it's an error.
+            if( !ResolveAdresses( context.Monitor, r, out IReadOnlyCollection<TransportTypeAddress>? listen, out TransportTypeAddress? target ) )
             {
                 return false;
             }
@@ -108,14 +109,21 @@ namespace CK.AppIdentity.TransportLayer
                 // This is not an error.
                 return true;
             }
-            // If we are listening and cannot setup a listener on the local address, it's an error.
-            TransportListener? listener = null;
+            // If we are listening and cannot setup the listeners on the local address, it's an error.
+            TransportListener[]? listeners = null;
             bool disallowEviction = false;
             if( listen != null )
             {
-                if( (listener = _transportManager.TryEnsureListener( context.Monitor, listen )) == null )
+                listeners = new TransportListener[listen.Count];
+                int i = 0;
+                foreach( var l in listen )
                 {
-                    return false;
+                    var listener = _transportManager.TryEnsureListener( context.Monitor, l );
+                    if( listener == null )
+                    {
+                        return false;
+                    }
+                    listeners[i++] = listener;
                 }
                 var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
                 disallowEviction = bool.TryParse( a, out var b ) && b;
@@ -125,18 +133,18 @@ namespace CK.AppIdentity.TransportLayer
             // listener and if the party is the initiator it must start to try to connect.
             // However, to be able to start exchanging with others, we must know the message protocols
             // that are supported.
-            var t = new TransportFeature( _transportManager, r, listener, target, remoteKeys, disallowEviction );
+            var t = new TransportFeature( _transportManager, r, listeners, target, remoteKeys, disallowEviction );
             // We add the feature here to the remote so that channels can use it.
             // And we wait a successful initialization to "publish" the new TransportFeature to the
             // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature
             // "appears" after the ApplicationIdentity.RemotesChanged event.
             r.AddFeature( t );
-            if( listener != null )
+            if( listeners != null )
             {
                 context.Trampoline.OnSuccess( () =>
                 {
                     t.CloseChannelRegistration( context.Monitor );
-                    listener.AddParty( t );
+                    foreach( var l in listeners ) l.AddParty( t );
                     context.Trampoline.OnSuccess( () => _transportManager.RaiseFeatureAppearsEventAsync( context.Monitor, t ) );
                 } );
             }
@@ -163,7 +171,7 @@ namespace CK.AppIdentity.TransportLayer
                 var p = s.AsSpan( 0, idx );
                 foreach( var t in _transportTypes )
                 {
-                    if( p.Equals( t.AddressProtocolName, StringComparison.OrdinalIgnoreCase) )
+                    if( p.Equals( t.TypeName, StringComparison.OrdinalIgnoreCase) )
                     {
                         typed = s.AsSpan( idx + 1 );
                         transport = t;
@@ -183,44 +191,51 @@ namespace CK.AppIdentity.TransportLayer
             return transport.ParseAddress( monitor, typed, section );
         }
 
-        bool ResolveAdresses( IActivityMonitor monitor, IRemoteParty r, out TransportTypeAddress? listen, out TransportTypeAddress? target )
+        bool ResolveAdresses( IActivityMonitor monitor,
+                              IRemoteParty r,
+                              out IReadOnlyCollection<TransportTypeAddress>? listen,
+                              out TransportTypeAddress? target )
         {
-            listen = null;
-            target = null;
             // If the Address is set, it must be parseable.
             var a = r.Address;
             if( a != null )
             {
                 var section = r.Configuration.Configuration.TryGetSection( "Address" );
                 Debug.Assert( section != null );
+                listen = null;
                 target = ParseTypedAddress( monitor, a, section );
                 return target != null;
             }
             // No Address: lookup for the ListeningAddress.
             // ReadListeningAddresses returns true if no error occurred but the address map can be null.
-            if( !ReadListeningAddresses( monitor, r, out var available ) )
+            target = null;
+            listen = ResolveListeningAddresses( monitor, r );
+            return listen != null;
+        }
+
+        IReadOnlyCollection<TransportTypeAddress>? ResolveListeningAddresses( IActivityMonitor monitor, IParty party )
+        {
+            if( !ReadListeningAddresses( monitor, party.Configuration.Configuration, out var available ) )
             {
-                return false;
+                return null;
             }
             Debug.Assert( available == null || available.Count > 0, "If there is a map, it is not empty." );
             // If there is a single listening address, we are done: there is no ambiguity.
             if( available != null && available.Count == 1 )
             {
-                listen = available.Values.First();
-                return true;
+                return available.Values;
             }
             // If there is no "ListeningAddress" at all, consider the default tcp listening address
             // bound to the root ApplicationIdentityService configuration.
-            var rootConfiguration = r.ApplicationIdentityService.Configuration.Configuration;
+            var rootConfiguration = party.ApplicationIdentityService.Configuration.Configuration;
             if( available == null )
             {
                 var tcpDef = _tcp.DefaultListeningAddress;
                 Debug.Assert( tcpDef != null );
-                listen = new TransportTypeAddress( _tcp, rootConfiguration, tcpDef );
-                return true;
+                return new[] { new TransportTypeAddress( _tcp, rootConfiguration, tcpDef ) };
             }
             // If there is more than one type of Transport, inject the defaults of all transport type (if supported and
-            // if no address exist for them) and let "UseTransport" decides or use the 'tcp' if "UseTransport" is missing.
+            // if no address exist for them) and let "ListeningTypes" decides or use the 'all' if "ListeningTypes" is missing.
             foreach( var t in _transportTypes )
             {
                 if( !available.ContainsKey( t ) )
@@ -232,32 +247,50 @@ namespace CK.AppIdentity.TransportLayer
                     }
                 }
             }
-            var useTransportSection = r.Configuration.Configuration.TryLookupSection( "UseTransport" );
-            var useTransport = useTransportSection?.Value;
-            if( useTransport == null )
+            var listeningTypesSection = party.Configuration.Configuration.TryLookupSection( "ListeningTypes" );
+            if( listeningTypesSection == null )
             {
-                monitor.Warn( $"Missing a \"UseTransport\" configuration for Remote '{r.FullName}'. Using the default 'tcp' transport type." );
-                listen = available[_tcp];
-                return true;
+                monitor.Warn( $"No \"ListeningTypes\" configuration for Party '{party.FullName}'. " +
+                              $"Using all available ListeningAddress: {available.Values.Select( a => a.ToString() ).Concatenate()}." );
+                return available.Values;
             }
-            foreach( var listeningAddress in available.Values )
+            var listeningTypeNames = listeningTypesSection.ReadUniqueStringSet( monitor, StringComparer.OrdinalIgnoreCase );
+            if( listeningTypeNames == null ) return null;
+            if( listeningTypeNames.Count == 0 )
             {
-                if( useTransport.Equals( listeningAddress.Type.AddressProtocolName, StringComparison.OrdinalIgnoreCase ) )
+                monitor.Error( $"Invalid '{listeningTypesSection.Path}' empty configuration for Party '{party.FullName}'. " +
+                               $"At least one of '{_transportTypes.Select( t => t.TypeName ).Concatenate("','")}' or 'all' must be specified.'" );
+                return null;
+            }
+            // Detecting invalid or unavailable type names and the 'all' occurrence,
+            // or builds the set of final TransportTypeAddress.
+            List<TransportTypeAddress>? final = null;
+            foreach( var t in listeningTypeNames )
+            {
+                if( t.Equals( "all", StringComparison.OrdinalIgnoreCase ) )
                 {
-                    listen = listeningAddress;
-                    return true;
+                    return available.Values;
                 }
+                var exist = available.Values.FirstOrDefault( exist => exist.Type.TypeName.Equals( t, StringComparison.OrdinalIgnoreCase ) );
+                if( exist == null )
+                {
+                    monitor.Error( $"Invalid value '{t}' in '{listeningTypesSection.Path}' for Party '{party.FullName}'.{Environment.NewLine}" +
+                                   $"Available transport types here are: '{available.Values.Select( t => t.Type.TypeName ).Concatenate( "','" )}'." );
+                    return null;
+                }
+                final ??= new List<TransportTypeAddress>();
+                final.Add( exist );
             }
-            Debug.Assert( useTransportSection != null );
-            monitor.Error( $"Invalid '{useTransportSection.Path}': no ListeningAddress exist for transport type '{useTransport}'." );
-            return false;
+            return final;
         }
 
-        bool ReadListeningAddresses( IActivityMonitor monitor, IRemoteParty r, out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
+        bool ReadListeningAddresses( IActivityMonitor monitor,
+                                     ImmutableConfigurationSection configuration,
+                                     out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
         {
             result = null;
             List<ITransportTypeService>? locally = null;
-            foreach( var config in r.Configuration.Configuration.LookupAllSection( "ListeningAddress" ) )
+            foreach( var config in configuration.LookupAllSection( "ListeningAddress" ) )
             {
                 var onLevel = config.ReadStringArray( monitor );
                 if( onLevel == null ) return false;
@@ -271,7 +304,7 @@ namespace CK.AppIdentity.TransportLayer
                         if( parsed == null ) return false;
                         if( locally.Contains( parsed.Type ) )
                         {
-                            monitor.Error( $"Invalid '{r.Configuration.Configuration.Path}': more than one address for '{parsed.Type.AddressProtocolName}' transport type." );
+                            monitor.Error( $"Invalid '{configuration.Path}': more than one address for '{parsed.Type.TypeName}' transport type." );
                             return false;
                         }
                         result ??= new Dictionary<ITransportTypeService, TransportTypeAddress>();
