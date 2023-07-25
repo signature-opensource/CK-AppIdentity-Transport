@@ -25,6 +25,8 @@ namespace CK.AppIdentity
 
             /// <summary>
             /// Gets the heart beat period in milliseconds.
+            /// Defaults to 1000 ms (1 second that is the maximum).
+            /// Must be between 20 and 1000.
             /// </summary>
             int HeatBeatPeriod { get; }
         }

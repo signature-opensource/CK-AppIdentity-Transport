@@ -538,11 +538,13 @@ namespace CK.AppIdentity.TransportLayer
                                                                           IncomingMessage message,
                                                                           TransportFeature remote,
                                                                           ulong expectedNonce,
+                                                                          out bool foundTrustedKey,
                                                                           out TimeSpan currentClockOffset )
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
+            foundTrustedKey = false;
             if( !CheckNonce( transportManager.Logger, ref r, remote, expectedNonce ) )
             {
                 currentClockOffset = TimeSpan.Zero;
@@ -573,12 +575,17 @@ namespace CK.AppIdentity.TransportLayer
             var map = MessageProtocolMap.InternalGet( protocols );
             if( ReadIdentityKeysAndVerifySignatures( ref r,
                                                      remote.RemoteKeys.TrustedIdentity,
-                                                     out var foundTrustedKey,
+                                                     out foundTrustedKey,
                                                      out var currentKeyData,
                                                      out var currentKey ) )
             {
                 transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
-                remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
+                foundTrustedKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
+                if( !foundTrustedKey )
+                {
+                    // This should not happen (defensive programming).
+                    return default;
+                }
                 var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
                 if( missing.Any() )
                 {

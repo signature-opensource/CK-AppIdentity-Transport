@@ -15,6 +15,12 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed partial class TransportManager : MicroAgent
     {
+        /// <summary>
+        /// Maximal time allowed for a connection to be negotiated.
+        /// This delay is not based on the heartbeat count.
+        /// </summary>
+        public const int NegotiationTimeout = 2000;
+
         readonly AppIdentityAgent _agent;
         readonly MessageProtocolDirectoryService _protocolDirectory;
         readonly List<TransportListener> _listeners;
@@ -44,7 +50,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public TransportManagerFeature Feature => _exposedFeature;
 
-        public ISystemClock SystemClock => _agent.ApplicationIdentityService.SystemClock;
+        public ApplicationIdentityService.ISystemClock SystemClock => _agent.SystemClock;
 
         internal bool Start() => TryStart() == RunningStatus.Running;
 
@@ -54,7 +60,7 @@ namespace CK.AppIdentity.TransportLayer
         /// yet another end task in the system, it is easier to use a dedicated stop message.
         /// Let's use this instance as the stop message.
         /// <para>
-        /// This is called once all TransportFeature have been torn down.
+        /// This is called once all transport features (on Remote) and Listeners (on Locals) have been torn down.
         /// </para>
         /// </summary>
         internal void Stop() => PushTypedJob( this );
@@ -211,12 +217,12 @@ namespace CK.AppIdentity.TransportLayer
                     var f = c.Remote;
                     Debug.Assert( f.TargetAddress != null );
                     monitor.Trace( $"Initiating connection to '{f.TargetAddress}' for '{f.Party.FullName}' immediately." );
-                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f ), 1 );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.OnInitialize( this, f, 0 ) );
                     return default;
                 case Transport t:
                     Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
-                    _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.Setup( this, t ), 2 );
+                    _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.OnInitialize( this, t ) );
                     return default;
                 case TransportFeature newFeature:
                     return HandleNewRemoteTransportFeature( monitor, newFeature );
@@ -256,12 +262,12 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async ValueTask HandleStopAsync( IActivityMonitor monitor )
+        ValueTask HandleStopAsync( IActivityMonitor monitor )
         {
             _backTasks.Destroy( monitor );
-            await DisposeListenersAsync( monitor );
             // Sends the MicroAgent stop marker.
             SendStop();
+            return default;
         }
 
         async ValueTask HandleNewRemoteTransportFeature( IActivityMonitor monitor, TransportFeature newFeature )
@@ -283,12 +289,12 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Killing validated transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()})." );
                     if( t.TargetAddress != null )
                     {
-                        var f = t.Controller.Feature;
-                        if( !f.IsOff )
+                        var remote = t.Controller.Feature;
+                        if( !remote.IsOff )
                         {
-                            var seconds = (int)Math.Floor( j.ShutUp.TotalSeconds );
-                            monitor.Trace( $"Initiating reconnection attempt to '{f.TargetAddress}' for '{f.Party.FullName}' in {seconds} seconds." );
-                            _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.Setup( this, f ), seconds + 1 );
+                            var seconds = (int)Math.Ceiling( j.ShutUp.TotalSeconds );
+                            monitor.Trace( $"Initiating reconnection attempt to '{remote.TargetAddress}' for '{remote.Party.FullName}' in {seconds} seconds." );
+                            _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.OnInitialize( this, remote, seconds ) );
                         }
                     }
                 }

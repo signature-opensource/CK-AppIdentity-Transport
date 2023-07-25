@@ -27,6 +27,25 @@ namespace CK.AppIdentity
         }
 
         /// <summary>
+        /// Lookups a "true"/"false" (case insensitive) boolean value in this section or above.
+        /// Defaults to false.
+        /// </summary>
+        /// <param name="s">This section.</param>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <returns>The boolean value, false by default.</returns>
+        public static bool LookupBooleanValue( this ImmutableConfigurationSection s, IActivityMonitor monitor, string key )
+        {
+            var a = s.TryLookupValue( key );
+            if( !bool.TryParse( a, out var value ) && a != null )
+            {
+                Debug.Assert( !value );
+                monitor.Warn( $"Unable to parse '{s.Path}:{key}' value, expected 'true' or 'false' but got '{a}'. Using default false." );
+            }
+            return value;
+        }
+
+        /// <summary>
         /// Helper that reads a string array from a string value, a comma separated string, or children
         /// sections (with string value or comma separated string) that must have integer keys ("0", "1",...).
         /// Returns null on error (and the error is logged).

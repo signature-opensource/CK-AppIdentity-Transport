@@ -1,4 +1,4 @@
-﻿using CK.Core;
+using CK.Core;
 using System;
 
 namespace CK.AppIdentity.BlobChannel.Tests

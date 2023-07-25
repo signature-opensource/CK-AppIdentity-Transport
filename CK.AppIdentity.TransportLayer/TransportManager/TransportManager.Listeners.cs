@@ -26,24 +26,6 @@ namespace CK.AppIdentity.TransportLayer
             return u;
         }
 
-
-        async ValueTask DisposeListenersAsync( IActivityMonitor monitor )
-        {
-            // No concurrency issues: see below.
-            monitor.Trace( $"Disposing listeners: '{_listeners.Select( l => l.ToString()).Concatenate()}" );
-            foreach( var exists in _listeners )
-            {
-                try
-                {
-                    await exists.DisposeAsync( monitor );
-                }
-                catch( Exception ex )
-                {
-                    monitor.Error( $"While disposing {exists}.", ex );
-                }
-            }
-        }
-
         /// <summary>
         /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
         /// The listener should be as ready as possible to handle incoming connections.
@@ -71,6 +53,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 if( exists.IsListeningAddress( endPoint.TypedAddress ) )
                 {
+                    exists.AddRef();
                     return exists;
                 }
             }
@@ -79,6 +62,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 l._transportManager = this;
                 _listeners.Add( l );
+                monitor.Trace( $"Created listener '{GetType().Name} - {l.EndPointDescription}'." );
             }
             return l;
         }

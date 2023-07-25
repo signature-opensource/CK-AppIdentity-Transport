@@ -34,6 +34,7 @@ namespace CK.AppIdentity.TransportLayer
             _peeringIssueChanged = new PerfectEventSender<PeeringIssue>();
             _peeringIssues = new Dictionary<string, PeeringIssue>();
             _transportManager = transportManager;
+            _maxUnknownRemoteCount = 5;
         }
 
 
@@ -50,7 +51,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Gets or sets the maximal number of memorized <see cref="PeeringIssue"/> for truly unknwon remotes
-        /// (when <see cref="PeeringIssue.Remote"/> is null).
+        /// (for <see cref="PeeringIssue.IsListener"/>: <see cref="PeeringIssue.Remote"/> is null).
         /// Must be between 5 and 100, defaults to 5.
         /// </summary>
         public int MaxUnknownRemoteCount
@@ -77,10 +78,28 @@ namespace CK.AppIdentity.TransportLayer
             {
                 lock( _peeringIssues )
                 {
-                    r ??= _exposedIssues = _peeringIssues.Values.ToArray();
+                    r = _exposedIssues ??= _peeringIssues.Values.ToArray();
                 }
             }
             return r;
+        }
+
+        /// <summary>
+        /// Gets the current number of peering issues.
+        /// </summary>
+        public int IssueCount => _peeringIssues.Count;
+
+        /// <summary>
+        /// Tries to find the <see cref="PeeringIssue"/> by its <see cref="PeeringIssue.FullName"/>.
+        /// </summary>
+        /// <param name="fullName">The party's full name to lookup.</param>
+        /// <returns>The issue or null if this party has no issue.</returns>
+        public PeeringIssue? Find(  string fullName )
+        {
+            lock( _peeringIssues )
+            {
+                return _peeringIssues.GetValueOrDefault( fullName );
+            }
         }
 
         /// <summary>

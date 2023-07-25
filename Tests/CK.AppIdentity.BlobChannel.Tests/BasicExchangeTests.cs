@@ -1,7 +1,9 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -88,6 +90,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
             await listener.DisposeAsync();
         }
 
+        SystemClockTester _systemClock = new SystemClockTester( 50 );
+        void ConfigureClock( ServiceCollection services ) => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+
+
         [TestCase( "Reverted" )]
         [TestCase( "Regular" )]
         [Timeout( 4000 )]
@@ -96,58 +102,64 @@ namespace CK.AppIdentity.BlobChannel.Tests
             TestHelper.GetCleanTestStoreFolder();
 
             bool regular = mode == "Regular";
-            ApplicationIdentityService listener;
-            ApplicationIdentityService sender;
-
-            if( regular )
+            ApplicationIdentityService? listener = null;
+            ApplicationIdentityService? sender = null;
+            try
             {
-                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once" );
-                sender = await BlobChannelTester.CreateAndStartSenderAsync();
+                if( regular )
+                {
+                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                }
+                else
+                {
+                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                }
+
+                var listenerReceived = new List<byte[]>();
+                var senderReceived = new List<byte[]>();
+                BlobChannelFeature senderChannel;
+                BlobChannelFeature listenerChannel;
+
+                if( regular )
+                {
+                    listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
+                    senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
+
+                    await BlobChannelTester.SendDataAsync( listenerChannel );
+                    await BlobChannelTester.SendDataAsync( senderChannel );
+
+                    BlobChannelTester.CheckDataReceived( senderReceived );
+                    BlobChannelTester.CheckDataReceived( listenerReceived );
+                }
+                else
+                {
+                    senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
+                    listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
+
+                    await BlobChannelTester.SendDataAsync( senderChannel );
+                    await BlobChannelTester.SendDataAsync( listenerChannel );
+
+                    BlobChannelTester.CheckDataReceived( listenerReceived );
+                    BlobChannelTester.CheckDataReceived( senderReceived );
+                }
             }
-            else
+            finally
             {
-                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once" );
-                listener = await BlobChannelTester.CreateAndStartListenerAsync();
+                if( regular )
+                {
+                    if( sender != null ) await sender.DisposeAsync();
+                    if( listener != null ) await listener.DisposeAsync();
+                }
+                else
+                {
+                    if( listener != null ) await listener.DisposeAsync();
+                    if( sender != null ) await sender.DisposeAsync();
+                }
             }
 
-            var listenerReceived = new List<byte[]>();
-            var senderReceived = new List<byte[]>();
-            BlobChannelFeature senderChannel;
-            BlobChannelFeature listenerChannel;
 
-            if( regular )
-            {
-                listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
-                senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
-
-                await BlobChannelTester.SendDataAsync( listenerChannel );
-                await BlobChannelTester.SendDataAsync( senderChannel );
-
-                BlobChannelTester.CheckDataReceived( senderReceived );
-                BlobChannelTester.CheckDataReceived( listenerReceived );
-            }
-            else
-            {
-                senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
-                listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
-
-                await BlobChannelTester.SendDataAsync( senderChannel );
-                await BlobChannelTester.SendDataAsync( listenerChannel );
-
-                BlobChannelTester.CheckDataReceived( listenerReceived );
-                BlobChannelTester.CheckDataReceived( senderReceived );
-            }
-
-            if( regular )
-            {
-                await sender.DisposeAsync();
-                await listener.DisposeAsync();
-            }
-            else
-            {
-                await listener.DisposeAsync();
-                await sender.DisposeAsync();
-            }
         }
 
     }

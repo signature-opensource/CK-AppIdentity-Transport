@@ -146,7 +146,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Gets whether this party is off line.
+        /// Gets whether this party is off line. The <see cref="Party"/> may be destroyed.
         /// Defaults to false: by default a remote always tries to establish a connection.
         /// </summary>
         public bool IsOff => _switchOffReason != null;
@@ -347,7 +347,13 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets whether we are listening or targeting the remote.
         /// </summary>
         [MemberNotNullWhen( false, nameof( TargetAddress ) )]
+        [MemberNotNullWhen( true, nameof( Listeners ) )]
         public bool IsListening => _listeners != null;
+
+        /// <summary>
+        /// Gets the non null listeners if <see cref="IsListening"/> is false.
+        /// </summary>
+        public IReadOnlyCollection<TransportListener>? Listeners => _listeners;
 
         /// <summary>
         /// Gets the non null target address if <see cref="IsListening"/> is false.
@@ -417,7 +423,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                monitor.Trace( $"Switching remote '{Party.FullName}' on." );
+                monitor.Trace( $"Switching remote on '{Party.FullName}'." );
                 if( _listeners != null )
                 {
                     foreach( var l in _listeners ) l.AddParty( this );
@@ -440,7 +446,7 @@ namespace CK.AppIdentity.TransportLayer
         internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, string offReason )
         {
             Debug.Assert( _transportManager.IsInLoop( monitor ) );
-            monitor.Trace( $"Switching remote '{Party.FullName}' off (reason: '{offReason}')." );
+            monitor.Trace( $"Switching off remote '{Party.FullName}' (reason: '{offReason}')." );
             if( _listeners != null )
             {
                 foreach( var l in _listeners ) l.RemoveParty( this );

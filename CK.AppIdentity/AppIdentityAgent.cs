@@ -22,6 +22,7 @@ namespace CK.AppIdentity
         internal AppIdentityAgent( ApplicationIdentityService service, IServiceProvider serviceProvider, int heartBeatPeriod )
             : base( $"ApplicationIdentityService Agent for '{service}'", heartBeatPeriod )
         {
+            Throw.CheckArgument( heartBeatPeriod <= 1000 );
             _service = service;
             _serviceProvider = serviceProvider;
         }

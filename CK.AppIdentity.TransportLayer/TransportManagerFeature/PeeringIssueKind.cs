@@ -53,7 +53,12 @@ namespace CK.AppIdentity.TransportLayer
         /// This applies only to initiators.
         /// </para>
         /// </summary>
-        WaitingRemoteCreation
+        WaitingRemoteCreation,
+
+        /// <summary>
+        /// Both us and the remote are initiators.
+        /// </summary>
+        InitiatorConflict
     }
 
 }

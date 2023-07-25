@@ -3,6 +3,7 @@ using CK.Core;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -44,53 +45,123 @@ namespace CK.AppIdentity.TransportLayer
             // Even if initialization fails, register the feature: it may be required by others.
             ApplicationIdentityService.AddFeature( _transportManager.Feature );
             // Local and External remote parties have no Transport.
+            // Locals hold the Listeners.
+            // Starts by creating the remotes.
+            var releaseOnError = new List<TransportListener>();
+            context.Trampoline.OnError( () => ReleaseListenersAsync( context.Monitor, releaseOnError ) );
             foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
-                success &= PlugTransportFeature( context, r );
+                success &= PlugTransportFeature( context, r, releaseOnError.Add );
+            }
+            foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
+            {
+                success &= EnsureListeners( context, local, releaseOnError.Add );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
         {
             bool success = true;
+            var releaseOnError = new List<TransportListener>();
+            context.Trampoline.OnError( () => ReleaseListenersAsync( context.Monitor, releaseOnError ) );
             // Local and External remote parties have no Transport.
             foreach( var r in context.GetAllRemotes().Where( r => !r.IsExternalParty && IsAllowedFeature( r ) ) )
             {
-                success &= PlugTransportFeature( context, r );
+                success &= PlugTransportFeature( context, r, releaseOnError.Add );
+            }
+            if( party is ILocalParty local )
+            {
+                success &= EnsureListeners( context, local, releaseOnError.Add );
             }
             return Task.FromResult( success );
         }
 
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
+        protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
         {
             Debug.Assert( _transportManager != null );
             foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
-                if( t != null ) _transportManager.TearDown( t );
+                if( t != null )
+                {
+                    await UnplugRemoteAsync( context, t );
+                }
             }
-            return Task.CompletedTask;
+            if( party is ILocalParty local )
+            {
+                var listeners = local.GetFeature<TransportListener[]>();
+                if( listeners != null ) await ReleaseListenersAsync( context.Monitor, listeners );
+            }
         }
 
-        protected override Task TeardownAsync( FeatureLifetimeContext context )
+        protected override async Task TeardownAsync( FeatureLifetimeContext context )
         {
             Debug.Assert( _transportManager != null );
             foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
-                if( t != null ) _transportManager.TearDown( t );
+                if( t != null )
+                {
+                    await UnplugRemoteAsync( context, t );
+                }
+            }
+            foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
+            {
+                var listeners = local.GetFeature<TransportListener[]>();
+                if( listeners != null ) await ReleaseListenersAsync( context.Monitor, listeners );
             }
             // Sends the stop signal and wait for the resolution of the running task
             // before returning to the ApplicationIdentity service's agent activity. 
             _transportManager.Stop();
-            return _transportManager.RunningTask;
+            await _transportManager.RunningTask;
         }
 
-        bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r )
+        static async Task<bool> ReleaseListenersAsync( IActivityMonitor monitor, IEnumerable<TransportListener> toRelease )
+        {
+            foreach( var l in toRelease )
+            {
+                await l.ReleaseAsync( monitor );
+            }
+            return false;
+        }
+
+        async Task UnplugRemoteAsync( FeatureLifetimeContext context, TransportFeature t )
         {
             Debug.Assert( _transportManager != null );
-            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
+            _transportManager.TearDown( t );
+            // Release the listeners from the ApplicationIdentityService's agent loop.
+            if( t.IsListening )
+            {
+                await ReleaseListenersAsync( context.Monitor, t.Listeners );
+            }
+        }
+
+        bool EnsureListeners( FeatureLifetimeContext context, ILocalParty local, Action<TransportListener> releaseOnError )
+        {
+            Debug.Assert( _transportManager != null );
+            // If AlwaysListening is false (the default), Listeners are created when the first non initiator
+            // remote (no Address) appears.
+            // We initialize the Listeners only if "AlwaysListening" is true.
+            if( !local.Configuration.Configuration.LookupBooleanValue( context.Monitor, "AlwaysListening" ) )
+            {
+                return true;
+            }
+            var listen = ResolveListeningAddresses( context.Monitor, local );
+            if( listen == null ) return false;
+            var listeners = ObtainListeners( context, listen, releaseOnError );
+            if( listeners != null )
+            {
+                local.AddFeature( listeners );
+                return true;
+            }
+            return false;
+        }
+
+        bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r, Action<TransportListener> releaseOnError )
+        {
+            Debug.Assert( _transportManager != null );
+            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName && !r.IsExternalParty );
             // If we cannot resolve the listening addresses or the target address, it's an error.
             if( !ResolveAdresses( context.Monitor, r, out IReadOnlyCollection<TransportTypeAddress>? listen, out TransportTypeAddress? target ) )
             {
@@ -102,7 +173,7 @@ namespace CK.AppIdentity.TransportLayer
             //   the trusted identity and then the ILocalKeys to sign the response.
             // - If we are targeting, then we must have a ILocalKeys manager to sign the initial message and then
             //   the IRemoteKeys to assert the response and update the trusted identity.
-            IRemoteKeys? remoteKeys = r.GetFeature<IRemoteKeys>(); ;
+            IRemoteKeys? remoteKeys = r.GetFeature<IRemoteKeys>();
             if( remoteKeys == null )
             {
                 context.Monitor.Warn( $"Remote '{r}' cannot support the allowed 'Transport' feature because the remote has a disallowed 'KeyManagement' feature." );
@@ -114,25 +185,15 @@ namespace CK.AppIdentity.TransportLayer
             bool disallowEviction = false;
             if( listen != null )
             {
-                listeners = new TransportListener[listen.Count];
-                int i = 0;
-                foreach( var l in listen )
-                {
-                    var listener = _transportManager.TryEnsureListener( context.Monitor, l );
-                    if( listener == null )
-                    {
-                        return false;
-                    }
-                    listeners[i++] = listener;
-                }
-                var a = r.Configuration.Configuration.TryLookupValue( "DisallowEviction" );
-                disallowEviction = bool.TryParse( a, out var b ) && b;
+                listeners = ObtainListeners( context, listen, releaseOnError );
+                if( listeners == null ) return false;
+                disallowEviction = r.Configuration.Configuration.LookupBooleanValue( context.Monitor, nameof( TransportFeature.DisallowEviction ) );
             }
             // No direct initialization error: add the TransportFeature to the party.
             // The initialization is not finished: if the party is listening it must be registered in its
-            // listener and if the party is the initiator it must start to try to connect.
-            // However, to be able to start exchanging with others, we must know the message protocols
-            // that are supported.
+            // listeners and if the party is the initiator it must start to try to connect.
+            // Before being able to start exchanging with others, we must know the message protocols
+            // that are supported: CloseChannelRegistration does this.
             var t = new TransportFeature( _transportManager, r, listeners, target, remoteKeys, disallowEviction );
             // We add the feature here to the remote so that channels can use it.
             // And we wait a successful initialization to "publish" the new TransportFeature to the
@@ -159,6 +220,21 @@ namespace CK.AppIdentity.TransportLayer
                 } );
             }
             return true;
+        }
+
+        TransportListener[]? ObtainListeners( FeatureLifetimeContext context, IReadOnlyCollection<TransportTypeAddress> listen, Action<TransportListener> releaseOnError )
+        {
+            Debug.Assert( _transportManager != null );
+            TransportListener[]? listeners = new TransportListener[listen.Count];
+            int i = 0;
+            foreach( var addr in listen )
+            {
+                var listener = _transportManager.TryEnsureListener( context.Monitor, addr );
+                if( listener == null ) break;
+                listeners[i++] = listener;
+                releaseOnError( listener );
+            }
+            return i < listeners.Length ? null : listeners;
         }
 
         TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, ImmutableConfigurationSection section )
@@ -247,6 +323,9 @@ namespace CK.AppIdentity.TransportLayer
                     }
                 }
             }
+            // Handling "ListeningTypes". This normally applies to Remote (not to a Local party) but this doesn't
+            // cost much to equally applies it a Local configuration level: this enables a transport Type to be an
+            // "opt-in one"... It's overkill but corresponds to simpler code.
             var listeningTypesSection = party.Configuration.Configuration.TryLookupSection( "ListeningTypes" );
             if( listeningTypesSection == null )
             {

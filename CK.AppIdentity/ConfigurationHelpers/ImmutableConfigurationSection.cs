@@ -141,7 +141,8 @@ namespace CK.AppIdentity
         /// <returns>The non null section if found.</returns>
         public ImmutableConfigurationSection? TryLookupSection( string key )
         {
-            ImmutableConfigurationSection? result = null;
+            Throw.CheckNotNullOrWhiteSpaceArgument( key );
+            ImmutableConfigurationSection? result;
             var s = this;
             do
             {

@@ -85,9 +85,7 @@ namespace CK.AppIdentity.TransportLayer
                     else
                     {
                         ++done;
-                        t.Reset();
-                        t._nextFree = t._head.FreeHead;
-                        t._head.FreeHead = t;
+                        Reset( t );
                     }
                     _queue.Dequeue();
                     if( _queue.Count == 0 ) break;
@@ -97,16 +95,25 @@ namespace CK.AppIdentity.TransportLayer
                 return (handled, done);
             }
 
+            static void Reset( BackTask t )
+            {
+                t.Reset();
+                t._nextFree = t._head.FreeHead;
+                t._head.FreeHead = t;
+            }
+
             /// <summary>
             /// Configures a BackTask to run in the background.
+            /// <para>
+            /// The <paramref name="onInitialize"/> action must call <see cref="BackTask.Retry(int)"/> (with a positive delay)
+            /// otherwise the back task will be <see cref="BackTask.Reset"/> and sent back to its pool.
+            /// </para>
             /// </summary>
             /// <typeparam name="T">The type of the BackTask.</typeparam>
             /// <param name="head">The back task head for <typeparamref name="T"/>.</param>
-            /// <param name="configure">The configuration action.</param>
-            /// <param name="ticks">Must be positive.</param>
-            public void Initialize<T>( Head head, Action<T> configure, int ticks ) where T : BackTask, new()
+            /// <param name="onInitialize">The configuration action.</param>
+            public void Initialize<T>( Head head, Action<T> onInitialize ) where T : BackTask, new()
             {
-                Debug.Assert( ticks > 0 );
                 var t = (T?)head.FreeHead;
                 if( t != null )
                 {
@@ -121,26 +128,29 @@ namespace CK.AppIdentity.TransportLayer
                     ++_totalCount;
                 }
                 Debug.Assert( t._head == head );
-                t._checkTick = _tick + ticks;
-                configure( t );
-                _queue.Enqueue( t, t._checkTick );
+                t._checkTick = _tick;
+                onInitialize( t );
+                if( t._checkTick == _tick )
+                {
+                    Reset( t );
+                }
+                else
+                {
+                    _queue.Enqueue( t, t._checkTick );
+                }
             }
         }
 
         /// <summary>
-        /// Can be called by <see cref="Check"/> if this task must be retried.
+        /// Initially called by the <see cref="BackTask.List.Initialize{T}(Head, Action{T})"/> configuration action
+        /// and then by <see cref="Check"/> when this back task must continue to be checked.
         /// </summary>
-        /// <param name="ticks">Must be positive.</param>
-        protected void Retry( int ticks )
+        /// <param name="delay">Must be positive.</param>
+        protected void Retry( int delay )
         {
-            Debug.Assert( ticks > 0 );
-            _checkTick += ticks;
+            Debug.Assert( delay > 0 );
+            _checkTick += delay;
         }
-
-        /// <summary>
-        /// Gets the current tick.
-        /// </summary>
-        protected int CurrentTick => _checkTick;
 
         /// <summary>
         /// Checks whatever it has to check. Can call <see cref="Retry(int)"/> if needed.

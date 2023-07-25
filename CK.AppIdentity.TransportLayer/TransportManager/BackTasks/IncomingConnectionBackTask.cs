@@ -19,6 +19,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         Transport? _incoming;
         Task? _result;
+        DateTime _initializeTime;
 
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
@@ -29,10 +30,14 @@ namespace CK.AppIdentity.TransportLayer
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
             Debug.Assert( _incoming != null && _result != null );
-            if( !_result.IsCompleted  )
+            if( !_result.IsCompleted )
             {
-                monitor.Warn( $"Incoming connection timeout for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
-                transportManager.KillTransport( _incoming );
+                var delta = DateTime.UtcNow - _initializeTime;
+                if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
+                {
+                    monitor.Warn( $"Incoming connection timeout ({delta.TotalMilliseconds:G0} ms) for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
+                    transportManager.KillTransport( _incoming );
+                }
             }
             else if( _result.IsFaulted )
             {
@@ -47,19 +52,33 @@ namespace CK.AppIdentity.TransportLayer
             _result = null;
         }
 
-        public void Setup( TransportManager transportManager, Transport incoming )
+        public void OnInitialize( TransportManager transportManager, Transport incoming )
         {
             Debug.Assert( incoming.Listener != null );
             _incoming = incoming;
+            _initializeTime = DateTime.UtcNow;
             _result = Task.Run( () => RunAsync( transportManager, incoming ) );
+            // Take no risk: integer division (to the floor).
+            Debug.Assert( transportManager.SystemClock.HeatBeatPeriod <= 1000 && transportManager.SystemClock.HeatBeatPeriod >= 20,
+                          "1 second is the default and the max and it cannot be 0." );
+            Retry( 1000 / transportManager.SystemClock.HeatBeatPeriod );
         }
 
         static async Task RunAsync( TransportManager transportManager, Transport incoming )
         {
+            var success = await DoRunAsync( transportManager, incoming );
+            if( !success )
+            {
+                transportManager.KillTransport( incoming );
+            }
+        }
+
+        static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming )
+        {
             Debug.Assert( incoming?.Listener != null );
 
-            var initialResult = await HandleInitialMessageAsync( transportManager, incoming );
-            if( !initialResult.HasValue ) return;
+            var initialResult = await HandleInitialMessageAsync( transportManager, incoming ).ConfigureAwait( false );
+            if( !initialResult.HasValue ) return false;
 
             var (initialMessage, remote, foundTrustKey) = initialResult.Value;
 
@@ -70,8 +89,8 @@ namespace CK.AppIdentity.TransportLayer
                 // Signals the InvalidClockOffset peering issue before sending the message.
                 transportManager.InvalidClockOffset( initialMessage, remote, initialMessage.ClockOffset );
                 // Replies the InvalidClockOffset. If this fails, we don't care.
-                await ZeroProtocol.SendInvalidClockOffsetMessageAsync( transportManager.SystemClock, incoming, initialMessage.ClockOffset, initialMessage.Nonce );
-                return;
+                await ZeroProtocol.SendInvalidClockOffsetMessageAsync( transportManager.SystemClock, incoming, initialMessage.ClockOffset, initialMessage.Nonce ).ConfigureAwait( false );
+                return false;
             }
             // If the remote is not known, either intrinsically or because it has no trusted identity yet or our trusted identity key
             // doesn't appear in the message, signals this InitialMessage to the TransportManager: the incoming Remote may be accepted
@@ -83,21 +102,21 @@ namespace CK.AppIdentity.TransportLayer
                 // no need for a cancellation token here.
                 // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party.
                 string? enlistUrl = transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
-                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ) )
+                if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ).ConfigureAwait( false ) )
                 {
                     // Only if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the TransportFeature found (if any).
                     transportManager.UnknownOrUntrustedIncomingRemote( initialMessage, remote );
                 }
-                return;
+                return false;
             }
             // The remote is who it pretends to be.
             Debug.Assert( incoming.RemoteKeys != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
-                await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, TimeSpan.FromSeconds( 5 ) );
-                return;
+                await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, TimeSpan.FromSeconds( 5 ) ).ConfigureAwait( false );
+                return false;
             }
             // Let's check the full protocol list we received by intersecting it
             // with our declared protocol (and selecting the highest common version for each of them).
@@ -121,8 +140,8 @@ namespace CK.AppIdentity.TransportLayer
                                               + $"misses support for {missingGroups.Count()} protocols:{Environment.NewLine}{texts}." );
 
                 // If this message cannot be sent, we don't care.
-                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, initialMessage.Nonce, missing );
-                return;
+                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, initialMessage.Nonce, missing ).ConfigureAwait( false );
+                return false;
             }
             // This Transport is now valid (up to us).
             // But our remote may not accept "eviction". 
@@ -133,8 +152,8 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     transportManager.Logger.Warn( $"Remote '{remote.Party.FullName}' while already connected to '{current.CurrentTransport}'. DisallowEviction is true: sending EvictionDisallowedMessage and closing." );
                     // If this message cannot be sent, we don't care.
-                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming, initialMessage.Nonce );
-                    return;
+                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming, initialMessage.Nonce ).ConfigureAwait( false );
+                    return false;
                 }
             }
             // We could check here that we cannot honor protocols of the other party but we let him decide:
@@ -142,14 +161,14 @@ namespace CK.AppIdentity.TransportLayer
             var protocolMap = MessageProtocolMap.InternalGet( commonBest );
             // We now have no reason to reject it: we send the accept message: it this fails, it's
             // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock, incoming, protocolMap, initialMessage.Nonce, initialMessage.ClockOffset ) )
+            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock, incoming, protocolMap, initialMessage.Nonce, initialMessage.ClockOffset ).ConfigureAwait( false ) )
             {
                 // Wait for the final message, either:
                 //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
                 //  - A DNegoInitiatorSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA512 hash (64 bytes) and
                 //    the signtature (its length on one byte and up to 255 bytes).
                 const int MaxInitiatorSuccessMessageLength = 1 + 8 + 8 + 64 + 1 + 255;
-                using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength );
+                using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength ).ConfigureAwait( false );
                 if( !finalInitiatorMessage.IsValid
                     || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
                     || finalInitiatorMessage.Message.FirstSpan.Length == 0
@@ -165,7 +184,7 @@ namespace CK.AppIdentity.TransportLayer
                 else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
                 {
                     // We're almost done.
-                    if( await ZeroProtocol.SendFinalSuccessMessageAsync( incoming, remote, initialMessage.Nonce, finalClockOffset ) )
+                    if( await ZeroProtocol.SendFinalSuccessMessageAsync( incoming, remote, initialMessage.Nonce, finalClockOffset ).ConfigureAwait( false ) )
                     {
                         // Final message is sent: we condemn the current transport if there is one.
                         var m = new ByeByeMessage( $"Evicted by instance '{initialMessage.InstanceId}' at '{initialMessage.RemoteEndPointDescription}'.",
@@ -174,6 +193,7 @@ namespace CK.AppIdentity.TransportLayer
                         // By providing the party here instead of the transport feature, we'll check
                         // that the RemoteParty is not destroyed and the existence of the TransportFeature.
                         transportManager.NewValidTransport( remote.Party, incoming, protocolMap, finalClockOffset );
+                        return true;
                     }
                     else
                     {
@@ -185,6 +205,7 @@ namespace CK.AppIdentity.TransportLayer
                     // Either the nonce or the signature failed: let this transport die.
                 }
             }
+            return false;
         }
 
         static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
@@ -198,7 +219,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 bool downgradedVersion = false;
                 retry:
-                message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength );
+                message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength ).ConfigureAwait( false );
                 if( !message.IsValid || message == IncomingMessage.Empty || message == IncomingMessage.EmptyAck )
                 {
                     transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
@@ -219,14 +240,14 @@ namespace CK.AppIdentity.TransportLayer
                         // We have read the first part of the message.
                         // If the initialMessage is null it is because its signature has failed the verification or the Nonce check failed (this has been logged).
                         // We send a null enlist url and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
-                        await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, 0, signatureVerificationFailed: true );
+                        await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, null, 0, signatureVerificationFailed: true ).ConfigureAwait( false );
                         return null;
                     }
                     // The remote's version of the InitialMessage is greater than ours.
                     if( !downgradedVersion )
                     {
                         transportManager.Logger.Warn( $"Replying DowngradeProtocolReplyMessage to '{incoming.RemoteEndPointDescription}' (remote version is '{otherVersion}', our is '{ZeroProtocol.CurrentVersion}')." );
-                        await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming );
+                        await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming ).ConfigureAwait( false );
                         // If the other can downgrade, it's cool. But do this only once.
                         downgradedVersion = true;
                         message.Release();

@@ -61,7 +61,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             _listenerChannel = SetupChannel( listener, _listenerReceived );
         }
 
-        public static async Task<BlobChannelTester> CreateTesterAsync( string autoTrustKey = "None",
+        public static async Task<BlobChannelTester> CreateTesterAsync( string autoTrustKey = "Never",
                                                                        int heartbeatPeriod = 0,
                                                                        TimeSpan? senderOffset = null,
                                                                        TimeSpan? listenerOffset = null,
@@ -78,7 +78,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             return new BlobChannelTester( s, l );
         }
 
-        public static async Task<ApplicationIdentityService> CreateAndStartSenderAsync( string autoTrustKey = "None",
+        public static async Task<ApplicationIdentityService> CreateAndStartSenderAsync( string autoTrustKey = "Never",
                                                                                         NormalizedPath storeSubPath = default,
                                                                                         Action<ServiceCollection>? configureServices = null )
         {
@@ -93,7 +93,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             }, configureServices );
         }
 
-        public static async Task<ApplicationIdentityService> CreateAndStartListenerAsync( string autoTrustKey = "None",
+        public static async Task<ApplicationIdentityService> CreateAndStartListenerAsync( string autoTrustKey = "Never",
                                                                                           NormalizedPath storeSubPath = default,
                                                                                           Action<ServiceCollection>? configureServices = null )
         {

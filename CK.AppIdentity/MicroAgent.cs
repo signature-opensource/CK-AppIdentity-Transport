@@ -40,11 +40,14 @@ namespace CK.AppIdentity
         /// Initializes a new Micro Agent.
         /// </summary>
         /// <param name="name">The required name of this micro agent.</param>
-        /// <param name="heartbeatPeriod"></param>
+        /// <param name="heartbeatPeriod">
+        /// Optional heartbeat in milliseconds: when 0, no <see cref="Timer"/> is allocated.
+        /// When positive, must be greater or equal to 20.
+        /// </param>
         protected MicroAgent( string name, int heartbeatPeriod = 0 )
         {
             Throw.CheckNotNullArgument( name );
-            Throw.CheckArgument( heartbeatPeriod >= 0 );
+            Throw.CheckArgument( heartbeatPeriod == 0 || heartbeatPeriod >= 20 );
             _monitor = new ActivityMonitor( name );
             Debug.Assert( _monitor.ParallelLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );

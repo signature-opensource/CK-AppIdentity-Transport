@@ -18,10 +18,14 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public abstract class TransportListener
     {
+        // This is set right after the instantiation to avoid a constructor parameter
+        // with which the developper must not interact with.
         [AllowNull]
         internal TransportManager _transportManager;
         readonly ITransportTypeService _transportType;
         TransportFeature[] _parties;
+        // Life and death of a listener is based on a ref count.
+        int _refCount;
 
         /// <summary>
         /// Initializes a new TransportListener.
@@ -32,6 +36,7 @@ namespace CK.AppIdentity.TransportLayer
             Throw.CheckNotNullArgument( transportType );
             _parties = Array.Empty<TransportFeature>();
             _transportType = transportType;
+            _refCount = 1;
         }
 
         /// <summary>
@@ -40,16 +45,60 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public IReadOnlyList<TransportFeature> Parties => _parties;
 
+        /// <summary>
+        /// Adds a remote party that is bound to this listener.
+        /// This needs Interlocked because this is called when parties are created
+        /// from the ApplicationIdentityService's agent loop and by TransportManager's loop
+        /// when Switching On a remote.
+        /// </summary>
+        /// <param name="party">The valid party for this listener.</param>
         internal void AddParty( TransportFeature party )
         {
             Debug.Assert( !_parties.Contains( party ) );
             Util.InterlockedAdd( ref _parties, party );
         }
 
+        /// <summary>
+        /// Removes a remote party that is bound to this listener.
+        /// This needs Interlocked because this is called when parties are destroyed
+        /// from the ApplicationIdentityService's agent loop and by TransportManager's loop
+        /// when Switching Off a remote.
+        /// </summary>
+        /// <param name="party"></param>
         internal void RemoveParty( TransportFeature party )
         {
             Debug.Assert( _parties.Contains( party ) );
             Util.InterlockedRemove( ref _parties, party );
+        }
+
+        /// <summary>
+        /// Increments the reference count. This doesn't need to be Interlocked because it is
+        /// called only from the ApplicationIdentityService's agent when party are
+        /// created.
+        /// </summary>
+        internal void AddRef() => ++_refCount;
+
+        /// <summary>
+        /// Release a reference. This doesn't need to be Interlocked because it is
+        /// called only from the ApplicationIdentityService's agent when party are
+        /// destroyed.
+        /// </summary>
+        internal async ValueTask ReleaseAsync( IActivityMonitor monitor )
+        {
+            if( --_refCount == 0 )
+            {
+                using( monitor.OpenInfo( $"Disposing listener '{ToString()}'." ) )
+                {
+                    try
+                    {
+                        await DisposeAsync( monitor );
+                    }
+                    catch( Exception ex )
+                    {
+                        monitor.Error( $"While disposing '{ToString()}'.", ex );
+                    }
+                }
+            }
         }
 
         /// <summary>

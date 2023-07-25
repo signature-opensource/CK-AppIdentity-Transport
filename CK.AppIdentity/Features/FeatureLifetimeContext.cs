@@ -45,8 +45,8 @@ namespace CK.AppIdentity
         ///   (<see cref="ILocalParty.Remotes"/>).
         ///   </item>
         /// </list>
-        /// Nothing prevents to associate features to a <see cref="ITenantDomainParty"/> but this is less common: this helper
-        /// ease the case where features must be associated to <see cref="IRemoteParty"/>.
+        /// Nothing prevents to associate features to a <see cref="ITenantDomainParty"/>: this helper ease the case where features must be
+        /// associated to <see cref="IRemoteParty"/>.
         /// </summary>
         /// <returns>The set of remotes to consider for the current operation.</returns>
         public IEnumerable<IRemoteParty> GetAllRemotes()
