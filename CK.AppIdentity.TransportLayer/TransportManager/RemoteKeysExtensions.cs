@@ -43,7 +43,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( foundTrustedKey )
             {
-                Debug.Assert( @this.TrustedIdentity != null );
+                Throw.DebugAssert( @this.TrustedIdentity != null );
                 // We trust the remote (we can update our trusted identity key).
                 if( !@this.TrustedIdentity.Equals( currentKeyData ) )
                 {

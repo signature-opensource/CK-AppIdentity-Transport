@@ -55,7 +55,7 @@ namespace CK.AppIdentity.TransportLayer
                                    IRemoteKeys remoteKeys,
                                    bool disallowEviction )
         {
-            Debug.Assert( (listeners == null) != (target == null), "Either we are listening or we are targeting." );
+            Throw.DebugAssert( (listeners == null) != (target == null), "Either we are listening or we are targeting." );
             _transportManager = transportManager;
             _party = remote;
             _listeners = listeners;
@@ -74,9 +74,9 @@ namespace CK.AppIdentity.TransportLayer
 
         internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols, TimeSpan clockOffset )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
-            Debug.Assert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
-            Debug.Assert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Throw.DebugAssert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
+            Throw.DebugAssert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
 
             // First, instantiates or rebinds the TransportController so that it can be
             // provided to the protocol handlers.
@@ -90,7 +90,7 @@ namespace CK.AppIdentity.TransportLayer
                 monitor.Trace( $"Rebinding TransportController for '{_party.FullName}'." );
                 _controller.Rebind( monitor, transport );
             }
-            Debug.Assert( _controller.Feature == this );
+            Throw.DebugAssert( _controller.Feature == this );
             // Sets the ClockOffset.
             _clockOffset = clockOffset;
             // Second, ensures that protocol handlers for the right version are available
@@ -99,21 +99,21 @@ namespace CK.AppIdentity.TransportLayer
             for( int i = 0; i < protocolHandlers.Length; i++ )
             {
                 var c = _channels[i];
-                Debug.Assert( c != null );
+                Throw.DebugAssert( c != null );
                 protocolHandlers[i] = c.EnsureCurrentHandler( monitor, _controller, protocols.Protocols[i] );
             }
             // The protocols are available.
             // We start receiving messages from this new transport (this sets the protocol map and handlers on the transport)
             // and starts sending the messages in the controller queues.
-            await _controller.ActivateAsync( monitor, protocols, protocolHandlers );
+            await _controller.ActivateAsync( monitor, protocols, protocolHandlers ).ConfigureAwait( false );
             // Always signals the ready task.
             _readyTask.TrySetResult();
-            await UpdateConnectionAvailabilityAsync( monitor );
+            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
         }
 
         Task UpdateConnectionAvailabilityAsync( IActivityMonitor monitor )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
 
             // TODO: Consider _controller queue load.
             // Currently we are connected if no off reason exists and a controller has been created and its lifetime has not been signaled.
@@ -224,7 +224,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
+                Throw.DebugAssert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
                 return _bestRegisteredProtocols!;
             }
         }
@@ -236,7 +236,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
+                Throw.DebugAssert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
                 return _registeredProtocols;
             }
         }
@@ -247,7 +247,7 @@ namespace CK.AppIdentity.TransportLayer
                                        string protocolName,
                                        IEnumerable<ushort> protocolVersions )
         {
-            Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
             if( _bestRegisteredProtocols.Count == MessageProtocolMap.MaxCount )
             {
                 monitor.Error( $"Unable to register '{channelFeatureName}'. There is already {MessageProtocolMap.MaxCount} channels registered for remote '{_party.FullName}'." );
@@ -317,9 +317,9 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal void CloseChannelRegistration( IActivityMonitor monitor )
         {
-            Debug.Assert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
-            Debug.Assert( _channels.Take( _bestRegisteredProtocols.Count ).All( c => c != null ) );
-            Debug.Assert( _channels.Skip( _bestRegisteredProtocols.Count ).All( c => c == null ) );
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            Throw.DebugAssert( _channels.Take( _bestRegisteredProtocols.Count ).All( c => c != null ) );
+            Throw.DebugAssert( _channels.Skip( _bestRegisteredProtocols.Count ).All( c => c == null ) );
             if( _bestRegisteredProtocols.Count == 0 )
             {
                 monitor.Warn( $"No message protocol registered for '{_party.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
@@ -399,7 +399,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void InitializeOutgoingAndInitiateConnection()
         {
-            Debug.Assert( _target != null );
+            Throw.DebugAssert( _target != null );
             _outgoingInitialMessage = new InitialMessage( this );
             _transportManager.TryConnectTo( this );
         }
@@ -415,7 +415,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal ValueTask DoSwitchOnAsync( IActivityMonitor monitor )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             var offReason = SwitchOffReason;
             if( _switchOffReason != null )
             {
@@ -443,9 +443,9 @@ namespace CK.AppIdentity.TransportLayer
         ///  - If the controller is null, we do nothing.
         /// => This whole function is idempotent.
         /// </summary>
-        internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, string offReason )
+        internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, TaskCompletionSource? done, string offReason )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             monitor.Trace( $"Switching off remote '{Party.FullName}' (reason: '{offReason}')." );
             if( _listeners != null )
             {
@@ -457,20 +457,21 @@ namespace CK.AppIdentity.TransportLayer
             {
                 // Setup a new ready task only if necessary.
                 if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
-                await c.CloseAsync( monitor, offReason );
+                await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
             }
-            await UpdateConnectionAvailabilityAsync( monitor );
+            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
             // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed
             // and/or this is destroyed.
-            await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this );
+            await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );
             // When tearing down, dispose the connection availability event bridge.
             if( offReason.Length == 0 )
             {
-                Debug.Assert( _switchOffReason != null && _switchOffReason.Length == 0 );
+                Throw.DebugAssert( _switchOffReason != null && _switchOffReason.Length == 0 );
                 // Update the possible PeeringIssue if any.
-                await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this );
+                await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this ).ConfigureAwait( false );
                 _connectionEventBridge.Dispose();
             }
+            done?.SetResult();
         }
 
         public override string ToString() => $"TransportFeature for '{_party.FullName}'";

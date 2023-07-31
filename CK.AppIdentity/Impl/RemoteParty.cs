@@ -40,7 +40,7 @@ namespace CK.AppIdentity
         public Task DestroyAsync()
         {
             SetDestroyed();
-            Debug.Assert( _destroyTCS != null );
+            Throw.DebugAssert( _destroyTCS != null );
             return _destroyTCS.Task;
         }
 

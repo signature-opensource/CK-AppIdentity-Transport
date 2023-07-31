@@ -48,7 +48,7 @@ namespace CK.AppIdentity
         MutableConfigurationSection( IConfigurationSection section, MutableConfigurationSection? withValue )
         {
             Throw.CheckNotNullArgument( section );
-            Debug.Assert( ConfigurationPath.KeyDelimiter == ":" );
+            Throw.DebugAssert( ConfigurationPath.KeyDelimiter == ":" );
             _key = section.Key;
             _path = section.Path;
             _value = section.Value;
@@ -59,7 +59,7 @@ namespace CK.AppIdentity
 
         MutableConfigurationSection( MutableConfigurationSection parent, string key )
         {
-            Debug.Assert( !key.Contains( ':' ) );
+            Throw.DebugAssert( !key.Contains( ':' ) );
             _key = key;
             _path = parent._path + ':' + key;
             _withValue = parent._withValue;
@@ -103,7 +103,7 @@ namespace CK.AppIdentity
                 {
                     if( _value == null )
                     {
-                        Debug.Assert( value != null );
+                        Throw.DebugAssert( value != null );
                         if( _withValue != null && _withValue != this )
                         {
                             Throw.InvalidOperationException( $"Unable to set '{_path}' value to '{value}' since '{_withValue._path}' above has value '{_withValue._value}'." );
@@ -112,7 +112,7 @@ namespace CK.AppIdentity
                     }
                     else if( value == null )
                     {
-                        Debug.Assert( _value != null && _withValue == this );
+                        Throw.DebugAssert( _value != null && _withValue == this );
                         ClearWithValue();
                     }
                     _value = value;
@@ -182,7 +182,7 @@ namespace CK.AppIdentity
             int idx;
             if( (idx = sKey.IndexOf( ':' )) < 0 )
             {
-                Debug.Assert( (parent == this) == (sKey.Length == key.Length) );
+                Throw.DebugAssert( (parent == this) == (sKey.Length == key.Length) );
                 // Sets the adjusted key (to the new parent) if needed.
                 if( parent != this )
                 {

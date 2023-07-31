@@ -22,7 +22,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal OutgoingMessage( OutgoingMessageFactory factory, MutableSequence<byte> buffer, object? source, bool isControl )
         {
-            Debug.Assert( buffer.Length > 0 && buffer.Length <= int.MaxValue );
+            Throw.DebugAssert( buffer.Length > 0 && buffer.Length <= int.MaxValue );
 
             _messageFactory = factory;
             _buffer = buffer;
@@ -55,7 +55,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( _refCount != 0 )
             {
-                Debug.Assert( _buffer != null );
+                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 )
@@ -70,12 +70,12 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( _refCount != 0 )
             {
-                Debug.Assert( _buffer != null );
+                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 && --_refCount == 0 )
                     {
-                        Debug.Assert( _messageFactory != null );
+                        Throw.DebugAssert( _messageFactory != null );
                         _messageFactory.Release( _buffer );
                     }
                 }

@@ -37,7 +37,7 @@ namespace CK.AppIdentity
         public Task DestroyAsync()
         {
             SetDestroyed();
-            Debug.Assert( _destroyTCS != null );
+            Throw.DebugAssert( _destroyTCS != null );
             return _destroyTCS.Task;
         }
 
@@ -81,7 +81,7 @@ namespace CK.AppIdentity
             await base.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
             if( isDestroyed )
             {
-                Debug.Assert( _destroyTCS != null );
+                Throw.DebugAssert( _destroyTCS != null );
                 _destroyTCS.SetResult();
             }
         }

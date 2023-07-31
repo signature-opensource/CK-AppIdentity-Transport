@@ -49,7 +49,7 @@ namespace CK.AppIdentity
             Throw.CheckNotNullArgument( name );
             Throw.CheckArgument( heartbeatPeriod == 0 || heartbeatPeriod >= 20 );
             _monitor = new ActivityMonitor( name );
-            Debug.Assert( _monitor.ParallelLogger != null );
+            Throw.DebugAssert( _monitor.ParallelLogger != null );
             _channel = Channel.CreateUnbounded<object?>( new UnboundedChannelOptions { SingleReader = true } );
             _name = name;
             if( heartbeatPeriod > 0 )

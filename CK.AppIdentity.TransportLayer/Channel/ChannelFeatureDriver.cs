@@ -49,7 +49,7 @@ namespace CK.AppIdentity.BlobChannel
 
         bool PlugFeature( FeatureLifetimeContext context, IRemoteParty r )
         {
-            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
+            Throw.DebugAssert( r.DomainName != CoreApplicationIdentity.DefaultDomainName );
             var transport = r.GetFeature<TransportFeature>();
             // No Transport implies no communication.
             if( transport == null )

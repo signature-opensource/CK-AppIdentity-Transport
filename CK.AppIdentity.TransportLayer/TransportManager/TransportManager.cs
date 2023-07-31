@@ -4,6 +4,7 @@ using CK.PerfectEvent;
 using Microsoft.VisualBasic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -101,7 +102,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal Task RaiseFeatureAppearsEventAsync( IActivityMonitor monitor, TransportFeature t )
         {
-            Debug.Assert( IsInApplicationIdentityLoop( monitor ) );
+            Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
             // When a new feature is created, we immediately raise the Feature.TransportChanged event
             // from the ApplicationIdentity loop but we push a job to update the possible peering issue
             // for the unknwon remote (only the full name is none from an incoming message) because
@@ -129,18 +130,23 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="invalidClockOffset">The invalid clock offset.</param>
         internal void InvalidClockOffset( InitialMessage? initialMessage, TransportFeature? remote, TimeSpan invalidClockOffset )
         {
-            Debug.Assert( initialMessage == null || (!initialMessage.ValidClockOffset && invalidClockOffset == initialMessage.ClockOffset) );
+            Throw.DebugAssert( initialMessage == null || (!initialMessage.ValidClockOffset && invalidClockOffset == initialMessage.ClockOffset) );
             PushTypedJob( new PeeringIssueJob( PeeringIssueKind.InvalidClockOffset, initialMessage, remote, null, invalidClockOffset ) );
         }
 
         /// <summary>
-        /// Listener only. The remote may be known or not (it is then untrusted).
+        /// Listener only. The remote may be known or not (it is then untrusted) or it's an initiator conflict
+        /// or our remote transport feature is disabled or the TransportListener is not the right one.
         /// </summary>
         /// <param name="m">The initial message received.</param>
         /// <param name="remote">The remote if knwon.</param>
-        internal void UnknownOrUntrustedIncomingRemote( InitialMessage m, TransportFeature? remote )
+        internal void UnknownOrUntrustedIncomingRemote( InitialMessage m, TransportFeature? remote, PeeringIssueKind kind )
         {
-            var kind = remote != null ? PeeringIssueKind.UntrustedIncoming : PeeringIssueKind.UnknwonIncoming;
+            Throw.DebugAssert( kind == PeeringIssueKind.UnknwonIncoming
+                          || kind == PeeringIssueKind.UntrustedIncoming
+                          || kind == PeeringIssueKind.UnsupportedTransportIncoming
+                          || kind == PeeringIssueKind.DisallowedTransportIncoming
+                          || kind == PeeringIssueKind.InitiatorConflict );
             PushTypedJob( new PeeringIssueJob( kind, m, remote, null, null ) );
         }
 
@@ -148,11 +154,32 @@ namespace CK.AppIdentity.TransportLayer
         /// Initiator only.
         /// </summary>
         /// <param name="remote">The calling remote.</param>
-        /// <param name="enlistUrl">The remote enlist url if provided.</param>
+        /// <param name="enlistUrl">
+        /// The remote enlist url if provided. Can be "!DisallowedTransportIncoming", "!InitiatorConflict" or "!UnsupportedTransportIncoming".
+        /// </param>
         /// <param name="created">True if we exist in the remote system but are not yet trusted.</param>
         internal void TargetRequiresCreationOrApproval( TransportFeature remote, string? enlistUrl, bool created )
         {
-            var kind = created ? PeeringIssueKind.WaitingRemoteApproval: PeeringIssueKind.WaitingRemoteCreation;
+
+            PeeringIssueKind kind;
+            switch( enlistUrl )
+            {
+                case ZeroProtocol.EnlistUrlDisallowedTransport:
+                    kind = PeeringIssueKind.RemoteDisallowedTransport;
+                    enlistUrl = null;
+                    break;
+                case ZeroProtocol.EnlistUrlInitiatorConflict:
+                    kind = PeeringIssueKind.InitiatorConflict;
+                    enlistUrl = null;
+                    break;
+                case ZeroProtocol.EnlistUrlUnsupportedTransport:
+                    kind = PeeringIssueKind.RemoteUnsupportedTransport;
+                    enlistUrl = null;
+                    break;
+                default:
+                    kind = created ? PeeringIssueKind.WaitingRemoteApproval : PeeringIssueKind.WaitingRemoteCreation;
+                    break;
+            };
             PushTypedJob( new PeeringIssueJob( kind, null, remote, enlistUrl, null ) );
         }
 
@@ -173,7 +200,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SwitchOff( TransportFeature feature, string reason )
         {
-            PushTypedJob( new SwitchOffJob( feature, reason ) );
+            PushTypedJob( new SwitchOffJob( feature, null, reason ) );
         }
 
         internal void SwitchOn( TransportFeature feature )
@@ -188,12 +215,14 @@ namespace CK.AppIdentity.TransportLayer
             return task.Task;
         }
 
-        internal void TearDown( TransportFeature feature )
+        internal Task TearDownAsync( TransportFeature feature )
         {
             // The empty string is the "Torn down" marker:
             // it is unconditionally set here so that no more transition to "on" is possible.
             feature.SetTornDownSwitchOff();
-            PushTypedJob( new SwitchOffJob( feature, string.Empty ) );
+            var tcs = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+            PushTypedJob( new SwitchOffJob( feature, tcs, string.Empty ) );
+            return tcs.Task;
         }
 
         // A new incoming Transport from a TransportListener is directly the Transport object.
@@ -203,7 +232,7 @@ namespace CK.AppIdentity.TransportLayer
         sealed record class TryConnectToJob( TransportFeature Remote );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset );
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
-        sealed record class SwitchOffJob( TransportFeature Feature, string Reason );
+        sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, string Reason );
         sealed record class SwitchOnJob( TransportFeature Feature );
         sealed record class TryAdjustSystemTimeJob( TaskCompletionSource<bool> Task, IRemoteParty Party, TimeSpan Offset );
 
@@ -215,25 +244,25 @@ namespace CK.AppIdentity.TransportLayer
                     return HandleKillTransport( monitor, j );
                 case TryConnectToJob c:
                     var f = c.Remote;
-                    Debug.Assert( f.TargetAddress != null );
+                    Throw.DebugAssert( f.TargetAddress != null );
                     monitor.Trace( $"Initiating connection to '{f.TargetAddress}' for '{f.Party.FullName}' immediately." );
-                    _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.OnInitialize( this, f, 0 ) );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( this, f, 0 ) );
                     return default;
                 case Transport t:
-                    Debug.Assert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
+                    Throw.DebugAssert( t.Listener != null, "This is necessarily an incoming connection created by a listener." );
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
-                    _backTasks.Initialize<IncomingConnectionBackTask>( _headIncomingConnection, back => back.OnInitialize( this, t ) );
+                    _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( this, t ) );
                     return default;
                 case TransportFeature newFeature:
                     return HandleNewRemoteTransportFeature( monitor, newFeature );
                 case PeeringIssueJob p:
                     return HandlePeeringIssue( monitor, p );
                 case NewValidTransportJob j:
-                    return HandleNewValidTransport( monitor, j );
+                    return HandleNewValidTransport( monitor, j, _exposedFeature );
                 case SwitchOnJob on:
                     return on.Feature.DoSwitchOnAsync( monitor );
                 case SwitchOffJob off:
-                    return off.Feature.DoSwitchOffAsync( monitor, off.Reason );
+                    return off.Feature.DoSwitchOffAsync( monitor, off.Done, off.Reason );
                 case TryAdjustSystemTimeJob time:
                     return HandleTryAdjustSystemTime( monitor, time.Task, time.Party, time.Offset );
             }
@@ -294,7 +323,7 @@ namespace CK.AppIdentity.TransportLayer
                         {
                             var seconds = (int)Math.Ceiling( j.ShutUp.TotalSeconds );
                             monitor.Trace( $"Initiating reconnection attempt to '{remote.TargetAddress}' for '{remote.Party.FullName}' in {seconds} seconds." );
-                            _backTasks.Initialize<OutgoingConnectionBackTask>( _headOutgoingConnection, back => back.OnInitialize( this, remote, seconds ) );
+                            _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( this, remote, seconds ) );
                         }
                     }
                 }
@@ -318,7 +347,7 @@ namespace CK.AppIdentity.TransportLayer
             await _exposedFeature.AddOrUpdateIssueAsync( monitor, job.Kind, job.Message, job.Remote, job.EnlistUrl, job.InvalidClockOffset );
         }
 
-        static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport )
+        static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport, TransportManagerFeature forPeeringIssue )
         {
             Transport t = remoteTransport.Transport;
             using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote}'." ) )
@@ -327,6 +356,7 @@ namespace CK.AppIdentity.TransportLayer
                 var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
                 if( feature != null && !feature.IsOff )
                 {
+                    await forPeeringIssue.OnTransportAvailableAsync( monitor, feature );
                     await feature.OnTransportAppearAsync( monitor, t, remoteTransport.Protocols, remoteTransport.ClockOffset );
                 }
                 else

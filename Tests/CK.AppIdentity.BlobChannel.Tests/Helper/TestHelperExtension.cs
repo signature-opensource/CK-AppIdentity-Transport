@@ -34,7 +34,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                                                                                       Action<ServiceCollection>? configureServices = null )
         {
             var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
-            Debug.Assert( c != null );
+            Throw.DebugAssert( c != null );
             return CreateApplicationServiceAsync( @this, c, configureServices );
         }
 

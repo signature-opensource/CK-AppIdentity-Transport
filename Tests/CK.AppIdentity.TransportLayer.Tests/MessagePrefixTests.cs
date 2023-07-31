@@ -45,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
             {
                 Span<byte> memory = stackalloc byte[6];
                 int prefixLen = WritePrefix( protocol, messageLength, memory );
-                Debug.Assert( prefixLen <= 5 );
+                Throw.DebugAssert( prefixLen <= 5 );
                 uint readLen = ReadPrefix( memory, out int readPrefixLen, out byte readProtocol );
                 readPrefixLen.Should().Be( prefixLen );
                 readProtocol.Should().Be( protocol );
@@ -56,10 +56,10 @@ namespace CK.AppIdentity.TransportLayer.Tests
 
             static int WritePrefix( uint protocol, uint messageLength, Span<byte> memory )
             {
-                Debug.Assert( memory.Length >= 6 );
-                Debug.Assert( messageLength >= 0 && protocol < 64 );
+                Throw.DebugAssert( memory.Length >= 6 );
+                Throw.DebugAssert( messageLength >= 0 && protocol < 64 );
                 uint len = (uint)BitOperations.Log2( messageLength ) / 8;
-                Debug.Assert( len >= 0 && len <= 3 );
+                Throw.DebugAssert( len >= 0 && len <= 3 );
                 protocol |= len << 6;
                 memory[0] = (byte)protocol;
                 if( !BitConverter.IsLittleEndian ) messageLength = BinaryPrimitives.ReverseEndianness( messageLength );

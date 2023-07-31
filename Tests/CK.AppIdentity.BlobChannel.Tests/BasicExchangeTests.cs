@@ -86,6 +86,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
             listenerReceived[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
             listenerReceived[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
 
+            await Task.Delay( 2000 );
+
             await sender.DisposeAsync();
             await listener.DisposeAsync();
         }

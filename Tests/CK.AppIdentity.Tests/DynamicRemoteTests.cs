@@ -39,7 +39,7 @@ namespace CK.AppIdentity.Tests
                 m.Trace( msg );
                 events.Add( msg );
             };
-            Debug.Assert( s != null );
+            Throw.DebugAssert( s != null );
             s.Parties.Should().BeEmpty();
 
             // Adding a simple remote. This is a RemoteParty.
@@ -47,7 +47,7 @@ namespace CK.AppIdentity.Tests
             {
                 c["PartyName"] = "LogTower";
             } );
-            Debug.Assert( addedRemotes != null );
+            Throw.DebugAssert( addedRemotes != null );
             var logTower = addedRemotes.Single();
             logTower.DomainName.Should().Be( s.DomainName );
             logTower.EnvironmentName.Should().Be( s.EnvironmentName );
@@ -63,7 +63,7 @@ namespace CK.AppIdentity.Tests
                 c["EnvironmentName"] = "#Debug";
                 c["Parties:0:PartyName"] = "SignatureBox";
             } );
-            Debug.Assert( added != null );
+            Throw.DebugAssert( added != null );
             var laToulousaine = added.Value.Tenants.Single();
             laToulousaine.IsDynamic.Should().BeTrue();
             var signatureBox = laToulousaine.Remotes.Single();
@@ -75,7 +75,7 @@ namespace CK.AppIdentity.Tests
             {
                 c["PartyName"] = "Trolley1";
             } );
-            Debug.Assert( addedRemotes != null );
+            Throw.DebugAssert( addedRemotes != null );
             var theTrolley = addedRemotes.Single();
             theTrolley.FullName.Should().Be( "LaToulousaine/$Trolley1/#Debug" );
             theTrolley.IsDynamic.Should().BeTrue();
@@ -86,7 +86,7 @@ namespace CK.AppIdentity.Tests
             {
                 c["PartyName"] = "Trolley2";
             } );
-            Debug.Assert( addedRemotes != null );
+            Throw.DebugAssert( addedRemotes != null );
             var theTrolley2 = addedRemotes.Single();
             theTrolley2.FullName.Should().Be( "LaToulousaine/$Trolley2/#Debug" );
             theTrolley2.IsDynamic.Should().BeTrue();

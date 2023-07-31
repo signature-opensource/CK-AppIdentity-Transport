@@ -64,7 +64,7 @@ namespace CK.AppIdentity.BlobChannel
 
         protected override PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c )
         {
-            Debug.Assert( c.Protocol.Version == 0 );
+            Throw.DebugAssert( c.Protocol.Version == 0 );
             return new Protocol( this, ref c );
         }
     }

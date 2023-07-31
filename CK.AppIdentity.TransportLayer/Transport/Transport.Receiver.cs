@@ -33,8 +33,8 @@ namespace CK.AppIdentity.TransportLayer
                                                            MessageProtocolMap protocols,
                                                            PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( protocols.IsValid );
-            Debug.Assert( handlers.Length == protocols.Protocols.Count );
+            Throw.DebugAssert( protocols.IsValid );
+            Throw.DebugAssert( handlers.Length == protocols.Protocols.Count );
             _receiveFactory.SetAllowedProtocols( protocols );
             _handlers = handlers;
             return Task.Run( () => RunReceiveAsync( receiveMonitor, transportManager, this, handlers ) );
@@ -45,7 +45,7 @@ namespace CK.AppIdentity.TransportLayer
                                                              Transport transport,
                                                              PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( transport.Controller != null );
+            Throw.DebugAssert( transport.Controller != null );
             receiveMonitor ??= new ActivityMonitor( $"Receive loop for '{transport.Controller.Feature.Party.FullName}'." );
             var receiveFactory = transport._receiveFactory;
             var reader = transport._reader;
@@ -92,7 +92,7 @@ namespace CK.AppIdentity.TransportLayer
                     else
                     {
                         int n = m.GetProtocolNumber();
-                        Debug.Assert( n > 0 && n <= handlers.Length );
+                        Throw.DebugAssert( n > 0 && n <= handlers.Length );
                         await handlers[n - 1].ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
                     }
                 }

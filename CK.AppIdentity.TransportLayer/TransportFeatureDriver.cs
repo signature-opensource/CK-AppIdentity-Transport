@@ -79,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
 
         protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
         {
-            Debug.Assert( _transportManager != null );
+            Throw.DebugAssert( _transportManager != null );
             foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
@@ -97,7 +97,7 @@ namespace CK.AppIdentity.TransportLayer
 
         protected override async Task TeardownAsync( FeatureLifetimeContext context )
         {
-            Debug.Assert( _transportManager != null );
+            Throw.DebugAssert( _transportManager != null );
             foreach( var r in context.GetAllRemotes() )
             {
                 var t = r.GetFeature<TransportFeature>();
@@ -128,8 +128,8 @@ namespace CK.AppIdentity.TransportLayer
 
         async Task UnplugRemoteAsync( FeatureLifetimeContext context, TransportFeature t )
         {
-            Debug.Assert( _transportManager != null );
-            _transportManager.TearDown( t );
+            Throw.DebugAssert( _transportManager != null );
+            await _transportManager.TearDownAsync( t );
             // Release the listeners from the ApplicationIdentityService's agent loop.
             if( t.IsListening )
             {
@@ -139,7 +139,7 @@ namespace CK.AppIdentity.TransportLayer
 
         bool EnsureListeners( FeatureLifetimeContext context, ILocalParty local, Action<TransportListener> releaseOnError )
         {
-            Debug.Assert( _transportManager != null );
+            Throw.DebugAssert( _transportManager != null );
             // If AlwaysListening is false (the default), Listeners are created when the first non initiator
             // remote (no Address) appears.
             // We initialize the Listeners only if "AlwaysListening" is true.
@@ -160,14 +160,14 @@ namespace CK.AppIdentity.TransportLayer
 
         bool PlugTransportFeature( FeatureLifetimeContext context, IRemoteParty r, Action<TransportListener> releaseOnError )
         {
-            Debug.Assert( _transportManager != null );
-            Debug.Assert( r.DomainName != CoreApplicationIdentity.DefaultDomainName && !r.IsExternalParty );
+            Throw.DebugAssert( _transportManager != null );
+            Throw.DebugAssert( r.DomainName != CoreApplicationIdentity.DefaultDomainName && !r.IsExternalParty );
             // If we cannot resolve the listening addresses or the target address, it's an error.
             if( !ResolveAdresses( context.Monitor, r, out IReadOnlyCollection<TransportTypeAddress>? listen, out TransportTypeAddress? target ) )
             {
                 return false;
             }
-            Debug.Assert( (listen == null) != (target == null) );
+            Throw.DebugAssert( (listen == null) != (target == null) );
             // Transport requires the KeyManagement feature:
             // - If we are listening, then we must have a IRemoteKeys manager to assert the incoming message update
             //   the trusted identity and then the ILocalKeys to sign the response.
@@ -211,7 +211,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                Debug.Assert( target != null );
+                Throw.DebugAssert( target != null );
                 context.Trampoline.OnSuccess( () =>
                 {
                     t.CloseChannelRegistration( context.Monitor );
@@ -224,7 +224,7 @@ namespace CK.AppIdentity.TransportLayer
 
         TransportListener[]? ObtainListeners( FeatureLifetimeContext context, IReadOnlyCollection<TransportTypeAddress> listen, Action<TransportListener> releaseOnError )
         {
-            Debug.Assert( _transportManager != null );
+            Throw.DebugAssert( _transportManager != null );
             TransportListener[]? listeners = new TransportListener[listen.Count];
             int i = 0;
             foreach( var addr in listen )
@@ -277,7 +277,7 @@ namespace CK.AppIdentity.TransportLayer
             if( a != null )
             {
                 var section = r.Configuration.Configuration.TryGetSection( "Address" );
-                Debug.Assert( section != null );
+                Throw.DebugAssert( section != null );
                 listen = null;
                 target = ParseTypedAddress( monitor, a, section );
                 return target != null;
@@ -295,7 +295,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 return null;
             }
-            Debug.Assert( available == null || available.Count > 0, "If there is a map, it is not empty." );
+            Throw.DebugAssert( available == null || available.Count > 0, "If there is a map, it is not empty." );
             // If there is a single listening address, we are done: there is no ambiguity.
             if( available != null && available.Count == 1 )
             {
@@ -307,7 +307,7 @@ namespace CK.AppIdentity.TransportLayer
             if( available == null )
             {
                 var tcpDef = _tcp.DefaultListeningAddress;
-                Debug.Assert( tcpDef != null );
+                Throw.DebugAssert( tcpDef != null );
                 return new[] { new TransportTypeAddress( _tcp, rootConfiguration, tcpDef ) };
             }
             // If there is more than one type of Transport, inject the defaults of all transport type (if supported and

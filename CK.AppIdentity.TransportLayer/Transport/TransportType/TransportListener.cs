@@ -54,7 +54,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="party">The valid party for this listener.</param>
         internal void AddParty( TransportFeature party )
         {
-            Debug.Assert( !_parties.Contains( party ) );
+            Throw.DebugAssert( !_parties.Contains( party ) );
             Util.InterlockedAdd( ref _parties, party );
         }
 
@@ -67,7 +67,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="party"></param>
         internal void RemoveParty( TransportFeature party )
         {
-            Debug.Assert( _parties.Contains( party ) );
+            Throw.DebugAssert( _parties.Contains( party ) );
             Util.InterlockedRemove( ref _parties, party );
         }
 
@@ -76,7 +76,12 @@ namespace CK.AppIdentity.TransportLayer
         /// called only from the ApplicationIdentityService's agent when party are
         /// created.
         /// </summary>
-        internal void AddRef() => ++_refCount;
+        internal void AddRef( IActivityMonitor monitor )
+        {
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            ++_refCount;
+            monitor.Debug( $"Added reference to Listener '{ToString()}' (RefCount = {_refCount})." );
+        }
 
         /// <summary>
         /// Release a reference. This doesn't need to be Interlocked because it is
@@ -85,7 +90,10 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal async ValueTask ReleaseAsync( IActivityMonitor monitor )
         {
-            if( --_refCount == 0 )
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            --_refCount;
+            monitor.Debug( $"Removed reference to Listener '{ToString()}' (RefCount = {_refCount})." );
+            if( _refCount == 0 )
             {
                 using( monitor.OpenInfo( $"Disposing listener '{ToString()}'." ) )
                 {

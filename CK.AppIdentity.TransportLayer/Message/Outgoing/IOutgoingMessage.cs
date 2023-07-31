@@ -69,14 +69,14 @@ namespace CK.AppIdentity.TransportLayer
 
         internal static int WriteWireHeader( uint protocolNumber, uint length, bool isControl, Span<byte> header )
         {
-            Debug.Assert( header.Length >= MaxWirePrefixLength );
-            Debug.Assert( length < int.MaxValue );
-            Debug.Assert( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
+            Throw.DebugAssert( header.Length >= MaxWirePrefixLength );
+            Throw.DebugAssert( length < int.MaxValue );
+            Throw.DebugAssert( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
             uint len = (uint)BitOperations.Log2( length ) / 8;
-            Debug.Assert( len >= 0 && len <= 3 );
+            Throw.DebugAssert( len >= 0 && len <= 3 );
             var b = (len << 6) | protocolNumber;
             if( isControl ) b |= OutgoingMessage.IsControlFlag;
-            Debug.Assert( b >= 0 && b <= 255 );
+            Throw.DebugAssert( b >= 0 && b <= 255 );
             header[0] = (byte)b;
             if( !BitConverter.IsLittleEndian ) length = BinaryPrimitives.ReverseEndianness( length );
             Unsafe.WriteUnaligned( ref Unsafe.Add( ref MemoryMarshal.GetReference( header ), 1 ), length );

@@ -75,7 +75,7 @@ namespace CK.AppIdentity.Tests
 
             // Adding a Tenant D1.
             var d1 = await s.AddTenantDomainAsync( TestHelper.Monitor, s => s["FullName"] = "D1/$D1" );
-            Debug.Assert( d1 != null );
+            Throw.DebugAssert( d1 != null );
 
             noWay = await s.AddTenantDomainAsync( TestHelper.Monitor, s => s["FullName"] = "D1/$D1" );
             noWay.Should().BeNull( "Duplicate tenant." );
@@ -93,7 +93,7 @@ namespace CK.AppIdentity.Tests
 
             // Adding a Tenant D2.
             var d2 = await s.AddTenantDomainAsync( TestHelper.Monitor, s => s["FullName"] = "D2/$D2" );
-            Debug.Assert( d2 != null );
+            Throw.DebugAssert( d2 != null );
             noWay = await d2.AddRemoteAsync( TestHelper.Monitor, s => s["FullName"] = "D1/$P1" );
             noWay.Should().BeNull( "Duplicate remote (from any other tenant) is not possible." );
         }

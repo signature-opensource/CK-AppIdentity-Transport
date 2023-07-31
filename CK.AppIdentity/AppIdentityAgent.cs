@@ -127,11 +127,11 @@ namespace CK.AppIdentity
                 bool success = true;
                 // Setup a hash set with ALL the names, including the root application one.
                 var existing = new HashSet<string>( _service.AllParties.Select( p => p.FullName.Path ).Prepend( _service.FullName.Path ), StringComparer.OrdinalIgnoreCase );
-                Debug.Assert( _service.AllParties.All( p => !p.IsDestroyed ), "We are in the Agent: operations are serialized: destroyed parties are not observable." );
+                Throw.DebugAssert( _service.AllParties.All( p => !p.IsDestroyed ), "We are in the Agent: operations are serialized: destroyed parties are not observable." );
                 foreach( var p in init.Added.Parties )
                 {
                     var newOne = p.FullName.Path;
-                    Debug.Assert( init.Added.Parties.SingleOrDefault( a => a.FullName.Path.Equals( p.FullName, StringComparison.OrdinalIgnoreCase ) ) == p,
+                    Throw.DebugAssert( init.Added.Parties.SingleOrDefault( a => a.FullName.Path.Equals( p.FullName, StringComparison.OrdinalIgnoreCase ) ) == p,
                                   "This has been checked when building the configuration objects: there is no duplicates in the configuration." );
                     if( existing.Contains( newOne ) )
                     {

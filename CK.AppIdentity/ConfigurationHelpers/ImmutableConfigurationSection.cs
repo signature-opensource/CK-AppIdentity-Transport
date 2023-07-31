@@ -43,7 +43,7 @@ namespace CK.AppIdentity
         /// </param>
         public ImmutableConfigurationSection( IConfigurationSection section, ImmutableConfigurationSection? lookupParent = null )
         {
-            Debug.Assert( ConfigurationPath.KeyDelimiter == ":" );
+            Throw.DebugAssert( ConfigurationPath.KeyDelimiter == ":" );
             if( lookupParent != null
                 && (lookupParent.Path.Length != section.Path.Length - section.Key.Length - 1
                     || !section.Path.AsSpan( 0, lookupParent.Path.Length ).Equals( lookupParent.Path, StringComparison.OrdinalIgnoreCase ) ) )

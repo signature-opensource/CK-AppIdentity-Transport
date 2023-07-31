@@ -43,7 +43,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SetAllowedProtocols( MessageProtocolMap protocols )
         {
-            Debug.Assert( protocols.IsValid );
+            Throw.DebugAssert( protocols.IsValid );
             _protocols = protocols;
         }
 
@@ -109,7 +109,7 @@ namespace CK.AppIdentity.TransportLayer
             try
             {
                 var header = buffer.GetMemory( FirstSegmentLength );
-                Debug.Assert( buffer.Length == 0 );
+                Throw.DebugAssert( buffer.Length == 0 );
                 // We first read exactly 2 bytes. 
                 await exactReader( header.Slice( 0, 2 ), cancellation ).ConfigureAwait( false );
                 byte firstByte = header.Span[0];
@@ -174,7 +174,7 @@ namespace CK.AppIdentity.TransportLayer
                 await exactReader( header, cancellation ).ConfigureAwait( false );
                 messageLength -= header.Length;
                 buffer.Advance( header.Length );
-                Debug.Assert( buffer.CurrentlyAvailableLength == 0 && messageLength > 0, "We totally filled the header but there's more to read." );
+                Throw.DebugAssert( buffer.CurrentlyAvailableLength == 0 && messageLength > 0, "We totally filled the header but there's more to read." );
                 // Huge messages are uncommon. We choose to process buffers limited to 64K to avoid the LOH.
                 while( messageLength >= 64 * 1024 )
                 {

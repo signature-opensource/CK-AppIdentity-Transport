@@ -135,14 +135,35 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public PerfectEvent<PeeringIssue> PeeringIssueChanged => _peeringIssueChanged.PerfectEvent;
 
+        internal Task OnTransportAvailableAsync( IActivityMonitor monitor, TransportFeature remote )
+        {
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+            if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) )
+            {
+                if( issue.Remote == null )
+                {
+                    // This should not happen!
+                    monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated, $"Transport available for an existing PeeringIssue with no available Remote." );
+                    --_unknwonRemoteCount;
+                }
+                issue.SetNoneIssueKind();
+                lock( _peeringIssues )
+                {
+                    _peeringIssues.Remove( issue.FullName );
+                }
+                _exposedIssues = null;
+                _exposedClonedIssues = null;
+                return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
+            }
+            return Task.CompletedTask;
+        }
+
         internal Task OnRemoteTornDownAsync( IActivityMonitor monitor, TransportFeature remote )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) && issue.Remote != null )
             {
-                _unknwonRemoteCount++;
-                issue.OnRemoteTornDown();
-                _exposedClonedIssues = null;
+                OnRemoteTornDown( issue );
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
             }
             return Task.CompletedTask;
@@ -150,16 +171,34 @@ namespace CK.AppIdentity.TransportLayer
 
         internal Task OnRemoteAppearedAsync( IActivityMonitor monitor, TransportFeature remote )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
-            if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) )
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+            if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) && issue.Remote == null )
             {
-                Debug.Assert( issue.Remote == null );
-                _unknwonRemoteCount--;
-                issue.OnRemoteAppeared( remote );
-                _exposedClonedIssues = null;
+                OnRemoteAppeared( remote, issue );
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
             }
             return Task.CompletedTask;
+        }
+
+        void OnRemoteTornDown( PeeringIssue issue )
+        {
+            if( issue.OnRemoteTornDown() )
+            {
+                _peeringIssues.Remove( issue.FullName );
+                _exposedIssues = null;
+            }
+            else
+            {
+                _unknwonRemoteCount++;
+            }
+            _exposedClonedIssues = null;
+        }
+
+        void OnRemoteAppeared( TransportFeature remote, PeeringIssue issue )
+        {
+            _unknwonRemoteCount--;
+            issue.OnRemoteAppeared( remote );
+            _exposedClonedIssues = null;
         }
 
         internal Task AddOrUpdateIssueAsync( IActivityMonitor monitor,
@@ -169,24 +208,27 @@ namespace CK.AppIdentity.TransportLayer
                                              string? enlistUrl,
                                              TimeSpan? invalidClockOffset )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
-            Debug.Assert( kind != PeeringIssueKind.None );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( kind != PeeringIssueKind.None );
 
             // Use the remote (long-living) full name if possible.
             var fullName = remote?.Party.FullName ?? message!.FullName;
             if( _peeringIssues.TryGetValue( fullName, out var exist ) )
             {
-                // Updates the existing issue and removes it from the dictionary if it's now None.
-                exist.Update( kind, _transportManager.SystemClock.UtcNow, message, remote, enlistUrl, invalidClockOffset, ref _unknwonRemoteCount );
-                if( kind == PeeringIssueKind.None )
+                // First, handles the case where remote appeared/disappeared without
+                // OnRemoteTornDown/OnRemoteAppeared calls: this is a race condition
+                // that can happen since the destruction and creation of remotes don't
+                // use lock.
+                if( (exist.Remote == null) != (remote == null) )
                 {
-                    lock( _peeringIssues )
-                    {
-                        _peeringIssues.Remove( fullName );
-                    }
-                    _exposedIssues = null;
+                    if( remote != null ) OnRemoteAppeared( remote, exist );
+                    else OnRemoteTornDown( exist );
                 }
-                _exposedClonedIssues = null;
+                if( exist.Kind != PeeringIssueKind.None )
+                {
+                    exist.Update( kind, _transportManager.SystemClock.UtcNow, message, remote, enlistUrl, invalidClockOffset );
+                    _exposedClonedIssues = null;
+                }
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
             }
             // If there is no remote then cleanup in excess unknwon remotes if any
@@ -220,7 +262,7 @@ namespace CK.AppIdentity.TransportLayer
             _exposedIssues = null;
             foreach( var i in toRemove )
             {
-                i.EjectUnknown();
+                i.SetNoneIssueKind();
                 await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
             }
             _exposedClonedIssues = null;

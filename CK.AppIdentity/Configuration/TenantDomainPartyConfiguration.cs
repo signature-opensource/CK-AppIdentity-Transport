@@ -21,7 +21,7 @@ namespace CK.AppIdentity
                                                  ref InheritedConfigurationProps props )
             : base( configuration, domainName, fullName, ref props )
         {
-            Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
+            Throw.DebugAssert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
                           && d == domainName && p == fullName.Parts[^2] && e == fullName.LastPart
                           && p[0] == '$' && p.Substring(1) == fullName.Parts[^3] );
             _remotes = remotes;

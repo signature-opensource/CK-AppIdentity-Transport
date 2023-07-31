@@ -48,7 +48,7 @@ namespace CK.AppIdentity
 
         internal NormalizedPath ComputeSharedStorePath( NormalizedPath fullName )
         {
-            Debug.Assert( fullName.Parts.Count >= 2 && fullName.LastPart[0] == '#' );
+            Throw.DebugAssert( fullName.Parts.Count >= 2 && fullName.LastPart[0] == '#' );
             var env = fullName.LastPart;
             var p = fullName.Path;
             return Configuration.StoreRootPath.Combine( $"{env}/{p.AsSpan( 0, p.Length - env.Length - 1 )}" );

@@ -1,3 +1,4 @@
+using CK.Core;
 using CK.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,7 +23,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
                                                                                       Action<ServiceCollection>? configureServices = null )
         {
             var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
-            Debug.Assert( c != null );
+            Throw.DebugAssert( c != null );
             return CreateApplicationServiceAsync( @this, c, configureServices );
         }
 

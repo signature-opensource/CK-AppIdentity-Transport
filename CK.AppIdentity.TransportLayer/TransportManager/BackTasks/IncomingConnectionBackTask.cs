@@ -23,26 +23,30 @@ namespace CK.AppIdentity.TransportLayer
 
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _incoming != null && _result != null );
+            Throw.DebugAssert( _incoming != null && _result != null );
             transportManager.KillTransport( _incoming );
         }
 
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _incoming != null && _result != null );
+            Throw.DebugAssert( _incoming != null && _result != null );
             if( !_result.IsCompleted )
             {
                 var delta = DateTime.UtcNow - _initializeTime;
                 if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
                 {
-                    monitor.Warn( $"Incoming connection timeout ({delta.TotalMilliseconds:G0} ms) for '{_incoming.RemoteEndPointDescription}'. Destroying the transport." );
+                    monitor.Warn( $"Incoming connection timeout ({(int)delta.TotalMilliseconds} ms) for '{_incoming}'. Destroying the transport." );
                     transportManager.KillTransport( _incoming );
                 }
             }
             else if( _result.IsFaulted )
             {
-                monitor.Warn( $"Error while handling incoming connection for '{_incoming.RemoteEndPointDescription}'. Destroying the transport.", _result.Exception );
+                monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _result.Exception );
                 transportManager.KillTransport( _incoming );
+            }
+            else
+            {
+                monitor.Debug( $"IncomingConnectionBackTask #{GetHashCode()} Done (Transport: '{_incoming}')." );
             }
         }
 
@@ -54,12 +58,12 @@ namespace CK.AppIdentity.TransportLayer
 
         public void OnInitialize( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( incoming.Listener != null );
+            Throw.DebugAssert( incoming.Listener != null );
             _incoming = incoming;
             _initializeTime = DateTime.UtcNow;
             _result = Task.Run( () => RunAsync( transportManager, incoming ) );
             // Take no risk: integer division (to the floor).
-            Debug.Assert( transportManager.SystemClock.HeatBeatPeriod <= 1000 && transportManager.SystemClock.HeatBeatPeriod >= 20,
+            Throw.DebugAssert( transportManager.SystemClock.HeatBeatPeriod <= 1000 && transportManager.SystemClock.HeatBeatPeriod >= 20,
                           "1 second is the default and the max and it cannot be 0." );
             Retry( 1000 / transportManager.SystemClock.HeatBeatPeriod );
         }
@@ -75,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
 
         static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( incoming?.Listener != null );
+            Throw.DebugAssert( incoming?.Listener != null );
 
             var initialResult = await HandleInitialMessageAsync( transportManager, incoming ).ConfigureAwait( false );
             if( !initialResult.HasValue ) return false;
@@ -97,21 +101,67 @@ namespace CK.AppIdentity.TransportLayer
             // later but for now, we reject the connection.
             if( remote == null || !foundTrustKey )
             {
+                // If the remote is not found in the Listener's parties, it may nevertheless exist:
+                // - It may be a Listener but on another tranport listener (UnsupportedTransportIncoming).
+                // - It may be an Initiator (InitiatorConflict).
+                // - The RemoteParty may exist but its TransportFeature is disabled (DisallowedTransportIncoming).
+                PeeringIssueKind issue;
+                // We use the enlistUrl to transmit the DisallowedTransportIncoming, InitiatorConflict, UnsupportedTransportIncoming issues.
+                // When we are not in these case, GetEnlistRemoteUrl is used.
+                string? enlistUrl = null;
+                if( remote == null )
+                {
+                    // By default, we down know the incoming at all.
+                    issue = PeeringIssueKind.UnknwonIncoming;
+                    var exist = transportManager.ApplicationIdentityAgent.ApplicationIdentityService.Remotes.FirstOrDefault( r => r.FullName == initialMessage.FullName );
+                    if( exist != null )
+                    {
+                        remote = exist.GetFeature<TransportFeature>();
+                        if( remote == null )
+                        {
+                            // The party exists but has no TransportFeature. From the TransportLayer point of view, it's as if it doesn't
+                            // exist but this is more than that: it is disallowed.
+                            enlistUrl = ZeroProtocol.EnlistUrlDisallowedTransport;
+                            issue = PeeringIssueKind.DisallowedTransportIncoming;
+                        }
+                        else
+                        {
+                            // The party exists...
+                            if( remote.TargetAddress != null )
+                            {
+                                // ...and it is also an initiator.
+                                enlistUrl = ZeroProtocol.EnlistUrlInitiatorConflict;
+                                issue = PeeringIssueKind.InitiatorConflict;
+                            }
+                            else
+                            {
+                                // ...and it listens on another TransportListener.
+                                Throw.DebugAssert( remote.IsListening );
+                                enlistUrl = ZeroProtocol.EnlistUrlUnsupportedTransport;
+                                issue = PeeringIssueKind.UnsupportedTransportIncoming;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    issue = PeeringIssueKind.UntrustedIncoming;
+                }
                 // Before awaking the TransportManager, we send the deny message:
                 // If this is a bad remote guy that tries to timeout us, this will be cleanup by the heart beat:
                 // no need for a cancellation token here.
                 // Sends back the UnknownRemoteReplyMessage with the url to use to enlist this party.
-                string? enlistUrl = transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
+                enlistUrl ??= transportManager.GetEnlistRemoteUrl( remote?.Party, initialMessage.DomainName );
                 if( await ZeroProtocol.SendUnknownRemoteReplyMessageAsync( incoming, enlistUrl, initialMessage.Nonce, signatureVerificationFailed: false ).ConfigureAwait( false ) )
                 {
                     // Only if the transport has not been condemned, tell the Transport manager about
                     // this potential new UnknownRemote party with the TransportFeature found (if any).
-                    transportManager.UnknownOrUntrustedIncomingRemote( initialMessage, remote );
+                    transportManager.UnknownOrUntrustedIncomingRemote( initialMessage, remote, issue );
                 }
                 return false;
             }
             // The remote is who it pretends to be.
-            Debug.Assert( incoming.RemoteKeys != null );
+            Throw.DebugAssert( incoming.RemoteKeys != null );
             // If the remote is off, sends a bye-bye message.
             if( remote.IsOff )
             {
@@ -128,7 +178,7 @@ namespace CK.AppIdentity.TransportLayer
             // MissingProtocolsMessage and let the caller close the connection (if it can do it quick enough).
             if( commonBest.Length != remote.BestRegisteredProtocols.Count )
             {
-                Debug.Assert( commonBest.Length < remote.BestRegisteredProtocols.Count );
+                Throw.DebugAssert( commonBest.Length < remote.BestRegisteredProtocols.Count );
                 var missing = remote.BestRegisteredProtocols.Where( p => !commonBest.Any( c => c.Name == p.Name ) )
                                                             .SelectMany( m => remote.RegisteredProtocols.Where( r => r.Name == m.Name ) )
                                                             .ToList();
@@ -210,7 +260,7 @@ namespace CK.AppIdentity.TransportLayer
 
         static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
         {
-            Debug.Assert( incoming.Listener != null );
+            Throw.DebugAssert( incoming.Listener != null );
             InitialMessage? initialMessage = null;
             IncomingMessage? message = null;
             TransportFeature? remote = null;
@@ -222,7 +272,14 @@ namespace CK.AppIdentity.TransportLayer
                 message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength ).ConfigureAwait( false );
                 if( !message.IsValid || message == IncomingMessage.Empty || message == IncomingMessage.EmptyAck )
                 {
-                    transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
+                    if( message == IncomingMessage.Canceled )
+                    {
+                        transportManager.Logger.Debug( $"Canceled read for '{incoming.RemoteEndPointDescription}'." );
+                    }
+                    else
+                    {
+                        transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
+                    }
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
@@ -270,7 +327,7 @@ namespace CK.AppIdentity.TransportLayer
                                              out TransportFeature? remote,
                                              out bool foundTrustKey )
             {
-                Debug.Assert( incoming.Listener != null, "We are listening." );
+                Throw.DebugAssert( incoming.Listener != null, "We are listening." );
                 var r = new FastByteReader( message.Message );
                 if( !InitialMessage.TryParse( ref r,
                                               out otherVersion,
@@ -294,7 +351,8 @@ namespace CK.AppIdentity.TransportLayer
                 // Accessing the Parties is thread safe.
                 // This COULD have been done by the TransportListener (lookup based on SSL certificates).
                 remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == fullName );
-                Debug.Assert( remote == null || remote.IsListening );
+                Throw.DebugAssert( remote == null || remote.IsListening );
+
                 // We may know the remote (or not). If we do, we may have a trusted identity for it.
                 var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
                 if( !ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out foundTrustKey, out var currentKeyData, out var currentKey ) )

@@ -1,6 +1,7 @@
 using CK.Core;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -70,14 +71,16 @@ namespace CK.AppIdentity.TransportLayer
 
             public (int,int) OnHeartBeat( IActivityMonitor monitor )
             {
-                Debug.Assert( _queue.Count > 0 );
+                Throw.DebugAssert( _queue.Count > 0 );
                 int handled = 0;
                 int done = 0;
                 var t = _queue.Peek();
                 while( t._checkTick <= _tick )
                 {
                     ++handled;
+                    t._checkTick = _tick;
                     t.Check( monitor, _transportManager );
+                    Throw.DebugAssert( t._checkTick >= _tick );
                     if( t._checkTick > _tick )
                     {
                         _queue.Enqueue( t, t._checkTick );
@@ -85,7 +88,7 @@ namespace CK.AppIdentity.TransportLayer
                     else
                     {
                         ++done;
-                        Reset( t );
+                        Reset( monitor, t );
                     }
                     _queue.Dequeue();
                     if( _queue.Count == 0 ) break;
@@ -95,8 +98,9 @@ namespace CK.AppIdentity.TransportLayer
                 return (handled, done);
             }
 
-            static void Reset( BackTask t )
+            static void Reset( IActivityMonitor monitor, BackTask t )
             {
+                monitor.Debug( $"Reseting backTask {t.GetType().Name} #{t.GetHashCode()}." );
                 t.Reset();
                 t._nextFree = t._head.FreeHead;
                 t._head.FreeHead = t;
@@ -112,12 +116,13 @@ namespace CK.AppIdentity.TransportLayer
             /// <typeparam name="T">The type of the BackTask.</typeparam>
             /// <param name="head">The back task head for <typeparamref name="T"/>.</param>
             /// <param name="onInitialize">The configuration action.</param>
-            public void Initialize<T>( Head head, Action<T> onInitialize ) where T : BackTask, new()
+            public void Initialize<T>( IActivityMonitor monitor, Head head, Action<T> onInitialize ) where T : BackTask, new()
             {
                 var t = (T?)head.FreeHead;
                 if( t != null )
                 {
                     head.FreeHead = t._nextFree;
+                    monitor.Debug( $"Reusing backTask: {t.GetType().Name} #{t.GetHashCode()}." );
                 }
                 else
                 {
@@ -125,17 +130,20 @@ namespace CK.AppIdentity.TransportLayer
                     Throw.CheckArgument( head.Type == typeof(T) );
 #endif
                     t = new() { _head = head };
+                    monitor.Trace( $"Created new backTask: {t.GetType().Name} #{t.GetHashCode()}." );
                     ++_totalCount;
                 }
-                Debug.Assert( t._head == head );
+                Throw.DebugAssert( t._head == head );
                 t._checkTick = _tick;
                 onInitialize( t );
+                Throw.DebugAssert( t._checkTick >= _tick );
                 if( t._checkTick == _tick )
                 {
-                    Reset( t );
+                    Reset( monitor, t );
                 }
                 else
                 {
+                    monitor.Debug( $"Backtask {t.GetType().Name} #{t.GetHashCode()} will be checked in {t._checkTick - _tick} heartbeats." );
                     _queue.Enqueue( t, t._checkTick );
                 }
             }
@@ -148,7 +156,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="delay">Must be positive.</param>
         protected void Retry( int delay )
         {
-            Debug.Assert( delay > 0 );
+            Throw.DebugAssert( delay > 0 );
             _checkTick += delay;
         }
 

@@ -437,7 +437,7 @@ namespace CK.AppIdentity.TransportLayer
                 // Max expansion is 3 bytes per char.
                 // Strings smaller than 42 characters always fit in 128 bytes (including the one byte prefix):
                 // this is our fast path... if there are 128 bytes available. 
-                Debug.Assert( 42 * 3 == 126 );
+                Throw.DebugAssert( 42 * 3 == 126 );
                 nuint pos = (uint)_bufferPos;
                 if( (uint)pos + sLen * 3 <= (uint)_currentSpan.Length )
                 {
@@ -477,7 +477,7 @@ namespace CK.AppIdentity.TransportLayer
 
                     if( completed )
                     {
-                        Debug.Assert( charsUsed == input.Length && bytesWritten == remainingBytes );
+                        Throw.DebugAssert( charsUsed == input.Length && bytesWritten == remainingBytes );
                         break;
                     }
 

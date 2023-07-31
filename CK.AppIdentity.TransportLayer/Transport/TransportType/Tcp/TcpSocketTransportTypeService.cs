@@ -49,7 +49,7 @@ namespace CK.AppIdentity.TransportLayer
             var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
             try
             {
-                await socket.ConnectAsync( ipEndPoint ).ConfigureAwait( false );
+                await socket.ConnectAsync( ipEndPoint, cancellation ).ConfigureAwait( false );
                 return new TcpSocketTransport( typedAddress, socket, remoteKeys );
             }
             catch( Exception ex )
@@ -79,7 +79,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 socket.Bind( ipEndPoint );
                 socket.Listen();
-                Debug.Assert( socket.LocalEndPoint is IPEndPoint );
+                Throw.DebugAssert( socket.LocalEndPoint is IPEndPoint );
                 return new TcpSocketListener( this, ipEndPoint, socket );
             }
             catch( Exception ex )

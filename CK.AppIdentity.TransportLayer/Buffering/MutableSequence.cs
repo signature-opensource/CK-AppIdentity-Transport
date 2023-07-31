@@ -210,12 +210,12 @@ namespace CK.AppIdentity.TransportLayer
             {
                 ++count;
                 segment.Free();
-                Debug.Assert( segment.Next != null || _tail == segment );
+                Throw.DebugAssert( segment.Next != null || _tail == segment );
                 segment = segment.Next;
             }
             if( count > 0 )
             {
-                Debug.Assert( _head != null && _tail != null );
+                Throw.DebugAssert( _head != null && _tail != null );
                 if( count == 1 ) ReleaseSegment( _head );
                 else ReleaseSegments( _head, _tail, count );
                 _head = null;
@@ -227,7 +227,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void AddExternalMemory( IMemoryOwner<T> external )
         {
-            Debug.Assert( external.Memory.Length > 0 );
+            Throw.DebugAssert( external.Memory.Length > 0 );
             // Obtains a segment dedicated to the external memory.
             var newSegment = GetCachedSegmentOrCreateOne();
             // Enlists this new segment in the current sequence and computes
@@ -236,13 +236,13 @@ namespace CK.AppIdentity.TransportLayer
             long runningIndex;
             if( _head == null )
             {
-                Debug.Assert( _tail == null && _bytesBuffered == 0 );
+                Throw.DebugAssert( _tail == null && _bytesBuffered == 0 );
                 _head = _tail = newSegment;
                 runningIndex = 0;
             }
             else
             {
-                Debug.Assert( _tail != null );
+                Throw.DebugAssert( _tail != null );
                 runningIndex = _tail.RunningIndex + _tail.Length;
                 _tail.Next = newSegment;
                 _tail = newSegment;
@@ -265,7 +265,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             else
             {
-                Debug.Assert( _tail != null );
+                Throw.DebugAssert( _tail != null );
                 int bytesLeftInBuffer = _tailMemory.Length;
 
                 // sizeHint is 0 by default ("Give me whatever you have").
@@ -285,7 +285,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         Segment AllocateSegment( long runningIndex, int sizeHint )
         {
-            Debug.Assert( sizeHint >= 0 );
+            Throw.DebugAssert( sizeHint >= 0 );
             var newSegment = GetCachedSegmentOrCreateOne();
             int maxSize = _maxPooledBufferSize;
             if( sizeHint <= maxSize )
@@ -330,7 +330,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void ReleaseSegment( Segment segment )
         {
-            Debug.Assert( segment.IsFree );
+            Throw.DebugAssert( segment.IsFree );
             if( _freeSegmentSize < _freeSegmentMaxSize )
             {
                 segment.Next = _freeSegmentHead;
@@ -341,7 +341,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void ReleaseSegments( Segment head, Segment tail, int count )
         {
-            Debug.Assert( head.IsFree && tail.IsFree );
+            Throw.DebugAssert( head.IsFree && tail.IsFree );
             int newPoolSize = _freeSegmentSize + count;
             if( newPoolSize <= _freeSegmentMaxSize )
             {
@@ -361,7 +361,7 @@ namespace CK.AppIdentity.TransportLayer
             for( int i = 0; i < keep; ++i )
             {
                 var n = head.Next;
-                Debug.Assert( n != null && n.IsFree );
+                Throw.DebugAssert( n != null && n.IsFree );
                 head.Next = _freeSegmentHead;
                 _freeSegmentHead = head;
                 head = n;

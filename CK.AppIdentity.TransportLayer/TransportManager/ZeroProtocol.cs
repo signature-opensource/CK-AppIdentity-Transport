@@ -36,8 +36,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
         {
-            Debug.Assert( transport.RemoteKeys != null );
-            Debug.Assert( message != null );
+            Throw.DebugAssert( transport.RemoteKeys != null );
+            Throw.DebugAssert( message != null );
             using var m = CreateAndSignMessage( message, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -57,10 +57,10 @@ namespace CK.AppIdentity.TransportLayer
 
         public static ByeByeMessage? ReadByeByeMessage( IParallelLogger logger, Transport transport, IncomingMessage message )
         {
-            Debug.Assert( transport.RemoteKeys != null );
+            Throw.DebugAssert( transport.RemoteKeys != null );
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DRunByeBye );
+            Throw.DebugAssert( discriminator == DRunByeBye );
             var m = new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
             if( ReadIdentityKeysAndVerifySignatures( ref r,
                                                      transport.RemoteKeys.TrustedIdentity,

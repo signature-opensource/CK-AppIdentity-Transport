@@ -60,13 +60,13 @@ namespace CK.AppIdentity.TransportLayer
         // Constructor for the 4 special singleton messages.
         IncomingMessage( int emptyOrAck )
         {
-            Debug.Assert( emptyOrAck >= 0 && emptyOrAck <= 2 );
+            Throw.DebugAssert( emptyOrAck >= 0 && emptyOrAck <= 2 );
             _protocol = MessageProtocol.ZeroProtocol;
             if( emptyOrAck != 0 )
             {
                 _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : OutgoingMessage.IsControlFlag), 0 } );
             }
-            Debug.Assert( _message.IsEmpty );
+            Throw.DebugAssert( _message.IsEmpty );
         }
 
         // Constructor for regular, disposable messages.
@@ -75,8 +75,8 @@ namespace CK.AppIdentity.TransportLayer
                                   MutableSequence<byte> buffer,
                                   int prefixLength )
         {
-            Debug.Assert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 0 );
-            Debug.Assert( prefixLength >= 2 && prefixLength <= IOutgoingMessage.MaxWirePrefixLength );
+            Throw.DebugAssert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 0 );
+            Throw.DebugAssert( prefixLength >= 2 && prefixLength <= IOutgoingMessage.MaxWirePrefixLength );
             _messageFactory = messageFactory;
             _buffer = buffer;
             _protocol = protocol;
@@ -134,7 +134,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal int GetProtocolNumber()
         {
-            Debug.Assert( IsValid );
+            Throw.DebugAssert( IsValid );
             return _wireMessage.First.Span[0] & 7;
         }
 
@@ -149,7 +149,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( _refCount != 0 )
             {
-                Debug.Assert( _buffer != null );
+                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 )
@@ -168,12 +168,12 @@ namespace CK.AppIdentity.TransportLayer
         {
             if( _refCount != 0 )
             {
-                Debug.Assert( _buffer != null );
+                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 && --_refCount == 0 )
                     {
-                        Debug.Assert( _messageFactory != null );
+                        Throw.DebugAssert( _messageFactory != null );
                         _messageFactory.Release( _buffer );
                     }
                 }

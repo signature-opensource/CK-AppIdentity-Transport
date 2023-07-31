@@ -39,7 +39,7 @@ namespace CK.AppIdentity
             var a = s.TryLookupValue( key );
             if( !bool.TryParse( a, out var value ) && a != null )
             {
-                Debug.Assert( !value );
+                Throw.DebugAssert( !value );
                 monitor.Warn( $"Unable to parse '{s.Path}:{key}' value, expected 'true' or 'false' but got '{a}'. Using default false." );
             }
             return value;
@@ -112,7 +112,7 @@ namespace CK.AppIdentity
             var set = new HashSet<string>( a, comparer );
             if( set.Count != a.Length )
             {
-                Debug.Assert( s != null, "Since we found something." );
+                Throw.DebugAssert( s != null, "Since we found something." );
                 monitor.Error( $"Duplicate found in '{s.Path}': {a.Except( set ).Concatenate()}." );
                 return null;
             }

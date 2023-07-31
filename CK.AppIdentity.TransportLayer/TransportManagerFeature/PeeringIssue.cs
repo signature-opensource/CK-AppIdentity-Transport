@@ -23,6 +23,8 @@ namespace CK.AppIdentity.TransportLayer
         string? _enlistUrl;
         TimeSpan? _invalidClockOffset;
         // We don't have internal alternative.
+        // We always update from the TransportManager loop,
+        // this lock is here to protect CanAccept/Accept decision.
         object _lock;
         PeeringIssue? _cloneSource;
 
@@ -34,12 +36,12 @@ namespace CK.AppIdentity.TransportLayer
                                string? enlistUrl, 
                                TimeSpan? invalidClockOffset )
         {
-            Debug.Assert( kind != PeeringIssueKind.None );
-            Debug.Assert( initialMessage != null || remote != null, "No InitialMessage => remote is known (initiator)" );
+            Throw.DebugAssert( kind != PeeringIssueKind.None );
+            Throw.DebugAssert( initialMessage != null || remote != null, "No InitialMessage => remote is known (initiator)" );
+            _fullName = fullName;
             CheckInvariants( kind, initialMessage, remote, enlistUrl, invalidClockOffset );
 
             _time = now;
-            _fullName = fullName;
             _kind = kind;
             _initialMessage = initialMessage;
             _remote = remote;
@@ -49,31 +51,33 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         [Conditional( "DEBUG" )]
-        static void CheckInvariants( PeeringIssueKind kind, InitialMessage? initialMessage, TransportFeature? remote, string? enlistUrl, TimeSpan? invalidClockOffset )
+        void CheckInvariants( PeeringIssueKind kind, InitialMessage? initialMessage, TransportFeature? remote, string? enlistUrl, TimeSpan? invalidClockOffset )
         {
             // For None, we keep the data as-is: no invariant exist. 
             if( kind == PeeringIssueKind.None ) return;
 
-            Debug.Assert( kind != PeeringIssueKind.InvalidClockOffset || invalidClockOffset.HasValue, "InvalidClockOffset => a non null value for the offset" );
+            bool isInitiator = remote?.TargetAddress != null;
 
-            Debug.Assert( !(kind == PeeringIssueKind.InvalidClockOffset && initialMessage != null)
+            Throw.DebugAssert( kind != PeeringIssueKind.InvalidClockOffset || invalidClockOffset.HasValue, "InvalidClockOffset => a non null value for the offset" );
+
+            Throw.DebugAssert( !(kind == PeeringIssueKind.InvalidClockOffset && initialMessage != null)
                                 || (!initialMessage.ValidClockOffset && invalidClockOffset!.Value == initialMessage.ClockOffset),
-                          "Listener InvalidClockOffset => Invalid clock offset is the one of the initialMessage" );
+                          "InvalidClockOffset with a message => Invalid clock offset is the one of the initialMessage" );
 
-            Debug.Assert( enlistUrl == null
-                            || ((kind == PeeringIssueKind.WaitingRemoteApproval || kind == PeeringIssueKind.WaitingRemoteCreation) && initialMessage == null && remote != null),
-                          "EnlistUrl => WaitingRemoteApproval/Creation and IsInitiator" );
+            Throw.DebugAssert( enlistUrl == null
+                            || (kind == PeeringIssueKind.WaitingRemoteApproval || kind == PeeringIssueKind.WaitingRemoteCreation),
+                          "EnlistUrl => WaitingRemoteApproval/Creation" );
 
-            Debug.Assert( kind != PeeringIssueKind.WaitingRemoteApproval && kind != PeeringIssueKind.WaitingRemoteCreation
-                            || initialMessage == null,
-                            "WaitingRemoteApproval/Creation => IsInitiator" );
+            Throw.DebugAssert( kind != PeeringIssueKind.WaitingRemoteApproval && kind != PeeringIssueKind.WaitingRemoteCreation
+                            || (isInitiator && initialMessage == null),
+                            "WaitingRemoteApproval/Creation => IsInitiator and we have no incoming request" );
 
-            Debug.Assert( kind != PeeringIssueKind.UnknwonIncoming || remote == null, "UnknwonIncoming => null remote" );
+            Throw.DebugAssert( kind != PeeringIssueKind.UnknwonIncoming || remote == null, "UnknwonIncoming => null remote" );
 
-            Debug.Assert( kind != PeeringIssueKind.UntrustedIncoming
+            Throw.DebugAssert( kind != PeeringIssueKind.UntrustedIncoming
                             || initialMessage != null && remote != null && initialMessage.ValidClockOffset,
                           "UntrustedIncoming => remote is known, clock offset is valid. This is all we can say (our remote may have a TrustedIdentity " +
-                          "but it has not been found in the message: this is a 'warning')" );
+                          "but it has not been found in the message: this may be a 'warning: no more/lost trust')" );
         }
 
         /// <summary>
@@ -89,16 +93,16 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets whether we are listening to the remote incoming requests.
         /// </summary>
-        [MemberNotNullWhen( true, nameof(IncomingRequest) )]
+        [MemberNotNullWhen( true, nameof( IncomingRequest ) )]
         [MemberNotNullWhen( false, nameof( Remote ) )]
-        public bool IsListener => _initialMessage != null;
+        public bool IsListener => _remote?.TargetAddress == null;
 
         /// <summary>
         /// Gets whether we are calling the remote.
+        /// If we are the initiator and there is an <see cref="IncomingRequest"/> then it's an <see cref="PeeringIssueKind.InitiatorConflict"/>.
         /// </summary>
-        [MemberNotNullWhen( false, nameof( IncomingRequest ) )]
         [MemberNotNullWhen( true, nameof( Remote ) )]
-        public bool IsInitiator => _initialMessage == null;
+        public bool IsInitiator => _remote?.TargetAddress != null;
 
         /// <summary>
         /// Gets the remote's full name. This is always available.
@@ -147,9 +151,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Accepts the current <see cref="IIncomingRequest.CurrentRemoteIdentity"/> for this remote.
         /// This information is persited: from now on, the remote incoming connections will be accepted.
-        /// <para>
-        /// 
-        /// </para>
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <returns>True on success, false if <see cref="Kind"/> is not <see cref="PeeringIssueKind.UntrustedIncoming"/>.</returns>
@@ -160,7 +161,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 if( _kind == PeeringIssueKind.UntrustedIncoming )
                 {
-                    Debug.Assert( _remote != null && IncomingRequest != null );
+                    Throw.DebugAssert( _remote != null && IncomingRequest != null );
                     _remote.RemoteKeys.SetTrustedIdentity( monitor, new KeyManagement.RemoteIdentityKey( IncomingRequest.CurrentRemoteIdentity ) );
                     return true;
                 }
@@ -190,44 +191,11 @@ namespace CK.AppIdentity.TransportLayer
                               InitialMessage? message,
                               TransportFeature? remote,
                               string? enlistUrl,
-                              TimeSpan? invalidClockOffset,
-                              ref int unknwonRemoteCount )
+                              TimeSpan? invalidClockOffset )
         {
-            Debug.Assert( _cloneSource == null );
-            // Maintain unknwon remote count and check invariants.
-            if( kind == PeeringIssueKind.None )
-            {
-                if( _remote == null ) unknwonRemoteCount--;
-            }
-            else
-            {
-                // First idea was:
-                //
-                //   Debug.Assert( (_initialMessage == null) == (message == null), "Initiator xor Listener cannot change." );
-                //
-                // This is not true! A possible scenario is:
-                //  - A remote "R" (on another system) is configured with an "Address" to us and we have a listener that
-                //    received one ore more attempts: we have a "UnknwonIncoming".
-                //  - Then "R" is dynamically added here with an "Address" to the remote system that is simultaneously reconfigured
-                //    as a listener (no more "Address" configuration in the remote system).
-                //  => We now initiate a connection and may receive a WaitingRemoteApproval from it: we transitioned from Listener
-                //     to Initiator for the full name.
-                //  
-                //  Note that we'll never see a transition from Initiator to Listener: this requires a destroy of the RemoteParty
-                //  and a new dynamic add of the remote (without the "Address" configuration).
-                //
-                CheckInvariants( kind, message, remote, enlistUrl, invalidClockOffset );
-                if( remote == null )
-                {
-                    if( _remote != null ) unknwonRemoteCount++;
-                }
-                else
-                {
-                    if( _remote == null ) unknwonRemoteCount--;
-                }
-            }
-            // Update atomically for CanAccept/Accept.
-            lock(_lock )
+            Throw.DebugAssert( _cloneSource == null );
+            CheckInvariants( kind, message, remote, enlistUrl, invalidClockOffset );
+            lock( _lock )
             {
                 _time = now;
                 _kind = kind;
@@ -238,37 +206,73 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal void EjectUnknown()
+        internal void SetNoneIssueKind()
         {
-            Debug.Assert( _remote == null );
             lock( _lock )
             {
                 _kind = PeeringIssueKind.None;
             }
         }
 
-        internal void OnRemoteTornDown()
+        internal bool OnRemoteTornDown()
         {
-            Debug.Assert( _remote != null );
+            Throw.DebugAssert( _remote != null );
             lock( _lock )
             {
-                if( _kind == PeeringIssueKind.UntrustedIncoming )
+                // If we are the initiator and the transport feature dispappear,
+                // there is no point to keep this issue.
+                // But if we are listening, we can keep it (with a null Remote) we then are either
+                // UnknwonIncoming (if the party itself is destroyed) or DisallowedTransportIncoming
+                // if the party is still alive.
+                if( _remote.IsListening )
                 {
-                    _kind = PeeringIssueKind.UnknwonIncoming;
+                    if( _remote.Party.IsDestroyed )
+                    {
+                        _kind = PeeringIssueKind.UnknwonIncoming;
+                    }
+                    else
+                    {
+                        _kind = PeeringIssueKind.DisallowedTransportIncoming;
+                    }
+                }
+                else
+                {
+                    _kind = PeeringIssueKind.None;
                 }
                 _remote = null;
                 CheckInvariants( _kind, _initialMessage, _remote, _enlistUrl, _invalidClockOffset );
+                return _kind == PeeringIssueKind.None;
             }
         }
 
         internal void OnRemoteAppeared( TransportFeature remote )
         {
-            Debug.Assert( _remote == null );
+            Throw.DebugAssert( _remote == null );
             lock( _lock )
             {
-                if( _kind == PeeringIssueKind.UnknwonIncoming )
+                Throw.DebugAssert( _initialMessage != null, "An existing issue without remote has an initial message." );
+                // When a remote appears locally and is in UnknwonIncoming state
+                // then it becomes known:
+                // - If the newcomer is a listener:
+                //      - We can transition to UnsupportedTransportIncoming
+                //        if the initial message has a IncomingEndPointDescription that is not one of the
+                //        remote's listeners.
+                //      - Else we are UntrustedIncoming. 
+                // - Else (the newcomer is configured to be an initiator): InitiatorConflict.
+                if( remote.IsListening )
                 {
-                    _kind = PeeringIssueKind.UntrustedIncoming;
+                    if( !remote.Listeners.Any( l => l.EndPointDescription == _initialMessage.IncomingEndPointDescription ) )
+                    {
+                        _kind = PeeringIssueKind.UnsupportedTransportIncoming;
+                    }
+                    else
+                    {
+                        _kind = PeeringIssueKind.UntrustedIncoming;
+                    }
+                }
+                else 
+                {
+                    _kind = PeeringIssueKind.InitiatorConflict;
                 }
                 _remote = remote;
                 CheckInvariants( _kind, _initialMessage, _remote, _enlistUrl, _invalidClockOffset );

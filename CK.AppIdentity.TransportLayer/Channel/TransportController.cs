@@ -36,8 +36,8 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void Rebind( IActivityMonitor monitor, Transport transport )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
-            Debug.Assert( _transport.IsCondemned );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transport.IsCondemned );
             _transport = transport;
             _transport.SetController( this );
         }
@@ -98,14 +98,14 @@ namespace CK.AppIdentity.TransportLayer
 
         internal ValueTask ActivateAsync( IActivityMonitor monitor, MessageProtocolMap protocols, PeerProtocolHandler[] handlers )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             // First starts the transport receive loop: this sets the protocol map and handlers on the transport.
             // We allow here the current receiving task to not be completed: the previous Transport can continue to receive
             // a message (in such case, we create a new monitor for the new transport).
             IActivityMonitor? receiveMonitor = null;
             if( _receiveTask != null )
             {
-                Debug.Assert( _receiveTask.IsCompleted == _receiveTask.IsCompletedSuccessfully, "The receive task can only be completed successfully or pending." );
+                Throw.DebugAssert( _receiveTask.IsCompleted == _receiveTask.IsCompletedSuccessfully, "The receive task can only be completed successfully or pending." );
                 if( _receiveTask.IsCompleted )
                 {
                     receiveMonitor = _receiveTask.Result;
@@ -130,7 +130,7 @@ namespace CK.AppIdentity.TransportLayer
 
         async ValueTask WaitToStartSendAsync( IActivityMonitor monitor )
         {
-            Debug.Assert( _sendTask != null );
+            Throw.DebugAssert( _sendTask != null );
             monitor.Warn( $"Current send task for '{_feature.Party.FullName}' is pending. Waiting for its completion." );
             await _sendTask.ConfigureAwait( false );
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
@@ -138,7 +138,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal async ValueTask CloseAsync( IActivityMonitor monitor, string reason )
         {
-            Debug.Assert( _transportManager.IsInLoop( monitor ) );
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             CurrentTransport.SetSoftCondemned( new ByeByeMessage( reason.Length == 0 ? "Disposed" : reason, TimeSpan.FromSeconds( 5 ) ) );
             _highPriorityChannel.Writer.Complete();
             _senderChannel.Writer.Complete();
@@ -157,9 +157,9 @@ namespace CK.AppIdentity.TransportLayer
         {
             try
             {
-                Debug.Assert( transportController._transport ==  transport && transport.Controller == transportController );
+                Throw.DebugAssert( transportController._transport ==  transport && transport.Controller == transportController );
                 var handlers = transport.Handlers;
-                Debug.Assert( handlers != null );
+                Throw.DebugAssert( handlers != null );
                 transportManager.Logger.Trace( $"Starting sending loop for '{transport.RemoteEndPointDescription}'." );
                 while( await reader.WaitToReadAsync().ConfigureAwait( false ) )
                 {
@@ -209,7 +209,7 @@ namespace CK.AppIdentity.TransportLayer
             }
             catch( Exception ex )
             {
-                Debug.Assert( ex is not ChannelClosedException, "The way we use it avoids to rely on the ChannelClosedException." );
+                Throw.DebugAssert( ex is not ChannelClosedException, "The way we use it avoids to rely on the ChannelClosedException." );
                 transportManager.Logger.Error( $"While sending message for '{transportController.Feature.Party.FullName}' to '{transport.RemoteEndPointDescription}'.", ex );
                 transportManager.KillTransport( transport );
             }
@@ -283,7 +283,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal bool Receive0Message( IActivityMonitor receiveMonitor, IncomingMessage m )
         {
-            Debug.Assert( m.Protocol == MessageProtocol.ZeroProtocol );
+            Throw.DebugAssert( m.Protocol == MessageProtocol.ZeroProtocol );
             if( m == IncomingMessage.Empty )
             {
                 // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:

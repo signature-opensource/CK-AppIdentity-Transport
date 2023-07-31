@@ -110,7 +110,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal int GetProtocolIndexByName( string name )
         {
-            Debug.Assert( name != MessageProtocol.ZeroProtocolName );
+            Throw.DebugAssert( name != MessageProtocol.ZeroProtocolName );
             for( int i = 0; i < _protocols.Length; i++ )
             {
                 var p = _protocols[i];

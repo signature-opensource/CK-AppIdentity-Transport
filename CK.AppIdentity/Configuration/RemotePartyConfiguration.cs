@@ -22,7 +22,7 @@ namespace CK.AppIdentity
                                            ref InheritedConfigurationProps props )
             : base( configuration, domainName, fullName, ref props )
         {
-            Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
+            Throw.DebugAssert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
                           && d == domainName && e == fullName.LastPart && p == fullName.Parts[^2] );
 
             _address = address;

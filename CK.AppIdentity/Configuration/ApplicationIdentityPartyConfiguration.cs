@@ -27,7 +27,7 @@ namespace CK.AppIdentity
                                                         NormalizedPath fullName,
                                                         ref InheritedConfigurationProps props )
         {
-            Debug.Assert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
+            Throw.DebugAssert( CoreApplicationIdentity.TryParseFullName( fullName.Path, out var d, out var p, out var e )
                           && d == domainName && p == fullName.Parts[^2] && e == fullName.LastPart,
                           $"{fullName.Path} => d:{domainName}, p:{p}, e:{e}" );
 
@@ -118,7 +118,7 @@ namespace CK.AppIdentity
             var anchor = Configuration;
             var remotes = new MutableConfigurationSection( anchor );
             var c = remotes.GetMutableSection( "Dynamic" );
-            Debug.Assert( string.IsInterned( c.Key ) == "Dynamic" );
+            Throw.DebugAssert( string.IsInterned( c.Key ) == "Dynamic" );
             configuration( c );
             var finalConfig = new ImmutableConfigurationSection( c, anchor );
             var inheritedProps = new InheritedConfigurationProps( this );
@@ -229,7 +229,7 @@ namespace CK.AppIdentity
                     monitor.Error( $"'{s.Path}:DomainName' cannot be used when '{s.Path}:FullName' is defined." );
                     success = false;
                 }
-                Debug.Assert( string.IsInterned( "<error>" ) != null && string.IsInterned( "External" ) != null );
+                Throw.DebugAssert( string.IsInterned( "<error>" ) != null && string.IsInterned( "External" ) != null );
                 domainName = NormalizeDomainName( monitor, d );
                 success &= !ReferenceEquals( domainName, "<error>" );
                 partyName = p;

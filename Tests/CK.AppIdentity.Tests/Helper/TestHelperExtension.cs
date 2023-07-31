@@ -24,7 +24,7 @@ namespace CK.AppIdentity.Tests
         public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this, Action<MutableConfigurationSection> configuration )
         {
             var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
-            Debug.Assert( c != null );
+            Throw.DebugAssert( c != null );
             return CreateApplicationServiceAsync( @this, c );
         }
 

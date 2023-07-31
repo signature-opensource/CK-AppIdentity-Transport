@@ -28,7 +28,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remote != null );
+            Throw.DebugAssert( _remote != null );
             if( IsStarted && !_cts.IsCancellationRequested ) CancelOperation( monitor, offline: true );
         }
 
@@ -37,15 +37,15 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _remote != null );
-                Debug.Assert( _result == null || _cts != null, "_result != null => _cts != null" );
+                Throw.DebugAssert( _remote != null );
+                Throw.DebugAssert( _result == null || _cts != null, "_result != null => _cts != null" );
                 return _result != null;
             }
         }
 
         public override void Check( IActivityMonitor monitor, TransportManager transportManager )
         {
-            Debug.Assert( _remote != null && _remote.TargetAddress != null );
+            Throw.DebugAssert( _remote != null && _remote.TargetAddress != null );
             if( IsStarted )
             {
                 // Handles a completed result first.
@@ -58,16 +58,16 @@ namespace CK.AppIdentity.TransportLayer
                         int retryDelay = Math.Max( _startCount + 1, 30 );
                         if( _result.IsFaulted )
                         {
-                            monitor.Error( $"Unhandled error while connecting to '{_remote.Party}' (try n°{_startCount}). Retrying in {retryDelay} second.", _result.Exception );
+                            monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} second.", _result.Exception );
                         }
                         else
                         {
-                            Debug.Assert( _result.IsCanceled );
+                            Throw.DebugAssert( _result.IsCanceled );
                             if( !_cts.IsCancellationRequested )
                             {
                                 // Cancellation is not by us and that is weird!
                                 monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                               $"Unexpected cancellation while connecting to '{_remote.Party}' (try n°{_startCount}). Retrying in {retryDelay} second." );
+                                               $"OutgoingConnectionBackTask #{GetHashCode()}: Unexpected cancellation while connecting to '{_remote.Party}'. Retrying in {retryDelay} second." );
                             }
                             // Else, regular case: cancellation belongs to us, it is a timeout or a offline decision.
                             // On timeout the delay is the same as for an unexpected error.
@@ -79,7 +79,11 @@ namespace CK.AppIdentity.TransportLayer
                         // Successful completion: either the new transport has been provided to the TransportFeature
                         // by TryConnectToAsync or we have a retry delay.
                         int delay = _result.Result;
-                        if( delay > 0 ) Retry( delay );
+                        if( delay > 0 )
+                        {
+                            if( !_offlineDecision ) Retry( delay );
+                            else monitor.Info( $"Forgetting the retry in {delay} seconds since '{_remote.Party}' is offline." );
+                        }
                         // Else (delay is 0), we are done, let this BackTask be reset.
                     }
                     // Forget the completed result.
@@ -90,8 +94,8 @@ namespace CK.AppIdentity.TransportLayer
                 if( _cts.IsCancellationRequested )
                 {
                     monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
-                                  $"Failure to complete cancellation of OutgoingConnectionBackTask for Remote '{_remote.Party}'." +
-                                  $" Forgetting the current Task and retrying in 30 seconds." );
+                                  $"OutgoingConnectionBackTask #{GetHashCode()}: Failure to complete cancellation of for Remote '{_remote.Party}'." +
+                                  $" Forgetting the current Task." );
                     _result = null;
                     if( !_offlineDecision ) Retry( 30 );
                     return;
@@ -102,14 +106,16 @@ namespace CK.AppIdentity.TransportLayer
                     CancelOperation( monitor, offline: true );
                     return;
                 }
-                // The attempt is still running. If it takes more than 2 seconds, this is weird.
+                // The attempt is still running. If it takes more than NegotiationTimeout seconds, cancel it.
                 var delta = DateTime.UtcNow - _startTime;
                 if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
                 {
-                    monitor.Trace( $"Timeout ({delta.TotalMilliseconds:G0} ms) while connecting to remote '{_remote.Party}'." );
+                    monitor.Trace( $"OutgoingConnectionBackTask #{GetHashCode()}: Timeout ({(int)delta.TotalMilliseconds} ms) while connecting to remote '{_remote.Party}'. Reseting in 1 second." );
                     CancelOperation( monitor, false );
+                    return;
                 }
-                Retry( 1 );   // If the previous tick canceled the task and we are not completed, this is weird.
+                // Check again asap.
+                Retry( 1 );   
             }
             else
             {
@@ -121,12 +127,12 @@ namespace CK.AppIdentity.TransportLayer
 
         void CancelOperation( IActivityMonitor monitor, bool offline )
         {
-            Debug.Assert( IsStarted && !_cts.IsCancellationRequested );
+            Throw.DebugAssert( IsStarted && !_cts.IsCancellationRequested );
 
             if( offline )
             {
                 _offlineDecision = true;
-                monitor.Info( $"Remote '{_remote.Party}' is off line. Stopping its OutgoingConnectionBackTask." );
+                monitor.Info( $"OutgoingConnectionBackTask #{GetHashCode()}: Remote '{_remote.Party}' is off line. Reseting in 1 second." );
             }
             // We signal the cancelation but wait one tick to handle it.
             _cts.Cancel();
@@ -137,7 +143,7 @@ namespace CK.AppIdentity.TransportLayer
 
         public void OnInitialize( TransportManager transportManager, TransportFeature remote, int startDelay )
         {
-            Debug.Assert( remote != null && remote.TargetAddress != null && _remote == null );
+            Throw.DebugAssert( remote != null && remote.TargetAddress != null && _remote == null );
             _remote = remote;
             if( startDelay == 0 )
             {
@@ -152,7 +158,7 @@ namespace CK.AppIdentity.TransportLayer
 
         void StartOrRestart( TransportManager transportManager )
         {
-            Debug.Assert( _remote != null );
+            Throw.DebugAssert( _remote != null );
             // Reuse the same CTS if possible.
             if( _cts == null || _cts.IsCancellationRequested )
             {
@@ -175,8 +181,8 @@ namespace CK.AppIdentity.TransportLayer
                                                   CancellationTokenSource cancellation,
                                                   int currentTryCount )
         {
-            Debug.Assert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
-            Debug.Assert( remote.TargetAddress != null );
+            Throw.DebugAssert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
+            Throw.DebugAssert( remote.TargetAddress != null );
 
             Transport? transport;
             try
@@ -187,17 +193,24 @@ namespace CK.AppIdentity.TransportLayer
                                                                              cancellation.Token );
                 if( transport == null )
                 {
-                    return OnFailedTransportCreation( transportManager.Logger, currentTryCount, $"Unable to open connection to '{remote.Party}' at '{remote.TargetAddress}'.", null );
+                    return OnFailedTransportCreation( transportManager.Logger,
+                                                      currentTryCount,
+                                                      $"Unable to open connection to '{remote.Party}' at '{remote.TargetAddress}'.",
+                                                      exception: null );
                 }
             }
             catch( Exception ex )
             {
-                return OnFailedTransportCreation( transportManager.Logger, currentTryCount, $"Error while opening connection to '{remote.Party}' at '{remote.TargetAddress}'.", ex );
+                return OnFailedTransportCreation( transportManager.Logger,
+                                                  currentTryCount,
+                                                  $"Error while opening connection to '{remote.Party}' at '{remote.TargetAddress}'.",
+                                                  ex );
             }
 
-            Debug.Assert( transport.RemoteKeys == remote.RemoteKeys );
+            Throw.DebugAssert( transport.RemoteKeys == remote.RemoteKeys );
             IncomingMessage? firstAnswer = null;
             transport.SetCancellationSource( cancellation );
+            transportManager.Logger.Debug( $"Created new Outgoing transport #{transport.GetHashCode()} for '{remote.Party}' to '{transport.RemoteEndPointDescription}'." );
             bool killTransport = true;
             try
             {
@@ -213,12 +226,14 @@ namespace CK.AppIdentity.TransportLayer
                 bool retriedDowngrade = false;
                 retry:
                 firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength ).ConfigureAwait( false );
-                if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty )
+                if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty || firstAnswer == IncomingMessage.EmptyAck )
                 {
-                    return OnInvalidMessage( transportManager, currentTryCount, $"Invalid first answer from remote '{remote.Party}'." );
+                    return OnInvalidMessage( transportManager, currentTryCount, firstAnswer == IncomingMessage.Canceled
+                                                                                    ? $"Canceled first answer from remote '{remote.Party}'."
+                                                                                    : $"Invalid first answer from remote '{remote.Party}'." );
                 }
                 var head = firstAnswer.Message.First;
-                Debug.Assert( head.Length > 0, "The message is not empty (handled above)." );
+                Throw.DebugAssert( head.Length > 0, "The message is not empty (handled above)." );
                 switch( head.Span[0] )
                 {
                     case ZeroProtocol.DNegoUnknownRemote:
@@ -253,8 +268,10 @@ namespace CK.AppIdentity.TransportLayer
                             // pick a Localkeys provider at random among its root and potential TenantDomains).
                             if( currentKeyData == null )
                             {
-                                Debug.Assert( !signatureVerified );
-                                transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us at all. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
+                                Throw.DebugAssert( !signatureVerified );
+                                // if enlistUrl is the special "!DisallowedTransport", "!InitiatorConflict" or "!UnsupportedTransport" strings,
+                                // this appears in the logs and will be translated into the correspondin issues by TargetRequiresCreationOrApproval.
+                                transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
                                 transportManager.TargetRequiresCreationOrApproval( remote, enlistUrl, false );
                                 return 5;
                             }
@@ -364,7 +381,7 @@ namespace CK.AppIdentity.TransportLayer
                                 // Accepts the transport.
                                 killTransport = false;
                                 transportManager.NewValidTransport( remote.Party, transport, protocolMap, finalClockOffset );
-                                // Successful SendFinalMessageAsync: retry asap, the BackTask will be reset).
+                                // Successful SendFinalMessageAsync: the BackTask will be reset).
                                 return 0;
                             }
                             // Canceled: the retry will be ignored since this back task is canceled.
@@ -401,14 +418,15 @@ namespace CK.AppIdentity.TransportLayer
                 firstAnswer?.Dispose();
                 if( killTransport )
                 {
+                    transportManager.Logger.Debug( $"Killing useless Outgoing transport #{transport.GetHashCode()}." );
                     transportManager.KillTransport( transport );
                 }
             }
 
-            static int OnFailedTransportCreation( IParallelLogger logger, int currentTryCount, string msg, Exception? ex )
+            static int OnFailedTransportCreation( IParallelLogger logger, int currentTryCount, string msg, Exception? exception )
             {
                 var retryDelay = Math.Max( currentTryCount + 1, 5 );
-                logger.Error( $"{msg} Retrying in {retryDelay} seconds.", ex );
+                logger.Error( $"{msg} Retrying in {retryDelay} seconds.", exception );
                 return retryDelay;
             }
 

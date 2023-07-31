@@ -28,7 +28,7 @@ namespace CK.AppIdentity.Configuration.Tests
                 EnvironmentName = "HostEnv",
             };
             var appIdentity = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, hostEnv, config );
-            Debug.Assert( appIdentity != null );
+            Throw.DebugAssert( appIdentity != null );
             appIdentity.DomainName.Should().Be( "Default" );
             appIdentity.EnvironmentName.Should().Be( "#HostEnv" );
             appIdentity.PartyName.Should().Be( "$HostApp" );
@@ -51,14 +51,14 @@ namespace CK.AppIdentity.Configuration.Tests
             config["CK-AppIdentity:Parties:0:PartyName"] = "Daddy";
             config["CK-AppIdentity:Parties:0:Address"] = "http://x.x";
             var appIdentity = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, hostEnv, config.GetRequiredSection( "CK-AppIdentity" ) );
-            Debug.Assert( appIdentity != null );
+            Throw.DebugAssert( appIdentity != null );
 
             appIdentity.DomainName.Should().Be( "OurDomain" );
             appIdentity.EnvironmentName.Should().Be( "#TestEnvironment" );
             appIdentity.PartyName.Should().Be( "$MyApp" );
             appIdentity.Remotes.Should().HaveCount(1);
             var remote = appIdentity.Remotes.Single() as RemotePartyConfiguration;
-            Debug.Assert( remote != null );
+            Throw.DebugAssert( remote != null );
             remote.PartyName.Should().Be( "$Daddy" );
             remote.Address.Should().Be( "http://x.x" );
             remote.DomainName.Should().Be( "OurDomain" );
@@ -78,9 +78,9 @@ namespace CK.AppIdentity.Configuration.Tests
 
             // To keep the file layout with timed folders, we need to locate the right folders...
             var ckMonDir = Directory.EnumerateDirectories( TestHelper.LogFolder.AppendPart( "CKMon" ) ).MaxBy( s => Path.GetFileName( s ) );
-            Debug.Assert( ckMonDir != null );
+            Throw.DebugAssert( ckMonDir != null );
             var textDir = Directory.EnumerateDirectories( TestHelper.LogFolder.AppendPart( "Text" ) ).MaxBy( s => Path.GetFileName( s ) );
-            Debug.Assert( textDir != null );
+            Throw.DebugAssert( textDir != null );
 
             var config = new DynamicConfigurationSource();
             config["CK-Monitoring:GrandOutput:Handlers:TextFile:Path"] = textDir;
@@ -93,7 +93,7 @@ namespace CK.AppIdentity.Configuration.Tests
             TestHelper.Monitor.Info( "Building the host: this file is closed." );
             var host = hostBuilder.Build();
 
-            Debug.Assert( GrandOutput.Default != null );
+            Throw.DebugAssert( GrandOutput.Default != null );
             GrandOutput.Default.IdentityCard.HasApplicationIdentity.Should().BeTrue( "IdentityCard received the CoreApplicationIdentity." );
 
             TestHelper.Monitor.Info( "A second test file has been created." );

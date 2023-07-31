@@ -146,7 +146,7 @@ namespace CK.Core
                 Throw.InvalidOperationException( "This trampoline has already been executed or disposed." );
             }
             _stopOnFirstError = !executeAll;
-            Debug.Assert( _result == TrampolineResult.TotalSuccess );
+            Throw.DebugAssert( _result == TrampolineResult.TotalSuccess );
 
             var actions = _reg._actions;
             using( monitor.OpenInfo( $"{actions.Count} initial actions." ) )
@@ -198,7 +198,7 @@ namespace CK.Core
                     }
                     else
                     {
-                        Debug.Assert( actions.Count == doneCount );
+                        Throw.DebugAssert( actions.Count == doneCount );
                         await ExecuteOnError( monitor, actions, doneCount ).ConfigureAwait( false );
                     }
                 }
@@ -246,7 +246,7 @@ namespace CK.Core
                 case Action a: a(); return true;
                 case Func<ValueTask> a: await a().ConfigureAwait( false ); return true;
                 default:
-                    Debug.Assert( o is Func<Task> );
+                    Throw.DebugAssert( o is Func<Task> );
                     await ((Func<Task>)o)().ConfigureAwait( false );
                     return true;
             }

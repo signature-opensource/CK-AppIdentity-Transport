@@ -33,7 +33,7 @@ namespace CK.AppIdentity.Tests
                 c["Parties:1:FullName"] = "LaToulousaine/London/$TrolleyCentral";
                 c["Parties:2:PartyName"] = "Trolley1";
             } );
-            Debug.Assert( config != null );
+            Throw.DebugAssert( config != null );
 
             config.FullName.Should().Be( "LaToulousaine/France/Albi/$SignatureBox/#Development" );
             config.DomainName.Should().Be( "LaToulousaine/France/Albi" );
@@ -74,7 +74,7 @@ namespace CK.AppIdentity.Tests
                 c["Parties:0:Parties:1:Parties:0:PartyName"] = "A2";
                 c["Parties:0:Parties:2:FullName"] = "D3/$D3";
             } );
-            Debug.Assert( good != null );
+            Throw.DebugAssert( good != null );
             good.Remotes.Should().BeEmpty();
             good.TenantDomains.Should().HaveCount( 3 );
             good.TenantDomains.Select( d => d.FullName.Path ).Should().BeEquivalentTo( new[] { "D1/$D1/#E", "D2/$D2/#E", "D3/$D3/#E" } );

@@ -1,3 +1,4 @@
+using CK.Core;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
@@ -35,7 +36,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal MessageProtocol( string fullName, string name, ushort version, bool isZeroProtocol )
         {
-            Debug.Assert( fullName.Length <= FullNameMaxLength );
+            Throw.DebugAssert( fullName.Length <= FullNameMaxLength );
             _fullName = fullName;
             _name = name;
             _version = version;

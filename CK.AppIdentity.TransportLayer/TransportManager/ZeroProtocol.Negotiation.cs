@@ -17,6 +17,9 @@ namespace CK.AppIdentity.TransportLayer
         public const int FirstAnswerMaxLength = 1 // One byte discriminator.
                                                 + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
                                                 + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength);
+        public const string EnlistUrlDisallowedTransport = "!DisallowedTransportIncoming";
+        public const string EnlistUrlInitiatorConflict = "!InitiatorConflict";
+        public const string EnlistUrlUnsupportedTransport = "!UnsupportedTransportIncoming";
 
         // Static messages use no initialization lock (we don't care of the rare case where 2 concurrent messages will be instantiated).
         // "1" followed by our version: it can be static.
@@ -156,7 +159,7 @@ namespace CK.AppIdentity.TransportLayer
                 // End of the message: it's time to compute its hash.
                 // We use the reusableBuffer: 64 first bytes for the hash, 256 next bytes
                 // for the idxSignatureToVerify signature buffer.
-                Debug.Assert( reusableBuffer.Length >= 64 );
+                Throw.DebugAssert( reusableBuffer.Length >= 64 );
                 var hashData = reusableBuffer.AsSpan( 0, 64 );
                 var signatureBuffer = reusableBuffer.AsSpan( 64, 256 );
                 ComputeHash( r.GetBeforeHead(), hashData );
@@ -173,7 +176,7 @@ namespace CK.AppIdentity.TransportLayer
                     r.ReadBytes( signature );
                 }
                 var verifier = foundTrustedKey ? alreadyTrusted : currentKey;
-                Debug.Assert( verifier != null );
+                Throw.DebugAssert( verifier != null );
                 return verifier.VerifyHash( hashData, signature );
             }
             finally
@@ -211,7 +214,7 @@ namespace CK.AppIdentity.TransportLayer
 
             static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock, InitialMessage initialMessage, int version, out ulong nonce )
             {
-                Debug.Assert( initialMessage.LocalIdentities.Count > 0 );
+                Throw.DebugAssert( initialMessage.LocalIdentities.Count > 0 );
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
@@ -271,7 +274,7 @@ namespace CK.AppIdentity.TransportLayer
             using var m = CreateMessage( transport, enlistUrl, nonce, signatureVerificationFailed );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateMessage( Transport transport, string? userAcceptUri, ulong nonce, bool signatureVerificationFailed )
+            static IOutgoingMessage CreateMessage( Transport transport, string? enlistUrl, ulong nonce, bool signatureVerificationFailed )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
@@ -287,7 +290,16 @@ namespace CK.AppIdentity.TransportLayer
                 else
                 {
                     w.WriteUInt64( nonce );
-                    w.WriteNullableString( userAcceptUri );
+                    // The enlistUrl can be null, a (hopefully) valid configured url or the special "!DisallowedTransport",
+                    // "!InitiatorConflict" or "!UnsupportedTransport" strings.
+                    // When it is such peering issues, the remote has not been found so we have no chance to have RemoteKeys set
+                    // on the Transport.
+                    Throw.DebugAssert( (enlistUrl != EnlistUrlDisallowedTransport
+                                   && enlistUrl != EnlistUrlInitiatorConflict
+                                   && enlistUrl != EnlistUrlUnsupportedTransport)
+                                    || transport.RemoteKeys == null,
+                                  "Enlist url is a peering issue => No remote => no RemoteKeys."  );
+                    w.WriteNullableString( enlistUrl );
                     // When the incoming remote is not known at all, we don't have local
                     // keys (we cannot locate the local party to use so we take no risk: selecting the root
                     // ApplicationIdentityService local is not a good idea).
@@ -319,7 +331,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoUnknownRemote );
+            Throw.DebugAssert( discriminator == DNegoUnknownRemote );
             remoteVerificationFailure = r.ReadBool();
             if( remoteVerificationFailure )
             {
@@ -357,7 +369,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendOffRemoteMessageAsync( Transport transport, ulong nonce, TimeSpan shutUp )
         {
-            Debug.Assert( transport.RemoteKeys != null );
+            Throw.DebugAssert( transport.RemoteKeys != null );
             using var m = CreateAndSignMessage( nonce, shutUp, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -382,7 +394,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoOffRemote );
+            Throw.DebugAssert( discriminator == DNegoOffRemote );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
                 return null;
@@ -414,7 +426,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
         public static async ValueTask<bool> SendInvalidClockOffsetMessageAsync( ISystemClock systemClock, Transport transport, TimeSpan offset, ulong nonce )
         {
-            Debug.Assert( transport.RemoteKeys != null );
+            Throw.DebugAssert( transport.RemoteKeys != null );
             using var m = CreateAndSignMessage( systemClock, nonce, offset, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -443,7 +455,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoInvalidClockOffset );
+            Throw.DebugAssert( discriminator == DNegoInvalidClockOffset );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
                 foundTrustedKey = false;
@@ -494,7 +506,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoDowngradeProtocol );
+            Throw.DebugAssert( discriminator == DNegoDowngradeProtocol );
             return (int)r.ReadSmallUInt32();
         }
 
@@ -504,7 +516,7 @@ namespace CK.AppIdentity.TransportLayer
                                                                                ulong nonce,
                                                                                TimeSpan initialClockOffset )
         {
-            Debug.Assert( transport.RemoteKeys != null );
+            Throw.DebugAssert( transport.RemoteKeys != null );
             using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset, transport.RemoteKeys.LocalKeys.Identities );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -543,7 +555,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoAcceptedProtocolsMessage );
+            Throw.DebugAssert( discriminator == DNegoAcceptedProtocolsMessage );
             foundTrustedKey = false;
             if( !CheckNonce( transportManager.Logger, ref r, remote, expectedNonce ) )
             {
@@ -583,13 +595,12 @@ namespace CK.AppIdentity.TransportLayer
                 foundTrustedKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
                 if( !foundTrustedKey )
                 {
-                    // This should not happen (defensive programming).
                     return default;
                 }
-                var missing = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
-                if( missing.Any() )
+                var missingProtocols = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
+                if( missingProtocols.Any() )
                 {
-                    transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missing.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
+                    transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missingProtocols.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
                     return default;
                 }
                 return map;
@@ -607,7 +618,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True on success, false if transport has been canceled.</returns>
         public static async ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming, ulong nonce )
         {
-            Debug.Assert( incoming.RemoteKeys != null );
+            Throw.DebugAssert( incoming.RemoteKeys != null );
             using var m = CreateAndSignMessage( nonce, incoming.RemoteKeys.LocalKeys.Identities );
             return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -633,7 +644,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoEvictionDisallowed );
+            Throw.DebugAssert( discriminator == DNegoEvictionDisallowed );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
                 return false;
@@ -661,7 +672,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The awaitable.</returns>
         public static async ValueTask<bool> SendMissingProtocolsMessageAsync( Transport incoming, ulong nonce, IReadOnlyList<MessageProtocol> missingProtocols )
         {
-            Debug.Assert( incoming.RemoteKeys != null );
+            Throw.DebugAssert( incoming.RemoteKeys != null );
             using var m = CreateAndSignMessage( missingProtocols, nonce, incoming.RemoteKeys.LocalKeys.Identities );
             return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -689,7 +700,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoMissingProtocols );
+            Throw.DebugAssert( discriminator == DNegoMissingProtocols );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
                 return null;
@@ -756,10 +767,10 @@ namespace CK.AppIdentity.TransportLayer
                                                        TransportFeature remote,
                                                        out TimeSpan finalClockOffset )
         {
-            Debug.Assert( remote.RemoteKeys.TrustedIdentity != null );
+            Throw.DebugAssert( remote.RemoteKeys.TrustedIdentity != null );
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Debug.Assert( discriminator == DNegoFinalSuccessMessage );
+            Throw.DebugAssert( discriminator == DNegoFinalSuccessMessage );
             if( !CheckNonce( logger, ref r, remote, expectedNonce ) )
             {
                 finalClockOffset = TimeSpan.Zero;

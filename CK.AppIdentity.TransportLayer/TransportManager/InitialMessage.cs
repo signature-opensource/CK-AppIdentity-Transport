@@ -85,8 +85,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="f">The remote party's transport.</param>
         public InitialMessage( TransportFeature f )
         {
-            Debug.Assert( !f.IsListening );
-            Debug.Assert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
+            Throw.DebugAssert( !f.IsListening );
+            Throw.DebugAssert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
             var local = f.Party.Owner;
             _domainName = local.DomainName;
             _partyName = local.PartyName;
@@ -269,7 +269,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Debug.Assert( _currentRemoteIdentity != null, "Called only from public IIncomingRequest facade." );
+                Throw.DebugAssert( _currentRemoteIdentity != null, "Called only from public IIncomingRequest facade." );
                 return _currentRemoteIdentity;
             }
         }

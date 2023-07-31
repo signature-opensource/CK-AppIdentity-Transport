@@ -112,7 +112,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SetController( TransportController controller )
         {
-            Debug.Assert( _controller == null && controller != null );
+            Throw.DebugAssert( _controller == null && controller != null );
             _controller = controller;
         }
 
@@ -140,7 +140,7 @@ namespace CK.AppIdentity.TransportLayer
         public string RemoteEndPointDescription => _remoteEndPointDescription;
 
         /// <summary>
-        /// Gets whether this transport is condemned, either the soft way with a 
+        /// Gets whether this transport is condemned (or is already dead).
         /// </summary>
         public bool IsCondemned => _byeByeMessage != null || _cts.IsCancellationRequested;
 
@@ -163,7 +163,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SetKeys( IRemoteKeys remoteKeys )
         {
-            Debug.Assert( _remoteKeys == null );
+            Throw.DebugAssert( _remoteKeys == null );
             _remoteKeys = remoteKeys;
         }
 
@@ -182,7 +182,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void SetSoftCondemned( ByeByeMessage m, bool overrideCurrentMessage = false )
         {
-            Debug.Assert( m != null );
+            Throw.DebugAssert( m != null );
             var done = IsCondemned;
             if( overrideCurrentMessage || _byeByeMessage == null ) _byeByeMessage = m;
             if( !done ) _controller?.OnTransportCondemned();
@@ -200,8 +200,8 @@ namespace CK.AppIdentity.TransportLayer
         /// </returns>
         internal Task<IncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
-            Debug.Assert( maxMessageLength > 0 );
-            Debug.Assert( _controller == null, "Not started yet." );
+            Throw.DebugAssert( maxMessageLength > 0 );
+            Throw.DebugAssert( _controller == null, "Not started yet." );
             return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _cts.Token );
         }
 
@@ -214,8 +214,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
         internal ValueTask<bool> SendAsync( uint protocolNumber, IOutgoingMessage message )
         {
-            Debug.Assert( message != null );
-            Debug.Assert( message.IsValid );
+            Throw.DebugAssert( message != null );
+            Throw.DebugAssert( message.IsValid );
 
             if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
 
@@ -354,10 +354,11 @@ namespace CK.AppIdentity.TransportLayer
         protected abstract ValueTask DisposeAsync( IActivityMonitor monitor );
 
         /// <summary>
-        /// Overridden to return the type name and the <see cref="RemoteEndPointDescription"/>.
+        /// Overridden to return the type name, the <see cref="RemoteEndPointDescription"/> (and <see cref="IsCondemned"/>
+        /// if it is true).
         /// </summary>
         /// <returns>A readable string.</returns>
-        public override string ToString() => $"{GetType().Name} - {_remoteEndPointDescription}";
+        public override string ToString() => $"{GetType().Name} - {_remoteEndPointDescription}{(IsCondemned ? " (Condemned)" : "")}";
 
     }
 }

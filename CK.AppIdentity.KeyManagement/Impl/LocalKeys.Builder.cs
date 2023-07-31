@@ -250,7 +250,7 @@ namespace CK.AppIdentity.KeyManagement
 
             static X509Certificate2 CreateIdentityCertificate( string commonName, DateTime notAfter, DateTime now )
             {
-                Debug.Assert( notAfter > now );
+                Throw.DebugAssert( notAfter > now );
                 using( var ecdsa = ECDsa.Create( "ECDsa" ) )
                 {
                     Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );

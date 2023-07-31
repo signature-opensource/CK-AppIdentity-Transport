@@ -62,8 +62,8 @@ namespace CK.AppIdentity.TransportLayer
 
         internal PeerProtocolHandler EnsureCurrentHandler( IActivityMonitor monitor, TransportController endPoint, MessageProtocol protocol )
         {
-            Debug.Assert( protocol.Name == _baseProtocolName );
-            Debug.Assert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
+            Throw.DebugAssert( protocol.Name == _baseProtocolName );
+            Throw.DebugAssert( (protocol.Version == 0 && !Versions.Any()) || Versions.Contains( protocol.Version ) );
             // Fast path: no change.
             if( _currentHandler != null && _currentHandler.Protocol == protocol )
             {

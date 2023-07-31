@@ -131,7 +131,7 @@ namespace CK.AppIdentity
         {
             await base.OnShutdownOrDestroyedAsync( monitor, isDestroyed ).ConfigureAwait( false );
             _privateStore.OnShutdownOrDestroyed( monitor, isDestroyed );
-            Debug.Assert( !isDestroyed || _remotes.Length == 0, "The ApplicationIdentityService is never destroyed, only shut down. " +
+            Throw.DebugAssert( !isDestroyed || _remotes.Length == 0, "The ApplicationIdentityService is never destroyed, only shut down. " +
                                                                 "Destroying applies only for the TenantDomainParty and its has already cleared the _remotes list." );
             foreach( var r in _remotes )
             {

@@ -173,7 +173,7 @@ namespace CK.AppIdentity.Tests
             using var gLog = TestHelper.Monitor.OpenInfo( nameof( feature_builders_initialization_follows_the_dependency_order_Async ) );
             CheckOrderFeatureDriver.Reset();
             var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, c => c["FullName"] = "FakeDomain/$FakeApp" );
-            Debug.Assert( c != null );
+            Throw.DebugAssert( c != null );
             ServiceCollection serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );
             serviceBuilder.AddSingleton<ApplicationIdentityService>();
@@ -225,7 +225,7 @@ namespace CK.AppIdentity.Tests
             {
                 c["PartyName"] = "SomeDynamicRemote";
             } );
-            Debug.Assert( r != null );
+            Throw.DebugAssert( r != null );
             CheckOrderFeatureDriver._dynamicSetupCount.Should().Be( 7 );
             CheckOrderFeatureDriver._dynamicTeardownCount.Should().Be( 0 );
 

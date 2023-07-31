@@ -1,3 +1,4 @@
+using CK.Core;
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -24,7 +25,7 @@ namespace CK.AppIdentity.TransportLayer
                 [MethodImpl( MethodImplOptions.AggressiveInlining )]
                 set
                 {
-                    Debug.Assert( value <= AvailableMemory.Length );
+                    Throw.DebugAssert( value <= AvailableMemory.Length );
                     Memory = AvailableMemory.Slice( 0, value );
                 }
             }
@@ -95,7 +96,7 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
-                    Debug.Assert( _array != null );
+                    Throw.DebugAssert( _array != null );
                     ArrayPool<T>.Shared.Return( _array );
                     _array = null;
                 }

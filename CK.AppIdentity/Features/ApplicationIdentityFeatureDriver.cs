@@ -22,7 +22,7 @@ namespace CK.AppIdentity
         /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
         protected ApplicationIdentityFeatureDriver( ApplicationIdentityService s, bool isAllowedByDefault )
         {
-            Debug.Assert( "FeatureDriver".Length == 13 );
+            Throw.DebugAssert( "FeatureDriver".Length == 13 );
             var name = GetType().Name;
             if( name.EndsWith( "FeatureDriver_CK" ) ) name = name.Substring( 0, name.Length - 16 );
             else if( name.EndsWith( "FeatureDriver" ) ) name = name.Substring( 0, name.Length - 13 );

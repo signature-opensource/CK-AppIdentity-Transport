@@ -47,13 +47,13 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>The listener on success, null otherwise.</returns>
         internal TransportListener? TryEnsureListener( IActivityMonitor monitor, TransportTypeAddress endPoint )
         {
-            Debug.Assert( IsInApplicationIdentityLoop( monitor ) );
+            Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
 
             foreach( var exists in _listeners )
             {
                 if( exists.IsListeningAddress( endPoint.TypedAddress ) )
                 {
-                    exists.AddRef();
+                    exists.AddRef( monitor );
                     return exists;
                 }
             }

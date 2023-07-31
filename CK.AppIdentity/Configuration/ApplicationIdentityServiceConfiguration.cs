@@ -34,7 +34,7 @@ namespace CK.AppIdentity
                                                  ref InheritedConfigurationProps inhProps )
             : base( configuration, domainName, fullName, ref inhProps )
         {
-            Debug.Assert( parties.HasValue );
+            Throw.DebugAssert( parties.HasValue );
             _storeRootPath = store;
             _remotes = parties.Value.Remotes;
             _tenants = parties.Value.Tenants;
@@ -177,7 +177,7 @@ namespace CK.AppIdentity
 
             if( ReferenceEquals( domainName, "External" ) )
             {
-                Debug.Assert( CoreApplicationIdentity.DefaultDomainName == "Undefined" );
+                Throw.DebugAssert( CoreApplicationIdentity.DefaultDomainName == "Undefined" );
                 monitor.Error( $"Root domain name cannot be \"External\" or \"Undefined\". This name denotes an external system." );
                 success = false;
             }
@@ -239,7 +239,7 @@ namespace CK.AppIdentity
                                                       ref InheritedConfigurationProps props,
                                                       Dictionary<string, ImmutableConfigurationSection> fullNameIndex )
         {
-            Debug.Assert( configuration.Key == "Parties" );
+            Throw.DebugAssert( configuration.Key == "Parties" );
             bool success = props.IsValid;
             var parties = new ProcessedConfiguration( new List<TenantDomainPartyConfiguration>(), new List<RemotePartyConfiguration>() );
             foreach( var c in configuration.GetChildren() )
@@ -291,7 +291,7 @@ namespace CK.AppIdentity
                 isDomain = address == null && partyName.Equals( fullName.Parts[^3], StringComparison.OrdinalIgnoreCase );
             }
             // Check full name unicity in this whole configuration only if the names have been successfully read.
-            Debug.Assert( fullNameIndex.Comparer == StringComparer.OrdinalIgnoreCase );
+            Throw.DebugAssert( fullNameIndex.Comparer == StringComparer.OrdinalIgnoreCase );
             if( nameSuccess )
             {
                 if (fullNameIndex.TryGetValue(fullName, out var exists))
@@ -329,7 +329,7 @@ namespace CK.AppIdentity
                 {
                     var p = new RemotePartyConfiguration( configuration, domainName, fullName, address, ref props );
                     partyCollector.Remotes.Add( p );
-                    monitor.Info( $"Fond '{fullName}' {(p.IsExternalParty ? "external " : "")} remote party." );
+                    monitor.Info( $"Found '{fullName}' {(p.IsExternalParty ? "external " : "")}remote party." );
                 }
             }
             return success;
