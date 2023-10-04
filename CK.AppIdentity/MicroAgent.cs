@@ -211,7 +211,7 @@ namespace CK.AppIdentity
         {
             try
             {
-                await OnStartAsync( _monitor );
+                await OnStartAsync( _monitor ).ConfigureAwait( false );
             }
             catch( Exception ex )
             {
@@ -219,7 +219,7 @@ namespace CK.AppIdentity
             }
             // We pool the channel until the null final closing signal.
             object? o;
-            while( (o = await _channel.Reader.ReadAsync()) != null )
+            while( (o = await _channel.Reader.ReadAsync().ConfigureAwait( false )) != null )
             {
                 try
                 {
@@ -228,7 +228,7 @@ namespace CK.AppIdentity
                         using( _monitor.OpenInfo( $"Stopping {ToString()}." ) )
                         {
                             // The heartbeat is disposed when sending the stop signal.
-                            await OnStopAsync( _monitor );
+                            await OnStopAsync( _monitor ).ConfigureAwait( false );
                             if( _channel.Writer.TryWrite( null ) ) _channel.Writer.TryComplete();
                         }
                     }
@@ -250,7 +250,7 @@ namespace CK.AppIdentity
                             _inHeartBeat = true;
                             try
                             {
-                                await OnHeartbeatAsync( _monitor, _heartbeatCount++ );
+                                await OnHeartbeatAsync( _monitor, _heartbeatCount++ ).ConfigureAwait( false );
                             }
                             catch( Exception ex )
                             {
@@ -261,11 +261,11 @@ namespace CK.AppIdentity
                     }
                     else if( o is IJob job )
                     {
-                        await job.ExecuteAsync( _monitor );
+                        await job.ExecuteAsync( _monitor ).ConfigureAwait( false );
                     }
                     else
                     {
-                        await ExecuteTypedJobAsync( _monitor, o );
+                        await ExecuteTypedJobAsync( _monitor, o ).ConfigureAwait( false );
                     }
                 }
                 catch( Exception ex )

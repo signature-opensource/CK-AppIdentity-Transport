@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-namespace CK.AppIdentity
+namespace CK.Core
 {
     /// <summary>
     /// Mutable <see cref="IConfigurationSection"/>: this acts as a simple configuration builder

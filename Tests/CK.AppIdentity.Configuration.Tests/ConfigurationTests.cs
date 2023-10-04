@@ -89,7 +89,8 @@ namespace CK.AppIdentity.Configuration.Tests
 
             var hostBuilder = new HostBuilder()
                                 .ConfigureAppConfiguration( ( hostingContext, c ) => c.Add( config ) )
-                                .UseCKAppIdentity( contextDescriptor: "some context..." );
+                                .UseCKAppIdentity( contextDescriptor: "some context..." )
+                                .UseCKMonitoring();
             TestHelper.Monitor.Info( "Building the host: this file is closed." );
             var host = hostBuilder.Build();
 

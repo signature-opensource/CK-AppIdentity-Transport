@@ -128,14 +128,14 @@ And:
 ```
 
 
-## Mutable and immutable IConfigurationSection helpers.
+## Mutable and immutable IConfigurationSection helpers (from CK.Core).
 
-A [ImmutableConfigurationSection](ImmutableConfigurationSection.cs) is a [IConfigurationSection](https://learn.microsoft.com/fr-fr/dotnet/api/microsoft.extensions.configuration.iconfigurationsection)
+A `ImmutableConfigurationSection` is a [IConfigurationSection](https://learn.microsoft.com/fr-fr/dotnet/api/microsoft.extensions.configuration.iconfigurationsection)
 that captures once for all the content and path of any other `IConfigurationSection`.
 
 Each application identity objects are bound to an immutable configuration.
 
-The [MutableConfigurationSection](MutableConfigurationSection.cs) acts as a builder for immutable configuration and hence is used to
+The `MutableConfigurationSection` acts as a builder for immutable configuration and hence is used to
 initialize dynamic parties.
 
 

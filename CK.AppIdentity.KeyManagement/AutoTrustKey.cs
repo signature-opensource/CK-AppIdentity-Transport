@@ -1,7 +1,7 @@
 namespace CK.AppIdentity.KeyManagement
 {
     /// <summary>
-    /// Optional behavior for that allows the <see cref="IRemoteKeys.TrustedIdentity"/> to be initialized or updated implicitly.
+    /// Optional behavior that allows the <see cref="IRemoteKeys.TrustedIdentity"/> to be initialized or updated implicitly.
     /// <para>
     /// This allows remotes to be operational immediately by trusting the replied identity,
     /// avoiding the step to enlist the remote's identity.

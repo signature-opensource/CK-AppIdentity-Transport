@@ -6,13 +6,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-namespace CK.AppIdentity
+namespace CK.Core
 {
     /// <summary>
     /// Immutable capture of a <see cref="IConfigurationSection"/>.
     /// </summary>
     /// <remarks>
-    /// If persistenc of configuration must be implemented once, the potetial parent configurations MUST NOT be flattened
+    /// If persistence of configuration must be implemented once, the potential parent configurations MUST NOT be flattened
     /// (even the parent for a child): configurations may be combined by consumer in a complex way, the whole parent chain
     /// must be restored to guaranty the same "final configuration".
     /// If you doubt consider this question: how do you know if a given property is "additive" - because it belongs to

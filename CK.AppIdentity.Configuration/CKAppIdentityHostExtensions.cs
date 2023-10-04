@@ -18,16 +18,14 @@ namespace Microsoft.Extensions.Hosting
     {
         /// <summary>
         /// Initializes this application identity from "CK-AppIdentity" configuration section.
-        /// This injects a configured instance of <see cref="ApplicationIdentityConfiguration"/> as a singleton service in the
-        /// DI container and initializes <see cref="CoreApplicationIdentity"/>
+        /// This injects a configured instance of <see cref="ApplicationIdentityServiceConfiguration"/> as
+        /// a singleton service in the DI container and initializes <see cref="CoreApplicationIdentity"/>
         /// </summary>
         /// <param name="builder">This host builder</param>
         /// <param name="contextDescriptor">Defaults to <see cref="Environment.CommandLine"/>.</param>
         /// <returns>The builder.</returns>
         public static IHostBuilder UseCKAppIdentity( this IHostBuilder builder, string? contextDescriptor = null )
         {
-            // UseCKMonitoring can be called more than once.
-            builder.UseCKMonitoring();
             var monitor = builder.GetBuilderMonitor();
             builder.ConfigureServices( (ctx,services) =>
             {

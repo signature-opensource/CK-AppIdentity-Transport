@@ -10,7 +10,7 @@ interact and how they interact can hardly exist without configuration
 
 The initial objects are defined by a standard [.Net configuration](https://learn.microsoft.com/en-us/dotnet/core/extensions/configuration)
 that is locked and cannot be changed during the application lifetime. Configured objects are immutable
-but one can dynamically define 
+but one can dynamically define new objects and destroy dynamically defined objects.
 
 
 ## CK.AppIdentity
