@@ -28,19 +28,115 @@ namespace CK.AppIdentity
 
         /// <summary>
         /// Lookups a "true"/"false" (case insensitive) boolean value in this section or above.
-        /// Defaults to false.
+        /// <para>
+        /// If the value exists and cannot be parsed, emits a log warning and returns the <paramref name="defaultValue"/>.
+        /// </para>
         /// </summary>
         /// <param name="s">This section.</param>
         /// <param name="monitor">The monitor to use.</param>
         /// <param name="key">The configuration key.</param>
-        /// <returns>The boolean value, false by default.</returns>
-        public static bool LookupBooleanValue( this ImmutableConfigurationSection s, IActivityMonitor monitor, string key )
+        /// <param name="defaultValue">Returned default value.</param>
+        /// <returns>The value.</returns>
+        public static bool LookupBooleanValue( this ImmutableConfigurationSection s,
+                                                IActivityMonitor monitor,
+                                                string key,
+                                                bool defaultValue = false )
         {
             var a = s.TryLookupValue( key );
-            if( !bool.TryParse( a, out var value ) && a != null )
+            if( a == null ) return defaultValue;
+            if( !bool.TryParse( a, out var value ) )
             {
-                Throw.DebugAssert( !value );
-                monitor.Warn( $"Unable to parse '{s.Path}:{key}' value, expected 'true' or 'false' but got '{a}'. Using default false." );
+                return Warn( s, monitor, key, "'true' or 'false'", defaultValue, a );
+            }
+            return value;
+        }
+
+        static T Warn<T>( ImmutableConfigurationSection s,
+                           IActivityMonitor monitor,
+                           string key,
+                           string expected,
+                           T defaultValue,
+                           string? a )
+        {
+            monitor.Warn( $"Unable to parse '{s.Path}:{key}' value, expected {expected} but got '{a}'. Using default '{defaultValue}'." );
+            return defaultValue;
+        }
+
+        /// <summary>
+        /// Lookups an integer value in this section or above.
+        /// <para>
+        /// If the value exists and cannot be parsed, emits a log warning and returns the <paramref name="defaultValue"/>.
+        /// </para>
+        /// </summary>
+        /// <param name="s">This section.</param>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <param name="defaultValue">Returned default value.</param>
+        /// <returns>The value.</returns>
+        public static int LookupIntValue( this ImmutableConfigurationSection s,
+                                          IActivityMonitor monitor,
+                                          string key,
+                                          int defaultValue = 0 )
+        {
+            var a = s.TryLookupValue( key );
+            if( a == null ) return defaultValue;
+            if( !int.TryParse( a, out var value ) )
+            {
+                return Warn( s, monitor, key, "an integer", defaultValue, a );
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// Lookups a <see cref="TimeSpan"/> value in this section or above.
+        /// <para>
+        /// If the value exists and cannot be parsed, emits a log warning and returns the <paramref name="defaultValue"/>.
+        /// </para>
+        /// </summary>
+        /// <param name="s">This section.</param>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <param name="defaultValue">Returned default value.</param>
+        /// <param name="allowNull">Allows "null" string to be returned as a null value (without warning).</param>
+        /// <returns>The value.</returns>
+        public static TimeSpan LookupTimeSpanValue( this ImmutableConfigurationSection s,
+                                                    IActivityMonitor monitor,
+                                                    string key,
+                                                    TimeSpan defaultValue,
+                                                    bool allowNull = false )
+        {
+            var a = s.TryLookupValue( key );
+            if( a == null ) return defaultValue;
+            if( !TimeSpan.TryParse( a, out var value ) )
+            {
+                return Warn( s, monitor, key, "a TimeSpan", defaultValue, a );
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// Lookups a <see cref="TimeSpan"/> value in this section or above.
+        /// <para>
+        /// If the value exists and cannot be parsed, emits a log warning and returns the <paramref name="defaultValue"/>.
+        /// </para>
+        /// </summary>
+        /// <param name="s">This section.</param>
+        /// <param name="monitor">The monitor to use.</param>
+        /// <param name="key">The configuration key.</param>
+        /// <param name="defaultValue">Returned default value.</param>
+        /// <param name="allowNull">Allows "null" string to be returned as a null value (without warning).</param>
+        /// <returns>The value.</returns>
+        public static double LookupDoubleValue( this ImmutableConfigurationSection s,
+                                                IActivityMonitor monitor,
+                                                string key,
+                                                double defaultValue = 0.0,
+                                                bool allowNull = false )
+        {
+            var a = s.TryLookupValue( key );
+            if( a == null ) return defaultValue;
+            if( !Double.TryParse( a, out var value ) )
+            {
+                return Warn( s, monitor, key, "a float number", defaultValue, a );
             }
             return value;
         }

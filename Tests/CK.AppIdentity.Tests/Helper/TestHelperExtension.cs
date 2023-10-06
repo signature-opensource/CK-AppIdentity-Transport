@@ -18,14 +18,14 @@ namespace CK.AppIdentity.Tests
         /// Creates a <see cref="ApplicationIdentityService"/> from a configuration builder.
         /// It must be disposed once done with it to stop its micro agent.
         /// </summary>
-        /// <param name="this">This test helper.</param>
+        /// <param name="helper">This test helper.</param>
         /// <param name="configuration">The configuration.</param>
         /// <returns>The started service.</returns>
-        public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this, Action<MutableConfigurationSection> configuration )
+        public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IMonitorTestHelper helper, Action<MutableConfigurationSection> configuration )
         {
-            var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
+            var c = ApplicationIdentityServiceConfiguration.Create( helper.Monitor, configuration );
             Throw.DebugAssert( c != null );
-            return CreateApplicationServiceAsync( @this, c );
+            return CreateApplicationServiceAsync( helper, c );
         }
 
         /// <summary>
