@@ -1,14 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <IsPackable>true</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="CK.AppIdentity" Version="0.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="6.0.19" />
   </ItemGroup>
-
 </Project>
