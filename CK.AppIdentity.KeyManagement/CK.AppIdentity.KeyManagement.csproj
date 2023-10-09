@@ -7,11 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CK.AppIdentity" Version="0.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="6.0.19" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\CK.AppIdentity\CK.AppIdentity.csproj" />
   </ItemGroup>
 
 </Project>

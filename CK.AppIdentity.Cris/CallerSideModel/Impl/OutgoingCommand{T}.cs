@@ -45,7 +45,7 @@ namespace CK.AppIdentity.Cris
                     var r = c.Result;
                     if( r is ICrisResultError error )
                     {
-                        var ex = new CKException( $"Request failed with {error.Errors.Count} errors." );
+                        var ex = new CKException( $"Request failed with {error.Messages.Count} errors." );
                         result.SetException( ex );
                     }
                     else

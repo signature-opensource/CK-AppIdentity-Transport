@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />
-    <ProjectReference Include="..\CK.AppIdentity\CK.AppIdentity.csproj" />
   </ItemGroup>
 
 </Project>

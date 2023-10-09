@@ -22,17 +22,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{1A7E3E39
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeCakeBuilder", "CodeCakeBuilder\CodeCakeBuilder.csproj", "{FD4817B6-3CD7-4E74-AA10-7CA95FDFCF2D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Configuration", "CK.AppIdentity.Configuration\CK.AppIdentity.Configuration.csproj", "{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Configuration.Tests", "Tests\CK.AppIdentity.Configuration.Tests\CK.AppIdentity.Configuration.Tests.csproj", "{288DA460-60E8-4A44-B61C-A576A0D8512F}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity", "CK.AppIdentity\CK.AppIdentity.csproj", "{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Tests", "Tests\CK.AppIdentity.Tests\CK.AppIdentity.Tests.csproj", "{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris", "CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj", "{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.Cris.Tests", "Tests\CK.AppIdentity.Cris.Tests\CK.AppIdentity.Cris.Tests.csproj", "{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.TransportLayer", "CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj", "{A74169D1-AE1F-42BB-B05D-27BD1FF94692}"
 EndProject
@@ -47,7 +37,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Doc", "Doc", "{92AEB1AC-BF1
 		Doc\CK-AppIdentity.pptx = Doc\CK-AppIdentity.pptx
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CK.AppIdentity.KeyManagement", "CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj", "{F9509320-E097-42DA-A8C6-44C5D7FF1B2C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CK.AppIdentity.KeyManagement", "CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj", "{F9509320-E097-42DA-A8C6-44C5D7FF1B2C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -59,30 +49,10 @@ Global
 		{FD4817B6-3CD7-4E74-AA10-7CA95FDFCF2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FD4817B6-3CD7-4E74-AA10-7CA95FDFCF2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FD4817B6-3CD7-4E74-AA10-7CA95FDFCF2D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2424EBCD-CDBF-47F6-87CE-0F4FA0DA2377}.Release|Any CPU.Build.0 = Release|Any CPU
-		{288DA460-60E8-4A44-B61C-A576A0D8512F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{288DA460-60E8-4A44-B61C-A576A0D8512F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{288DA460-60E8-4A44-B61C-A576A0D8512F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{288DA460-60E8-4A44-B61C-A576A0D8512F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{15E25A67-70B2-4DC6-B612-F3B6FD7ABD2F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5D552BF7-DECE-4ED4-98AD-5D23CBCDF5C9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A74169D1-AE1F-42BB-B05D-27BD1FF94692}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -108,9 +78,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{288DA460-60E8-4A44-B61C-A576A0D8512F} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
-		{72D7AFC0-8F8C-4C51-885B-C0B3E75F7ACD} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
-		{42529DF3-A37F-4AAA-9A88-7315F93EB7CB} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{C94859C9-ED2F-4824-A6D2-501C78C1612A} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{10311192-BE3A-483B-82AB-B8E6878A04E2} = {1A7E3E39-6483-4802-8B27-C4D245D35D09}
 		{92AEB1AC-BF13-4223-B60A-D860DED791F7} = {7C9F751D-25CD-4A19-838B-B69E7B897468}

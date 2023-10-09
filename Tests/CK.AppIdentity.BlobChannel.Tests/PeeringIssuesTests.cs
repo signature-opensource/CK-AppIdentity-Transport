@@ -145,7 +145,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     theIssue.Kind.Should().Be( PeeringIssueKind.UnknwonIncoming );
                     Throw.DebugAssert( theIssue.IncomingRequest != null );
                     theIssue.IncomingRequest.CurrentRemoteIdentity.Should().NotBeNull();
-                    theIssue.IncomingRequest.FullName.Should().Be( "Test/$Sender/#Development" );
+                    theIssue.IncomingRequest.FullName.Should().Be( "Test/$Sender/#Dev" );
                     theIssue.IncomingRequest.AvailableProtocols.Should().BeEquivalentTo( new[] { "Blob.0" } );
                     theIssue.IncomingRequest.ValidClockOffset.Should().BeTrue();
 

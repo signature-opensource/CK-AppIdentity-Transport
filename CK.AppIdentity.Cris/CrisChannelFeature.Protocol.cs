@@ -40,8 +40,7 @@ namespace CK.AppIdentity.Cris
                     w.WriteNullableString( (string?)request.ExtraData );
                     w.Commit();
                     Write( request.Payload, bytes );
-                } );
-                message.Source = request;
+                }, source: request );
                 if( highPriority ? TryEnqueueHighPriority( message ) : TryEnqueue( message ) )
                 {
                     return true;
@@ -50,7 +49,7 @@ namespace CK.AppIdentity.Cris
                 return false;
             }
 
-            protected override bool OnSendMessage( IParallelLogger logger, ITransportMessageData message, out TransportMessage? replacement )
+            protected override bool OnSendMessage( IParallelLogger logger, IOutgoingMessageData message, out IOutgoingMessage? replacement )
             {
                 if( message.Source is OutgoingCommand r ) r.SetSentDate( logger, DateTime.UtcNow );
                 replacement = null;
@@ -64,7 +63,7 @@ namespace CK.AppIdentity.Cris
                     FastByteWriter w = new FastByteWriter( bytes );
                     w.WriteByte( DValidationResult );
                     w.WriteReadLogKey( id );
-                    w.WriteReadCrisValidationResult( validationResult );
+                    w.WriteCrisValidationResult( validationResult );
                     w.Commit();
                 } );
                 if( TryEnqueueHighPriority( message ) )
@@ -75,7 +74,7 @@ namespace CK.AppIdentity.Cris
                 return false;
             }
 
-            internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutor.ICrisExecutorPayload? result )
+            internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutionHost.ICrisJobResult? result )
             {
                 var message = MessageFactory.Create( bytes =>
                 {
@@ -119,58 +118,62 @@ namespace CK.AppIdentity.Cris
                 }
             }
 
-            protected override ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
+            //protected override ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
+            //{
+            //    HandleMessage( monitor, _feature, message.Message );
+            //    message.Dispose();
+            //    return default;
+
+            //    static void HandleMessage( IActivityMonitor monitor,
+            //                               CrisChannelFeature feature,
+            //                               ReadOnlySequence<byte> message )
+            //    {
+            //        var r = new FastByteReader( message  );
+            //        var discriminator = r.ReadByte();
+            //        switch( discriminator )
+            //        {
+            //            case DSendRequest:
+            //                {
+            //                    monitor.Debug( $"Handling incoming Cris request." );
+            //                    var token = ActivityMonitor.Token.Parse( r.ReadString() );
+            //                    var authToken = r.ReadNullableString();
+            //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
+            //                    var payload = (IAbstractCommand)feature._pocoDirectory.Read( ref rPoco )!;
+            //                    feature._executor.BackgroundExecute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
+            //                    break;
+            //                }
+            //            case DValidationResult:
+            //                {
+            //                    monitor.Debug( $"Handling Cris validation message." );
+            //                    feature._outgoingRequestCache.SetValidationResult( monitor.ParallelLogger, r.ReadLogKey(), r.ReadCrisValidationResult() );
+            //                    break;
+            //                }
+            //            case DEvent:
+            //                {
+            //                    monitor.Debug( $"Handling Cris event message." );
+            //                    var id = r.ReadLogKey();
+            //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
+            //                    var e = (IEvent)feature._pocoDirectory.Read( ref rPoco )!;
+            //                    feature._outgoingRequestCache.CollectCommandEvent( monitor, id, e );
+            //                    break;
+            //                }
+            //            case DRequestResult:
+            //                {
+            //                    monitor.Debug( $"Handling Cris request result." );
+            //                    var id = r.ReadLogKey();
+            //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
+            //                    var result = (CrisExecutor.ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
+            //                    feature._outgoingRequestCache.SetResult( monitor.ParallelLogger, id, result.Result );
+            //                    break;
+            //                }
+            //        }
+            //    }
+            //}
+
+            protected override ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
             {
-                HandleMessage( monitor, _feature, message.Message );
-                message.Dispose();
-                return default;
-
-                static void HandleMessage( IActivityMonitor monitor,
-                                           CrisChannelFeature feature,
-                                           ReadOnlySequence<byte> message )
-                {
-                    var r = new FastByteReader( message  );
-                    var discriminator = r.ReadByte();
-                    switch( discriminator )
-                    {
-                        case DSendRequest:
-                            {
-                                monitor.Debug( $"Handling incoming Cris request." );
-                                var token = ActivityMonitor.Token.Parse( r.ReadString() );
-                                var authToken = r.ReadNullableString();
-                                var rPoco = new Utf8JsonReader( r.GetRemainder() );
-                                var payload = (IAbstractCommand)feature._pocoDirectory.Read( ref rPoco )!;
-                                feature._executor.BackgroundExecute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
-                                break;
-                            }
-                        case DValidationResult:
-                            {
-                                monitor.Debug( $"Handling Cris validation message." );
-                                feature._outgoingRequestCache.SetValidationResult( monitor.ParallelLogger, r.ReadLogKey(), r.ReadCrisValidationResult() );
-                                break;
-                            }
-                        case DEvent:
-                            {
-                                monitor.Debug( $"Handling Cris event message." );
-                                var id = r.ReadLogKey();
-                                var rPoco = new Utf8JsonReader( r.GetRemainder() );
-                                var e = (IEvent)feature._pocoDirectory.Read( ref rPoco )!;
-                                feature._outgoingRequestCache.CollectCommandEvent( monitor, id, e );
-                                break;
-                            }
-                        case DRequestResult:
-                            {
-                                monitor.Debug( $"Handling Cris request result." );
-                                var id = r.ReadLogKey();
-                                var rPoco = new Utf8JsonReader( r.GetRemainder() );
-                                var result = (CrisExecutor.ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
-                                feature._outgoingRequestCache.SetResult( monitor.ParallelLogger, id, result.Result );
-                                break;
-                            }
-                    }
-                }
+                throw new NotImplementedException();
             }
-
         }
     }
 

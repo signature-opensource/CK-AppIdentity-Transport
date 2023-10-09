@@ -76,10 +76,13 @@ namespace CK.AppIdentity.Cris
             _validation.SetResult( v );
             if( !v.Success )
             {
-                SetResult( logger, errorFactory.Create( e => e.Errors.AddRange( v.Errors ) ) );
+                SetResult( logger, errorFactory.Create( e => e.Messages.AddRange( v.Messages ) ) );
                 return true;
             }
-            if( _payload.CrisPocoModel.IsEvent )
+            // TODO: This has nothing to do here (just compiling for the moment).
+            if( _payload.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyEvent
+                || _payload.CrisPocoModel.Kind == CrisPocoKind.RoutedEvent
+                || _payload.CrisPocoModel.Kind == CrisPocoKind.RoutedImmediateEvent )
             {
                 SetResult( logger, null );
                 return true;
