@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -6,9 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.Auth.Abstractions" Version="5.0.0" />
-    <PackageReference Include="CK.Poco.Json" Version="24.0.0" />
-    <PackageReference Include="CK.Cris.Executor" Version="0.19.1" />
+    <PackageReference Include="CK.Auth.Abstractions" Version="5.0.1--0001-develop" />
+    <PackageReference Include="CK.Poco.Json" Version="24.0.1--0007-develop" />
+    <PackageReference Include="CK.Cris.Executor" Version="0.19.3--0010-develop" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />
