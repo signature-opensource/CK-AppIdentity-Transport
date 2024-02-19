@@ -93,8 +93,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
         }
 
         SystemClockTester _systemClock = new SystemClockTester( 50 );
-        void ConfigureClock( ServiceCollection services ) => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
-
+        void ConfigureClock( ServiceCollection services )
+        {
+            services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+        }
 
         [TestCase( "Reverted" )]
         [TestCase( "Regular" )]

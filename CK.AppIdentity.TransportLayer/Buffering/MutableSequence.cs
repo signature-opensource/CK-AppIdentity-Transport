@@ -303,7 +303,7 @@ namespace CK.AppIdentity.TransportLayer
             return newSegment;
         }
 
-        private MutableSequence<T>.Segment GetCachedSegmentOrCreateOne()
+        MutableSequence<T>.Segment GetCachedSegmentOrCreateOne()
         {
             Segment? newSegment = _freeSegmentHead;
             if( newSegment != null )

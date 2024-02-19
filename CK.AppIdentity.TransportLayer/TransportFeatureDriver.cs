@@ -26,9 +26,11 @@ namespace CK.AppIdentity.TransportLayer
         /// Initializes a new transport driver.
         /// </summary>
         /// <param name="s">The application identity service.</param>
+        /// <param name="keyManagement">The Key management is required: the RemoteKeys must be initialized before the TransportFeatures.</param>
         /// <param name="transportTypes">The available type of transports.</param>
         /// <param name="protocolDirectory">The transport protocol directory.</param>
         public TransportFeatureDriver( ApplicationIdentityService s,
+                                       KeyManagementFeatureDriver keyManagement,
                                        IEnumerable<ITransportTypeService> transportTypes,
                                        MessageProtocolDirectoryService protocolDirectory )
             : base( s, isAllowedByDefault: true )

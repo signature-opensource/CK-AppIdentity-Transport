@@ -56,11 +56,14 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
             serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
 
-            serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
-            serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
-
+            // Adds the TransportFeatureDriver before the KeyManagementFeatureDriver to test
+            // the existence of the dependency from TransportFeatureDriver to KeyManagementFeatureDriver.
+            // (Without the - unused - constructor parameter, registering services in this order fails.)
             serviceBuilder.AddSingleton<TransportFeatureDriver>();
             serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
+
+            serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
+            serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
 
             serviceBuilder.AddSingleton<BlobChannelFeatureDriver>();
             serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
