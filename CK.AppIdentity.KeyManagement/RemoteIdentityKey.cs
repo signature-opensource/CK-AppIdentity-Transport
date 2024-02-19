@@ -76,7 +76,7 @@ namespace CK.AppIdentity.KeyManagement
         public bool VerifyHash( ReadOnlySpan<byte> hash, ReadOnlySpan<byte> signature ) => _key.VerifyHash( hash, signature );
 
         /// <inheritdoc />
-        public void WriteFile( NormalizedPath fullPath ) => _keyData.WriteFile( fullPath );
+        public void WritePublicKeyFile( NormalizedPath fullPath ) => _keyData.WritePublicKeyFile( fullPath );
 
         /// <summary>
         /// Disposes the EDCsa verifier.

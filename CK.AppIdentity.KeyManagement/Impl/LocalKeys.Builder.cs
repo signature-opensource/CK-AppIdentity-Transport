@@ -32,6 +32,9 @@ namespace CK.AppIdentity.KeyManagement
             {
                 var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
                 int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
+                // KeyRenewalFrequency may be introduced to generate more certificates
+                // but with shorter validity.
+                int renewalFrequency = 1;
 
                 var systemClock = _local.ApplicationIdentityService.SystemClock;
                 var now = systemClock.UtcNow;
@@ -39,16 +42,17 @@ namespace CK.AppIdentity.KeyManagement
                 var identityPath = _store.FolderPath.AppendPart( "Keys" );
                 // File name matters:
                 //   - The file name is in FileUtil.FileNameUniqueTimeUtcFormat format.
-                //   - The date time parsed from the name is grater than now: This is our certificate name.
+                //   - The date time parsed from the name is greater than now: This is our certificate name.
                 //   - The certificates are sorted in reverse order of their certificate name.
                 //   => The first one is the one to use, the current one, because it is the most recent one.
                 List<LocalIdentityKey> identities = LoadIdentityKeys( monitor, protector, now, identityPath );
                 // The certificate to consider is the last one of the list.
-                // If it cannot guaranty the "AllowedOfflineDays", we must issue a new identity valid
-                // from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
-                if( identities.Count == 0 || identities[0].NotAfter < today.AddDays( allowedOfflineDays + 1 ) )
+                // If it cannot guaranty the "AllowedOfflineDays", we must issue a new identity valid from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
+                if( identities.Count == 0 || identities[0].NotAfter < today.AddDays( (allowedOfflineDays / renewalFrequency) + 1 ) )
                 {
-                    var newOne = CreateIdentityCertificate( _local.FullName, today.AddDays( 2 * allowedOfflineDays ), now );
+                    var newOne = CreateIdentityCertificate( _local.FullName,
+                                                            today.AddDays( ((renewalFrequency + 1) * allowedOfflineDays) / renewalFrequency ),
+                                                            now );
                     if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
                     else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {newOne.NotAfter:yyyy-MM-dd}. " +
                                        $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
@@ -102,12 +106,12 @@ namespace CK.AppIdentity.KeyManagement
                         if( !File.ReadAllBytes( foundCurrent ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
                         {
                             monitor.Warn( $"Invalid file content '{foundCurrent}' (does not contain the public key). Rewriting it." );
-                            current.WriteFile( currentPath );
+                            current.WritePublicKeyFile( currentPath );
                         }
                     }
                     else
                     {
-                        current.WriteFile( currentPath );
+                        current.WritePublicKeyFile( currentPath );
                     }
                 }
                 catch( Exception ex )
@@ -218,13 +222,18 @@ namespace CK.AppIdentity.KeyManagement
                 }
                 if( c.NotBefore >= now )
                 {
-                    LogAndCleanup( monitor, filePath, $"Certificate '{filePath}' is not yet valid (NotBefore: {c.NotBefore}). This is not supported.", tags: ActivityMonitor.Tags.ToBeInvestigated );
+                    LogAndCleanup( monitor,
+                                   filePath,
+                                   $"Certificate '{filePath}' is not yet valid (NotBefore: {c.NotBefore}). This is not supported.",
+                                   tags: ActivityMonitor.Tags.ToBeInvestigated );
                     success = false;
                 }
                 var expectedSubject = $"CN=\"{_local.FullName}\"";
                 if( c.Subject != expectedSubject )
                 {
-                    LogAndCleanup( monitor, filePath, $"Invalid certificate subject (expected '{expectedSubject}', got '{c.Subject}') for '{filePath}'." );
+                    LogAndCleanup( monitor,
+                                   filePath,
+                                   $"Invalid certificate subject (expected '{expectedSubject}', got '{c.Subject}') for '{filePath}'." );
                     success = false;
                 }
                 if( !c.HasPrivateKey )

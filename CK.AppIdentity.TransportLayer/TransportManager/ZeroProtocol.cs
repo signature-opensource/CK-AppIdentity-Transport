@@ -1,7 +1,9 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

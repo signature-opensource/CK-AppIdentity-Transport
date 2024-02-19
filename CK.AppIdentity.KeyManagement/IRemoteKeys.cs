@@ -1,6 +1,5 @@
 using CK.Core;
 using System;
-using System.Collections.Generic;
 
 namespace CK.AppIdentity.KeyManagement
 {
@@ -34,16 +33,6 @@ namespace CK.AppIdentity.KeyManagement
         /// connection when the trusted remote renews its identity key.
         /// </summary>
         RemoteIdentityKey? TrustedIdentity { get; }
-
-        /// <summary>
-        /// Gets the "AllowClockSet" configuration option.
-        /// When true the system clock may be updated based on the remote's time whenever
-        /// the remote system and this local clock are too different.
-        /// <para>
-        /// Defaults to false and applies only to initiators.
-        /// </para>
-        /// </summary>
-        bool AllowClockSet { get; }
 
         /// <summary>
         /// Sets or clears the trusted identity.

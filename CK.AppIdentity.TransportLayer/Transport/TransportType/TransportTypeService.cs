@@ -3,6 +3,10 @@ using System.Net;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using CK.AppIdentity.KeyManagement;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {

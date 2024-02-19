@@ -1,6 +1,9 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

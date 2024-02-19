@@ -25,7 +25,6 @@ namespace CK.AppIdentity.KeyManagement
             {
                 ImmutableConfigurationSection configuration = _remote.Configuration.Configuration;
                 AutoTrustKey autoTrust = GetAutoTrustKey( monitor, configuration );
-                bool allowClockSet = GetAllowClockSet( monitor, configuration );
 
                 DateTime now = _remote.ApplicationIdentityService.SystemClock.UtcNow;
                 RemoteIdentityKeyData? c = null;
@@ -47,20 +46,15 @@ namespace CK.AppIdentity.KeyManagement
                 if( c != null )
                 {
                     monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
-                    return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, allowClockSet );
+                    return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust );
                 }
                 monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-                return new RemoteKeys( _localKeys, _remote, null, autoTrust, allowClockSet );
+                return new RemoteKeys( _localKeys, _remote, null, autoTrust );
 
                 static string ExtractTimeName( string s )
                 {
                     return s.Substring( s.IndexOf( '.' ) + 1 );
                 }
-            }
-
-            static bool GetAllowClockSet( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
-            {
-                return configuration.LookupBooleanValue( monitor, nameof( AllowClockSet ) );
             }
 
             AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
@@ -69,7 +63,9 @@ namespace CK.AppIdentity.KeyManagement
                 var a = configuration.TryLookupValue( nameof( AutoTrustKey ) );
                 if( a != null && !Enum.TryParse( a, true, out autoTrust ) )
                 {
-                    monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AutoTrustKey )}' value, expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. Using default '{AutoTrustKey.Never}'." );
+                    monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AutoTrustKey )}' value, " +
+                                  $"expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. " +
+                                  $"Using default '{AutoTrustKey.Never}'." );
                 }
                 if( autoTrust != AutoTrustKey.Never )
                 {

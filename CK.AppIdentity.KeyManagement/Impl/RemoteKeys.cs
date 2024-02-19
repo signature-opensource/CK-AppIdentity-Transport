@@ -1,15 +1,5 @@
 using CK.Core;
-using Microsoft.AspNetCore.DataProtection;
 using System;
-using System.Buffers;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using System.Threading;
-using static CK.Core.CheckedWriteStream;
 
 namespace CK.AppIdentity.KeyManagement
 {
@@ -20,15 +10,13 @@ namespace CK.AppIdentity.KeyManagement
         readonly IRemoteParty _remote;
         RemoteIdentityKey? _identity;
         readonly AutoTrustKey _autoTrustKey;
-        readonly bool _allowClockSet;
 
-        RemoteKeys( LocalKeys localKeys, IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey, bool allowClockSet )
+        RemoteKeys( LocalKeys localKeys, IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey )
         {
             _localKeys = localKeys;
             _remote = remote;
             _identity = identity;
             _autoTrustKey = autoTrustKey;
-            _allowClockSet = allowClockSet;
         }
 
         public ILocalKeys LocalKeys => _localKeys;
@@ -38,8 +26,6 @@ namespace CK.AppIdentity.KeyManagement
         public RemoteIdentityKey? TrustedIdentity => _identity;
 
         public AutoTrustKey AutoTrustKey => _autoTrustKey;
-
-        public bool AllowClockSet => _allowClockSet;
 
         public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
         {
@@ -66,7 +52,7 @@ namespace CK.AppIdentity.KeyManagement
             if( identity != null )
             {
                 var cPath = _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{identity.Name}.public" );
-                identity.WriteFile( cPath );
+                identity.WritePublicKeyFile( cPath );
             }
             return true;
         }

@@ -1,11 +1,14 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using Microsoft.Extensions.Hosting;
+using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

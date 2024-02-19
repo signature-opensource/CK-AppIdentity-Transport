@@ -1,10 +1,13 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using Microsoft.VisualBasic;
+using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using static CK.Core.ActivityMonitorSimpleCollector;
 
 namespace CK.AppIdentity.TransportLayer
@@ -310,17 +313,6 @@ namespace CK.AppIdentity.TransportLayer
                                 // If the nonce or the verification failed, retries in 30 seconds.
                                 transportManager.Logger.Trace( $"Retrying in 30 seconds." );
                                 return 30;
-                            }
-                            // If we trust the remote and the "AllowClockSet" configuration is true, try to update our clock.
-                            if( foundTrustedKey && remote.RemoteKeys.AllowClockSet )
-                            {
-                                bool success = await transportManager.TryAdjustSystemTimeAsync( remote.Party, msgReceivedTime - remoteTime ).ConfigureAwait( false );
-                                if( success )
-                                {
-                                    // On success, retry quickly.
-                                    transportManager.Logger.Trace( $"Retrying in 1 second." );
-                                    return 1;
-                                }
                             }
                             transportManager.Logger.Trace( $"Retrying in 20 seconds." );
                             return 20;

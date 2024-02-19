@@ -1,9 +1,12 @@
 using CK.Core;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

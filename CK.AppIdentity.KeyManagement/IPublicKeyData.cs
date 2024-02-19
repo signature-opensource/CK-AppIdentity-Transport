@@ -43,6 +43,6 @@ namespace CK.AppIdentity.KeyManagement
         /// Creates or overwrites a file with this public key.
         /// </summary>
         /// <param name="fullPath">The target file path.</param>
-        void WriteFile( NormalizedPath fullPath );
+        void WritePublicKeyFile( NormalizedPath fullPath );
     }
 }

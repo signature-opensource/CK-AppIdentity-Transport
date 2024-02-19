@@ -1,5 +1,8 @@
 using CK.Core;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

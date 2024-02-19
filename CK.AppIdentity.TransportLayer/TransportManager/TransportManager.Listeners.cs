@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Diagnostics;
+using System.Linq;
 
 namespace CK.AppIdentity.TransportLayer
 {

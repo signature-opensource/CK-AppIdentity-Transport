@@ -3,6 +3,7 @@ using CommunityToolkit.HighPerformance.Buffers;
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer
 {

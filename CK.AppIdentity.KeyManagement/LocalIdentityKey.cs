@@ -60,10 +60,14 @@ namespace CK.AppIdentity.KeyManagement
         /// </summary>
         /// <param name="hash">The hash for which a signature must be computed.</param>
         /// <param name="signature">The buffer to receive the signature.</param>
-        public bool TrySignHash( ReadOnlySpan<byte> hash, Span<byte> signature, out int bytesWritten ) => _privateKey.TrySignHash( hash, signature, out bytesWritten );
+        /// <returns>false if destination is not long enough to receive the signature.</returns>
+        public bool TrySignHash( ReadOnlySpan<byte> hash, Span<byte> signature, out int bytesWritten )
+        {
+            return _privateKey.TrySignHash( hash, signature, DSASignatureFormat.IeeeP1363FixedFieldConcatenation, out bytesWritten );
+        }
 
         /// <inheritdoc />
-        public void WriteFile( NormalizedPath fullPath )
+        public void WritePublicKeyFile( NormalizedPath fullPath )
         {
             File.WriteAllBytes( fullPath, _publicRaw );
         }

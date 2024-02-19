@@ -6,6 +6,8 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

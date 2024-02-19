@@ -1,4 +1,6 @@
 using CK.AppIdentity.KeyManagement;
+using System;
+using System.Collections.Generic;
 
 namespace CK.AppIdentity.TransportLayer
 {

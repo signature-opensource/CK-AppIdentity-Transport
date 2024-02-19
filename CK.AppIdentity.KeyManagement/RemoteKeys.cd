@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="FullSignature">
+  <Class Name="CK.AppIdentity.KeyManagement.RemoteIdentityKey">
+    <Position X="6.75" Y="0.5" Width="5" />
+    <Members>
+      <Field Name="_key" Hidden="true" />
+      <Field Name="_keyData" Hidden="true" />
+      <Method Name="Equals" Hidden="true" />
+      <Method Name="OnTeardown" Hidden="true" />
+      <Method Name="RemoteIdentityKey" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>AMAAQAgAAAABAAAAgACAAAQAAAAAAAAAAAAAAAAQABA=</HashCode>
+      <FileName>RemoteIdentityKey.cs</FileName>
+    </TypeIdentifier>
+    <Lollipop Position="1.109" />
+  </Class>
+  <Interface Name="CK.AppIdentity.KeyManagement.IRemoteKeys">
+    <Position X="0.5" Y="0.5" Width="5.75" />
+    <TypeIdentifier>
+      <HashCode>AUAABAAAAEgAAAAAAAAAAAABAAAAAAIAAAAAAAAAAAA=</HashCode>
+      <FileName>IRemoteKeys.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Enum Name="CK.AppIdentity.KeyManagement.AutoTrustKey">
+    <Position X="0.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAEAAAAAAAQAAAAAAAAgAAAAAAA=</HashCode>
+      <FileName>AutoTrustKey.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

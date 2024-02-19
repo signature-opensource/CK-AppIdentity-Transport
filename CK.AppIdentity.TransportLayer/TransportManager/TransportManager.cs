@@ -2,9 +2,12 @@ using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.PerfectEvent;
 using Microsoft.VisualBasic;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -208,13 +211,6 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new SwitchOnJob( feature ) );
         }
 
-        internal Task<bool> TryAdjustSystemTimeAsync( IRemoteParty party, TimeSpan offset )
-        {
-            var task = new TaskCompletionSource<bool>();
-            PushTypedJob( new TryAdjustSystemTimeJob( task, party, offset ) );
-            return task.Task;
-        }
-
         internal Task TearDownAsync( TransportFeature feature )
         {
             // The empty string is the "Torn down" marker:
@@ -234,14 +230,13 @@ namespace CK.AppIdentity.TransportLayer
         sealed record class KillTransportJob( Transport Transport, TimeSpan ShutUp );
         sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, string Reason );
         sealed record class SwitchOnJob( TransportFeature Feature );
-        sealed record class TryAdjustSystemTimeJob( TaskCompletionSource<bool> Task, IRemoteParty Party, TimeSpan Offset );
 
         protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
         {
             switch( job )
             {
                 case KillTransportJob j:
-                    return HandleKillTransport( monitor, j );
+                    return HandleKillTransportAsync( monitor, j );
                 case TryConnectToJob c:
                     var f = c.Remote;
                     Throw.DebugAssert( f.TargetAddress != null );
@@ -254,41 +249,21 @@ namespace CK.AppIdentity.TransportLayer
                     _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( this, t ) );
                     return default;
                 case TransportFeature newFeature:
-                    return HandleNewRemoteTransportFeature( monitor, newFeature );
+                    return HandleNewRemoteTransportFeatureAsync( monitor, newFeature );
                 case PeeringIssueJob p:
-                    return HandlePeeringIssue( monitor, p );
+                    return HandlePeeringIssueAsync( monitor, p );
                 case NewValidTransportJob j:
-                    return HandleNewValidTransport( monitor, j, _exposedFeature );
+                    return HandleNewValidTransportAsync( monitor, j, _exposedFeature );
                 case SwitchOnJob on:
                     return on.Feature.DoSwitchOnAsync( monitor );
                 case SwitchOffJob off:
                     return off.Feature.DoSwitchOffAsync( monitor, off.Done, off.Reason );
-                case TryAdjustSystemTimeJob time:
-                    return HandleTryAdjustSystemTime( monitor, time.Task, time.Party, time.Offset );
             }
             if( job == this )
             {
                 return HandleStopAsync( monitor );
             }
             return base.ExecuteTypedJobAsync( monitor, job );
-        }
-
-        ValueTask HandleTryAdjustSystemTime( IActivityMonitor monitor, TaskCompletionSource<bool> task, IRemoteParty party, TimeSpan offset )
-        {
-            using( monitor.OpenWarn( $"Trying to adjust system time by '{offset}' from remote '{party}'." ) )
-            {
-                try
-                {
-                    bool success = _agent.SystemClock.TryAdjustCurrentTime( monitor, offset );
-                    task.SetResult( success );
-                }
-                catch( Exception ex )
-                {
-                    monitor.Error( "While trying to adjust system time.", ex );
-                    task.SetResult( false );
-                }
-                return default;
-            }
         }
 
         ValueTask HandleStopAsync( IActivityMonitor monitor )
@@ -299,12 +274,12 @@ namespace CK.AppIdentity.TransportLayer
             return default;
         }
 
-        async ValueTask HandleNewRemoteTransportFeature( IActivityMonitor monitor, TransportFeature newFeature )
+        async ValueTask HandleNewRemoteTransportFeatureAsync( IActivityMonitor monitor, TransportFeature newFeature )
         {
             await _exposedFeature.OnRemoteAppearedAsync( monitor, newFeature );
         }
 
-        async ValueTask HandleKillTransport( IActivityMonitor monitor, KillTransportJob j )
+        async ValueTask HandleKillTransportAsync( IActivityMonitor monitor, KillTransportJob j )
         {
             var t = j.Transport;
             if( t.SetHardCondemned() )
@@ -342,12 +317,12 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        async ValueTask HandlePeeringIssue( IActivityMonitor monitor, PeeringIssueJob job )
+        async ValueTask HandlePeeringIssueAsync( IActivityMonitor monitor, PeeringIssueJob job )
         {
             await _exposedFeature.AddOrUpdateIssueAsync( monitor, job.Kind, job.Message, job.Remote, job.EnlistUrl, job.InvalidClockOffset );
         }
 
-        static async ValueTask HandleNewValidTransport( IActivityMonitor monitor, NewValidTransportJob remoteTransport, TransportManagerFeature forPeeringIssue )
+        static async ValueTask HandleNewValidTransportAsync( IActivityMonitor monitor, NewValidTransportJob remoteTransport, TransportManagerFeature forPeeringIssue )
         {
             Transport t = remoteTransport.Transport;
             using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote}'." ) )

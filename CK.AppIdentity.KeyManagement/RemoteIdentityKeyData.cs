@@ -89,7 +89,7 @@ namespace CK.AppIdentity.KeyManagement
         }
 
         /// <inheritdoc />
-        public void WriteFile( NormalizedPath fullPath )
+        public void WritePublicKeyFile( NormalizedPath fullPath )
         {
             File.WriteAllBytes( fullPath, _publicRaw );
         }
