@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="FullSignature">
+  <Class Name="CK.AppIdentity.TransportLayer.TransportManagerFeature">
+    <Position X="0.5" Y="0.5" Width="5" />
+    <Members>
+      <Field Name="_connectionAvailabilityChanged" Hidden="true" />
+      <Field Name="_exposedClonedIssues" Hidden="true" />
+      <Field Name="_exposedIssues" Hidden="true" />
+      <Field Name="_maxUnknownRemoteCount" Hidden="true" />
+      <Field Name="_peeringIssueChanged" Hidden="true" />
+      <Field Name="_peeringIssues" Hidden="true" />
+      <Field Name="_transportFeatureChangedEvent" Hidden="true" />
+      <Field Name="_transportManager" Hidden="true" />
+      <Field Name="_unknwonRemoteCount" Hidden="true" />
+      <Method Name="AddNewPeeringIssueAsync" Hidden="true" />
+      <Method Name="AddNewUnknownAndTrimExcessAsync" Hidden="true" />
+      <Method Name="AddOrUpdateIssueAsync" Hidden="true" />
+      <Method Name="OnRemoteAppeared" Hidden="true" />
+      <Method Name="OnRemoteAppearedAsync" Hidden="true" />
+      <Method Name="OnRemoteTornDown" Hidden="true" />
+      <Method Name="OnRemoteTornDownAsync" Hidden="true" />
+      <Method Name="OnTransportAvailableAsync" Hidden="true" />
+      <Method Name="TransportManagerFeature" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>AAABAAACCAICBggAAAAhJAAQEIIZAAAAoAAAFAAACAI=</HashCode>
+      <FileName>TransportManagerFeature\TransportManagerFeature.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CK.AppIdentity.TransportLayer.PeeringIssue">
+    <Position X="0.5" Y="3.5" Width="3.75" />
+    <Members>
+      <Field Name="_cloneSource" Hidden="true" />
+      <Field Name="_enlistUrl" Hidden="true" />
+      <Field Name="_fullName" Hidden="true" />
+      <Field Name="_initialMessage" Hidden="true" />
+      <Field Name="_invalidClockOffset" Hidden="true" />
+      <Field Name="_kind" Hidden="true" />
+      <Field Name="_lock" Hidden="true" />
+      <Field Name="_remote" Hidden="true" />
+      <Field Name="_time" Hidden="true" />
+      <Method Name="CheckInvariants" Hidden="true" />
+      <Method Name="OnRemoteAppeared" Hidden="true" />
+      <Method Name="OnRemoteTornDown" Hidden="true" />
+      <Method Name="PeeringIssue" Hidden="true" />
+      <Method Name="SetNoneIssueKind" Hidden="true" />
+      <Method Name="Update" Hidden="true" />
+    </Members>
+    <TypeIdentifier>
+      <HashCode>AAQAAABAiABwAIAxCQAAAANUwABEAAAAAAAAAAAAIBE=</HashCode>
+      <FileName>TransportManagerFeature\PeeringIssue.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Interface Name="CK.AppIdentity.TransportLayer.IIncomingRequest">
+    <Position X="7" Y="3.5" Width="3.5" />
+    <TypeIdentifier>
+      <HashCode>IAAAAAAABAAAAIAAAEQAAAAJAAAAAAAAAACBAAAAQgA=</HashCode>
+      <FileName>TransportManagerFeature\IIncomingRequest.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Enum Name="CK.AppIdentity.TransportLayer.PeeringIssueKind">
+    <Position X="4.5" Y="3.5" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAQABAAAAAAABgAAQAAAAQAAIAQAAAAAAAAgEAQEA=</HashCode>
+      <FileName>TransportManagerFeature\PeeringIssueKind.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

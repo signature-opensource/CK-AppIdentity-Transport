@@ -4,8 +4,6 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NUnit.Framework;
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -14,87 +12,22 @@ using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
+
+
     [TestFixture]
-    public class PeeringIssuesTests
+    public class ListenerPeeringIssuesTests
     {
-
-        sealed class PeeringIssueWaiter : IDisposable
-        {
-            readonly TransportManagerFeature _transport;
-            TaskCompletionSource<PeeringIssue> _nextEvent;
-            PeeringIssue? _lastEvent;
-
-            public PeeringIssueWaiter( TransportManagerFeature transport )
-            {
-                _transport = transport;
-                _nextEvent = new TaskCompletionSource<PeeringIssue>();
-                transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;
-            }
-
-            void OnPeeringIssueChanged( IActivityMonitor monitor, PeeringIssue e )
-            {
-                var n = _nextEvent;
-                _nextEvent = new TaskCompletionSource<PeeringIssue>();
-                n.SetResult( _lastEvent = e );
-            }
-
-            public void Dispose()
-            {
-                _transport.PeeringIssueChanged.Sync -= OnPeeringIssueChanged;
-            }
-
-            public PeeringIssue? LastEvent => _lastEvent;
-
-            public Task<PeeringIssue> NextEvent => _nextEvent.Task;
-        }
-
-        sealed class PeeringIssueCollector
-        {
-            readonly TransportManagerFeature _transport;
-            readonly List<PeeringIssue> _issues;
-            readonly bool _skipSameKind;
-            bool _stopped;
-
-            public PeeringIssueCollector( TransportManagerFeature transport, bool skipSameKind )
-            {
-                _transport = transport;
-                _skipSameKind = skipSameKind;
-                _issues = new List<PeeringIssue>();
-                transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;
-            }
-
-            void OnPeeringIssueChanged( IActivityMonitor monitor, PeeringIssue e )
-            {
-                monitor.Info( $"(PeeringIssueCollectorTest {_transport}) PeeringIssue #{e.GetHashCode()} '{e.FullName}' {e.Kind}." );
-                lock( _issues )
-                {
-                    if( !_stopped && (!_skipSameKind || _issues.Count == 0 || _issues[^1].Kind != e.Kind) )
-                    {
-                        _issues.Add( e.Clone() );
-                    }
-                }
-            }
-
-            public IReadOnlyList<PeeringIssue> StopAndGetEvents()
-            {
-                lock( _issues )
-                {
-                    if( !_stopped )
-                    {
-                        _transport.PeeringIssueChanged.Sync -= OnPeeringIssueChanged;
-                        _stopped = true;
-                    }
-                    return _issues;
-                }
-            }
-        }
-
+        // Uses a 50ms instead of the default 1000ms for tests.
         SystemClockTester _systemClock = new SystemClockTester( 50 );
-        void ConfigureClock( ServiceCollection services ) => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+
+        void ConfigureClock( ServiceCollection services )
+        {
+            services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+        }
 
         [Test]
         [Timeout( 7000 )]
-        public async Task Unknown_InitiatorConflict_and_Untrusted_PeeringIssueKind()
+        public async Task UnknwonIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async()
         {
             TestHelper.GetCleanTestStoreFolder();
 
@@ -105,7 +38,6 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 c["AllowFeatures"] = "BlobChannel";
                 c["AlwaysListening"] = "true";
             } );
-            await listener.InitializationTask;
 
             var listenerTransport = listener.GetRequiredFeature<TransportManagerFeature>();
             listenerTransport.GetPeeringIssues().Should().BeEmpty();
@@ -235,5 +167,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 if( sender != null ) await sender.DisposeAsync();
             }
         }
+
+
     }
 }

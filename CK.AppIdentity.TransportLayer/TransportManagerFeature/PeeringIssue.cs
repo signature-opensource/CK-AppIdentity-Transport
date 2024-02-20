@@ -60,26 +60,26 @@ namespace CK.AppIdentity.TransportLayer
 
             bool isInitiator = remote?.TargetAddress != null;
 
-            Throw.DebugAssert( kind != PeeringIssueKind.InvalidClockOffset || invalidClockOffset.HasValue, "InvalidClockOffset => a non null value for the offset" );
+            Throw.DebugAssert( "InvalidClockOffset => a non null value for the offset", kind != PeeringIssueKind.InvalidClockOffset || invalidClockOffset.HasValue );
 
-            Throw.DebugAssert( !(kind == PeeringIssueKind.InvalidClockOffset && initialMessage != null)
-                                || (!initialMessage.ValidClockOffset && invalidClockOffset!.Value == initialMessage.ClockOffset),
-                          "InvalidClockOffset with a message => Invalid clock offset is the one of the initialMessage" );
+            Throw.DebugAssert( "InvalidClockOffset with a message => Invalid clock offset is the one of the initialMessage",
+                               !(kind == PeeringIssueKind.InvalidClockOffset && initialMessage != null)
+                                || (!initialMessage.ValidClockOffset && invalidClockOffset!.Value == initialMessage.ClockOffset) );
 
-            Throw.DebugAssert( enlistUrl == null
-                            || (kind == PeeringIssueKind.WaitingRemoteApproval || kind == PeeringIssueKind.WaitingRemoteCreation),
-                          "EnlistUrl => WaitingRemoteApproval/Creation" );
+            Throw.DebugAssert( "EnlistUrl => WaitingRemoteApproval/Creation",
+                               enlistUrl == null
+                                || (kind == PeeringIssueKind.WaitingRemoteApproval || kind == PeeringIssueKind.WaitingRemoteCreation) );
 
-            Throw.DebugAssert( kind != PeeringIssueKind.WaitingRemoteApproval && kind != PeeringIssueKind.WaitingRemoteCreation
-                            || (isInitiator && initialMessage == null),
-                            "WaitingRemoteApproval/Creation => IsInitiator and we have no incoming request" );
+            Throw.DebugAssert( "WaitingRemoteApproval/Creation => IsInitiator and we have no incoming request",
+                               kind != PeeringIssueKind.WaitingRemoteApproval && kind != PeeringIssueKind.WaitingRemoteCreation
+                                || (isInitiator && initialMessage == null) );
 
-            Throw.DebugAssert( kind != PeeringIssueKind.UnknwonIncoming || remote == null, "UnknwonIncoming => null remote" );
+            Throw.DebugAssert( "UnknwonIncoming => null remote", kind != PeeringIssueKind.UnknwonIncoming || remote == null );
 
-            Throw.DebugAssert( kind != PeeringIssueKind.UntrustedIncoming
-                            || initialMessage != null && remote != null && initialMessage.ValidClockOffset,
-                          "UntrustedIncoming => remote is known, clock offset is valid. This is all we can say (our remote may have a TrustedIdentity " +
-                          "but it has not been found in the message: this may be a 'warning: no more/lost trust')" );
+            Throw.DebugAssert( "UntrustedIncoming => remote is known, clock offset is valid. This is all we can say (our remote may have a TrustedIdentity " +
+                               "but it has not been found in the message: this may be a 'warning: no more/lost trust')",
+                                kind != PeeringIssueKind.UntrustedIncoming
+                                || initialMessage != null && remote != null && initialMessage.ValidClockOffset );
         }
 
         /// <summary>
@@ -134,7 +134,7 @@ namespace CK.AppIdentity.TransportLayer
         public string? EnlistUrl => _enlistUrl;
 
         /// <summary>
-        /// Gets the non null invalid clock offset is <see cref="Kind"/> is <see cref="PeeringIssueKind.InvalidClockOffset"/>.
+        /// Gets the non null invalid clock offset if <see cref="Kind"/> is <see cref="PeeringIssueKind.InvalidClockOffset"/>.
         /// <para>
         /// This applies to <see cref="IsInitiator"/> or <see cref="IsListener"/>.
         /// </para>

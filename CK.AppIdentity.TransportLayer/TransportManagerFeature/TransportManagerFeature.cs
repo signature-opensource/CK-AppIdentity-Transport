@@ -71,7 +71,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets a snapshot of the peering issues. Issues are dynamic, they can be updated at any time.
         /// <para>
-        /// Use <see cref="GetClonedPeeringIssues"/> for a non dynamic snapshot: an array of immutable <see cref="Clone"/> is returned.
+        /// Use <see cref="GetClonedPeeringIssues"/> for a non dynamic snapshot: an array of immutable <see cref="PeeringIssue.Clone"/> is returned.
         /// </para>
         /// </summary>
         /// <returns>An array containing the current issues.</returns>
@@ -98,7 +98,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="fullName">The party's full name to lookup.</param>
         /// <returns>The issue or null if this party has no issue.</returns>
-        public PeeringIssue? Find(  string fullName )
+        public PeeringIssue? Find( string fullName )
         {
             lock( _peeringIssues )
             {
@@ -147,7 +147,8 @@ namespace CK.AppIdentity.TransportLayer
                 if( issue.Remote == null )
                 {
                     // This should not happen!
-                    monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated, $"Transport available for an existing PeeringIssue with no available Remote." );
+                    monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
+                                  $"Transport available for an existing PeeringIssue with no available Remote." );
                     --_unknwonRemoteCount;
                 }
                 issue.SetNoneIssueKind();
@@ -242,22 +243,25 @@ namespace CK.AppIdentity.TransportLayer
                 int inExcess = ++_unknwonRemoteCount - _maxUnknownRemoteCount;
                 if( inExcess > 0 )
                 {
-                    return AddNewUnknownAndTrimExcess( monitor, kind, message, enlistUrl, invalidClockOffset, fullName, inExcess );
+                    return AddNewUnknownAndTrimExcessAsync( monitor, kind, message, enlistUrl, invalidClockOffset, fullName, inExcess );
                 }
             }
             _exposedClonedIssues = null;
-            return AddNewPeeringIssue( monitor, kind, message, remote, enlistUrl, invalidClockOffset, fullName );
+            return AddNewPeeringIssueAsync( monitor, kind, message, remote, enlistUrl, invalidClockOffset, fullName );
         }
 
-        async Task AddNewUnknownAndTrimExcess( IActivityMonitor monitor,
-                                               PeeringIssueKind kind,
-                                               InitialMessage? message,
-                                               string? enlistUrl,
-                                               TimeSpan? invalidClockOffset,
-                                               NormalizedPath fullName,
-                                               int inExcess )
+        async Task AddNewUnknownAndTrimExcessAsync( IActivityMonitor monitor,
+                                                    PeeringIssueKind kind,
+                                                    InitialMessage? message,
+                                                    string? enlistUrl,
+                                                    TimeSpan? invalidClockOffset,
+                                                    NormalizedPath fullName,
+                                                    int inExcess )
         {
-            var toRemove = _peeringIssues.Values.Where( i => i.Remote == null ).OrderByDescending( i => i.LastUpdated ).Take( inExcess ).ToArray();
+            var toRemove = _peeringIssues.Values.Where( i => i.Remote == null )
+                                                .OrderByDescending( i => i.LastUpdated )
+                                                .Take( inExcess )
+                                                .ToArray();
             monitor.Info( $"Removing peering issues for unknown remotes: '{toRemove.Select( i => i.FullName ).Concatenate( "', '" )}'. Max {_maxUnknownRemoteCount} has been reached." );
             lock( _peeringIssues )
             {
@@ -270,16 +274,16 @@ namespace CK.AppIdentity.TransportLayer
                 await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
             }
             _exposedClonedIssues = null;
-            await AddNewPeeringIssue( monitor, kind, message, null, enlistUrl, invalidClockOffset, fullName );
+            await AddNewPeeringIssueAsync( monitor, kind, message, null, enlistUrl, invalidClockOffset, fullName );
         }
 
-        Task AddNewPeeringIssue( IActivityMonitor monitor,
-                                 PeeringIssueKind kind,
-                                 InitialMessage? message,
-                                 TransportFeature? remote,
-                                 string? enlistUrl,
-                                 TimeSpan? invalidClockOffset,
-                                 NormalizedPath fullName )
+        Task AddNewPeeringIssueAsync( IActivityMonitor monitor,
+                                      PeeringIssueKind kind,
+                                      InitialMessage? message,
+                                      TransportFeature? remote,
+                                      string? enlistUrl,
+                                      TimeSpan? invalidClockOffset,
+                                      NormalizedPath fullName )
         {
             // Add the new issue.
             var issue = new PeeringIssue( fullName,

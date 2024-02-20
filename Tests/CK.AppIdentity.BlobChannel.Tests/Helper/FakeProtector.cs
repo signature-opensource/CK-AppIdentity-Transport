@@ -1,7 +1,11 @@
-﻿using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
+    /// <summary>
+    /// Fake <see cref="IDataProtector"/> (that is a <see cref="IDataProtectionProvider"/>)
+    /// implementation.
+    /// </summary>
     public sealed class FakeProtector : IDataProtector
     {
         public static readonly IDataProtector Fake = new FakeProtector();

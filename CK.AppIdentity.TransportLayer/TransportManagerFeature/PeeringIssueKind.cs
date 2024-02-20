@@ -20,6 +20,11 @@ namespace CK.AppIdentity.TransportLayer
         InvalidClockOffset,
 
         /// <summary>
+        /// Both us and the remote are initiators.
+        /// </summary>
+        InitiatorConflict,
+
+        /// <summary>
         /// The remote that is calling us is totally unknown (<see cref="PeeringIssue.Remote"/> is null).
         /// <para>
         /// This applies only to listeners.
@@ -45,23 +50,6 @@ namespace CK.AppIdentity.TransportLayer
         RemoteDisallowedTransport,
 
         /// <summary>
-        /// A known remote is calling (<see cref="PeeringIssue.Remote"/> is not null) but we don't trusted it yet.
-        /// It can be accepted by calling <see cref="PeeringIssue.AcceptRemoteIdentity(Core.IActivityMonitor)"/>.
-        /// <para>
-        /// This applies only to listeners.
-        /// </para>
-        /// </summary>
-        UntrustedIncoming,
-
-        /// <summary>
-        /// A known and trusted remote is calling but he doesn't trust us.
-        /// <para>
-        /// This applies only to listeners.
-        /// </para>
-        /// </summary>
-        IncomingDontTrustUs,
-
-        /// <summary>
         /// A known remote is calling (<see cref="PeeringIssue.Remote"/> is not null) but on a wrong Transport type
         /// or local address.
         /// <para>
@@ -77,6 +65,24 @@ namespace CK.AppIdentity.TransportLayer
         /// </para>
         /// </summary>
         RemoteUnsupportedTransport,
+
+        /// <summary>
+        /// A known remote is calling (<see cref="PeeringIssue.Remote"/> is not null) but we don't trust it yet.
+        /// It can be accepted by calling <see cref="PeeringIssue.AcceptRemoteIdentity(Core.IActivityMonitor)"/>.
+        /// <para>
+        /// This applies only to listeners.
+        /// </para>
+        /// </summary>
+        UntrustedIncoming,
+
+        /// <summary>
+        /// A known and trusted remote is calling but he doesn't trust us.
+        /// This happens when ha lost its remote keys.
+        /// <para>
+        /// This applies only to listeners.
+        /// </para>
+        /// </summary>
+        IncomingDoesNotTrustUs,
 
         /// <summary>
         /// The target remote knows us but is not trusting us yet. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
@@ -95,11 +101,6 @@ namespace CK.AppIdentity.TransportLayer
         /// </para>
         /// </summary>
         WaitingRemoteCreation,
-
-        /// <summary>
-        /// Both us and the remote are initiators.
-        /// </summary>
-        InitiatorConflict,
     }
 
 }

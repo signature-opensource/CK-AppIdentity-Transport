@@ -131,22 +131,22 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
                     senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
 
-                    await BlobChannelTester.SendDataAsync( listenerChannel );
-                    await BlobChannelTester.SendDataAsync( senderChannel );
+                    await BlobChannelTester.SendTestDataAsync( listenerChannel, true );
+                    await BlobChannelTester.SendTestDataAsync( senderChannel, false );
 
-                    BlobChannelTester.CheckDataReceived( senderReceived );
-                    BlobChannelTester.CheckDataReceived( listenerReceived );
+                    BlobChannelTester.CheckTestDataReceived( senderReceived );
+                    BlobChannelTester.CheckTestDataReceived( listenerReceived );
                 }
                 else
                 {
                     senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
                     listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
 
-                    await BlobChannelTester.SendDataAsync( senderChannel );
-                    await BlobChannelTester.SendDataAsync( listenerChannel );
+                    await BlobChannelTester.SendTestDataAsync( senderChannel, true );
+                    await BlobChannelTester.SendTestDataAsync( listenerChannel, false );
 
-                    BlobChannelTester.CheckDataReceived( listenerReceived );
-                    BlobChannelTester.CheckDataReceived( senderReceived );
+                    BlobChannelTester.CheckTestDataReceived( listenerReceived );
+                    BlobChannelTester.CheckTestDataReceived( senderReceived );
                 }
             }
             finally

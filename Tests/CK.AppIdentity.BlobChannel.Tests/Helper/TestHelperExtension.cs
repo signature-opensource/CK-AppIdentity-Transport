@@ -25,9 +25,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <summary>
         /// Creates a <see cref="ApplicationIdentityService"/> from a configuration builder.
         /// It must be disposed once done with it to stop its micro agent.
+        /// <para>
+        /// See <see cref="CreateApplicationServiceAsync(IBasicTestHelper, ApplicationIdentityServiceConfiguration, Action{ServiceCollection}?)"/>.
+        /// </para>
         /// </summary>
         /// <param name="this">This test helper.</param>
         /// <param name="configuration">The configuration.</param>
+        /// <param name="configureServices">Optional services configurator.</param>
         /// <returns>The started service.</returns>
         public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
                                                                                       Action<MutableConfigurationSection> configuration,
@@ -41,9 +45,20 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <summary>
         /// Creates a <see cref="ApplicationIdentityService"/> from its configuration.
         /// It must be disposed once done with it to stop its micro agent.
+        /// <para>
+        /// Services are configured by default with the <see cref="ApplicationIdentityServiceConfiguration"/>,
+        /// MessageProtocolDirectoryService, <see cref="FakeProtector"/>, KeyManagementFeatureDriver,
+        /// TransportFeatureDriver, TcpSocketTransportTypeService and the BlobChannelFeatureDriver.
+        /// </para>
+        /// <para>
+        /// The <see cref="ApplicationIdentityService"/> is started manually (IHostedService) because we don't have
+        /// Automatic DI here, and its <see cref="ApplicationIdentityService.InitializationTask"/> is awaited:
+        /// the ApplicationIdentityService is running.
+        /// </para>
         /// </summary>
         /// <param name="this">This test helper.</param>
         /// <param name="c">The configuration.</param>
+        /// <param name="configureServices">Optional services configurator.</param>
         /// <returns>The started service.</returns>
         public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
                                                                                             ApplicationIdentityServiceConfiguration c,

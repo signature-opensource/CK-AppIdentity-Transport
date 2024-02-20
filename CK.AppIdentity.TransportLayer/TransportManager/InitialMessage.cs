@@ -272,7 +272,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Throw.DebugAssert( _currentRemoteIdentity != null, "Called only from public IIncomingRequest facade." );
+                Throw.DebugAssert( "Called only from public IIncomingRequest facade.", _currentRemoteIdentity != null );
                 return _currentRemoteIdentity;
             }
         }

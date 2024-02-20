@@ -3,6 +3,9 @@ using System;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
+    /// <summary>
+    /// Test clock that can introduce an <see cref="Offset"/> in its time.
+    /// </summary>
     public sealed class SystemClockTester : ApplicationIdentityService.ISystemClock
     {
         readonly int _heatBeatPeriod;
