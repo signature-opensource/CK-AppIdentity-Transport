@@ -15,7 +15,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Defines this type of communication protocol that <see cref="IRemoteParty.Address"/> can use as a prefix.
         /// Must be in lower case, be short and not contain ':'.
         /// <para>
-        /// When no prefix is used in an address, "tcp" is assumed and the embedded <see cref="TcpSocketTransportTypeService"/> is used.
+        /// This is "tcp" for the embedded <see cref="TcpSocketTransportTypeService"/>.
         /// </para>
         /// </summary>
         string TypeName { get; }

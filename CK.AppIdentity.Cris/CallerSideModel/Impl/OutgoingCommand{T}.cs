@@ -29,24 +29,27 @@ namespace CK.AppIdentity.Cris
             {
                 _command = command;
                 _result = new TaskCompletionSource<TResult>();
-                _command.RequestCompletion.ContinueWith( OnRequestCompletion!, _result );
+                _ = _command.RequestCompletion.ContinueWith( OnRequestCompletion!, _result, default, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
             }
 
             static void OnRequestCompletion( Task<object?> c, object target )
             {
-                var result = (TaskCompletionSource<TResult>)target;
+                var _result = (TaskCompletionSource<TResult>)target;
                 // Don't take any risk: even if there should not be Faulted or Canceled state
                 // on the RequestCompletion, transfers it if it happens.
-                if( c.Exception != null ) result.SetException( c.Exception );
-                else if( c.IsCanceled ) result.SetCanceled();
+                if( c.Exception != null ) _result.SetException( c.Exception );
+                else if( c.IsCanceled ) _result.SetCanceled();
                 else
                 {
+                    Throw.DebugAssert( c.IsCompletedSuccessfully );
                     // If the completion is a ICrisResultError, resolves the result task with an exception.
+#pragma warning disable VSTHRD002 // c.IsCompletedSuccessfully is true.
                     var r = c.Result;
+#pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
                     if( r is ICrisResultError error )
                     {
                         var ex = new CKException( $"Request failed with {error.Messages.Count} errors." );
-                        result.SetException( ex );
+                        _result.SetException( ex );
                     }
                     else
                     {
@@ -55,7 +58,7 @@ namespace CK.AppIdentity.Cris
                         // Fast path is that the result type is fine.
                         if( r is TResult typedResult )
                         {
-                            result.SetResult( typedResult );                            
+                            _result.SetResult( typedResult );                            
                         }
                         else
                         {
@@ -65,18 +68,18 @@ namespace CK.AppIdentity.Cris
                             {
                                 if( default( TResult ) == null )
                                 {
-                                    result.SetResult( default( TResult )! );
+                                    _result.SetResult( default( TResult )! );
                                 }
                                 else
                                 {
                                     var ex = new CKException( $"Request result is null. This is not compatible with '{typeof(TResult).ToCSharpName()}'." );
-                                    result.SetException( ex );
+                                    _result.SetException( ex );
                                 }
                             }
                             else
                             {
                                 var ex = new CKException( $"Request result is a '{r.GetType().ToCSharpName()}'. This is not compatible with '{typeof( TResult ).ToCSharpName()}'." );
-                                result.SetException( ex );
+                                _result.SetException( ex );
                             }
                         }
                     }

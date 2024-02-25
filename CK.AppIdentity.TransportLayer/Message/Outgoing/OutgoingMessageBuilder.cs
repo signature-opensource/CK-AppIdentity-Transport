@@ -8,7 +8,7 @@ using System.Threading;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// <see cref="IOutgoingMessage"/> builder.
+    /// A <see cref="IOutgoingMessage"/> builder.
     /// </summary>
     public sealed partial class OutgoingMessageBuilder: IDisposable
     {
@@ -132,7 +132,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="sequence">The writer previously obtained by <see cref="ObtainSequence"/>.</param>
         public IOutgoingMessage CreateMessage( MutableSequence<byte> sequence )
         {
-            Throw.CheckArgument( sequence == _buffer && _sequence == null );
+            Throw.CheckArgument( "ObtainSequence must have been called to obtain the sequence.", sequence == _buffer && _sequence == null );
             if( sequence.Length == 0 )
             {
                 Throw.InvalidOperationException( "No data has been written to the outgoing message." );

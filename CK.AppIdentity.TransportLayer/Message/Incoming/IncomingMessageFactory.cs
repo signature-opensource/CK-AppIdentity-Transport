@@ -104,7 +104,9 @@ namespace CK.AppIdentity.TransportLayer
             return DoReadAsync( exactReader, maxMessageLength, cancellation );
         }
 
-        internal async Task<IncomingMessage> DoReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader, int maxMessageLength, CancellationToken cancellation )
+        internal async Task<IncomingMessage> DoReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
+                                                          int maxMessageLength,
+                                                          CancellationToken cancellation )
         {
             bool releaseBuffer = true;
             var buffer = GetBuffer();
@@ -176,7 +178,8 @@ namespace CK.AppIdentity.TransportLayer
                 await exactReader( header, cancellation ).ConfigureAwait( false );
                 messageLength -= header.Length;
                 buffer.Advance( header.Length );
-                Throw.DebugAssert( buffer.CurrentlyAvailableLength == 0 && messageLength > 0, "We totally filled the header but there's more to read." );
+                Throw.DebugAssert( "We totally filled the header but there's more to read.",
+                                   buffer.CurrentlyAvailableLength == 0 && messageLength > 0 );
                 // Huge messages are uncommon. We choose to process buffers limited to 64K to avoid the LOH.
                 while( messageLength >= 64 * 1024 )
                 {

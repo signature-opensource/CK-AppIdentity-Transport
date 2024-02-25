@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<ClassDiagram MajorVersion="1" MinorVersion="1">
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="FullSignature">
   <Class Name="CK.AppIdentity.TransportLayer.TransportFeature">
-    <Position X="3" Y="0.5" Width="2.5" />
+    <Position X="0.5" Y="0.5" Width="4.75" />
     <Members>
       <Field Name="_bestRegisteredProtocols" Hidden="true" />
       <Field Name="_channels" Hidden="true" />
@@ -11,7 +11,7 @@
       <Field Name="_connectionEventBridge" Hidden="true" />
       <Field Name="_controller" Hidden="true" />
       <Field Name="_disallowEviction" Hidden="true" />
-      <Field Name="_listener" Hidden="true" />
+      <Field Name="_listeners" Hidden="true" />
       <Field Name="_outgoingInitialMessage" Hidden="true" />
       <Field Name="_party" Hidden="true" />
       <Field Name="_readyTask" Hidden="true" />
@@ -36,26 +36,19 @@
       <Method Name="UpdateConnectionAvailabilityAsync" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>CkQgAAgIAQBDBQwMAQQABJAkZKCAIAAAEQRAMEABAEA=</HashCode>
+      <HashCode>CkQgAAgIAQBDFQwMAAQABJAkZKCAIACAEQRAMEABAEA=</HashCode>
       <FileName>TransportFeature.cs</FileName>
     </TypeIdentifier>
     <ShowAsAssociation>
       <Property Name="Party" />
     </ShowAsAssociation>
   </Class>
-  <Class Name="CK.AppIdentity.TransportLayer.TransportFeatureDriver" Collapsed="true">
-    <Position X="0.5" Y="0.5" Width="2" />
-    <TypeIdentifier>
-      <HashCode>AAAIRAAQAIACAAQAAAAABAEAAAAAAAAgAAAAKAAAAAA=</HashCode>
-      <FileName>TransportFeatureDriver.cs</FileName>
-    </TypeIdentifier>
-  </Class>
-  <Interface Name="CK.AppIdentity.IRemoteParty" Collapsed="true">
-    <Position X="0.5" Y="3.25" Width="1.5" />
+  <Interface Name="CK.AppIdentity.IRemoteParty">
+    <Position X="6" Y="2.25" Width="3" />
     <TypeIdentifier />
   </Interface>
   <Enum Name="CK.AppIdentity.TransportLayer.ConnectionAvailability">
-    <Position X="0.5" Y="1.5" Width="2" />
+    <Position X="6.5" Y="0.5" Width="2" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAAAAQAAAAAAAAAAAAAgAAACAAAAAAAEAAAA=</HashCode>
       <FileName>ConnectionAvailability.cs</FileName>

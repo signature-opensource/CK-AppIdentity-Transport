@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -46,10 +47,19 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// or <see cref="BlobChannelFeature.TrySend(byte[])"/>.
         /// </param>
         /// <returns>The awaitable.</returns>
-        public async Task CheckSendReceiveAsync( bool asyncSend )
+        public async Task CheckSendReceiveAsync( bool asyncSend, CancellationToken token = default )
         {
-            await SendTestDataAsync( _listenerChannel, asyncSend );
-            await SendTestDataAsync( _senderChannel, asyncSend );
+            await _listenerChannel.Transport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
+            await _senderChannel.Transport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
+            if( asyncSend )
+            {
+                await SendTestDataAsync( _listenerChannel, token );
+                await SendTestDataAsync( _senderChannel, token );
+            }
+            else
+            {
+
+            }
 
             CheckTestDataReceived( _senderReceived );
             CheckTestDataReceived( _listenerReceived );
@@ -65,7 +75,15 @@ namespace CK.AppIdentity.BlobChannel.Tests
             await _listener.DisposeAsync();
         }
 
-        BlobChannelTester( ApplicationIdentityService sender, ApplicationIdentityService listener )
+        /// <summary>
+        /// Initializes a new tester bound to 2 sides that must be correctly configured with a
+        /// single remote bound to each other with the BlobChannel feature allowed.
+        /// <see cref="CheckSendReceiveAsync(bool)"/> can be used to challenge an opened connection between them.
+        /// Note that disposing the tester will dispose both sides.
+        /// </summary>
+        /// <param name="sender">The "sender" side (can be any of the two).</param>
+        /// <param name="listener">The "listener" side (the other one).</param>
+        public BlobChannelTester( ApplicationIdentityService sender, ApplicationIdentityService listener )
         {
             _listenerReceived = new List<byte[]>();
             _senderReceived = new List<byte[]>();
@@ -113,10 +131,12 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
         /// <param name="storeSubPath">Optional file store sub path.</param>
         /// <param name="configureServices">Optional services configurator.</param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns></returns>
         public static async Task<ApplicationIdentityService> CreateAndStartSenderAsync( string autoTrustKey = "Never",
                                                                                         NormalizedPath storeSubPath = default,
-                                                                                        Action<ServiceCollection>? configureServices = null )
+                                                                                        Action<ServiceCollection>? configureServices = null,
+                                                                                        CancellationToken token = default )
         {
             return await TestHelper.CreateApplicationServiceAsync( c =>
             {
@@ -126,7 +146,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 c["Parties:0:PartyName"] = "$Listener";
                 c["Parties:0:Address"] = "tcp:127.0.0.1";
                 c["AllowFeatures"] = "BlobChannel";
-            }, configureServices );
+            }, configureServices, token );
         }
 
         /// <summary>
@@ -137,10 +157,12 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
         /// <param name="storeSubPath">Optional file store sub path.</param>
         /// <param name="configureServices">Optional services configurator.</param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns></returns>
         public static async Task<ApplicationIdentityService> CreateAndStartListenerAsync( string autoTrustKey = "Never",
                                                                                           NormalizedPath storeSubPath = default,
-                                                                                          Action<ServiceCollection>? configureServices = null )
+                                                                                          Action<ServiceCollection>? configureServices = null,
+                                                                                          CancellationToken token = default )
         {
             return await TestHelper.CreateApplicationServiceAsync( c =>
             {
@@ -149,9 +171,16 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 c["FullName"] = "Test/$Listener";
                 c["Parties:0:PartyName"] = "$Sender";
                 c["AllowFeatures"] = "BlobChannel";
-            }, configureServices );
+            }, configureServices, token );
         }
 
+        /// <summary>
+        /// Starts listening to the <see cref="BlobChannelFeature.Received"/> event on the single
+        /// remote of the <paramref name="from"/> side that must have the <see cref="BlobChannelFeature"/>.
+        /// </summary>
+        /// <param name="from">The side from wich data must be received.</param>
+        /// <param name="receivedData">The list to fill.</param>
+        /// <returns>The BlobChannel feature.</returns>
         public static BlobChannelFeature SetupChannel( ApplicationIdentityService from, List<byte[]> receivedData )
         {
             var channel = from.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
@@ -165,28 +194,29 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
         /// <summary>
         /// Sends 3 messages of 1, 2 and 3 bytes on the channel.
+        /// This awaits the <see cref="TransportFeature.ReadyTask"/> (unlike <see cref="SendTestData(BlobChannelFeature)"/>).
         /// </summary>
         /// <param name="c">The channel.</param>
-        /// <param name="asyncSend">
-        /// Whether to use <see cref="BlobChannelFeature.TrySendAsync(byte[])"/>
-        /// or <see cref="BlobChannelFeature.TrySend(byte[])"/>.
-        /// </param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns>The awaitable.</returns>
-        public static async Task SendTestDataAsync( BlobChannelFeature c, bool asyncSend )
+        public static async Task SendTestDataAsync( BlobChannelFeature c, CancellationToken token = default )
         {
             await c.Transport.ReadyTask;
-            if( asyncSend )
-            {
-                (await c.TrySendAsync( new byte[] { 1 } )).Should().BeTrue();
-                (await c.TrySendAsync( new byte[] { 1, 2 } )).Should().BeTrue();
-                (await c.TrySendAsync( new byte[] { 1, 2, 3 } )).Should().BeTrue();
-            }
-            else
-            {
-                c.TrySend( new byte[] { 1 } ).Should().BeTrue();
-                c.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
-                c.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
-            }
+            (await c.TrySendAsync( new byte[] { 1 }, token )).Should().BeTrue();
+            (await c.TrySendAsync( new byte[] { 1, 2 }, token )).Should().BeTrue();
+            (await c.TrySendAsync( new byte[] { 1, 2, 3 }, token )).Should().BeTrue();
+        }
+
+        /// <summary>
+        /// Sends 3 messages of 1, 2 and 3 bytes on the channel.
+        /// The <see cref="TransportFeature.ReadyTask"/> must be completed.
+        /// </summary>
+        /// <param name="c">The channel.</param>
+        public static void SendTestData( BlobChannelFeature c )
+        {
+            c.TrySend( new byte[] { 1 } ).Should().BeTrue();
+            c.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
+            c.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
         }
 
         /// <summary>

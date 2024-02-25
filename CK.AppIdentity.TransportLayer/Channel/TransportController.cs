@@ -20,6 +20,7 @@ namespace CK.AppIdentity.TransportLayer
 
         readonly TransportManager _transportManager;
         readonly TransportFeature _feature;
+        // Null is the awaker for the priority messages and closing.
         readonly Channel<IOutgoingMessage?> _senderChannel;
         readonly Channel<IOutgoingMessage> _highPriorityChannel;
         Transport _transport;
@@ -72,7 +73,8 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the wait operation.</param>
         /// <returns>
-        /// True when a new message can be enqueued, false if the channel is closed (the remote is destroyed).
+        /// True when a new message can be enqueued, false if the channel is closed (the remote is destroyed)
+        /// or the <paramref name="cancellationToken"/> has been signaled.
         /// </returns>
         public ValueTask<bool> WaitToEnqueueAsync( CancellationToken cancellationToken = default ) => _senderChannel.Writer.WaitToWriteAsync( cancellationToken );
 
@@ -95,7 +97,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void OnTransportCondemned()
         {
-            // Null marker to end the send loop even if there is no message.
+            // Null awaker to end the send loop even if there is no message.
             _senderChannel.Writer.TryWrite( null );
         }
 
@@ -108,10 +110,13 @@ namespace CK.AppIdentity.TransportLayer
             IActivityMonitor? receiveMonitor = null;
             if( _receiveTask != null )
             {
-                Throw.DebugAssert( _receiveTask.IsCompleted == _receiveTask.IsCompletedSuccessfully, "The receive task can only be completed successfully or pending." );
+                Throw.DebugAssert( "The receive task can only be completed successfully or pending.",
+                                   _receiveTask.IsCompleted == _receiveTask.IsCompletedSuccessfully );
                 if( _receiveTask.IsCompleted )
                 {
+#pragma warning disable VSTHRD103 // _receiveTask.IsCompleted is true.
                     receiveMonitor = _receiveTask.Result;
+#pragma warning restore VSTHRD103 // Call async methods when in an async method
                 }
                 else
                 {
@@ -139,16 +144,19 @@ namespace CK.AppIdentity.TransportLayer
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
         }
 
-        internal async ValueTask CloseAsync( IActivityMonitor monitor, string reason )
+        internal async ValueTask CloseAsync( IActivityMonitor monitor, GoodbyeMessage reason )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            CurrentTransport.SetSoftCondemned( new ByeByeMessage( reason.Length == 0 ? "Disposed" : reason, TimeSpan.FromSeconds( 5 ) ) );
+            CurrentTransport.SetSoftCondemned( reason );
+            // Close the channels: this controller is dead.
             _highPriorityChannel.Writer.Complete();
             _senderChannel.Writer.Complete();
             // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels.
             var t = _sendTask;
             if( t != null ) await t.ConfigureAwait( false );
+            // Drain queued outgoing messages: they must be released.
             ClearPendingOutgoingMessages( monitor );
+            // Kill the 
             _transportManager.KillTransport( CurrentTransport );
         }
 
@@ -187,7 +195,7 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         if( m == null )
                         {
-                            // Null marker is here to react to a condemned transport or StopSending.
+                            // Null awaker is here to react to a condemned transport or StopSending.
                             // or signals a high priority message.
                             reader.TryRead( out m );
                         }
@@ -203,16 +211,20 @@ namespace CK.AppIdentity.TransportLayer
                     }
                 }
                 // Sends the bye-bye message if any.
-                var byeBye = transport.ByeByeMessage;
-                if( byeBye != null )
+                var byeBye = transport.GoodbyeMessage;
+                if( byeBye != null && !byeBye.IsFromRemote )
                 {
-                    await ZeroProtocol.SendCreateByeByeMessageAsync( transport, byeBye );
+                    transportManager.Logger.Trace( $"Sending goodbye message '{byeBye}' and stopping sending loop for '{transport.RemoteEndPointDescription}'." );
+                    await ZeroProtocol.SendGoodbyeMessageAsync( transport, byeBye );
                 }
-                transportManager.Logger.Trace( $"Stopped sending loop for '{transport.RemoteEndPointDescription}'." );
+                else
+                {
+                    transportManager.Logger.Trace( $"Stopped sending loop for '{transport.RemoteEndPointDescription}'." );
+                }
             }
             catch( Exception ex )
             {
-                Throw.DebugAssert( ex is not ChannelClosedException, "The way we use it avoids to rely on the ChannelClosedException." );
+                Throw.DebugAssert( "The way we use it avoids to rely on the ChannelClosedException.", ex is not ChannelClosedException );
                 transportManager.Logger.Error( $"While sending message for '{transportController.Feature.Party.FullName}' to '{transport.RemoteEndPointDescription}'.", ex );
                 transportManager.KillTransport( transport );
             }
@@ -226,7 +238,7 @@ namespace CK.AppIdentity.TransportLayer
             if( m.Protocol.IsZeroProtocol )
             {
                 // Even if the send is canceled in "0 Protocol", always consume the message:
-                // the "0 Protocol" has no interest to interact with different transports.
+                // the "0 Protocol" must not interact with different transports.
                 await transport.SendAsync( 0, m ).ConfigureAwait( false );
             }
             else
@@ -287,6 +299,8 @@ namespace CK.AppIdentity.TransportLayer
         internal bool Receive0Message( IActivityMonitor receiveMonitor, IncomingMessage m )
         {
             Throw.DebugAssert( m.Protocol == MessageProtocol.ZeroProtocol );
+            Throw.DebugAssert( "The transport is trusted.", _transport.RemoteKeys != null );
+
             if( m == IncomingMessage.Empty )
             {
                 // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
@@ -303,10 +317,37 @@ namespace CK.AppIdentity.TransportLayer
             {
                 switch( m.Message.FirstSpan[0] )
                 {
-                    case ZeroProtocol.DRunByeBye:
+                    case ZeroProtocol.DRunGoodbye:
                         {
-                            var message = ZeroProtocol.ReadByeByeMessage( receiveMonitor.ParallelLogger, _transport, m );
-                            _transportManager.KillTransport( _transport, message?.ShutUp ?? TimeSpan.FromSeconds( 30 ) );
+                            var message = ZeroProtocol.ReadGoodbyeMessage( receiveMonitor, _transport, m );
+                            if( message == null )
+                            {
+                                // Fatal protocol error.
+                                return false;
+                            }
+                            int reconnectDelay;
+                            switch( message )
+                            {
+                                case GoodbyeMessage.Evicted:
+                                    // When evicted, we MUST switch off the transport.
+                                    // We are the initiator and the remote allows eviction: if we retry, we'll be accepted
+                                    // and this will never end...
+                                    _feature.RemoteSwitchedOff( message );
+                                    reconnectDelay = 0;
+                                    break;
+                                case GoodbyeMessage.SwitchedOff off:
+                                    Throw.DebugAssert( "We are connected: we have a clock offset.", _feature.ClockOffset.HasValue );
+                                    reconnectDelay = OutgoingConnectionBackTask.HandleRemoteSwitchedOff( _feature, _feature.ClockOffset.Value, off );
+                                    break;
+                                // PartyDestroyed and ApplicationIdentityShutdown: this can be transient (restart of the application
+                                // or suppresion of a dynamic party to add it back with a different configuration).
+                                // We don't switch of our remote, we just emit an issue.
+                                default:
+                                    reconnectDelay = 5;
+                                    break;
+                            }
+                            _transportManager.OnRemoteSwitchedOffIssue( _feature, message );
+                            _transportManager.KillTransport( _transport, reconnectDelay );
                             return false;
                         }
                     default:

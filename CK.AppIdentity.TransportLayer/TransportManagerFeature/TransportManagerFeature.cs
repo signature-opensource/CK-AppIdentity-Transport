@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.PerfectEvent;
 using System;
@@ -179,7 +180,7 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             if( _peeringIssues.TryGetValue( remote.Party.FullName, out var issue ) && issue.Remote == null )
             {
-                OnRemoteAppeared( remote, issue );
+                OnRemoteAppeared( issue, remote );
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
             }
             return Task.CompletedTask;
@@ -199,7 +200,7 @@ namespace CK.AppIdentity.TransportLayer
             _exposedClonedIssues = null;
         }
 
-        void OnRemoteAppeared( TransportFeature remote, PeeringIssue issue )
+        void OnRemoteAppeared( PeeringIssue issue, TransportFeature remote )
         {
             _unknwonRemoteCount--;
             issue.OnRemoteAppeared( remote );
@@ -211,7 +212,11 @@ namespace CK.AppIdentity.TransportLayer
                                              InitialMessage? message,
                                              TransportFeature? remote,
                                              string? enlistUrl,
-                                             TimeSpan? invalidClockOffset )
+                                             TimeSpan? invalidClockOffset,
+                                             RemoteIdentityKeyData? remoteKeyForApproval,
+                                             IReadOnlyList<string>? localMissing,
+                                             IReadOnlyList<string>? remoteMissing,
+                                             GoodbyeMessage? remoteOffMessage )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             Throw.DebugAssert( kind != PeeringIssueKind.None );
@@ -226,12 +231,21 @@ namespace CK.AppIdentity.TransportLayer
                 // use lock.
                 if( (exist.Remote == null) != (remote == null) )
                 {
-                    if( remote != null ) OnRemoteAppeared( remote, exist );
+                    if( remote != null ) OnRemoteAppeared( exist, remote );
                     else OnRemoteTornDown( exist );
                 }
                 if( exist.Kind != PeeringIssueKind.None )
                 {
-                    exist.Update( kind, _transportManager.SystemClock.UtcNow, message, remote, enlistUrl, invalidClockOffset );
+                    exist.Update( kind,
+                                  _transportManager.SystemClock.UtcNow,
+                                  message,
+                                  remote,
+                                  enlistUrl,
+                                  invalidClockOffset,
+                                  remoteKeyForApproval,
+                                  localMissing,
+                                  remoteMissing,
+                                  remoteOffMessage );
                     _exposedClonedIssues = null;
                 }
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
@@ -243,19 +257,40 @@ namespace CK.AppIdentity.TransportLayer
                 int inExcess = ++_unknwonRemoteCount - _maxUnknownRemoteCount;
                 if( inExcess > 0 )
                 {
-                    return AddNewUnknownAndTrimExcessAsync( monitor, kind, message, enlistUrl, invalidClockOffset, fullName, inExcess );
+                    return AddNewUnknownAndTrimExcessAsync( monitor,
+                                                            fullName,
+                                                            kind,
+                                                            message,
+                                                            enlistUrl,
+                                                            invalidClockOffset,
+                                                            remoteKeyForApproval,
+                                                            localMissing,
+                                                            remoteMissing,
+                                                            inExcess );
                 }
             }
             _exposedClonedIssues = null;
-            return AddNewPeeringIssueAsync( monitor, kind, message, remote, enlistUrl, invalidClockOffset, fullName );
+            return AddNewPeeringIssueAsync( monitor,
+                                            fullName,
+                                            kind,
+                                            message,
+                                            remote,
+                                            enlistUrl,
+                                            invalidClockOffset,
+                                            remoteKeyForApproval,
+                                            localMissing,
+                                            remoteMissing );
         }
 
         async Task AddNewUnknownAndTrimExcessAsync( IActivityMonitor monitor,
+                                                    NormalizedPath fullName,
                                                     PeeringIssueKind kind,
                                                     InitialMessage? message,
                                                     string? enlistUrl,
                                                     TimeSpan? invalidClockOffset,
-                                                    NormalizedPath fullName,
+                                                    RemoteIdentityKeyData? remoteKeyForApproval,
+                                                    IReadOnlyList<string>? localMissingProtocols,
+                                                    IReadOnlyList<string>? remoteMissingProtocols,
                                                     int inExcess )
         {
             var toRemove = _peeringIssues.Values.Where( i => i.Remote == null )
@@ -274,16 +309,28 @@ namespace CK.AppIdentity.TransportLayer
                 await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
             }
             _exposedClonedIssues = null;
-            await AddNewPeeringIssueAsync( monitor, kind, message, null, enlistUrl, invalidClockOffset, fullName );
+            await AddNewPeeringIssueAsync( monitor,
+                                           fullName,
+                                           kind,
+                                           message,
+                                           null,
+                                           enlistUrl,
+                                           invalidClockOffset,
+                                           remoteKeyForApproval,
+                                           localMissingProtocols,
+                                           remoteMissingProtocols );
         }
 
         Task AddNewPeeringIssueAsync( IActivityMonitor monitor,
+                                      NormalizedPath fullName,
                                       PeeringIssueKind kind,
                                       InitialMessage? message,
                                       TransportFeature? remote,
                                       string? enlistUrl,
                                       TimeSpan? invalidClockOffset,
-                                      NormalizedPath fullName )
+                                      RemoteIdentityKeyData? remoteKeyForApproval,
+                                      IReadOnlyList<string>? localMissingProtocols,
+                                      IReadOnlyList<string>? remoteMissingProtocols )
         {
             // Add the new issue.
             var issue = new PeeringIssue( fullName,
@@ -292,7 +339,10 @@ namespace CK.AppIdentity.TransportLayer
                                           message,
                                           remote,
                                           enlistUrl,
-                                          invalidClockOffset );
+                                          invalidClockOffset,
+                                          remoteKeyForApproval,
+                                          localMissingProtocols,
+                                          remoteMissingProtocols );
             lock( _peeringIssues )
             {
                 _peeringIssues.Add( fullName, issue );

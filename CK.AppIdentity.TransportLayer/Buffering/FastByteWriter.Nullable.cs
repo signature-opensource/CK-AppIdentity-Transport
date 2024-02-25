@@ -1,4 +1,5 @@
 using CK.Core;
+using System;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -32,6 +33,16 @@ namespace CK.AppIdentity.TransportLayer
             {
                 WriteByte( 1 );
                 WriteDouble( value.Value );
+            }
+            else WriteByte( 0 );
+        }
+
+        public void WriteNullableDateTime( DateTime? value )
+        {
+            if( value.HasValue )
+            {
+                WriteByte( 1 );
+                WriteDateTime( value.Value );
             }
             else WriteByte( 0 );
         }

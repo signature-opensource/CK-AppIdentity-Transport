@@ -23,7 +23,8 @@ namespace CK.AppIdentity.KeyManagement
         internal LocalIdentityKey( string name, DateTime timeName, X509Certificate2 certificate, ECDsa privateKey )
         {
             Throw.DebugAssert( timeName.Kind == DateTimeKind.Utc );
-             Throw.DebugAssert( name == timeName.ToString( FileUtil.FileNameUniqueTimeUtcFormat ), "This is important: key serialization uses the timeName." );
+             Throw.DebugAssert( "This is important: key serialization uses the timeName.",
+                                name == timeName.ToString( FileUtil.FileNameUniqueTimeUtcFormat ) );
             _certificate = certificate;
             _privateKey = privateKey;
             _publicRaw = certificate.PublicKey.ExportSubjectPublicKeyInfo();

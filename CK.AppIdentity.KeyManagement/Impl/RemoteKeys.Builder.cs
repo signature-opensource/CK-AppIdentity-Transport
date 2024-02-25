@@ -1,6 +1,7 @@
 using CK.Core;
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography.X509Certificates;
 using System.Xml.Linq;
@@ -25,7 +26,7 @@ namespace CK.AppIdentity.KeyManagement
             {
                 ImmutableConfigurationSection configuration = _remote.Configuration.Configuration;
                 AutoTrustKey autoTrust = GetAutoTrustKey( monitor, configuration );
-
+                TimeSpan maxClockOffset = GetMaxClockOffset( monitor, configuration );
                 DateTime now = _remote.ApplicationIdentityService.SystemClock.UtcNow;
                 RemoteIdentityKeyData? c = null;
                 foreach( var f in FilterFileNames( monitor,
@@ -46,15 +47,37 @@ namespace CK.AppIdentity.KeyManagement
                 if( c != null )
                 {
                     monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
-                    return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust );
+                    return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, maxClockOffset );
                 }
                 monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-                return new RemoteKeys( _localKeys, _remote, null, autoTrust );
+                return new RemoteKeys( _localKeys, _remote, null, autoTrust, maxClockOffset );
 
                 static string ExtractTimeName( string s )
                 {
                     return s.Substring( s.IndexOf( '.' ) + 1 );
                 }
+            }
+
+            static TimeSpan GetMaxClockOffset( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
+            {
+                var maxClockOffset = IRemoteKeys.DefaultMaxClockOffset;
+                var o = configuration.TryLookupValue( nameof( MaxClockOffset ) );
+                if( o != null )
+                {
+                    if( TimeSpan.TryParse( o, CultureInfo.InvariantCulture, out var offset )
+                        && offset >= TimeSpan.FromMinutes( 1 )
+                        && offset <= TimeSpan.FromMinutes( 20 ) )
+                    {
+                        maxClockOffset = offset;
+                    }
+                    else
+                    {
+                        monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( MaxClockOffset )}' value, " +
+                                      $"expected time span between '00:01:00' (1 minute) and '00:20:00' (20 minutes) but got '{o}'. " +
+                                      $"Using default '{IRemoteKeys.DefaultMaxClockOffset}'." );
+                    }
+                }
+                return maxClockOffset;
             }
 
             AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor, ImmutableConfigurationSection configuration )

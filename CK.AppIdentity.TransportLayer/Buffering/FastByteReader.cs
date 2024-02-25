@@ -497,7 +497,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Reads a string written by <see cref="FastByteWriter.WriteString(string)"/>
-        /// with a length constraint: an <see cref="InvalidDataException"/> is thrown if the string
+        /// with a length constraint: a <see cref="System.IO.InvalidDataException"/> is thrown if the string
         /// is longer than <paramref name="maxLength"/>.
         /// </summary>
         /// <param name="maxLength">Maximal length of the string.</param>

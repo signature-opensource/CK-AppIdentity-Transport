@@ -108,6 +108,7 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         monitor.Error( $"While disposing '{ToString()}'.", ex );
                     }
+                    _transportManager.OnListenerDisposed( monitor, this );
                 }
             }
         }

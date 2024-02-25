@@ -30,7 +30,7 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         /// <param name="protocols">
         /// The list of supported protocols that has been negotiated with the other party.
-        /// Must not be empty, contain more than <see cref="MaxCount"/> protocols, contain duplicates <see cref="MessageProtocol.Name"/>
+        /// It can be empty but must not contain more than <see cref="MaxCount"/> protocols, contain duplicates <see cref="MessageProtocol.Name"/>
         /// or any invalid or the "0 Protocol".
         /// </param>
         /// <returns>The map to use.</returns>
@@ -48,7 +48,7 @@ namespace CK.AppIdentity.TransportLayer
             static void CheckProtocolArrayArgument( MessageProtocol[] protocols )
             {
                 Throw.CheckNotNullArgument( protocols );
-                Throw.CheckArgument( protocols.Length > 0 && protocols.Length <= MaxCount );
+                Throw.CheckArgument( protocols.Length <= MaxCount );
                 Throw.CheckArgument( protocols.All( p => p != null && p != MessageProtocol.ZeroProtocol ) );
                 Throw.CheckArgument( protocols.Select( p => p.Name ).IsSortedStrict() );
             }
@@ -123,10 +123,14 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Overridden to return "Invalid" or the protocols' full name.
+        /// Overridden to return "Invalid", "No Protocol" or the protocols' full name.
         /// </summary>
         /// <returns>The protocols.</returns>
-        public override string ToString() => _protocols == null ? "Invalid" : _protocols.Select( p => p.FullName ).Concatenate();
+        public override string ToString() => _protocols == null
+                                                ? "Invalid"
+                                                : _protocols.Length > 0
+                                                    ? _protocols.Select( p => p.FullName ).Concatenate()
+                                                    : "No Protocol";
     }
 
 }

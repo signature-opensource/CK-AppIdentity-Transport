@@ -367,7 +367,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
             }, minimumBufferSize: minimumBufferSize );
         }
 
-        static int ReadWrite( Action<IBufferWriter<byte>> writer, Action<ReadOnlySequence<byte>>? reader = null, int minimumBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
+        static int ReadWrite( Action<MutableSequence<byte>> writer, Action<ReadOnlySequence<byte>>? reader = null, int minimumBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
             using( var mem = new MutableSequence<byte>() {  MinimumBufferSize = minimumBufferSize } )
             {

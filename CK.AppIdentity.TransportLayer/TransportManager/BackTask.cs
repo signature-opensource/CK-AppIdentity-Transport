@@ -76,6 +76,9 @@ namespace CK.AppIdentity.TransportLayer
                 Throw.DebugAssert( _queue.Count > 0 );
                 int handled = 0;
                 int done = 0;
+                // Preincrement the tick: previous initialisation or check
+                // are bound to the previous tick.
+                ++_tick;
                 var t = _queue.Peek();
                 while( t._checkTick <= _tick )
                 {
@@ -96,7 +99,6 @@ namespace CK.AppIdentity.TransportLayer
                     if( _queue.Count == 0 ) break;
                     t = _queue.Peek();
                 }
-                ++_tick;
                 return (handled, done);
             }
 

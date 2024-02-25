@@ -91,7 +91,7 @@ namespace CK.AppIdentity.TransportLayer
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null )
                 {
-                    await UnplugRemoteAsync( context, t );
+                    await UnplugRemoteAsync( context, t, shutdown: false );
                 }
             }
             if( party is ILocalParty local )
@@ -109,7 +109,7 @@ namespace CK.AppIdentity.TransportLayer
                 var t = r.GetFeature<TransportFeature>();
                 if( t != null )
                 {
-                    await UnplugRemoteAsync( context, t );
+                    await UnplugRemoteAsync( context, t, shutdown: true );
                 }
             }
             foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
@@ -132,10 +132,10 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
-        async Task UnplugRemoteAsync( FeatureLifetimeContext context, TransportFeature t )
+        async Task UnplugRemoteAsync( FeatureLifetimeContext context, TransportFeature t, bool shutdown )
         {
             Throw.DebugAssert( _transportManager != null );
-            await _transportManager.TearDownAsync( t );
+            await _transportManager.TearDownAsync( t, serviceShutdown: shutdown );
             // Release the listeners from the ApplicationIdentityService's agent loop.
             if( t.IsListening )
             {
@@ -301,7 +301,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 return null;
             }
-            Throw.DebugAssert( available == null || available.Count > 0, "If there is a map, it is not empty." );
+            Throw.DebugAssert( "If there is a map, it is not empty.", available == null || available.Count > 0 );
             // If there is a single listening address, we are done: there is no ambiguity.
             if( available != null && available.Count == 1 )
             {

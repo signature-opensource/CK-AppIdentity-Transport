@@ -1,7 +1,7 @@
 using CK.Core;
 using System;
 
-namespace CK.AppIdentity.BlobChannel.Tests
+namespace CK.AppIdentity.TransportLayer.Tests
 {
     /// <summary>
     /// Test clock that can introduce an <see cref="Offset"/> in its time.
@@ -25,5 +25,6 @@ namespace CK.AppIdentity.BlobChannel.Tests
             get => _offset;
             set => _offset = value;
         }
+
     }
 }

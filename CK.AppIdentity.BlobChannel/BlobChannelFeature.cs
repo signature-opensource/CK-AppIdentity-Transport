@@ -48,15 +48,16 @@ namespace CK.AppIdentity.BlobChannel
         /// Tries to send the data to the remote.
         /// </summary>
         /// <param name="data">The data.</param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns>True if data has been successfully sent.</returns>
-        public async ValueTask<bool> TrySendAsync( byte[] data )
+        public async ValueTask<bool> TrySendAsync( byte[] data, CancellationToken token = default )
         {
             Throw.CheckArgument( data.Length > 0 );
             var h = CurrentHandler;
             if( h != null )
             {
                 var message = h.CreateMessage( data );
-                if( await h.TryEnqueueAsync( message ) ) return true;
+                if( await h.TryEnqueueAsync( message, token ) ) return true;
                 message.Release();
             }
             return false;

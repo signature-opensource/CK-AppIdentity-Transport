@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="0.1.1--0002-develop" />
+    <PackageReference Include="CK.AppIdentity" Version="0.4.1--0004-develop" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="6.0.19" />
   </ItemGroup>
 </Project>

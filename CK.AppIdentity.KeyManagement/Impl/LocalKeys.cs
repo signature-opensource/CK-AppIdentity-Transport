@@ -2,31 +2,34 @@ using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement
 {
     sealed partial class LocalKeys : ILocalKeys
     {
-        private const string PasswordExtension = ".pwd";
+        const string PasswordExtension = ".pwd";
         readonly ILocalParty _local;
         readonly IDataProtector _protector;
         readonly LocalNonceCache _nonceCache;
+        readonly int _allowedOfflineDays;
+        // Key renewal should be implemented while running soon:
+        // this is not readonly (Interlocked exchanged).
+        // This must be an array (not the ImmutableArray) so that
+        // reference equality can be used to detect changes.
         LocalIdentityKey[] _identities;
-        int _allowedOfflineDays;
 
         LocalKeys( ILocalParty local,
                    IDataProtector protector,
                    LocalIdentityKey[] identities,
-                   LocalNonceCache nonceCache )
+                   LocalNonceCache nonceCache,
+                   int allowedOfflineDays )
         {
             _local = local;
             _identities = identities;
             _nonceCache = nonceCache;
+            _allowedOfflineDays = allowedOfflineDays;
             _protector = protector;
             local.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
         }
@@ -57,7 +60,9 @@ namespace CK.AppIdentity.KeyManagement
         }
 
         // Not used yet.
-        internal static X509Certificate2 CreateSignedCertificate( string subjectName, X509Certificate2 signer, Action<CertificateRequest> configuration )
+        internal static X509Certificate2 CreateSignedCertificate( string subjectName,
+                                                                  X509Certificate2 signer,
+                                                                  Action<CertificateRequest> configuration )
         {
             using( var ecdsa = ECDsa.Create( "ECDsa" ) )
             {

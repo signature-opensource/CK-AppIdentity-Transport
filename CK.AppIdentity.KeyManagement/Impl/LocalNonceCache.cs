@@ -75,7 +75,7 @@ namespace CK.AppIdentity.KeyManagement
             }
         }
 
-        public static LocalNonceCache Create( IActivityMonitor monitor, NormalizedPath filePath )
+        internal static LocalNonceCache Create( IActivityMonitor monitor, NormalizedPath filePath )
         {
             var nonces = new ulong[CacheSize + 1];
             using var hFile = File.OpenHandle( filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, FileOptions.None );

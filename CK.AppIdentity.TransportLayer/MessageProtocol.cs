@@ -22,7 +22,7 @@ namespace CK.AppIdentity.TransportLayer
         readonly bool _isZeroProtocol;
 
         /// <summary>
-        /// Th" "0 Protocol" name.
+        /// The "0 Protocol" name.
         /// </summary>
         public static readonly string ZeroProtocolName = "0 Protocol";
 

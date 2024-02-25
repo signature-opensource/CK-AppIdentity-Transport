@@ -37,7 +37,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
 
 
         [Test]
-        public async Task basic_TransportMessage_read_write( )
+        public async Task basic_TransportMessage_read_write_Async( )
         {
             using var ctx = new Context();
 
@@ -69,7 +69,7 @@ namespace CK.AppIdentity.TransportLayer.Tests
         [TestCase( 21, 259 )]
         [TestCase( 274, 48527 )]
         [TestCase( 274, 90500 )]
-        public async Task random_TransportMessage_read_write( int seed, int maxMessageLength )
+        public async Task random_TransportMessage_read_write_Async( int seed, int maxMessageLength )
         {
             using var ctx = new Context();
 

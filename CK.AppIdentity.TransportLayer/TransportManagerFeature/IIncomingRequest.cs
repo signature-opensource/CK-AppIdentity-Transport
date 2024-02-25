@@ -4,12 +4,16 @@ using System.Collections.Generic;
 
 namespace CK.AppIdentity.TransportLayer
 {
+    /// <summary>
+    /// Describes the initial message received by a listener from a remote initiator.
+    /// This is exposed on the <see cref="PeeringIssue.IncomingRequest"/>.
+    /// </summary>
     public interface IIncomingRequest
     {
         /// <summary>
         /// Gets the "0 Protocol" version.
         /// </summary>
-        int Version { get; }
+        int ZeroProtocolVersion { get; }
 
         /// <summary>
         /// Gets the <see cref="TransportListener.EndPointDescription"/> that received this message.
@@ -59,12 +63,20 @@ namespace CK.AppIdentity.TransportLayer
         string InstanceId { get; }
 
         /// <summary>
+        /// Gets the public key that the remote has for us and whether he's able to
+        /// automatically trust us. 
+        /// </summary>
+        (RemoteIdentityKeyData? SupposedIdentity, bool CanAutoTrust) RemoteTrustInfo { get; }
+
+        /// <summary>
         /// Gets the list of protocols with their versions that must be supported.
         /// </summary>
         IReadOnlyCollection<string> AvailableProtocols { get; }
 
         /// <summary>
         /// Gets the current remote identity.
+        /// This is not null because an incoming initial message without at least one public
+        /// identity (the current one) is discarded.
         /// </summary>
         RemoteIdentityKeyData CurrentRemoteIdentity { get; }
 
@@ -77,6 +89,6 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets whether the <see cref="ClockOffset"/> is small enough or too
         /// large to work with the party.
         /// </summary>
-        bool ValidClockOffset { get; }
+        bool IsValidClockOffset { get; }
     }
 }

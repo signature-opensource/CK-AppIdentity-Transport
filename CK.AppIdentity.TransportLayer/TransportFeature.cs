@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,11 +18,6 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     public sealed class TransportFeature
     {
-        /// <summary>
-        /// Maximal allowed clock offset between parties is 10 minutes.
-        /// </summary>
-        public static readonly TimeSpan MaxClockOffset = TimeSpan.FromMinutes( 10 );
-
         readonly TransportManager _transportManager;
         readonly IRemoteParty _party;
 
@@ -46,7 +42,7 @@ namespace CK.AppIdentity.TransportLayer
 
         InitialMessage? _outgoingInitialMessage;
 
-        string? _switchOffReason;
+        GoodbyeMessage? _switchOffReason;
         TransportController? _controller;
         TaskCompletionSource _readyTask;
         ConnectionAvailability _connectionAvailabilty;
@@ -60,7 +56,7 @@ namespace CK.AppIdentity.TransportLayer
                                    IRemoteKeys remoteKeys,
                                    bool disallowEviction )
         {
-            Throw.DebugAssert( (listeners == null) != (target == null), "Either we are listening or we are targeting." );
+            Throw.DebugAssert( "Either we are listening or we are targeting.", ( listeners == null) != (target == null) );
             _transportManager = transportManager;
             _party = remote;
             _listeners = listeners;
@@ -79,7 +75,7 @@ namespace CK.AppIdentity.TransportLayer
 
         internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols, TimeSpan clockOffset )
         {
-            Throw.DebugAssert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
             Throw.DebugAssert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
             Throw.DebugAssert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
 
@@ -107,18 +103,20 @@ namespace CK.AppIdentity.TransportLayer
                 Throw.DebugAssert( c != null );
                 protocolHandlers[i] = c.EnsureCurrentHandler( monitor, _controller, protocols.Protocols[i] );
             }
-            // The protocols are available.
+            // The protocols are available (there may be no protocols).
             // We start receiving messages from this new transport (this sets the protocol map and handlers on the transport)
             // and starts sending the messages in the controller queues.
             await _controller.ActivateAsync( monitor, protocols, protocolHandlers ).ConfigureAwait( false );
+            // Signals the change of connection before signaling the ready task: awaiting
+            // the ready task and reading the availability is rather common initialization pattern.
+            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
             // Always signals the ready task.
             _readyTask.TrySetResult();
-            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
         }
 
         Task UpdateConnectionAvailabilityAsync( IActivityMonitor monitor )
         {
-            Throw.DebugAssert( _transportManager.IsInLoop( monitor ), "Called from the TransportManager loop." );
+            Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
 
             // TODO: Consider _controller queue load.
             // Currently we are connected if no off reason exists and a controller has been created and its lifetime has not been signaled.
@@ -152,31 +150,62 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Gets whether this party is off line. The <see cref="Party"/> may be destroyed.
-        /// Defaults to false: by default a remote always tries to establish a connection.
+        /// Initially defaults to false: by default a remote always tries to establish a connection.
+        /// <para>
+        /// There is currently no "InitiallySwitchedOff" configuration.
+        /// </para>
         /// </summary>
         public bool IsOff => _switchOffReason != null;
 
+        internal GoodbyeMessage? SwitchOffMessage => _switchOffReason;
+
         /// <summary>
         /// Gets a non null string if this remote is off.
-        /// This is "Torn down" when this <see cref="Party"/> is destroyed. 
+        /// This is "PartyDestoyed" when this <see cref="Party"/> is destroyed
+        /// and "ApplicationIdentityShutdown" when the whole service is disposed.
         /// </summary>
-        public string? SwitchOffReason => ReferenceEquals( _switchOffReason, string.Empty ) ? "Torn down." : _switchOffReason;
+        public string? SwitchOffReason => _switchOffReason switch
+                                            {
+                                                GoodbyeMessage.SwitchedOff m => m.Reason,
+                                                GoodbyeMessage.PartyDestroyed => nameof( GoodbyeMessage.PartyDestroyed ),
+                                                GoodbyeMessage.ApplicationIdentityShutdown => nameof( GoodbyeMessage.ApplicationIdentityShutdown ),
+                                                GoodbyeMessage.Evicted e => e.ToString(),
+                                                _ => null
+                                            };
+
+        internal bool RemoteSwitchedOff( GoodbyeMessage remoteMessage )
+        {
+            Throw.DebugAssert( remoteMessage.IsFromRemote );
+            return DoSetSwitchOffMessage( remoteMessage );
+        }
 
         /// <summary>
         /// Switch this remote off.
         /// </summary>
-        /// <param name="reason">A required non empty reason string.</param>
+        /// <param name="reason">A required non empty reason string. Must not be longer than 255 characters.</param>
+        /// <param name="expectedAvailableTime">Time at wich this transport should be back online. Must be <see cref="DateTimeKind.Utc"/>.</param>
         /// <returns>True if this call switched this off, false if it was already off.</returns>
-        public bool SwitchOff( string reason )
+        public bool SwitchOff( string reason, DateTime? expectedAvailableTime = null )
         {
-            // The reason cannot be the empty string.
+            // The reason cannot be the empty string, cannot be longer than 255 characters and
+            // cannot be the 2 reserved messages.
+            // We normalize it as it appears in the 0 Protocol.
             Throw.CheckNotNullOrEmptyArgument( reason );
-            if( Interlocked.CompareExchange( ref _switchOffReason, reason, null ) == null )
+            reason = reason.Normalize();
+            Throw.CheckArgument( reason.Length < 256 );
+            Throw.CheckArgument( reason != nameof( GoodbyeMessage.PartyDestroyed ) && reason != nameof( GoodbyeMessage.ApplicationIdentityShutdown ) );
+            Throw.CheckArgument( expectedAvailableTime?.Kind is null or DateTimeKind.Utc );
+            return DoSetSwitchOffMessage( new GoodbyeMessage.SwitchedOff( false, reason, expectedAvailableTime ) );
+        }
+
+        bool DoSetSwitchOffMessage( GoodbyeMessage goodbye )
+        {
+            if( Interlocked.CompareExchange( ref _switchOffReason, goodbye, null ) == null )
             {
                 // We transitioned from null to this reason.
                 // We don't rely on the _switchOffReason state:
                 // the reason will flow to the DoSwitchOff method.
-                _transportManager.SwitchOff( this, reason );
+                _transportManager.SwitchOff( this, goodbye );
                 return true;
             }
             return false;
@@ -188,17 +217,24 @@ namespace CK.AppIdentity.TransportLayer
         /// <returns>False if this is definitely off.</returns>
         public bool SwitchOn()
         {
-            // We never transition from the empty string reason to null: this is the definite off reason.
+            // We never transition from local PartyDestroyed or ApplicationIdentityShutDown to null:
+            // these are definite off reason.
+            retry:
             var reason = _switchOffReason;
-            if( reason == String.Empty ) return false;
+            if( reason != null
+                && !reason.IsFromRemote
+                && reason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown )
+            {
+                return false;
+            }
+            if( Interlocked.CompareExchange( ref _switchOffReason, null, reason ) != reason ) goto retry;
             // Clear the off reason.
             // DoSwitchOn we'll do nothing if SwitchOff has been called.
-            _switchOffReason = null;
             _transportManager.SwitchOn( this );
             return true;
         }
 
-        internal void SetTornDownSwitchOff() => Interlocked.Exchange( ref _switchOffReason, string.Empty );
+        internal void SetTornDownSwitchOff( GoodbyeMessage reason ) => Interlocked.Exchange( ref _switchOffReason, reason );
 
         /// <summary>
         /// Gets the last received time.
@@ -229,7 +265,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Throw.DebugAssert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
+                Throw.DebugAssert( "This is safe: see CloseChannelRegistration comment.", _bestRegisteredProtocols != null );
                 return _bestRegisteredProtocols!;
             }
         }
@@ -241,7 +277,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             get
             {
-                Throw.DebugAssert( _bestRegisteredProtocols != null, "This is safe: see CloseChannelRegistration comment." );
+                Throw.DebugAssert( "This is safe: see CloseChannelRegistration comment.", _bestRegisteredProtocols != null );
                 return _registeredProtocols;
             }
         }
@@ -394,11 +430,27 @@ namespace CK.AppIdentity.TransportLayer
             get
             {
                 var m = _outgoingInitialMessage;
-                if( m != null && m.LocalIdentities != _remoteKeys.LocalKeys.Identities )
+                // We cannot reuse the cached message if:
+                // - Our owner's identity keys have changed.
+                // - Or our knowledge of the remote's identity has changed. 
+                if( m == null
+                    || m.LocalIdentities != _remoteKeys.LocalKeys.Identities
+                    || HasChanged( m.RemoteTrustInfo.SupposedIdentity, _remoteKeys.TrustedIdentity )
+                    || m.RemoteTrustInfo.CanAutoTrust != (_remoteKeys.AutoTrustKey == AutoTrustKey.Always
+                                                          || (_remoteKeys.AutoTrustKey == AutoTrustKey.Once && _remoteKeys.TrustedIdentity == null)) )
                 {
                     m = _outgoingInitialMessage = new InitialMessage( this );
                 }
                 return m;
+
+                static bool HasChanged( RemoteIdentityKeyData? supposedIdentity, RemoteIdentityKey? trustedIdentity )
+                {
+                    if( trustedIdentity == null )
+                    {
+                        return supposedIdentity != null;
+                    }
+                    return !trustedIdentity.Equals( supposedIdentity );
+                }
             }
         }
 
@@ -415,25 +467,20 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Calls to SwitchOn/SwitchOff are serialized (by the TransportManager).
         /// We skip a SwitchOn here that has been "canceled" by a call to SwitchOff:
-        /// either this new SwitchOff state is the definite one (empty string) and we are done
-        /// or a subsequent call to DoSwitchOn will be serialized.
+        /// either this new SwitchOff state is the definite PartyDestroyed or ApplicationIdentityShutdown
+        /// and we are done or a subsequent call to DoSwitchOn will be serialized.
         /// </summary>
         internal ValueTask DoSwitchOnAsync( IActivityMonitor monitor )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            var offReason = SwitchOffReason;
             if( _switchOffReason != null )
             {
-                monitor.Trace( $"Remote '{Party.FullName}' is off (reason: '{offReason}'). Skipping its activation." );
+                monitor.Trace( $"Remote '{Party.FullName}' is off (reason: '{_switchOffReason}'). Skipping its activation." );
             }
             else
             {
                 monitor.Trace( $"Switching remote on '{Party.FullName}'." );
-                if( _listeners != null )
-                {
-                    foreach( var l in _listeners ) l.AddParty( this );
-                }
-                else
+                if( _listeners == null )
                 {
                     _transportManager.TryConnectTo( this );
                 }
@@ -442,24 +489,22 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Do not challenge the switch off reason here, applies the originating offReason.
+        /// Do not challenge the _switchOffReason here, applies the originating offReason.
         /// We can safely miss a SwitchOn (above) because:
-        ///  - _listener.RemoveParty is idempotent.
         ///  - If the controller is null, we do nothing.
+        ///  - _listener.RemoveParty is idempotent.
         /// => This whole function is idempotent.
         /// </summary>
-        internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, TaskCompletionSource? done, string offReason )
+        internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, TaskCompletionSource? done, GoodbyeMessage offReason )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            monitor.Trace( $"Switching off remote '{Party.FullName}' (reason: '{offReason}')." );
-            if( _listeners != null )
-            {
-                foreach( var l in _listeners ) l.RemoveParty( this );
-            }
+            bool isDefinitive = offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown;
+
             var c = _controller;
             _controller = null;
             if( c != null )
             {
+                monitor.Trace( $"Switching off remote '{Party.FullName}' (reason: '{offReason}')." );
                 // Setup a new ready task only if necessary.
                 if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
                 await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
@@ -469,9 +514,13 @@ namespace CK.AppIdentity.TransportLayer
             // and/or this is destroyed.
             await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );
             // When tearing down, dispose the connection availability event bridge.
-            if( offReason.Length == 0 )
+            if( isDefinitive )
             {
-                Throw.DebugAssert( _switchOffReason != null && _switchOffReason.Length == 0 );
+                // Removes the party from the listeners (if we were listening).
+                if( _listeners != null )
+                {
+                    foreach( var l in _listeners ) l.RemoveParty( this );
+                }
                 // Update the possible PeeringIssue if any.
                 await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this ).ConfigureAwait( false );
                 _connectionEventBridge.Dispose();

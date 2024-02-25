@@ -7,6 +7,7 @@ using NUnit.Framework;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Versioning;
+using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -26,8 +27,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
         }
 
         [Test]
-        [Timeout( 7000 )]
-        public async Task UnknwonIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async()
+        [CancelAfter( 7000 )]
+        public async Task UnknwonIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async( CancellationToken token )
         {
             TestHelper.GetCleanTestStoreFolder();
 
@@ -37,7 +38,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 c["FullName"] = "Test/$Listener";
                 c["AllowFeatures"] = "BlobChannel";
                 c["AlwaysListening"] = "true";
-            } );
+            }, token: token );
 
             var listenerTransport = listener.GetRequiredFeature<TransportManagerFeature>();
             listenerTransport.GetPeeringIssues().Should().BeEmpty();
@@ -55,11 +56,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     TestHelper.Monitor.Info( "Starts the sender: it is unknown for the listener. One UnknwonIncoming issue appears." );
                     // We need this remote to retry quickly, we use a heartbeat of 50 ms instead of 1000 ms.
                     // It will automatically trust the listener identity.
-                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
-                    await sender.InitializationTask;
+                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
 
                     TestHelper.Monitor.Info( "Wait for the first UnknwonIncoming event." );
-                    var theIssue = await nextEvent;
+                    var theIssue = await nextEvent.WaitAsync( token );
                     Throw.DebugAssert( theIssue != null );
 
                     TestHelper.Monitor.Info( "Check the exposed PeeringIssues and ClonedPeeringIssues and the first issue." );
@@ -74,12 +74,12 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     theIssue.IsListener.Should().BeTrue();
                     theIssue.IsInitiator.Should().BeFalse();
                     theIssue.Remote.Should().BeNull();
-                    theIssue.Kind.Should().Be( PeeringIssueKind.UnknwonIncoming );
+                    theIssue.Kind.Should().Be( PeeringIssueKind.IncomingUnknwon );
                     Throw.DebugAssert( theIssue.IncomingRequest != null );
                     theIssue.IncomingRequest.CurrentRemoteIdentity.Should().NotBeNull();
                     theIssue.IncomingRequest.FullName.Should().Be( "Test/$Sender/#Dev" );
                     theIssue.IncomingRequest.AvailableProtocols.Should().BeEquivalentTo( new[] { "Blob.0" } );
-                    theIssue.IncomingRequest.ValidClockOffset.Should().BeTrue();
+                    theIssue.IncomingRequest.IsValidClockOffset.Should().BeTrue();
 
                     // Captures the (unresolved) next event task.
                     nextEvent = waiter.NextEvent;
@@ -91,17 +91,17 @@ namespace CK.AppIdentity.BlobChannel.Tests
                         c["Address"] = "1.0.2.3";
                     } );
                     Throw.DebugAssert( declaredRemote != null );
-                    // When the remote appears, the existing issue kind transitions from Unknwon to InitiatorConflict
-                    // because the OnRemoteAppeared method check that the new remote has a TargetAddress (not waiting for
+                    // When the remote appears, the existing issue kind transitions from IncomingUnknwon to InitiatorConflict
+                    // because the OnRemoteAppeared method check that the new remote has a TargetAddress (without waiting for
                     // the next incoming request).
                     // (This is the same object since we haven't clone the issue.)
                     var prevMessage = theIssue.IncomingRequest;
-                    var theSameIssue = await nextEvent;
+                    var theSameIssue = await nextEvent.WaitAsync(token);
                     Throw.DebugAssert( theSameIssue == theIssue );
                     theIssue.Kind.Should().Be( PeeringIssueKind.InitiatorConflict );
 
                     TestHelper.Monitor.Info( "Wait for the remote's incoming connection." );
-                    var alwaysTheSameIssue = await waiter.NextEvent;
+                    var alwaysTheSameIssue = await waiter.NextEvent.WaitAsync( token );
                     Throw.DebugAssert( alwaysTheSameIssue == theIssue );
                     var butNotTheSameMessage = theIssue.IncomingRequest;
                     Throw.DebugAssert( butNotTheSameMessage != prevMessage );
@@ -124,14 +124,14 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 } );
                 Throw.DebugAssert( declaredRemote != null );
 
-                // The issue will become Untrusted: the remote now exists and no more InitiatorConflict.
+                // The issue will become UntrustedIncoming: the remote now exists and no more InitiatorConflict.
                 var transport = declaredRemote.GetFeature<TransportFeature>();
                 Throw.DebugAssert( transport != null );
 
                 using( TestHelper.Monitor.OpenInfo( "Let (at least) one incoming try reach us to be UntrustedIncoming." ) )
                 {
                     PeeringIssue[] issues;
-                    while( (issues = listenerTransport.GetPeeringIssues()).Length == 0 || issues[0].Kind != PeeringIssueKind.UntrustedIncoming );
+                    while( (issues = listenerTransport.GetPeeringIssues()).Length == 0 || issues[0].Kind != PeeringIssueKind.RequiresLocalApproval );
                 }
                 // Accept the incoming remote.
                 using( TestHelper.Monitor.OpenInfo( "Accept the incoming remote and wait for the Kind to become None: the connection is established" +
@@ -139,35 +139,48 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 {
                     var issues = listenerTransport.GetPeeringIssues();
                     issues.Should().HaveCount( 1 );
-                    issues[0].Kind.Should().Be( PeeringIssueKind.UntrustedIncoming );
+                    issues[0].Kind.Should().Be( PeeringIssueKind.RequiresLocalApproval );
                     issues[0].CanAcceptRemoteIdentity.Should().BeTrue();
 
                     issues[0].AcceptRemoteIdentity( TestHelper.Monitor );
                     while( issues[0].Kind != PeeringIssueKind.None ) ;
                     // Also wait for the issues to be cleared (OnTransportAvailable).
                     while( listenerTransport.GetPeeringIssues().Length > 0 ) ;
+
+                    // Check that the connection is up and running.
+                    // We don't dispose the tester as it would dispose our sender and listener.
+                    var blobTester = new BlobChannelTester( sender, listener );
+                    await blobTester.CheckSendReceiveAsync( true, token );
+                    await blobTester.CheckSendReceiveAsync( false, token );
                 }
                 var events = collector.StopAndGetEvents();
                 events.Select( e => e.Kind ).Should().BeEquivalentTo( new[]
                 {
                     // Initial state: the listener's remote is not declared.
-                    PeeringIssueKind.UnknwonIncoming,
+                    PeeringIssueKind.IncomingUnknwon,
                     // The listener's remote is also an Initiator.
                     PeeringIssueKind.InitiatorConflict,
                     // The buggy listener's remote is removed.
                     PeeringIssueKind.None,
                     // The listener's remote is created.
-                    PeeringIssueKind.UntrustedIncoming,
+                    PeeringIssueKind.RequiresLocalApproval,
                     // The listener's remote is Accepted.
                     PeeringIssueKind.None
                 } );
             }
             finally
             {
-                if( sender != null ) await sender.DisposeAsync();
+                if( sender != null )
+                {
+                    TestHelper.Monitor.Info( "Disposing sender." );
+                    await sender.DisposeAsync();
+                }
+            }
+            using( TestHelper.Monitor.OpenInfo( "Waiting 1 second for final logs." ) )
+            {
+                await Task.Delay( 1000, token );
             }
         }
-
 
     }
 }

@@ -32,7 +32,10 @@ namespace CK.AppIdentity.TransportLayer
         public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
         {
             Throw.DebugAssert( _remote != null );
-            if( IsStarted && !_cts.IsCancellationRequested ) CancelOperation( monitor, offline: true );
+            if( IsStarted && !_cts.IsCancellationRequested )
+            {
+                CancelOperation( monitor, offline: true );
+            }
         }
 
         [MemberNotNullWhen( true, nameof( _result ), nameof( _cts ), nameof( _remote ) )]
@@ -41,7 +44,7 @@ namespace CK.AppIdentity.TransportLayer
             get
             {
                 Throw.DebugAssert( _remote != null );
-                Throw.DebugAssert( _result == null || _cts != null, "_result != null => _cts != null" );
+                Throw.DebugAssert( "_result != null => _cts != null", _result == null || _cts != null );
                 return _result != null;
             }
         }
@@ -58,7 +61,7 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         // We have an error or have been canceled..
                         // The error is typically a parsing error of an incoming message, we increase the retry time.
-                        int retryDelay = Math.Max( _startCount + 1, 30 );
+                        int retryDelay = Math.Min( _startCount + 1, 30 );
                         if( _result.IsFaulted )
                         {
                             monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} second.", _result.Exception );
@@ -81,7 +84,9 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         // Successful completion: either the new transport has been provided to the TransportFeature
                         // by TryConnectToAsync or we have a retry delay.
+#pragma warning disable VSTHRD002 // We have checked that _result.IsCompletedSuccessfully is true. 
                         int delay = _result.Result;
+#pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
                         if( delay > 0 )
                         {
                             if( !_offlineDecision ) Retry( delay );
@@ -140,7 +145,10 @@ namespace CK.AppIdentity.TransportLayer
             // We signal the cancelation but wait one tick to handle it.
             _cts.Cancel();
             // This avoids any UnobservedTaskException on the result if cancellation fails to be honored in 1 tick.
-            _result.ContinueWith( Util.ActionVoid, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default );
+            _ = _result.ContinueWith( t => t.Exception?.Handle( static _ => true ),
+                                      CancellationToken.None,
+                                      TaskContinuationOptions.ExecuteSynchronously,
+                                      TaskScheduler.Default );
             Retry( 1 );
         }
 
@@ -184,7 +192,7 @@ namespace CK.AppIdentity.TransportLayer
                                                   CancellationTokenSource cancellation,
                                                   int currentTryCount )
         {
-            Throw.DebugAssert( remote.OutgoingInitialMessage != null, "Feature initialization is done." );
+            Throw.DebugAssert( "Feature initialization is done.", remote.OutgoingInitialMessage != null );
             Throw.DebugAssert( remote.TargetAddress != null );
 
             Transport? transport;
@@ -206,7 +214,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 return OnFailedTransportCreation( transportManager.Logger,
                                                   currentTryCount,
-                                                  $"Error while opening connection to '{remote.Party}' at '{remote.TargetAddress}'.",
+                                                  $"Error while creating Transport to '{remote.Party}' at '{remote.TargetAddress}'.",
                                                   ex );
             }
 
@@ -236,30 +244,30 @@ namespace CK.AppIdentity.TransportLayer
                                                                                     : $"Invalid first answer from remote '{remote.Party}'." );
                 }
                 var head = firstAnswer.Message.First;
-                Throw.DebugAssert( head.Length > 0, "The message is not empty (handled above)." );
+                Throw.DebugAssert( "The message is not empty (handled above).", head.Length > 0 );
                 switch( head.Span[0] )
                 {
-                    case ZeroProtocol.DNegoUnknownRemote:
+                    case ZeroProtocol.DNegoFinalFailureMessage:
+                        {
+                            // Weird case: the remote couldn't verify our signature or the nonce check failed.
+                            // We don't have any other available data.
+                            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                            $"The remote '{remote.Party}' was unable to verify our signature or the nonce check failed. Retrying in 10 seconds." );
+                            return 10;
+                        }
+                    case ZeroProtocol.DNegoRejectRemote:
                         {
                             RemoteIdentityKey? trustedIdentity = remote.RemoteKeys.TrustedIdentity;
-                            ZeroProtocol.ReadUnknownRemoteReplyMessage( firstAnswer,
+                            ZeroProtocol.ReadRejectRemoteReplyMessage( firstAnswer,
                                                                         sentNonce.Value,
                                                                         trustedIdentity,
-                                                                        out bool remoteVerificationFailure,
                                                                         out bool nonceFailure,
+                                                                        out ZeroProtocol.ConfigurationOrTrustIssue pIssue,
                                                                         out string? enlistUrl,
                                                                         out RemoteIdentityKeyData? currentKeyData,
                                                                         out bool foundTrustedKey,
                                                                         out RemoteIdentityKey? currentKey,
                                                                         out bool signatureVerified );
-                            // Weird case: the remote couldn't verify our signature or the nonce check failed.
-                            // We don't have any other available data.
-                            if( remoteVerificationFailure )
-                            {
-                                transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                               $"The remote '{remote.Party}' was unable to verify our signature or the nonce check failed. Retrying in 10 seconds." );
-                                return 10;
-                            }
                             // We have data but if the nonce we sent is not the one we have in reply, this is a serious issue.
                             if( nonceFailure )
                             {
@@ -267,47 +275,119 @@ namespace CK.AppIdentity.TransportLayer
                                                                $"The remote '{remote.Party}' sent an invalid Nonce. Retrying in 30 seconds." );
                                 return 30;
                             }
-                            // We are totally unknown to the target (the message is not signed in this case because the remote system must not
-                            // pick a Localkeys provider at random among its root and potential TenantDomains).
-                            if( currentKeyData == null )
+                            // If there is no remote key data, we are totally unknown to the target or the transport is disallowed (the message is not
+                            // signed in this case because the remote system must not pick a Localkeys provider at random among its root and
+                            // potential TenantDomains). And vice versa.
+                            // We check a Protocol error here.
+                            if( (currentKeyData == null) != (enlistUrl == null && pIssue is ZeroProtocol.ConfigurationOrTrustIssue.Unknwon
+                                                                                            or ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport) )
                             {
-                                Throw.DebugAssert( !signatureVerified );
-                                // if enlistUrl is the special "!DisallowedTransport", "!InitiatorConflict" or "!UnsupportedTransport" strings,
-                                // this appears in the logs and will be translated into the correspondin issues by TargetRequiresCreationOrApproval.
-                                transportManager.Logger.Warn( $"The remote '{remote.Party}' doesn't know us. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
-                                transportManager.TargetRequiresCreationOrApproval( remote, enlistUrl, false );
-                                return 5;
+                                // Weird: The only possible issues when the message is not signed are Unknwon and DisallowedTransport
+                                //        and enlistUrl mus be null.
+                                transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                               $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport), " +
+                                                               $"EnlistUrl='{enlistUrl}' (must be null). Retrying in 30 seconds." );
+                                return 30;
                             }
-                            // The remote knowns our existence but doesn't trust us.
-                            // Weird: the sent signatures cannot be verified.
-                            if( !signatureVerified )
+                            // Check the signature if it must be signed.
+                            if( currentKeyData != null && !signatureVerified )
                             {
+                                // Weird: the sent signatures cannot be verified.
                                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                                $"Unable to verify the signature's reply message from '{remote.Party}'. Retrying in 30 seconds." );
                                 return 30;
                             }
+                            // From now on we'll always retry in 5 seconds.
+                            transportManager.Logger.Warn( $"The remote '{remote.Party}' listener rejected us. Issue='{pIssue}', EnlistUrl='{enlistUrl}'. " +
+                                                          $"Retrying in 5 seconds." );
+                            PeeringIssueKind issue;
+                            // Handles the no signature case.
+                            if( currentKeyData == null )
+                            {
+                                Throw.DebugAssert( !signatureVerified );
+                                issue = pIssue switch
+                                {
+                                    ZeroProtocol.ConfigurationOrTrustIssue.Unknwon => PeeringIssueKind.RequiresRemoteCreation,
+                                    ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => PeeringIssueKind.RemoteDisallowedTransport,
+                                    _ => Throw.NotSupportedException<PeeringIssueKind>()
+                                };
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, enlistUrl, null );
+                                return 5;
+                            }
+                            // Signature is fine. We update our TrustedIdentity.
                             remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
-                            transportManager.Logger.Warn( $"The remote '{remote.Party}' knows about us but doesn't trust our identity. EnlistUrl='{enlistUrl}'. Retrying in 5 seconds." );
-                            transportManager.TargetRequiresCreationOrApproval( remote, enlistUrl, true );
+                            // Thanks to the InitialMessage.RemoteTrustInfo, the remote has detected that we won't be able to trust him:
+                            // we must provide him our EnlistUrl (even if it is null).
+                            if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
+                                          or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
+                            {
+                                // This is our EnlistUrl for him. (Note that the second parameter is unused).
+                                var hisEnlistUrl = transportManager.GetEnlistRemoteUrl( remote.Party, string.Empty );
+                                // We don't care if this is not sent.
+                                Throw.DebugAssert( remote.RemoteKeys == transport.RemoteKeys );
+                                await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, sentNonce.Value );
+                            }
+
+                            issue = pIssue switch
+                            {
+                                ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict => PeeringIssueKind.InitiatorConflict,
+                                ZeroProtocol.ConfigurationOrTrustIssue.UnsupportedTransport => PeeringIssueKind.RemoteUnsupportedTransport,
+                                ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval => PeeringIssueKind.RequiresRemoteApproval,
+                                ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval => PeeringIssueKind.RequiresLocalApproval,
+                                ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval => PeeringIssueKind.RequiresBothApproval,
+                                // Unknwon and DisallowedTransport are already handled.
+                                ZeroProtocol.ConfigurationOrTrustIssue.Unknwon => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
+                                ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
+                                _ => Throw.NotSupportedException<PeeringIssueKind>( pIssue.ToString() )
+                            };
+                            var usefulRemoteKey = issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
+                                                    ? currentKeyData
+                                                    : null;
+                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, enlistUrl, usefulRemoteKey );
                             return 5;
                         }
                     case ZeroProtocol.DNegoOffRemote:
                         {
-                            var shutUp = ZeroProtocol.ReadOffRemoteMessage( transportManager.Logger, remote, firstAnswer, sentNonce.Value );
-                            // If the nonce or the verification failed (this has been logged), retries in 30 seconds.
-                            int retryDelay = shutUp.HasValue ? (int)Math.Floor( shutUp.Value.TotalSeconds ) : 30;
-                            transportManager.Logger.Trace( $"Retrying in {retryDelay} seconds." );
+                            int retryDelay;
+                            if( !ZeroProtocol.ReadOffRemoteMessage( transportManager.Logger,
+                                                                    remote,
+                                                                    firstAnswer,
+                                                                    sentNonce.Value,
+                                                                    out var clockOffset,
+                                                                    out var offMessage ) )
+                            {
+                                // The nonce or the verification failed (this has been logged), retries in 30 seconds.
+                                retryDelay = 30;
+                            }
+                            else
+                            {
+                                if( offMessage is GoodbyeMessage.SwitchedOff sOff )
+                                {
+                                    retryDelay = HandleRemoteSwitchedOff( remote, clockOffset, sOff );
+                                }
+                                else
+                                {
+                                    // PartyDestroyed and ApplicationIdentityShutdown: this can be transient (restart of the application
+                                    // or suppresion of a dynamic party to add it back with a different configuration).
+                                    // We don't switch of our remote, we just emit an issue.
+                                    retryDelay = 5;
+                                }
+                                // If the remote is switched off because of us, don't emit the issue.
+                                if( offMessage != null )
+                                {
+                                    transportManager.OnRemoteSwitchedOffIssue( remote, offMessage );
+                                }
+                            }
+                            if( retryDelay != 0 ) transportManager.Logger.Trace( $"Retrying in {retryDelay} seconds." );
                             return retryDelay;
                         }
                     case ZeroProtocol.DNegoInvalidClockOffset:
                         {
-                            DateTime msgReceivedTime = transportManager.SystemClock.UtcNow;
                             if( !ZeroProtocol.ReadInvalidClockOffsetMessage( transportManager.Logger,
                                                                              remote,
                                                                              firstAnswer,
                                                                              sentNonce.Value,
-                                                                             out var remoteClockOffset,
-                                                                             out var remoteTime,
+                                                                             out var clockOffset,
                                                                              out var foundTrustedKey ) )
                             {
                                 // If the nonce or the verification failed, retries in 30 seconds.
@@ -315,6 +395,7 @@ namespace CK.AppIdentity.TransportLayer
                                 return 30;
                             }
                             transportManager.Logger.Trace( $"Retrying in 20 seconds." );
+                            transportManager.OnInvalidClockOffsetIssue( null, remote, clockOffset );
                             return 20;
                         }
                     case ZeroProtocol.DNegoDowngradeProtocol:
@@ -367,12 +448,12 @@ namespace CK.AppIdentity.TransportLayer
                                 return 30;
                             }
                             // We are ready to accept the transport.
-                            // Sends the Initiator (Outgoing) Ack.
+                            // Sends the initiator DNegoFinalSuccessMessage.
                             if( await ZeroProtocol.SendFinalSuccessMessageAsync( transport, remote, sentNonce.Value, finalClockOffset ).ConfigureAwait( false ) )
                             {
                                 // Accepts the transport.
                                 killTransport = false;
-                                transportManager.NewValidTransport( remote.Party, transport, protocolMap, finalClockOffset );
+                                transportManager.NewValidTransport( remote.Party, transport, protocolMap, finalClockOffset, evictionMessage: null );
                                 // Successful SendFinalMessageAsync: the BackTask will be reset).
                                 return 0;
                             }
@@ -385,6 +466,7 @@ namespace CK.AppIdentity.TransportLayer
                             if( valid )
                             {
                                 transportManager.Logger.Error( $"Remote '{remote.Party}' is already connected and its DisallowEviction is true. Retrying in 20 seconds." );
+                                transportManager.OnRemoteDisallowEvictionIssue( remote );
                                 return 20;
                             }
                             transportManager.Logger.Info( "Retrying in 30 seconds." );
@@ -392,17 +474,24 @@ namespace CK.AppIdentity.TransportLayer
                         }
                     case ZeroProtocol.DNegoMissingProtocols:
                         {
-                            var missingProtocols = ZeroProtocol.TryReadMissingProtocolsMessage( transportManager.Logger, firstAnswer, sentNonce.Value, remote );
-                            if( missingProtocols == null )
+                            if( !ZeroProtocol.TryReadMissingProtocolsMessage( transportManager.Logger,
+                                                                              firstAnswer,
+                                                                              sentNonce.Value,
+                                                                              remote,
+                                                                              out var localMissing,
+                                                                              out var remoteMissing ) )
                             {
                                 transportManager.Logger.Info( "Retrying in 30 seconds." );
                                 return 30;
                             }
-                            transportManager.Logger.Error( $"Remote '{remote.Party}' expects protocols: '{missingProtocols.Concatenate( "', '" )}'. Retrying in 30 seconds." );
+                            transportManager.Logger.Error( $"Missing protocols for remote '{remote.Party}':{Environment.NewLine}" +
+                                                           $"We (initiator) miss: {localMissing?.Concatenate()}{Environment.NewLine}" +
+                                                           $"He (listener) misses: {remoteMissing?.Concatenate()}" );
+                            transportManager.OnMissingProtocolsIssues( null, remote, localMissing, remoteMissing );
                             return 30;
                         }
                     default:
-                        return OnInvalidMessage( transportManager, currentTryCount, $"Invalid discriminator from remote '{remote.Party}'." );
+                        return OnInvalidMessage( transportManager, currentTryCount, $"Invalid discriminator '{head.Span[0]}' from remote '{remote.Party}'." );
                 }
             }
             finally
@@ -417,7 +506,7 @@ namespace CK.AppIdentity.TransportLayer
 
             static int OnFailedTransportCreation( IParallelLogger logger, int currentTryCount, string msg, Exception? exception )
             {
-                var retryDelay = Math.Max( currentTryCount + 1, 5 );
+                var retryDelay = Math.Min( currentTryCount + 1, 5 );
                 logger.Error( $"{msg} Retrying in {retryDelay} seconds.", exception );
                 return retryDelay;
             }
@@ -425,10 +514,50 @@ namespace CK.AppIdentity.TransportLayer
 
             static int OnInvalidMessage( TransportManager transportManager, int currentTryCount, string msg )
             {
-                int retryDelay = Math.Max( currentTryCount + 1, 30 );
+                int retryDelay = Math.Min( currentTryCount + 1, 30 );
                 transportManager.Logger.Error( $"{msg} Retrying in {retryDelay} seconds." );
                 return retryDelay;
             }
+        }
+
+        /// <summary>
+        /// Handles a remote received <see cref="GoodbyeMessage.SwitchedOff"/> message by computing the retry delay in seconds (heartbeats)
+        /// and if the <see cref="GoodbyeMessage.SwitchedOff.ExpectedAvailableTime"/> is <see cref="Util.UtcMaxValue"/> by switching
+        /// off our <paramref name="remote"/> with the message.
+        /// <para>
+        /// Used by <see cref="TransportController.Receive0Message(IActivityMonitor, IncomingMessage)"/> and by the <see cref="OutgoingConnectionBackTask"/>
+        /// when a <see cref="ZeroProtocol.DNegoOffRemote"/> is received.
+        /// </para>
+        /// </summary>
+        /// <param name="remote">The remote feature.</param>
+        /// <param name="clockOffset">The clock offset.</param>
+        /// <param name="offMessage">The swithed off message.</param>
+        /// <returns>The retry delay. 0 for no retry.</returns>
+        internal static int HandleRemoteSwitchedOff( TransportFeature remote, TimeSpan clockOffset, GoodbyeMessage.SwitchedOff offMessage )
+        {
+            int retryDelay;
+            if( offMessage.ExpectedAvailableTime.HasValue )
+            {
+                var t = offMessage.ExpectedAvailableTime.Value;
+                if( t == Util.UtcMaxValue )
+                {
+                    // We are done!
+                    // Switch off our remote: this is what year 9999 means.
+                    remote.RemoteSwitchedOff( offMessage );
+                    // And stop retrying!
+                    retryDelay = 0;
+                }
+                else
+                {
+                    var delta = t - remote.Party.ApplicationIdentityService.SystemClock.UtcNow;
+                    retryDelay = Math.Max( (int)(delta + clockOffset).TotalSeconds, 5 );
+                }
+            }
+            else
+            {
+                retryDelay = 5;
+            }
+            return retryDelay;
         }
     }
 }

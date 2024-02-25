@@ -10,6 +10,10 @@ namespace CK.AppIdentity.TransportLayer
     /// Reusable and mutable <see cref="ReadOnlySequence{T}"/>.
     /// <see cref="Clear"/> must be called to free its resources and use it again.
     /// This is a low level implementation: it must be used with care otherwise kitten will die.
+    /// <para>
+    /// Ther is no Slice or equivalent methods and this is intended: the MutableSequence owns its linked
+    /// list of buffers, there cannot be multiple owners.
+    /// </para>
     /// </summary>
     /// <typeparam name="T">The type (in practice, this is a byte).</typeparam>
     public sealed partial class MutableSequence<T> : IBufferWriter<T>, IDisposable where T : struct
@@ -193,11 +197,10 @@ namespace CK.AppIdentity.TransportLayer
         /// By using <see cref="System.Runtime.InteropServices.MemoryMarshal.AsMemory{T}(ReadOnlyMemory{T})"/>,
         /// each segment may be modified before publishing this sequence.
         /// </summary>
-        /// <param name="startIndex">Optional start index in the buffer.</param>
         /// <returns>This sequence content.</returns>
-        public ReadOnlySequence<T> GetReadOnlySequence( int startIndex = 0 ) => _head == null
-                                                                                ? ReadOnlySequence<T>.Empty
-                                                                                : new ReadOnlySequence<T>( _head, startIndex, _tail!, _tail!.Length );
+        public ReadOnlySequence<T> GetReadOnlySequence() => _head == null
+                                                                ? ReadOnlySequence<T>.Empty
+                                                                : new ReadOnlySequence<T>( _head, 0, _tail!, _tail!.Length );
 
         /// <summary>
         /// Clears this buffer. It can be reused.

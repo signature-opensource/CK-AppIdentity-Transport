@@ -1,4 +1,5 @@
 using CK.Core;
+using System;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -34,6 +35,8 @@ namespace CK.AppIdentity.TransportLayer
         public float? ReadNullableSingle() => ReadByte() == 1 ? ReadSingle() : null;
 
         public double? ReadNullableDouble() => ReadByte() == 1 ? ReadDouble() : null;
+
+        public DateTime? ReadNullableDateTime() => ReadByte() == 1 ? ReadDateTime() : null;
 
         public char? ReadNullableChar()
         {

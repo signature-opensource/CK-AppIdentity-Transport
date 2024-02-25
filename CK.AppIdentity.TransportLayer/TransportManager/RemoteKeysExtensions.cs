@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer
     {
         /// <summary>
         /// Must be called once identity keys have been read from a verified message incoming message:
-        /// the <paramref name="foundTrustedKey"/> indicates whether our <see cref="TrustedIdentity"/> has been
+        /// the <paramref name="foundTrustedKey"/> indicates whether our <see cref="IRemoteKeys.TrustedIdentity"/> has been
         /// found and the <paramref name="currentKeyData"/> is the current remote's identity.
         /// <list type="bullet">
         ///    <item>
@@ -22,7 +22,7 @@ namespace CK.AppIdentity.TransportLayer
         ///    </item>
         ///    <item>
         ///    If we haven't found our trusted key (may be because we don't have one), we can avoid a manual enlistment of the remote
-        ///    on our side: this depends on the "AutoTrustKey" configuration. This is a "dangerous" option (it defaults to Never).
+        ///    on our side: this depends on the <see cref="IRemoteKeys.AutoTrustKey"/> configuration. This is a "dangerous" option (it defaults to Never).
         ///    </item>
         /// </list>
         /// <para>
@@ -34,13 +34,14 @@ namespace CK.AppIdentity.TransportLayer
         /// <param name="foundTrustedKey">Whether our TrustedIdentity has been found in the message.</param>
         /// <param name="currentKeyData">Current remote's identity key data.</param>
         /// <param name="currentKey">The current key if it is known (already instantiated).</param>
-        /// <returns>True if the <see cref="TrustedIdentity"/> has been updated, false otherwise.</returns>
+        /// <returns>True if the <see cref="IRemoteKeys.TrustedIdentity"/> has been updated, false otherwise.</returns>
         public static bool OnReadIdentityKeys( this IRemoteKeys @this,
                                                IParallelLogger logger,
                                                bool foundTrustedKey,
                                                RemoteIdentityKeyData currentKeyData,
                                                RemoteIdentityKey? currentKey )
         {
+            Throw.CheckArgument( currentKey == null || currentKey.Equals( currentKeyData ) );
             if( foundTrustedKey )
             {
                 Throw.DebugAssert( @this.TrustedIdentity != null );

@@ -10,14 +10,25 @@ using System.Text;
 namespace CK.AppIdentity.TransportLayer
 {
     /// <summary>
-    /// Provides basic write function to a <see cref="IBufferWriter{T}"/>.
+    /// Provides basic write function to a <see cref="MutableSequence{T}"/> of bytes.
     /// <see cref="Commit"/> MUST be called at the end of the write session.
+    /// <para>
+    /// This writer is tied to a <see cref="MutableSequence{T}"/> instead of a more general <see cref="IBufferWriter{T}"/>.
+    /// This avoids virtcalls and to enable the already written bytes to be accessible from a FastByteWriter (with <see cref="MutableSequence{T}.GetReadOnlySequence(int)"/>)
+    /// without relying on external knwoledge.
+    /// </para>
+    /// <para>
+    /// This FastByteWriter is not a "general purpose" writer: it is tailored to only work with MutableSequence and this fits our needs.
+    /// If targeting other <see cref="IBufferWriter{T}"/> is important we could extract this in a FastByteWriter&lt;T&gt; where T : IBufferWriter and
+    /// compose this FastByteWriter with it and relay the calls (that should be elided at compile time) but at this time it seems useless.
+    /// </para>
     /// </summary>
     public ref partial struct FastByteWriter
     {
-        IBufferWriter<byte> _output;
+        readonly MutableSequence<byte> _output;
         Span<byte> _currentSpan;
         int _bufferPos;
+        long _totalWritten;
         Encoder? _utf8Encoder;
         // This writer will not allocate contiguous buffers bigger than 64 KiB
         // if it can, but if EnsureContiguous or Allocate are called with a bigger
@@ -25,14 +36,31 @@ namespace CK.AppIdentity.TransportLayer
         // is a just hint).
         internal const int MaxSegmentSizeHint = 64 * 1024;
 
+        /// <summary>
+        /// Initializes a new FastByteWriter on a <see cref="MutableSequence{T}"/> of bytes
+        /// starting at its beginning.
+        /// </summary>
+        /// <param name="output">The written sequence.</param>
         [MethodImpl( MethodImplOptions.AggressiveInlining )]
-        public FastByteWriter( IBufferWriter<byte> output )
+        public FastByteWriter( MutableSequence<byte> output )
         {
             _output = output;
             _currentSpan = _output.GetSpan();
-            _bufferPos = default;
+            _bufferPos = 0;
+            _totalWritten = 0;
             _utf8Encoder = null;
         }
+
+        /// <summary>
+        /// Gets the bytes written so far. <see cref="Commit()"/> should be called
+        /// before accessing to these already written bytes.
+        /// </summary>
+        public readonly MutableSequence<byte> Output => _output;
+
+        /// <summary>
+        /// Gets the total number of bytes written so far.
+        /// </summary>
+        public long TotalWritten => _totalWritten;
 
         /// <summary>
         /// Gets the current writable span.
@@ -57,9 +85,48 @@ namespace CK.AppIdentity.TransportLayer
         [MethodImpl( MethodImplOptions.AggressiveInlining )]
         public void Commit()
         {
+            _totalWritten += _bufferPos;
             _output.Advance( _bufferPos );
             _currentSpan = default;
             _bufferPos = 0;
+        }
+
+        /// <summary>
+        /// Gets the already written sequence. See <see cref="MutableSequence{T}.GetReadOnlySequence()"/>.
+        /// <para>
+        /// This calls <see cref="Commit"/> first.
+        /// </para>
+        /// </summary>
+        /// <returns>The data written so far.</returns>
+        public ReadOnlySequence<byte> GetBeforeHead()
+        {
+            Commit();
+            var s = _output.GetReadOnlySequence();
+            // Nominal case (sequence Length computation is fast): we are not
+            // rewriting an already filled MutableSequence.
+            return s.Length == _totalWritten
+                                    ? s
+                                    : s.Slice( s.Start, _totalWritten );
+        }
+
+
+        /// <summary>
+        /// Calls <see cref="Commit"/> and reserves a block of contiguous bytes
+        /// that can be written later. The initial content of this memory is not specified.
+        /// <para>
+        /// After this call, <see cref="Output"/> ends with this reserved memory.
+        /// </para>
+        /// </summary>
+        /// <param name="length">The block's length. Must be positive.</param>
+        /// <returns>The reserved memory.</returns>
+        public Memory<byte> ReserveMemory( int length )
+        {
+            Throw.CheckArgument( length > 0 );
+            Commit();
+            var m = _output.GetMemory( length );
+            _totalWritten += length;
+            _output.Advance( length );
+            return m.Slice( 0, length );
         }
 
         /// <summary>
@@ -81,23 +148,23 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Allocates buffer space for the specified number of bytes.
         /// This commits the current written data and acquires a new one.
+        /// You may want to use <see cref="EnsureContiguous(int)"/> rather than this method.
         /// </summary>
         /// <param name="sizeHint">The number of bytes to reserve.</param>
         [MethodImpl( MethodImplOptions.NoInlining )]
         public void Allocate( int sizeHint )
         {
+            _totalWritten += _bufferPos;
             _output.Advance( _bufferPos );
             _currentSpan = _output.GetSpan( sizeHint );
             _bufferPos = 0;
         }
 
         /// <summary>
-        /// Writes the specified value.
+        /// Writes the specified bytes as-is.
         /// </summary>
         /// <param name="value">The value.</param>
         [MethodImpl( MethodImplOptions.AggressiveInlining )]
-
-
         public void WriteBytes( scoped ReadOnlySpan<byte> value )
         {
             // Fast path, try copying to the current buffer.
@@ -137,7 +204,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <summary>
-        /// Writes a <see cref="sbyte"/>.
+        /// Writes a 1 or 0 value <see cref="byte"/>.
         /// </summary>
         /// <param name="value">The value.</param>
         public void WriteBool( bool value ) => WriteByte( value ? (byte)1 : (byte)0 );

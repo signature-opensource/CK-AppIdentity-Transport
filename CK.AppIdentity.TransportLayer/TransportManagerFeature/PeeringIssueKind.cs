@@ -25,26 +25,35 @@ namespace CK.AppIdentity.TransportLayer
         InitiatorConflict,
 
         /// <summary>
-        /// The remote that is calling us is totally unknown (<see cref="PeeringIssue.Remote"/> is null).
+        /// The remote that is calling us is totally unknown (<see cref="PeeringIssue.FullName"/> is not one
+        /// of our <see cref="ApplicationIdentityService.AllRemotes"/>).
         /// <para>
         /// This applies only to listeners.
         /// </para>
         /// </summary>
-        UnknwonIncoming,
+        IncomingUnknwon,
 
         /// <summary>
-        /// The remote that is calling us is known (the <see cref="IRemoteParty"/> exists) but its <see cref="PeeringIssue.Remote"/> is null
-        /// (its <see cref="TransportFeature"/> is disallowed).
+        /// The target remote doesn't know us at all. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
+        /// may be used by an authorized user of the remote system to create (and allow) us.
+        /// <para>
+        /// This applies only to initiators (this mirrors <see cref="IncomingUnknwon"/>).
+        /// </para>
+        /// </summary>
+        RequiresRemoteCreation,
+
+        /// <summary>
+        /// The remote that is calling us is known (the <see cref="IRemoteParty"/> exists) but its its <see cref="TransportFeature"/> is disallowed.
         /// <para>
         /// This applies only to listeners.
         /// </para>
         /// </summary>
-        DisallowedTransportIncoming,
+        IncomingDisallowedTransport,
 
         /// <summary>
         /// The target knows us: our remote counterpart exists but its <see cref="TransportFeature"/> is disallowed.
         /// <para>
-        /// This applies only to initiators.
+        /// This applies only to initiators (this mirrors <see cref="IncomingDisallowedTransport"/>).
         /// </para>
         /// </summary>
         RemoteDisallowedTransport,
@@ -56,51 +65,64 @@ namespace CK.AppIdentity.TransportLayer
         /// This applies only to listeners.
         /// </para>
         /// </summary>
-        UnsupportedTransportIncoming,
+        IncomingUnsupportedTransport,
 
         /// <summary>
         /// The target knows us: our remote counterpart exists but is listening on another type of transport or address.
         /// <para>
-        /// This applies only to initiators.
+        /// This applies only to initiators (this mirrors <see cref="IncomingUnsupportedTransport"/>).
         /// </para>
         /// </summary>
         RemoteUnsupportedTransport,
 
         /// <summary>
-        /// A known remote is calling (<see cref="PeeringIssue.Remote"/> is not null) but we don't trust it yet.
+        /// The remote transport feature is switched off.
+        /// <para>
+        /// This applies only to initiators.
+        /// </para>
+        /// </summary>
+        RemoteIsSwitchedOff,
+
+        /// <summary>
+        /// The remote is already connected to another party with the same <see cref="IParty.FullName"/>
+        /// and it is configured to disallow eviction.
+        /// <para>
+        /// This applies only to initiators.
+        /// </para>
+        /// </summary>
+        RemoteDisallowEviction,
+
+        /// <summary>
+        /// The remote has been evicted by another party with the same <see cref="IParty.FullName"/>.
+        /// <para>
+        /// This applies only to initiators.
+        /// </para>
+        /// </summary>
+        RemoteHasBeenEvicted,
+
+        /// <summary>
+        /// The remote trusts us but we don't trust it yet.
         /// It can be accepted by calling <see cref="PeeringIssue.AcceptRemoteIdentity(Core.IActivityMonitor)"/>.
-        /// <para>
-        /// This applies only to listeners.
-        /// </para>
         /// </summary>
-        UntrustedIncoming,
+        RequiresLocalApproval,
 
         /// <summary>
-        /// A known and trusted remote is calling but he doesn't trust us.
-        /// This happens when ha lost its remote keys.
-        /// <para>
-        /// This applies only to listeners.
-        /// </para>
+        /// We trust the remote but the remote doesn't trust us yet. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
+        /// may be used by an authorized user of the remote system to allow us.
         /// </summary>
-        IncomingDoesNotTrustUs,
+        RequiresRemoteApproval,
 
         /// <summary>
-        /// The target remote knows us but is not trusting us yet. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
-        /// can be used by an authorized user of the remote system to allow us.
-        /// <para>
-        /// This applies only to initiators.
-        /// </para>
+        /// The remote doesn't trust us and we don't trust it either.
         /// </summary>
-        WaitingRemoteApproval,
+        RequiresBothApproval,
 
         /// <summary>
-        /// The target remote doesn't know us at all. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
-        /// can be used by an authorized user of the remote system to create (and allow) us.
-        /// <para>
-        /// This applies only to initiators.
-        /// </para>
+        /// Trusted relationship has been estanblished but expected protocols are not satisfied:
+        /// <see cref="PeeringIssue.LocalMissingProtocols"/> and <see cref="PeeringIssue.RemoteMissingProtocols"/> contain
+        /// the culprits.
         /// </summary>
-        WaitingRemoteCreation,
+        MissingProtocols
     }
 
 }

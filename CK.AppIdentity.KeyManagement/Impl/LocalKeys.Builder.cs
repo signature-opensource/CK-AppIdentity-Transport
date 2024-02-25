@@ -80,7 +80,7 @@ namespace CK.AppIdentity.KeyManagement
                 HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
                 // We load the nonce cache.
                 var nonceCache = LocalNonceCache.Create( monitor, _store.FolderPath.AppendPart( "Nonce.cache" ) );
-                return new LocalKeys( _local, protector, ids, nonceCache );
+                return new LocalKeys( _local, protector, ids, nonceCache, allowedOfflineDays );
             }
 
             void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )

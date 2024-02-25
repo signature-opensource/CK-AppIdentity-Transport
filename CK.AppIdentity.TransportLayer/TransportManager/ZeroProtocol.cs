@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -16,7 +17,7 @@ namespace CK.AppIdentity.TransportLayer
 
         // Discriminator byte is the first byte of the payload.
         // Negotiation discriminators:
-        internal const byte DNegoUnknownRemote = 0;
+        internal const byte DNegoRejectRemote = 0;
         internal const byte DNegoFinalFailureMessage = 1;
         internal const byte DNegoDowngradeProtocol = 2;
         internal const byte DNegoAcceptedProtocolsMessage = 3;
@@ -25,57 +26,59 @@ namespace CK.AppIdentity.TransportLayer
         internal const byte DNegoOffRemote = 6;
         internal const byte DNegoFinalSuccessMessage = 7;
         internal const byte DNegoInvalidClockOffset = 8;
+        internal const byte DNegoRequiredEnlistUrl = 9;
         // Run discriminators:
-        internal const byte DRunByeBye = 255;
+        internal const byte DRunGoodbye = 255;
 
         internal static readonly OutgoingMessageFactory _zeroFactory = MessageProtocol.ZeroProtocol.MessageFactory;
 
         /// <summary>
-        /// ByeBye message is a signed message with the local identities.
+        /// Sends a <see cref="GoodbyeMessage"/> message. This is a signed message.
         /// </summary>
         /// <param name="transport">The transport.</param>
         /// <param name="message">The message.</param>
         /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
-        public static async ValueTask<bool> SendCreateByeByeMessageAsync( Transport transport, ByeByeMessage message )
+        public static async ValueTask<bool> SendGoodbyeMessageAsync( Transport transport, GoodbyeMessage message )
         {
             Throw.DebugAssert( transport.RemoteKeys != null );
             Throw.DebugAssert( message != null );
-            using var m = CreateAndSignMessage( message, transport.RemoteKeys.LocalKeys.Identities );
+            using var m = CreateAndSignMessage( message,
+                                                transport.RemoteKeys.Party.ApplicationIdentityService.SystemClock,
+                                                transport.RemoteKeys.LocalKeys.CurrentIdentity );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateAndSignMessage( ByeByeMessage message, IReadOnlyList<LocalIdentityKey> localIdentities )
+            static IOutgoingMessage CreateAndSignMessage( GoodbyeMessage message, ISystemClock systemClock, LocalIdentityKey identity )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );
-                w.WriteByte( DRunByeBye );
-                w.WriteString( message.Reason );
-                w.WriteTimeSpan( message.ShutUp );
-                w.Commit();
-                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
+                w.WriteByte( DRunGoodbye );
+                CreateAndWriteNonce( ref w, systemClock );
+                GoodbyeMessage.WriteMessage( ref w, message );
+                ComputeSHA512HashAndAppendSignature( ref w, identity );
                 return builder.CreateMessage( sequence );
             }
         }
 
-        public static ByeByeMessage? ReadByeByeMessage( IParallelLogger logger, Transport transport, IncomingMessage message )
+        public static GoodbyeMessage? ReadGoodbyeMessage( IActivityLineEmitter logger, Transport transport, IncomingMessage message )
         {
-            Throw.DebugAssert( transport.RemoteKeys != null );
+            Throw.DebugAssert( transport.RemoteKeys?.TrustedIdentity != null );
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
-            Throw.DebugAssert( discriminator == DRunByeBye );
-            var m = new ByeByeMessage( r.ReadString(), r.ReadTimeSpan() );
-            if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                     transport.RemoteKeys.TrustedIdentity,
-                                                     out var foundTrustedKey,
-                                                     out var currentKeyData,
-                                                     out var currentKey ) )
+            Throw.DebugAssert( discriminator == DRunGoodbye );
+            var timedNonce = ReadNonce( ref r );
+            var m = GoodbyeMessage.ReadMessage( ref r );
+
+            if( !ComputeSHA512HashAndVerifySignature( ref r, transport.RemoteKeys.TrustedIdentity ) )
             {
-                logger.Info( $"Received verified bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
-                transport.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
-                return m;
+                logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
+                return null;
             }
-            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
-            return null;
+            if( !transport.RemoteKeys.CheckNonce( logger, in timedNonce ) )
+            {
+                return null;
+            }
+            return m;
         }
 
     }

@@ -17,6 +17,7 @@ namespace CK.AppIdentity.TransportLayer
     /// </summary>
     sealed class InitialMessage : IIncomingRequest
     {
+
         // The maximum number of possible versions per protocol.
         const int MaxVersionPerProtocolCount = 4;
 
@@ -38,10 +39,13 @@ namespace CK.AppIdentity.TransportLayer
                                    + (2 + CoreApplicationIdentity.FullNameMaxLength) // Party' FullName
                                    + 5 // Number of protocol names (allows uint.MaxValue)
                                    + MaxProtocolFullNameCount * (2 + MessageProtocol.FullNameMaxLength)
+                                   + 5 // expectedCommonProtocolCount
+                                   + 1 // Is there a RemoteTrustInfo.SupposedIdentity?
+                                   + 1 // RemoteTrustInfo.CanAutoTrust?
+                                   + MaxPublicKeySize // The SupposedIdentity: TimeName + public key bytes.
                                    + 5 // Number of public keys (allows uint.MaxValue)
                                    + MaxPublicKeyCount * (4 + MaxPublicKeySize)
                                    + MaxPublicKeyCount * MaxSignatureSize;
-
         readonly string _endPointDescription;
         readonly string _remoteEndPointDescription;
         readonly string _domainName;
@@ -49,22 +53,28 @@ namespace CK.AppIdentity.TransportLayer
         readonly string _environmentName;
         readonly string _fullName;
         readonly string _instanceId;
+        readonly RemoteIdentityKeyData? _supposedIdentity;
+        readonly bool _canAutoTrust;
         readonly int _version;
 
         // Prefix is "CK-AppId" in ASCII.
         static ReadOnlySpan<byte> _prefix => "CK-AppId"u8;
 
         // For an outgoing message:
-        // TransportFeature.AvailableProtocols is adapted: no concurrency issues here, see TransportFeature.AvailableProtocols
-        // code comments.
+        // TransportFeature.AvailableProtocols is adapted: no concurrency issues here,
+        // see TransportFeature.AvailableProtocols code comments.
         // For an ingoing message, this is an array.
         readonly IReadOnlyCollection<string> _availableProtocols;
+        // The initiator BestRegisteredProtocols.Count: this is enough for the
+        // listener to detect that he cannot satisfy the initiator.
+        readonly int _expectedCommonProtocolCount;
 
         // Local identities is empty for incoming message.
         readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
 
         // Relevant only for incoming messages.
         readonly RemoteIdentityKeyData? _currentRemoteIdentity;
+        RemoteIdentityKey? _currentRemoteIdentityKey;
         readonly TimeSpan _clockOffset;
         readonly ulong _nonce;
         readonly bool _validClockOffset;
@@ -96,9 +106,13 @@ namespace CK.AppIdentity.TransportLayer
             _environmentName = local.EnvironmentName;
             _fullName = local.FullName;
             _instanceId = CoreApplicationIdentity.InstanceId;
+            _supposedIdentity = f.RemoteKeys.TrustedIdentity?.GetKeyData();
+            _canAutoTrust = f.RemoteKeys.AutoTrustKey == AutoTrustKey.Always
+                            || (f.RemoteKeys.AutoTrustKey == AutoTrustKey.Once && _supposedIdentity == null);
             _endPointDescription = string.Empty;
             _remoteEndPointDescription = string.Empty;
             _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
+            _expectedCommonProtocolCount = f.BestRegisteredProtocols.Count;
             _localIdentities = f.RemoteKeys.LocalKeys.Identities;
         }
 
@@ -114,10 +128,14 @@ namespace CK.AppIdentity.TransportLayer
                                string incomingEnvironmentName,
                                string incomingFullName,
                                string[] protocols,
+                               int expectedCommonProtocolCount,
+                               bool canAutoTrust,
+                               RemoteIdentityKeyData? supposedIdentity,
                                ulong nonce,
                                bool validClockOffset,
                                TimeSpan clockOffset,
-                               RemoteIdentityKeyData currentRemoteIdentity )
+                               RemoteIdentityKeyData currentRemoteIdentity,
+                               RemoteIdentityKey? currentRemoteIdentityKey )
         {
             _endPointDescription = endPointDescription;
             _remoteEndPointDescription = remoteEndPointDescription;
@@ -128,10 +146,14 @@ namespace CK.AppIdentity.TransportLayer
             _environmentName = incomingEnvironmentName;
             _fullName = incomingFullName;
             _availableProtocols = protocols;
+            _expectedCommonProtocolCount = expectedCommonProtocolCount;
+            _canAutoTrust = canAutoTrust;
+            _supposedIdentity = supposedIdentity;
             _nonce = nonce;
             _validClockOffset = validClockOffset;
             _clockOffset = clockOffset;
             _currentRemoteIdentity = currentRemoteIdentity;
+            _currentRemoteIdentityKey = currentRemoteIdentityKey;
             _localIdentities = Array.Empty<LocalIdentityKey>();
         }
 
@@ -146,6 +168,19 @@ namespace CK.AppIdentity.TransportLayer
             {
                 w.WriteString( protocol );
             }
+            w.WriteSmallInt32( _expectedCommonProtocolCount );
+            if( _supposedIdentity != null )
+            {
+                w.WriteBool( true );
+                w.WriteDateTime( _supposedIdentity.TimeName );
+                w.WriteSmallUInt32( (uint)_supposedIdentity.PublicKeyRawData.Length );
+                w.WriteBytes( _supposedIdentity.PublicKeyRawData.Span );
+            }
+            else
+            {
+                w.WriteBool( false );
+            }
+            w.WriteBool( _canAutoTrust );
         }
 
         /// <summary>
@@ -160,7 +195,10 @@ namespace CK.AppIdentity.TransportLayer
                                      [NotNullWhen( true )] out string? partyName,
                                      [NotNullWhen( true )] out string? environmentName,
                                      [NotNullWhen( true )] out string? fullName,
-                                     [NotNullWhen( true )] out string[]? protocols )
+                                     [NotNullWhen( true )] out string[]? protocols,
+                                     out int expectedCommonProtocolCount,
+                                     out bool canAutoTrust,
+                                     out RemoteIdentityKeyData? supposedIdentity )
         {
             Span<byte> header = stackalloc byte[8];
             r.ReadBytes( header );
@@ -192,6 +230,25 @@ namespace CK.AppIdentity.TransportLayer
             {
                 protocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
+            expectedCommonProtocolCount = r.ReadSmallInt32();
+            if( r.ReadBool() )
+            {
+                var timeName = r.ReadDateTime();
+                var lenKey = r.ReadSmallUInt32();
+                Throw.CheckData( lenKey <= ILocalKeys.MaxPublicKeySize );
+                if( !r.TryReadBytes( (int)lenKey, out var keyData  ) )
+                {
+                    keyData = r.ReadBytes( lenKey );
+                }
+                var publicKey = PublicKey.CreateFromSubjectPublicKeyInfo( keyData, out int bytesRead );
+                Throw.CheckData( bytesRead == keyData.Length );
+                supposedIdentity = new RemoteIdentityKeyData( timeName, publicKey );
+            }
+            else
+            {
+                supposedIdentity = null;
+            }
+            canAutoTrust = r.ReadBool();
             return true;
 
             static bool False( out string? instanceId,
@@ -212,7 +269,7 @@ namespace CK.AppIdentity.TransportLayer
         }
 
         /// <inheritdoc />
-        public int Version => _version;
+        public int ZeroProtocolVersion => _version;
 
         /// <inheritdoc />
         /// <remarks>
@@ -247,11 +304,20 @@ namespace CK.AppIdentity.TransportLayer
         /// <inheritdoc />
         public IReadOnlyCollection<string> AvailableProtocols => _availableProtocols;
 
+        public int ExpectedCommonProtocolCount => _expectedCommonProtocolCount;
+
         /// <summary>
         /// Gets the list of public keys that identify this local party.
         /// This is empty for an incoming message.
         /// </summary>
         public IReadOnlyList<LocalIdentityKey> LocalIdentities => _localIdentities;
+
+        /// <summary>
+        /// Gets the remote identity that the initiator expects the listener to be and whether it can accept
+        /// the .
+        /// A null implies that the initiator doesn't trust its remote and is expecting to be peered.
+        /// </summary>
+        public (RemoteIdentityKeyData? SupposedIdentity, bool CanAutoTrust) RemoteTrustInfo => (_supposedIdentity, _canAutoTrust);
 
         /// <summary>
         /// Relevant only for incoming messages.
@@ -261,12 +327,34 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Relevant only for incoming messages.
         /// </summary>
-        public bool ValidClockOffset => _validClockOffset;
+        public bool IsValidClockOffset => _validClockOffset;
 
         /// <summary>
         /// Relevant only for incoming messages.
         /// </summary>
         public ulong Nonce => _nonce;
+
+        /// <summary>
+        /// Relevant only for incoming messages.
+        /// </summary>
+        internal RemoteIdentityKey GetCurrentRemoteIdentityKey()
+        {
+            Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _currentRemoteIdentity != null );
+            if( _currentRemoteIdentityKey == null )
+            {
+                _currentRemoteIdentityKey = new RemoteIdentityKey( _currentRemoteIdentity );
+            }
+            return _currentRemoteIdentityKey;
+        }
+
+        /// <summary>
+        /// Relevant only for incoming messages.
+        /// </summary>
+        internal RemoteIdentityKeyData GetCurrentRemoteIdentityKeyData()
+        {
+            Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _currentRemoteIdentity != null );
+            return _currentRemoteIdentity;
+        }
 
         RemoteIdentityKeyData IIncomingRequest.CurrentRemoteIdentity
         {

@@ -75,6 +75,10 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     Logger.Warn( $"An incoming TCP connection got reset while it was in the backlog on '{_address}'." );
                 }
+                catch( Exception ex )
+                {
+                    Logger.Error( $"Unexpected error in TCP listener on '{_address}'.", ex );
+                }
             }
             Logger.Info( $"Ending TCP listener on '{_address}'." );
         }

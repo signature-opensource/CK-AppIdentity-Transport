@@ -36,7 +36,7 @@ namespace CK.AppIdentity.TransportLayer
         // Set when this transport has been accepted.
         TransportController? _controller;
         // Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
-        // as soon as the Transport has been created.
+        // as soon as the Transport has been created (initiator side).
         [AllowNull]
         CancellationTokenSource _cts;
 
@@ -46,7 +46,7 @@ namespace CK.AppIdentity.TransportLayer
 
         // Settable at any time: this is a soft condemned that doesn't signal the
         // LifeTime token.
-        ByeByeMessage? _byeByeMessage;
+        GoodbyeMessage? _goodbyeMessage;
 
         /// <summary>
         /// Initializes a new Transport from a <see cref="TransportListener"/>.
@@ -126,13 +126,13 @@ namespace CK.AppIdentity.TransportLayer
         public MessageProtocolMap NegotiatedProtocols => _receiveFactory.AllowedProtocols;
 
         /// <summary>
-        /// Gets the listener if this transport has been initiated by this server side.
-        /// Null if this transport is initiated by an outgoing connection to <see cref="TargetAddress"/>.
+        /// Gets the listener if this transport is on the listening side.
+        /// Null if this transport is the initiator to the non null <see cref="TargetAddress"/>.
         /// </summary>
         public TransportListener? Listener => _listenerOrTargetAddress as TransportListener;
 
         /// <summary>
-        /// Gets the target address if this transport has been initiated by an outgoing connection.
+        /// Gets the target address if this transport has initiated the connection.
         /// </summary>
         public TransportTypeAddress? TargetAddress => _listenerOrTargetAddress as TransportTypeAddress;
 
@@ -144,16 +144,19 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets whether this transport is condemned (or is already dead).
         /// </summary>
-        public bool IsCondemned => _byeByeMessage != null || _cts.IsCancellationRequested;
+        public bool IsCondemned => _goodbyeMessage != null || _cts.IsCancellationRequested;
 
         /// <summary>
-        /// Gets the bye-bye message if it has set.
+        /// Gets the goodbye message if it has been set.
         /// </summary>
-        public ByeByeMessage? ByeByeMessage => _byeByeMessage;
+        public GoodbyeMessage? GoodbyeMessage => _goodbyeMessage;
 
         /// <summary>
         /// Gets the alive token for this transport.
         /// </summary>
+        /// <remarks>
+        /// This is used as the cancellation token when reading and writing messages.
+        /// </remarks>
         public CancellationToken Lifetime => _cts.Token;
 
         /// <summary>
@@ -176,17 +179,17 @@ namespace CK.AppIdentity.TransportLayer
                 _cts.Cancel();
                 // Signals the send loop with a null message: this ensures that even when no
                 // message are waiting, the send loop ends without relying on cancellation exception.
-                if( _byeByeMessage == null ) _controller?.OnTransportCondemned();
+                if( _goodbyeMessage == null ) _controller?.OnTransportCondemned();
                 return true;
             }
             return false;
         }
 
-        internal void SetSoftCondemned( ByeByeMessage m, bool overrideCurrentMessage = false )
+        internal void SetSoftCondemned( GoodbyeMessage m, bool overrideCurrentMessage = false )
         {
             Throw.DebugAssert( m != null );
             var done = IsCondemned;
-            if( overrideCurrentMessage || _byeByeMessage == null ) _byeByeMessage = m;
+            if( overrideCurrentMessage || _goodbyeMessage == null ) _goodbyeMessage = m;
             if( !done ) _controller?.OnTransportCondemned();
         }
 
@@ -203,7 +206,7 @@ namespace CK.AppIdentity.TransportLayer
         internal Task<IncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
         {
             Throw.DebugAssert( maxMessageLength > 0 );
-            Throw.DebugAssert( _controller == null, "Not started yet." );
+            Throw.DebugAssert( "Not started yet.", _controller == null );
             return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _cts.Token );
         }
 
@@ -311,7 +314,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Must read the incoming available data and return the number of bytes read.
         /// If the underlying transport natively supports exact buffer reading, <see cref="ReadExactlyAsync(Memory{byte}, CancellationToken)"/> should be overridden.
-        /// In such case this ReceiveAsync method doesn't need to be implemented (it will never be called).
+        /// In such case this ReceiveAsync method doesn't need to be supported (it will never be called).
         /// </summary>
         /// <param name="buffer">The buffer to fill with the read data.</param>
         /// <param name="cancellation">Cancellation token.</param>
@@ -321,7 +324,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Must read exactly the number of bytes of the <paramref name="buffer"/>.
         /// This default implementation loops on <see cref="ReceiveAsync(Memory{byte}, CancellationToken)"/> until the buffer
-        /// is filled and throws an <see cref="InvalidDataException"/> if ReceiveAsync returns 0 or a negative value.
+        /// is filled and throws a <see cref="System.IO.InvalidDataException"/> if ReceiveAsync returns 0 or a negative value.
         /// <para>
         /// If the underlying transport has an efficient support of exact buffer reading this should be overridden and <see cref="ReceiveAsync(Memory{byte}, CancellationToken)"/>
         /// will never be called: this prefixed length transport only use exact buffer reading.

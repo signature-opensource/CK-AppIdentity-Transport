@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -17,8 +18,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
     {
         [Test]
         // The timeout must be enough for back task to be checked and exceptions to be dumped.
-        [Timeout( 4000 )]
-        public async Task demo_BlobChannel_is_an_optin_Feature_Async()
+        //[CancelAfter( 4000 )]
+        public async Task demo_BlobChannel_is_an_optin_Feature_Async( CancellationToken token = default )
         {
             TestHelper.GetCleanTestStoreFolder();
 
@@ -28,14 +29,14 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 c["FullName"] = "Test/$Listener";
                 c["Parties:0:PartyName"] = "Sender";
                 c["AllowFeatures"] = "BlobChannel";
-            } );
+            }, token: token );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "Test/$Sender";
                 c["Parties:0:PartyName"] = "Listener";
                 c["Parties:0:Address"] = "tcp:127.0.0.1";
                 c["AllowFeatures"] = "BlobChannel";
-            } );
+            }, token: token );
             var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
             var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 
@@ -64,13 +65,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
             };
             // Listener => Sender.
             // Before sending, ReadyTask can be awaited.
-            await listenerChannel.Transport.ReadyTask;
+            await listenerChannel.Transport.ReadyTask.WaitAsync( token );
             listenerChannel.TrySend( new byte[] { 1 } ).Should().BeTrue();
             listenerChannel.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
             listenerChannel.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
 
             // Sender => Listener.
-            await senderChannel.Transport.ReadyTask;
+            await senderChannel.Transport.ReadyTask.WaitAsync( token );
             senderChannel.TrySend( new byte[] { 1 } ).Should().BeTrue();
             senderChannel.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
             senderChannel.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
@@ -86,7 +87,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             listenerReceived[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
             listenerReceived[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
 
-            await Task.Delay( 2000 );
+            await Task.Delay( 2000, token );
 
             await sender.DisposeAsync();
             await listener.DisposeAsync();
@@ -100,8 +101,8 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
         [TestCase( "Reverted" )]
         [TestCase( "Regular" )]
-        [Timeout( 4000 )]
-        public async Task Listener_then_Sender_setup_using_AutoTrustKey_Once_Async( string mode )
+        [CancelAfter( 4000 )]
+        public async Task Listener_then_Sender_setup_using_AutoTrustKey_Once_Async( string mode, CancellationToken token )
         {
             TestHelper.GetCleanTestStoreFolder();
 
@@ -112,13 +113,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 if( regular )
                 {
-                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
-                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
+                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
                 }
                 else
                 {
-                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
-                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock );
+                    sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
+                    listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
                 }
 
                 var listenerReceived = new List<byte[]>();
@@ -131,9 +132,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
                     senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
 
-                    await BlobChannelTester.SendTestDataAsync( listenerChannel, true );
-                    await BlobChannelTester.SendTestDataAsync( senderChannel, false );
+                    await BlobChannelTester.SendTestDataAsync( listenerChannel, token );
+                    await BlobChannelTester.SendTestDataAsync( senderChannel, token );
+                    BlobChannelTester.SendTestData( listenerChannel );
+                    BlobChannelTester.SendTestData( senderChannel );
 
+                    BlobChannelTester.CheckTestDataReceived( senderReceived );
+                    BlobChannelTester.CheckTestDataReceived( listenerReceived );
                     BlobChannelTester.CheckTestDataReceived( senderReceived );
                     BlobChannelTester.CheckTestDataReceived( listenerReceived );
                 }
@@ -142,9 +147,13 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     senderChannel = BlobChannelTester.SetupChannel( sender, senderReceived );
                     listenerChannel = BlobChannelTester.SetupChannel( listener, listenerReceived );
 
-                    await BlobChannelTester.SendTestDataAsync( senderChannel, true );
-                    await BlobChannelTester.SendTestDataAsync( listenerChannel, false );
+                    await BlobChannelTester.SendTestDataAsync( senderChannel, token );
+                    await BlobChannelTester.SendTestDataAsync( listenerChannel, token );
+                    BlobChannelTester.SendTestData( senderChannel );
+                    BlobChannelTester.SendTestData( listenerChannel );
 
+                    BlobChannelTester.CheckTestDataReceived( listenerReceived );
+                    BlobChannelTester.CheckTestDataReceived( senderReceived );
                     BlobChannelTester.CheckTestDataReceived( listenerReceived );
                     BlobChannelTester.CheckTestDataReceived( senderReceived );
                 }

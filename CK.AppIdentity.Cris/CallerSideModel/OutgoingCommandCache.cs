@@ -91,7 +91,7 @@ namespace CK.AppIdentity.Cris
         /// <param name="monitor">The logger.</param>
         /// <param name="id">The <see cref="IOutgoingCommand.IssuerToken"/> key.</param>
         /// <param name="e">The event received from the callee.</param>
-        public Task CollectCommandEvent( IActivityMonitor monitor, ActivityMonitor.LogKey id, IEvent e )
+        public Task CollectCommandEventAsync( IActivityMonitor monitor, ActivityMonitor.LogKey id, IEvent e )
         {
             if( _cache.TryGetValue( id, out var r ) )
             {

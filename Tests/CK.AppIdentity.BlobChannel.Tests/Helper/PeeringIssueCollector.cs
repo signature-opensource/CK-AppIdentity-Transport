@@ -1,4 +1,4 @@
-﻿using CK.AppIdentity.TransportLayer;
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System.Collections.Generic;
 
@@ -42,7 +42,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
         }
 
         /// <summary>
-        /// Stops this collector and retreives the collected PeeringIssues.
+        /// Stops this collector and retrieves the collected PeeringIssues.
         /// </summary>
         /// <returns>The list of PeeringIssues received.</returns>
         public IReadOnlyList<PeeringIssue> StopAndGetEvents()
@@ -55,6 +55,20 @@ namespace CK.AppIdentity.BlobChannel.Tests
                     _stopped = true;
                 }
                 return _issues;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the collected PeeringIssues do far and clears the list.
+        /// </summary>
+        /// <returns>The list of PeeringIssues received.</returns>
+        public IReadOnlyList<PeeringIssue> GetEventsAndClear()
+        {
+            lock( _issues )
+            {
+                var a = _issues.ToArray();
+                _issues.Clear();
+                return a;
             }
         }
     }

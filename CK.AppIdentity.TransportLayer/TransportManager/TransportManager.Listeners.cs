@@ -1,4 +1,5 @@
 using CK.Core;
+using System;
 using System.Diagnostics;
 using System.Linq;
 
@@ -66,6 +67,12 @@ namespace CK.AppIdentity.TransportLayer
                 monitor.Trace( $"Created listener '{GetType().Name} - {l.EndPointDescription}'." );
             }
             return l;
+        }
+
+        internal void OnListenerDisposed( IActivityMonitor monitor, TransportListener listener )
+        {
+            Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
+            _listeners.Remove( listener );
         }
     }
 }

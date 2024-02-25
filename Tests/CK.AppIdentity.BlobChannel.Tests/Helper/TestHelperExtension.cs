@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -32,14 +33,16 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <param name="this">This test helper.</param>
         /// <param name="configuration">The configuration.</param>
         /// <param name="configureServices">Optional services configurator.</param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns>The started service.</returns>
         public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
                                                                                       Action<MutableConfigurationSection> configuration,
-                                                                                      Action<ServiceCollection>? configureServices = null )
+                                                                                      Action<ServiceCollection>? configureServices = null,
+                                                                                      CancellationToken token = default )
         {
             var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
             Throw.DebugAssert( c != null );
-            return CreateApplicationServiceAsync( @this, c, configureServices );
+            return CreateApplicationServiceAsync( @this, c, configureServices, token );
         }
 
         /// <summary>
@@ -59,10 +62,12 @@ namespace CK.AppIdentity.BlobChannel.Tests
         /// <param name="this">This test helper.</param>
         /// <param name="c">The configuration.</param>
         /// <param name="configureServices">Optional services configurator.</param>
+        /// <param name="token">Optional cancellation token.</param>
         /// <returns>The started service.</returns>
         public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
                                                                                             ApplicationIdentityServiceConfiguration c,
-                                                                                            Action<ServiceCollection>? configureServices = null )
+                                                                                            Action<ServiceCollection>? configureServices = null,
+                                                                                            CancellationToken token = default )
         {
             var serviceBuilder = new ServiceCollection();
             serviceBuilder.AddSingleton( c );
@@ -91,9 +96,9 @@ namespace CK.AppIdentity.BlobChannel.Tests
 
             var s = services.GetRequiredService<ApplicationIdentityService>();
             // This is done by host. We wait for the FeatureBuildersInitialization task.
-            _ = ((IHostedService)s).StartAsync( default );
+            _ = ((IHostedService)s).StartAsync( token );
 
-            await s.InitializationTask.ConfigureAwait( false );
+            await s.InitializationTask.WaitAsync( token ).ConfigureAwait( false );
             return s;
         }
     }

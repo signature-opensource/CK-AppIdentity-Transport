@@ -14,8 +14,8 @@ namespace CK.AppIdentity.TransportLayer
     /// Factory for <see cref="OutgoingMessageBuilder"/>.
     /// There is only 2 ways to create an outgoing transport message:
     /// <list type="number">
-    /// <item><see cref="CreateBuilder()"/> (and then <see cref="OutgoingMessageBuilder.CreateMessage"/>) for regular messages (that must be disposed).</item>
-    /// <item><see cref="CreateStatic(Action{IBufferWriter{byte}}, int)"/> for messages that can be kept without the need to be disposed.</item>
+    /// <item><see cref="CreateBuilder(int)"/> (and then <see cref="OutgoingMessageBuilder.CreateMessage"/>) for regular messages (that must be disposed).</item>
+    /// <item><see cref="CreateStatic(Action{MutableSequence{byte}}, bool, int)"/> for messages that can be kept without the need to be disposed.</item>
     /// </list>
     /// <para>
     /// This class is thread safe.
