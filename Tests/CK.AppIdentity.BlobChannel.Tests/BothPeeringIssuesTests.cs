@@ -41,7 +41,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var senderTransportManager = sender.GetRequiredFeature<TransportManagerFeature>();
             var senderIssues = new PeeringIssueCollector( senderTransportManager, skipSameKind: false );
 
-            TestHelper.Monitor.Info( "Tests: Creates the sender Party (no protocol, no AutoTrustKey)." );
+            TestHelper.Monitor.Info( "Tests: Creates the sender Party (no AutoTrustKey)." );
             var senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "$Listener";
@@ -59,7 +59,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             var listenerTransportManager = listener.GetRequiredFeature<TransportManagerFeature>();
             var listenerIssues = new PeeringIssueCollector( listenerTransportManager, skipSameKind: false );
 
-            TestHelper.Monitor.Info( "Tests: Creates the listener Party (no protocol, no AutoTrustKey)." );
+            TestHelper.Monitor.Info( "Tests: Creates the listener Party (no AutoTrustKey)." );
             var listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "$Sender";

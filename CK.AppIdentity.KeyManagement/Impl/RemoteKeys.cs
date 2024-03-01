@@ -117,7 +117,7 @@ namespace CK.AppIdentity.KeyManagement
             return false;
         }
 
-        public bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel )
+        public bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error )
         {
             if( clockOffset > _maxClockOffset || clockOffset < -_maxClockOffset )
             {
@@ -127,43 +127,23 @@ namespace CK.AppIdentity.KeyManagement
             return true;
         }
 
-        public bool CheckClockOffset( IActivityLineEmitter logger, DateTime time, out TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error )
+        public bool CheckAndAddNonceValue( IActivityLineEmitter logger, ulong nonceValue, LogLevel logLevel = LogLevel.Error )
         {
-            Throw.CheckNotNullArgument( logger );
-            Throw.CheckArgument( time.Kind == DateTimeKind.Utc );
-            clockOffset = time - _remote.ApplicationIdentityService.SystemClock.UtcNow;
-            return CheckClockOffset( logger, clockOffset, logLevel );
+            if( _localKeys.NonceCache.Find( nonceValue ) )
+            {
+                if( logLevel != LogLevel.None ) logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated,
+                                                                      $"Nonce value '{nonceValue:X}' has already been used for '{_remote}'." );
+                return false;
+            }
+            _localKeys.NonceCache.Add( nonceValue );
+            return true;
         }
 
         public bool CheckNonce( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error )
         {
             return nonce.CheckCreationTimeKind( logger, Party.FullName, logLevel )
-                   && CheckNonce( logger, nonce, out _, out _, logLevel );
-        }
-
-        public bool CheckNonce( IActivityLineEmitter logger,
-                                in TimedNonce nonce,
-                                out TimeSpan clockOffset,
-                                out bool validClockOffset,
-                                LogLevel logLevel = LogLevel.Error )
-        {
-            validClockOffset = CheckClockOffset( logger, nonce.CreationTime, out clockOffset, logLevel );
-            if( !validClockOffset ) return false;
-            if( _localKeys.NonceCache.Find( nonce.Nonce ) )
-            {
-                if( logLevel != LogLevel.None ) logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated,
-                                                                      $"Nonce value '{nonce.Nonce:X}' has already been used for '{_remote}'." );
-                return false;
-            }
-            _localKeys.NonceCache.Add( nonce.Nonce );
-            return true;
-        }
-
-        public bool CheckAndAddNonceValue( ulong nonceValue )
-        {
-            if( _localKeys.NonceCache.Find( nonceValue ) ) return false;
-            _localKeys.NonceCache.Add( nonceValue );
-            return true;
+                   && CheckClockOffset( logger, nonce.CreationTime - _remote.ApplicationIdentityService.SystemClock.UtcNow )
+                   && CheckAndAddNonceValue( logger, nonce.Nonce, logLevel );
         }
     }
 }

@@ -59,31 +59,31 @@ namespace CK.AppIdentity.TransportLayer
             _runTask = null;
         }
 
-        public void OnInitialize( TransportManager transportManager, Transport incoming )
+        public void OnInitialize( Transport incoming, DateTime incomingTime )
         {
             Throw.DebugAssert( incoming.Listener != null );
             _incoming = incoming;
             _initializeTime = DateTime.UtcNow;
-            _runTask = Task.Run( () => RunAsync( transportManager, incoming ) );
+            _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
             NextCheckDelay = 1;
         }
 
         // Wraps the call to DoRunAsync that does the real job of handling the incoming InitialMessage:
         // if it returns false, the incoming transport is immediately killed.
-        static async Task RunAsync( TransportManager transportManager, Transport incoming )
+        static async Task RunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
         {
-            var success = await DoRunAsync( transportManager, incoming );
+            var success = await DoRunAsync( transportManager, incoming, incomingTime );
             if( !success )
             {
                 transportManager.KillTransport( incoming, int.MaxValue );
             }
         }
 
-        static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming )
+        static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
         {
             Throw.DebugAssert( incoming?.Listener != null );
 
-            var initialResult = await HandleInitialMessageAsync( transportManager, incoming ).ConfigureAwait( false );
+            var initialResult = await HandleInitialMessageAsync( transportManager, incoming, incomingTime ).ConfigureAwait( false );
             if( !initialResult.HasValue ) return false;
 
             var (initialMessage, remote, foundTrustKey) = initialResult.Value;
@@ -192,7 +192,9 @@ namespace CK.AppIdentity.TransportLayer
             return false;
         }
 
-        static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager, Transport incoming )
+        static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager,
+                                                                                               Transport incoming,
+                                                                                               DateTime incomingTime )
         {
             Throw.DebugAssert( incoming.Listener != null );
             InitialMessage? initialMessage = null;
@@ -217,7 +219,7 @@ namespace CK.AppIdentity.TransportLayer
                     return null;
                 }
                 // Let any exception while reading the initial message be a task error.
-                initialMessage = TryParse( transportManager, incoming, message, out var otherVersion, out remote, out foundTrustKey );
+                initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey );
                 // Handles null parse result:
                 //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
                 //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
@@ -262,6 +264,7 @@ namespace CK.AppIdentity.TransportLayer
 
             static InitialMessage? TryParse( TransportManager transportManager,
                                              Transport incoming,
+                                             DateTime incomingTime,
                                              IncomingMessage message,
                                              out int otherVersion,
                                              out TransportFeature? remote,
@@ -314,12 +317,8 @@ namespace CK.AppIdentity.TransportLayer
                 // If we have no identified remote, we're done (with an invalid clock offset) but we compute the clockOffset
                 // nevertheless (this may be a warning for the user).
                 bool validClockOffset = false;
-                TimeSpan clockOffset;
-                if( remote == null )
-                {
-                    clockOffset = timedNonce.CreationTime - transportManager.ApplicationIdentityAgent.SystemClock.UtcNow;
-                }
-                else
+                TimeSpan clockOffset = timedNonce.CreationTime - incomingTime;
+                if( remote != null )
                 {
                     // Before impacting anything we check the nonce (that checks clock offset).
                     // The nonce (when validClockOffset is true) is always added: we don't want to
@@ -327,14 +326,11 @@ namespace CK.AppIdentity.TransportLayer
                     // was to be replayed once the legitimate remote has been accepted, we would let
                     // a bad guy validate its connection... And if DisallowEviction is false this will
                     // be endless.
-                    if( !remote.RemoteKeys.CheckNonce( transportManager.Logger,
-                                                       in timedNonce,
-                                                       out clockOffset,
-                                                       out validClockOffset )
-                        && validClockOffset )
+                    validClockOffset = remote.RemoteKeys.CheckClockOffset( transportManager.Logger, clockOffset );
+                    if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce.Nonce ) )
                     {
                         // This looks like a replay attack.
-                        // The log has been emitted. Give up.
+                        // This has already been logged.
                         return null;
                     }
                     // We have a known remote, validClockOffset may be false but if it is true then nonce is fine (and in the cache).

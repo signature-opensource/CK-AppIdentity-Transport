@@ -125,7 +125,7 @@ namespace CK.AppIdentity.TransportLayer
         protected void OnIncomingTransport( Transport transport )
         {
             Throw.CheckNotNullArgument( transport );
-            _transportManager.IncomingTransport( transport );
+            _transportManager.IncomingTransport( transport, _transportManager.SystemClock.UtcNow );
         }
 
         /// <summary>

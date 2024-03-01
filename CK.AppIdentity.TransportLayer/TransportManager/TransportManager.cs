@@ -122,9 +122,9 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new TryConnectToJob( remote ) );
         }
 
-        internal void IncomingTransport( Transport t )
+        internal void IncomingTransport( Transport t, DateTime incomingTime )
         {
-            PushTypedJob( t );
+            PushTypedJob( new NewIncomingTransport( t, incomingTime ) );
         }
 
         /// <summary>
@@ -307,7 +307,6 @@ namespace CK.AppIdentity.TransportLayer
             return tcs.Task;
         }
 
-        // A new incoming Transport from a TransportListener is directly the Transport object.
         // A new TransportFeature is directly the TransportFeature object.
         sealed record class PeeringIssueJob( PeeringIssueKind Kind,
                                              InitialMessage? Message,
@@ -319,6 +318,7 @@ namespace CK.AppIdentity.TransportLayer
                                              IReadOnlyList<string>? RemoteMissing,
                                              GoodbyeMessage? RemoteOffMessage );
         sealed record class TryConnectToJob( TransportFeature Remote );
+        sealed record class NewIncomingTransport( Transport Incoming, DateTime IncomingTime );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset, GoodbyeMessage.Evicted? EvictionMessage );
         sealed record class KillTransportJob( Transport Transport, int ReconnectDelay, bool Delayed );
         sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, GoodbyeMessage Reason );
@@ -344,11 +344,11 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Trace( $"Initiating connection to '{f.TargetAddress}' for '{f.Party.FullName}' immediately." );
                     _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( f, 0 ) );
                     return default;
-                case Transport t:
+                case NewIncomingTransport j:
                     Throw.DebugAssert( "This is necessarily an incoming connection created by a listener (not yet validated).",
-                                       t.Listener != null && t.Controller == null );
-                    monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
-                    _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( this, t ) );
+                                       j.Incoming.Listener != null && j.Incoming.Controller == null );
+                    monitor.Trace( $"Received transport '{j.Incoming.RemoteEndPointDescription}' (#{j.Incoming.GetHashCode()}) from listener '{j.Incoming.Listener.EndPointDescription}'. Validating it." );
+                    _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime ) );
                     return default;
                 case TransportFeature newFeature:
                     return HandleNewRemoteTransportFeatureAsync( monitor, newFeature );
