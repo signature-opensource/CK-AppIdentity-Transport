@@ -13,6 +13,10 @@ namespace CK.AppIdentity.TransportLayer
     /// that compose the <see cref="WireMessage"/>: the ReadOnlySequence must no more be accessed
     /// once this message is disposed.
     /// <para>
+    /// The <see cref="ToString"/> method can be used for logging: it displays the special singletons,
+    /// the <see cref="Protocol"/> and whether the message has been released or its wire message length.
+    /// </para>
+    /// <para>
     /// The maximal message length is <see cref="int.MaxValue"/> (2 GiB).
     /// </para>
     /// </summary>
@@ -52,12 +56,14 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// The "0 Protocol" empty acknowledgment message singleton (2 bytes on the wire) with
-        /// <see cref="IncomingMessage.IsResponse"/> set.
+        /// <see cref="IsControl"/> set.
         /// It can be safely disposed and will remain valid and empty.
         /// </summary>
         public static readonly IncomingMessage EmptyAck = new IncomingMessage( 2 );
 
         // Constructor for the 4 special singleton messages.
+        // _refCount is 0  for invalid messages, and 1 for valid (Empty and EmptyAck).
+        // _buffer and _messageFactory are null.
         IncomingMessage( int emptyOrAck )
         {
             Throw.DebugAssert( emptyOrAck >= 0 && emptyOrAck <= 2 );
@@ -65,6 +71,7 @@ namespace CK.AppIdentity.TransportLayer
             if( emptyOrAck != 0 )
             {
                 _wireMessage = new ReadOnlySequence<byte>( new byte[] { (byte)(emptyOrAck == 1 ? 0 : OutgoingMessage.IsControlFlag), 0 } );
+                _refCount = 1;
             }
             Throw.DebugAssert( _message.IsEmpty );
         }
@@ -75,7 +82,7 @@ namespace CK.AppIdentity.TransportLayer
                                   MutableSequence<byte> buffer,
                                   int prefixLength )
         {
-            Throw.DebugAssert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 0 );
+            Throw.DebugAssert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 2 );
             Throw.DebugAssert( prefixLength >= 2 && prefixLength <= IOutgoingMessage.MaxWirePrefixLength );
             _messageFactory = messageFactory;
             _buffer = buffer;
@@ -89,7 +96,7 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets whether this message is valid: it is not the <see cref="Invalid"/> nor the <see cref="Canceled"/> message
         /// and has not been disposed yet.
         /// </summary>
-        public bool IsValid => _refCount != 0 && !_wireMessage.IsEmpty;
+        public bool IsValid => _refCount != 0;
 
         /// <summary>
         /// Gets whether this message is a valid control message.
@@ -142,14 +149,12 @@ namespace CK.AppIdentity.TransportLayer
         /// Retains this message, preventing a <see cref="Release()"/> to release the resources.
         /// Release must be called as many times as AddRef has been called for the resources to be released.
         /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/>, <see cref="Empty"/> and <see cref="EmptyAck"/>
-        /// or a static message (see <see cref="OutgoingMessageFactory.CreateStatic(Action{IBufferWriter{byte}}, int)"/> )
         /// has no effect and returns false.
         /// </summary>
         public void AddRef()
         {
-            if( _refCount != 0 )
+            if( _refCount != 0 && _buffer != null )
             {
-                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 )
@@ -166,9 +171,8 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         public void Release()
         {
-            if( _refCount != 0 )
+            if( _refCount != 0 && _buffer != null )
             {
-                Throw.DebugAssert( _buffer != null );
                 lock( _buffer )
                 {
                     if( _refCount != 0 && --_refCount == 0 )
@@ -184,5 +188,24 @@ namespace CK.AppIdentity.TransportLayer
         /// Synonym of <see cref="Release"/>.
         /// </summary>
         public void Dispose() => Release();
+
+        /// <summary>
+        /// Overridden to describe this message.
+        /// </summary>
+        /// <returns>A readable string.</returns>
+        public override string ToString()
+        {
+            if( _buffer == null )
+            {
+                if( this == Invalid ) return nameof( Invalid );
+                if( this == Canceled ) return nameof( Canceled );
+                if( this == Empty ) return nameof( Empty );
+                if( this == EmptyAck ) return nameof( EmptyAck );
+                Throw.CKException( nameof( IncomingMessage ) );
+            }
+            int c = _refCount;
+            if( c == 0 ) return $"Released IncomingMessage for {_protocol}";
+            return $"IncomingMessage for {_protocol} ({_buffer.Length} wire bytes)";
+        }
     }
 }

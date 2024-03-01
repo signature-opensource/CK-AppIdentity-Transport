@@ -25,7 +25,8 @@ namespace CK.AppIdentity.TransportLayer
         readonly Channel<IOutgoingMessage> _highPriorityChannel;
         Transport _transport;
         Task<IActivityMonitor>? _receiveTask;
-        Task? _sendTask;
+        // Never null: initialized with a completed task.
+        Task _sendTask;
 
         internal TransportController( TransportManager transportManager, TransportFeature feature, Transport transport )
         {
@@ -34,16 +35,26 @@ namespace CK.AppIdentity.TransportLayer
             _highPriorityChannel = Channel.CreateUnbounded<IOutgoingMessage>( _unboundOptions );
             // This channel should be bounded.
             _senderChannel = Channel.CreateUnbounded<IOutgoingMessage?>( _unboundOptions );
+            _sendTask = Task.CompletedTask;
             _transport = transport;
             _transport.SetController( this );
         }
 
-        internal void Rebind( IActivityMonitor monitor, Transport transport )
+        internal void Rebind( IActivityMonitor monitor, Transport transport, GoodbyeMessage.Evicted? evictionMessage )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            Throw.DebugAssert( _transport.IsCondemned );
+            if( evictionMessage != null )
+            {
+                CloseCurrentTransport( monitor, evictionMessage );
+            }
+            else
+            {
+                // If we have no evictionMessage then we are an initiator and our
+                // current transport is dead: the _sendTask is completed.
+                Throw.DebugAssert( !_feature.IsListening && _transport.IsCondemned && _sendTask.IsCompleted );
+            }
             _transport = transport;
-            _transport.SetController( this );
+            transport.SetController( this );
         }
 
         /// <summary>
@@ -95,12 +106,6 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        internal void OnTransportCondemned()
-        {
-            // Null awaker to end the send loop even if there is no message.
-            _senderChannel.Writer.TryWrite( null );
-        }
-
         internal ValueTask ActivateAsync( IActivityMonitor monitor, MessageProtocolMap protocols, PeerProtocolHandler[] handlers )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
@@ -123,13 +128,12 @@ namespace CK.AppIdentity.TransportLayer
                     monitor.Warn( $"Current receive task for '{_feature.Party.FullName}' is pending. A new monitor is instantiated." );
                 }
             }
-            // The receive loop is tied to the transport, it will end when the transport is condemned.
+            // The receive loop is controlled by a receive CTS that can be signaled by the Transport.LifeTime token
+            // or by a GoodbyeMessage.
             _receiveTask = _transport.StartReceiveAsync( receiveMonitor, _transportManager, protocols, handlers );
-            // Then start the send loop. The send loop will also end when the transport is condemned but it can be
-            // stopped at any time (eviction uses this).
-            if( _sendTask != null && !_sendTask.IsCompleted )
+            // Then start the send loop after the completion of the previous one.
+            if( !_sendTask.IsCompleted )
             {
-                // This is highly improbable.
                 return WaitToStartSendAsync( monitor );
             }
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
@@ -138,8 +142,9 @@ namespace CK.AppIdentity.TransportLayer
 
         async ValueTask WaitToStartSendAsync( IActivityMonitor monitor )
         {
-            Throw.DebugAssert( _sendTask != null );
             monitor.Warn( $"Current send task for '{_feature.Party.FullName}' is pending. Waiting for its completion." );
+
+            _transportManager.DelayedKillTransport( _transport, int.MaxValue );
             await _sendTask.ConfigureAwait( false );
             _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
         }
@@ -147,19 +152,57 @@ namespace CK.AppIdentity.TransportLayer
         internal async ValueTask CloseAsync( IActivityMonitor monitor, GoodbyeMessage reason )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            CurrentTransport.SetSoftCondemned( reason );
+            CloseCurrentTransport( monitor, reason );
             // Close the channels: this controller is dead.
             _highPriorityChannel.Writer.Complete();
             _senderChannel.Writer.Complete();
-            // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels.
-            var t = _sendTask;
-            if( t != null ) await t.ConfigureAwait( false );
+            // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels
+            // while clearing pending outgoing messages.
+            if( !_sendTask.IsCompleted )
+            {
+                await _sendTask.ConfigureAwait( false );
+            }
             // Drain queued outgoing messages: they must be released.
             ClearPendingOutgoingMessages( monitor );
-            // Kill the 
-            _transportManager.KillTransport( CurrentTransport );
+            // Kill the transport and don't trigger any retry if this is an outgoing transport.
+            // If the sendTask is completed, it's the opportunity to not wait for 1 second.
+            if( _sendTask.IsCompleted ) _transportManager.KillTransport( CurrentTransport, int.MaxValue );
         }
 
+        internal void OnKilledTransport()
+        {
+            _senderChannel.Writer.TryWrite( null );
+        }
+
+        void CloseCurrentTransport( IActivityMonitor monitor, GoodbyeMessage goodbye )
+        {
+            Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+            if( _transport.Condemn( goodbye ) )
+            {
+                // _transport.Condemn ensures that the cancellation token of the Receive loop is signaled.
+                //
+                // Awake the send loop that will
+                //   - see a condemned transport,
+                //   - breaks its loop
+                //   - sends the GoodbyeMessage (if it's not from the remote) with the Transport.LifeTime token.
+                //   - and this eventually completes the _sendTask...
+                _senderChannel.Writer.TryWrite( null );
+                // But if something is blocked in the message sending (that uses the transport.LifeTime token),
+                // the _sendTask may block "too much" (especially because we await the _sendTask from the
+                // TransportManager loop).
+                // Let some time to the sendTask to end before killing the transport and don't trigger
+                // any retry if this is an outgoing transport: we are rebinding (to a new transport with an eviction message
+                // to send to the current transport or we are closing this controller because the TransportFeature is switched off). 
+                _transportManager.DelayedKillTransport( _transport, int.MaxValue );
+            }
+        }
+
+        // There is no "sendCTS" here, only the lookup to transport.IsCondemned.
+        // A sendCTS would be useful if cancelling a send was "atomic" (no bytes of the message would be sent): in such
+        // case we would then be able to send the goodbye message (if any) before exiting the loop (and completing the task).
+        // Unfortunately, this super feature is missing!
+        // So we simply use the transport.LifeTime token and if a big message is being sent and takes too long, we
+        // won't be able to send the Goodbye message.
         static async Task RunSendAsync( TransportManager transportManager,
                                         TransportController transportController,
                                         Transport transport,
@@ -211,8 +254,9 @@ namespace CK.AppIdentity.TransportLayer
                     }
                 }
                 // Sends the bye-bye message if any.
+                // ZeroProtocol always use the transport.LifeTime token.
                 var byeBye = transport.GoodbyeMessage;
-                if( byeBye != null && !byeBye.IsFromRemote )
+                if( byeBye != null && !byeBye.IsFromRemote && !transport.Lifetime.IsCancellationRequested )
                 {
                     transportManager.Logger.Trace( $"Sending goodbye message '{byeBye}' and stopping sending loop for '{transport.RemoteEndPointDescription}'." );
                     await ZeroProtocol.SendGoodbyeMessageAsync( transport, byeBye );
@@ -226,53 +270,55 @@ namespace CK.AppIdentity.TransportLayer
             {
                 Throw.DebugAssert( "The way we use it avoids to rely on the ChannelClosedException.", ex is not ChannelClosedException );
                 transportManager.Logger.Error( $"While sending message for '{transportController.Feature.Party.FullName}' to '{transport.RemoteEndPointDescription}'.", ex );
-                transportManager.KillTransport( transport );
+                // Kill this buggy transport and retry asap if this is an outgoing connection.
+                transportManager.KillTransport( transport, 0 );
             }
-        }
 
-        static async ValueTask<bool> SendMessageAsync( TransportManager transportManager,
-                                                       Transport transport,
-                                                       IOutgoingMessage m,
-                                                       IReadOnlyList<PeerProtocolHandler> handlers )
-        {
-            if( m.Protocol.IsZeroProtocol )
+            static async ValueTask<bool> SendMessageAsync( TransportManager transportManager,
+                                                           Transport transport,
+                                                           IOutgoingMessage m,
+                                                           IReadOnlyList<PeerProtocolHandler> handlers )
             {
-                // Even if the send is canceled in "0 Protocol", always consume the message:
-                // the "0 Protocol" must not interact with different transports.
-                await transport.SendAsync( 0, m ).ConfigureAwait( false );
-            }
-            else
-            {
-                int protocolNumber = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
-                if( protocolNumber == -1 )
+                if( m.Protocol.IsZeroProtocol )
                 {
-                    transportManager.Logger.Error( $"Got a '{m.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
+                    // Even if the send is canceled in "0 Protocol", always consume the message:
+                    // the "0 Protocol" must not interact with different transports.
+                    await transport.SendAsync( 0, m ).ConfigureAwait( false );
                 }
                 else
                 {
-                    PeerProtocolHandler currentHandler = handlers[protocolNumber];
-                    if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
+                    int protocolNumber = transport.NegotiatedProtocols.GetProtocolIndexByName( m.Protocol.Name );
+                    if( protocolNumber == -1 )
                     {
-                        var toSend = replacement ?? m;
-                        if( toSend.Protocol != currentHandler.Protocol )
+                        transportManager.Logger.Error( $"Got a '{m.Protocol}' message to send for transport '{transport}' but negotiated protocols are: {transport.NegotiatedProtocols}. Message is dropped." );
+                    }
+                    else
+                    {
+                        PeerProtocolHandler currentHandler = handlers[protocolNumber];
+                        if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
                         {
-                            transportManager.Logger.Warn( $"{currentHandler.GetType():C}.OnSendMessage has not converted a message from '{toSend.Protocol}' to '{currentHandler.Protocol}'). Message is dropped." );
-                        }
-                        else
-                        {
-                            // If the send is canceled, ends this loop without consuming the message.
-                            if( !await transport.SendAsync( (uint)protocolNumber + 1, toSend ).ConfigureAwait( false ) )
+                            var toSend = replacement ?? m;
+                            if( toSend.Protocol != currentHandler.Protocol )
                             {
-                                replacement?.Release();
-                                return false;
+                                transportManager.Logger.Warn( $"{currentHandler.GetType():C}.OnSendMessage has not converted a message from '{toSend.Protocol}' to '{currentHandler.Protocol}'). Message is dropped." );
+                            }
+                            else
+                            {
+                                // If the send is canceled, returns without consuming the message.
+                                if( !await transport.SendAsync( (uint)protocolNumber + 1, toSend ).ConfigureAwait( false ) )
+                                {
+                                    replacement?.Release();
+                                    return false;
+                                }
                             }
                         }
+                        replacement?.Release();
                     }
-                    replacement?.Release();
                 }
+                m.Release();
+                return true;
             }
-            m.Release();
-            return true;
+
         }
 
         internal void ClearPendingOutgoingMessages( IActivityMonitor monitor, Action<IOutgoingMessage>? action = null )
@@ -303,13 +349,15 @@ namespace CK.AppIdentity.TransportLayer
 
             if( m == IncomingMessage.Empty )
             {
-                // An empty message (a single 0 byte) is not a real TransportMessage, it is the keep alive:
+                // An empty message is not a real TransportMessage, it is the keep alive:
                 // the other side worries about us because we did not send it any message for some time.
-                // Let's reassure it.
+                // Let's reassure it. It is useless to use the high priority: if messages are being sent
+                // we should not receive KeepAlive.
                 receiveMonitor.Trace( $"Received KeepAlive request." );
                 if( !TryEnqueue( IOutgoingMessage.EmptyAck ) )
                 {
-                    receiveMonitor.Warn( $"Received a KeepAlive from '{_transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" );
+                    receiveMonitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
+                                         $"Received a KeepAlive from '{_transport.RemoteEndPointDescription}' but our outgoing queue is full. This is weird!" ); ;
                 }
                 return true;
             }
@@ -319,25 +367,29 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     case ZeroProtocol.DRunGoodbye:
                         {
-                            var message = ZeroProtocol.ReadGoodbyeMessage( receiveMonitor, _transport, m );
-                            if( message == null )
+                            var goodbye = ZeroProtocol.ReadGoodbyeMessage( receiveMonitor, _transport, m );
+                            if( goodbye == null )
                             {
                                 // Fatal protocol error.
                                 return false;
                             }
+                            receiveMonitor.Info( $"Received GoodbyeMessage from '{_transport.RemoteEndPointDescription}': {goodbye}" );
                             int reconnectDelay;
-                            switch( message )
+                            switch( goodbye )
                             {
                                 case GoodbyeMessage.Evicted:
                                     // When evicted, we MUST switch off the transport.
                                     // We are the initiator and the remote allows eviction: if we retry, we'll be accepted
                                     // and this will never end...
-                                    _feature.RemoteSwitchedOff( message );
+                                    _feature.RemoteSwitchedOff( goodbye );
                                     reconnectDelay = 0;
                                     break;
                                 case GoodbyeMessage.SwitchedOff off:
                                     Throw.DebugAssert( "We are connected: we have a clock offset.", _feature.ClockOffset.HasValue );
+                                    // HandleRemoteSwitchedOff returns 0 when no retry must be done (this is the OutgoingConnectionBackTask
+                                    // retry convention). We adjust it here.
                                     reconnectDelay = OutgoingConnectionBackTask.HandleRemoteSwitchedOff( _feature, _feature.ClockOffset.Value, off );
+                                    if( reconnectDelay == 0 ) reconnectDelay = int.MaxValue;
                                     break;
                                 // PartyDestroyed and ApplicationIdentityShutdown: this can be transient (restart of the application
                                 // or suppresion of a dynamic party to add it back with a different configuration).
@@ -346,8 +398,13 @@ namespace CK.AppIdentity.TransportLayer
                                     reconnectDelay = 5;
                                     break;
                             }
-                            _transportManager.OnRemoteSwitchedOffIssue( _feature, message );
-                            _transportManager.KillTransport( _transport, reconnectDelay );
+                            _transportManager.OnRemoteSwitchedOffIssue( _feature, goodbye );
+                            if( _transport.Condemn( goodbye ) )
+                            {
+                                _senderChannel.Writer.TryWrite( null );
+                                // Ne delay here because there's nothing to do before killing the connection.
+                                _transportManager.KillTransport( _transport, reconnectDelay );
+                            }
                             return false;
                         }
                     default:

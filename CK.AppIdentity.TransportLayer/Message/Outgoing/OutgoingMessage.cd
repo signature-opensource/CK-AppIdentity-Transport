@@ -1,27 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="NameAndType">
-  <Class Name="CK.AppIdentity.TransportLayer.MessageProtocol">
-    <Position X="4.25" Y="0.5" Width="3" />
-    <Members>
-      <Field Name="_fullName" Hidden="true" />
-      <Field Name="_isZeroProtocol" Hidden="true" />
-      <Field Name="_messageFactory" Hidden="true" />
-      <Field Name="_name" Hidden="true" />
-      <Field Name="_version" Hidden="true" />
-      <Field Name="FullNameMaxLength" Hidden="true" />
-      <Property Name="MessageFactory" Hidden="true" />
-      <Method Name="MessageProtocol" Hidden="true" />
-      <Method Name="ToString" Hidden="true" />
-      <Field Name="ZeroProtocol" Hidden="true" />
-      <Field Name="ZeroProtocolName" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>IAAAIAAgCAAAKIAEAAAAAAYIAAACAAAAAACAAAAAAAA=</HashCode>
-      <FileName>MessageProtocol.cs</FileName>
-    </TypeIdentifier>
-  </Class>
   <Class Name="CK.AppIdentity.TransportLayer.OutgoingMessageFactory">
-    <Position X="0.5" Y="0.5" Width="3.25" />
+    <Position X="0.5" Y="0.5" Width="3.5" />
     <Members>
       <Field Name="_cachedOneBuffer" Hidden="true" />
       <Field Name="_protocol" Hidden="true" />
@@ -62,14 +42,14 @@
     <Lollipop Position="0.2" />
   </Class>
   <Interface Name="CK.AppIdentity.TransportLayer.IOutgoingMessageData">
-    <Position X="4.75" Y="2.5" Width="2.5" />
+    <Position X="4.5" Y="0.5" Width="2.5" />
     <TypeIdentifier>
       <HashCode>AAAAAAAAAgAAAAAAAAgAAABAAAAQAAAAAAIAIAAAAAA=</HashCode>
       <FileName>Message\Outgoing\IOutgoingMessageData.cs</FileName>
     </TypeIdentifier>
   </Interface>
   <Interface Name="CK.AppIdentity.TransportLayer.IOutgoingMessage">
-    <Position X="4.75" Y="5" Width="2.5" />
+    <Position X="4.5" Y="3" Width="2.5" />
     <Members>
       <Method Name="WriteWireHeader" Hidden="true" />
     </Members>

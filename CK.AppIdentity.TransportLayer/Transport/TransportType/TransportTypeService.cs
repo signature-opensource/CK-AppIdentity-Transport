@@ -1,12 +1,9 @@
-using CK.Core;
-using System.Net;
-using System.Diagnostics;
-using System.Net.Http.Headers;
 using CK.AppIdentity.KeyManagement;
+using CK.Core;
 using System;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
 {

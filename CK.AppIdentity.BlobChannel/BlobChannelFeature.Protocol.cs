@@ -23,8 +23,8 @@ namespace CK.AppIdentity.BlobChannel
             {
                 // Here we are using the MutableSequence<byte>.AddSegment( byte[] ): there
                 // is no copy at all, the data is simply referenced by the sequence.
-                var builder = MessageFactory.CreateBuilder();
-                var w = builder.ObtainSequence();
+                OutgoingMessageBuilder builder = MessageFactory.CreateBuilder();
+                MutableSequence<byte> w = builder.ObtainSequence();
                 w.AddSegment( data );
                 builder.Source = data;
                 return builder.CreateMessage( w );
@@ -35,11 +35,11 @@ namespace CK.AppIdentity.BlobChannel
                 // We take a snapshot of the data in a new array because a receiver must dispose the message
                 // and this is a simple channel: we don't want to expose a message that can be retained
                 // by the event subscribers (but we could...).
-                var payload = message.Message.ToArray();
+                byte[] payload = message.Message.ToArray();
                 message.Dispose();
                 await _feature._received.SafeRaiseAsync( monitor, _feature, payload );
             }
         }
-    }
+}
 
 }

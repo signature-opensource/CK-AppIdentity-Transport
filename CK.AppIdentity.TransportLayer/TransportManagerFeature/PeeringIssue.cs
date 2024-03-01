@@ -168,7 +168,7 @@ namespace CK.AppIdentity.TransportLayer
                 if( _kind is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
                     && _remoteKeyForApproval != null )
                 {
-                    Throw.DebugAssert( _remote != null && IncomingRequest != null );
+                    Throw.DebugAssert( _remote != null );
                     _remote.RemoteKeys.SetTrustedIdentity( monitor, _remoteKeyForApproval );
                     return true;
                 }
@@ -333,8 +333,8 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( "IncomingUnknwon => IsListener",
                                 kind != PeeringIssueKind.IncomingUnknwon || isListener );
 
-            Throw.DebugAssert( "InvalidClockOffset <=> a non null value for the offset.",
-                               (kind is PeeringIssueKind.InvalidClockOffset) == invalidClockOffset.HasValue );
+            Throw.DebugAssert( "InvalidClockOffset => a non null value for the offset.",
+                               (kind is not PeeringIssueKind.InvalidClockOffset) || invalidClockOffset.HasValue );
 
             Throw.DebugAssert( "Listener and InvalidClockOffset <=> Invalid clock offset is the one of the initialMessage.",
                                (isListener && kind == PeeringIssueKind.InvalidClockOffset) == (initialMessage != null && !initialMessage.IsValidClockOffset
@@ -363,6 +363,11 @@ namespace CK.AppIdentity.TransportLayer
                                (kind is PeeringIssueKind.MissingProtocols) == (localMissingProtocols?.Count > 0 || remoteMissingProtocols?.Count > 0) );
         }
 
+        /// <summary>
+        /// Overridden to return the <see cref="FullName"/> - <see cref="Kind"/>.
+        /// </summary>
+        /// <returns>The party's full name and kind of this issue.</returns>
+        public override string ToString() => $"{_fullName} - {Kind}";
 
     }
 

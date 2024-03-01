@@ -2,6 +2,8 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -12,7 +14,24 @@ namespace CK.AppIdentity.TransportLayer
         /// Gets the handlers to which incoming messages are routed.
         /// This is set by StartReceiveAsync and used by the <see cref="Controller"/>.
         /// </summary>
-        internal IReadOnlyList<PeerProtocolHandler>? Handlers => _handlers;
+        internal IReadOnlyList<PeerProtocolHandler>? Handlers => _receiveHandlers;
+
+        /// <summary>
+        /// Used during the initial negotiation.
+        /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
+        /// <see cref="IsCondemned"/> has been set, in such case <see cref="IncomingMessage.Canceled"/> is returned.
+        /// </summary>
+        /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
+        /// <returns>
+        /// A message that may be one of the special messages <see cref="IncomingMessage.Invalid"/>, <see cref="IncomingMessage.Canceled"/>,
+        /// <see cref="IncomingMessage.Empty"/> or <see cref="IncomingMessage.EmptyAck"/>.
+        /// </returns>
+        internal Task<IncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
+        {
+            Throw.DebugAssert( maxMessageLength > 0 );
+            Throw.DebugAssert( "Not started yet.", _controller == null );
+            return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _lifeTime.Token );
+        }
 
         /// <summary>
         /// Binds the <see cref="Handlers"/> and starts the reading loop that dispatches the incoming messages to the
@@ -39,42 +58,51 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( protocols.IsValid );
             Throw.DebugAssert( handlers.Length == protocols.Protocols.Count );
             _receiveFactory.SetAllowedProtocols( protocols );
-            _handlers = handlers;
-            return Task.Run( () => RunReceiveAsync( receiveMonitor, transportManager, this, handlers ) );
+            _receiveHandlers = handlers;
+            // The LifeTime drives the receive CTS: this is a safety net.
+            // There is no need to unregister the callback here.
+            _receiveCTS = new CancellationTokenSource();
+            _lifeTime.Token.UnsafeRegister( static r => Unsafe.As<CancellationTokenSource>( r )!.Cancel(), _receiveCTS );
+            return Task.Run( () => RunReceiveAsync( receiveMonitor, transportManager, this ) );
         }
 
         static async Task<IActivityMonitor> RunReceiveAsync( IActivityMonitor? receiveMonitor,
                                                              TransportManager transportManager,
-                                                             Transport transport,
-                                                             PeerProtocolHandler[] handlers )
+                                                             Transport transport )
         {
-            Throw.DebugAssert( transport.Controller != null );
+            Throw.DebugAssert( transport.Controller != null && transport._receiveCTS != null && transport._receiveHandlers != null );
             receiveMonitor ??= new ActivityMonitor( $"Receive loop for '{transport.Controller.Feature.Party.FullName}'." );
-            var receiveFactory = transport._receiveFactory;
-            var reader = transport._reader;
+            // Captures used variables:
+            IncomingMessageFactory receiveFactory = transport._receiveFactory;
+            Func<Memory<byte>, CancellationToken, ValueTask> reader = transport._reader;
+            CancellationToken receiveToken = transport._receiveCTS.Token;
+            PeerProtocolHandler[] handlers = transport._receiveHandlers;
             using var log = receiveMonitor.OpenInfo( $"Start receiving messages from '{transport}'." );
             try
             {
                 for(; ; )
                 {
-                    var m = await receiveFactory.DoReadAsync( reader, int.MaxValue, transport.Lifetime );
+                    var m = await receiveFactory.DoReadAsync( reader, int.MaxValue, receiveToken );
                     if( m.Protocol == MessageProtocol.ZeroProtocol )
                     {
                         // Handles Canceled and Invalid messages.
-                        if( m == IncomingMessage.Canceled )
+                        if( !m.IsValid )
                         {
-                            // The transport.LifeTime has been signaled: the transport has been
-                            // killed.
-                            receiveMonitor.Trace( $"Canceled message received." );
-                            break;
-                        }
-                        if( m == IncomingMessage.Invalid )
-                        {
-                            // The message was invalid. This is a serious error: kill
-                            // the transport as if an exception occurred.
-                            receiveMonitor.Error( $"Invalid message received." );
-                            transportManager.KillTransport( transport );
-                            break;
+                            if( m == IncomingMessage.Canceled )
+                            {
+                                // The receiveCTS has been signaled.
+                                receiveMonitor.Trace( $"Canceled message received." );
+                                break;
+                            }
+                            if( m == IncomingMessage.Invalid )
+                            {
+                                // The message was invalid. This is a serious error: kill
+                                // the transport as if an exception occurred and like the exception case
+                                // retry asap if we are an outgoing connection.
+                                receiveMonitor.Error( $"Invalid message received." );
+                                transportManager.KillTransport( transport, 0 );
+                                break;
+                            }
                         }
                         // Handles KeepAlive acknowledgment directly without bothering the controller.
                         if( m == IncomingMessage.EmptyAck )
@@ -86,8 +114,11 @@ namespace CK.AppIdentity.TransportLayer
                         else
                         {
                             // A bye-bye message or a fatal protocol error occurred.
+                            // It is up to the Receive0Message to send a KillTransport message to the
+                            // TransportManager when false is returned.
                             if( !transport.Controller.Receive0Message( receiveMonitor, m ) )
                             {
+                                // We don't have a "KillTransportRequested" flag on a Transport.
                                 break;
                             }
                         }
@@ -103,7 +134,8 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 receiveMonitor.Error( $"While receiving on '{transport}'.", ex );
-                transportManager.KillTransport( transport );
+                // Retrying asap if we are an outgoing connection.
+                transportManager.KillTransport( transport, 0 );
             }
             return receiveMonitor;
         }

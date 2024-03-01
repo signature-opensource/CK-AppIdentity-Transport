@@ -67,18 +67,16 @@ namespace CK.AppIdentity.TransportLayer
                                         object? source = null,
                                         int minSequenceBufferSize = MutableSequence<byte>.DefaultMinimumBufferSize )
         {
-            var b = CreateBuilder( minSequenceBufferSize );
+            var buffer = GetBuffer();
+            buffer.MinimumBufferSize = minSequenceBufferSize;
             try
             {
-                b.Source = source;
-                b.IsControl = isControl;
-                var sequence = b.ObtainSequence();
-                writer( sequence );
-                return b.CreateMessage( sequence );
+                writer( buffer );
+                return new OutgoingMessage( this, buffer, source, isControl );
             }
             catch
             {
-                b.Dispose();
+                Release( buffer );
                 throw;
             }
         }

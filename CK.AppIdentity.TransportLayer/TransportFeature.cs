@@ -73,7 +73,11 @@ namespace CK.AppIdentity.TransportLayer
             _disallowEviction = disallowEviction;
         }
 
-        internal async Task OnTransportAppearAsync( IActivityMonitor monitor, Transport transport, MessageProtocolMap protocols, TimeSpan clockOffset )
+        internal async Task OnTransportAppearAsync( IActivityMonitor monitor,
+                                                    Transport transport,
+                                                    MessageProtocolMap protocols,
+                                                    TimeSpan clockOffset,
+                                                    GoodbyeMessage.Evicted? evictionMessage )
         {
             Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
             Throw.DebugAssert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
@@ -89,7 +93,7 @@ namespace CK.AppIdentity.TransportLayer
             else
             {
                 monitor.Trace( $"Rebinding TransportController for '{_party.FullName}'." );
-                _controller.Rebind( monitor, transport );
+                _controller.Rebind( monitor, transport, evictionMessage );
             }
             Throw.DebugAssert( _controller.Feature == this );
             // Sets the ClockOffset.
@@ -109,12 +113,12 @@ namespace CK.AppIdentity.TransportLayer
             await _controller.ActivateAsync( monitor, protocols, protocolHandlers ).ConfigureAwait( false );
             // Signals the change of connection before signaling the ready task: awaiting
             // the ready task and reading the availability is rather common initialization pattern.
-            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
+            await UpdateExtremeConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
             // Always signals the ready task.
             _readyTask.TrySetResult();
         }
 
-        Task UpdateConnectionAvailabilityAsync( IActivityMonitor monitor )
+        Task UpdateExtremeConnectionAvailabilityAsync( IActivityMonitor monitor )
         {
             Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
 
@@ -148,6 +152,17 @@ namespace CK.AppIdentity.TransportLayer
             return Task.CompletedTask;
         }
 
+        internal Task SetMaxConnectionAvailabilityAsync( IActivityMonitor monitor, ConnectionAvailability max )
+        {
+            Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
+            if( _connectionAvailabilty > max )
+            {
+                _connectionAvailabilty = max;
+                return _connectionAvailabilityChanged.SafeRaiseAsync( monitor, this );
+            }
+            return Task.CompletedTask;
+        }
+
         /// <summary>
         /// Gets whether this party is off line. The <see cref="Party"/> may be destroyed.
         /// Initially defaults to false: by default a remote always tries to establish a connection.
@@ -175,8 +190,10 @@ namespace CK.AppIdentity.TransportLayer
 
         internal bool RemoteSwitchedOff( GoodbyeMessage remoteMessage )
         {
-            Throw.DebugAssert( remoteMessage.IsFromRemote );
-            return DoSetSwitchOffMessage( remoteMessage );
+            Throw.DebugAssert( remoteMessage.IsFromRemote
+                               && (remoteMessage is GoodbyeMessage.Evicted
+                                  || (remoteMessage is GoodbyeMessage.SwitchedOff off && off.ExpectedAvailableTime == Util.UtcMaxValue)) );
+            return SetSwitchOffMessageOnlyOnce( remoteMessage );
         }
 
         /// <summary>
@@ -195,10 +212,10 @@ namespace CK.AppIdentity.TransportLayer
             Throw.CheckArgument( reason.Length < 256 );
             Throw.CheckArgument( reason != nameof( GoodbyeMessage.PartyDestroyed ) && reason != nameof( GoodbyeMessage.ApplicationIdentityShutdown ) );
             Throw.CheckArgument( expectedAvailableTime?.Kind is null or DateTimeKind.Utc );
-            return DoSetSwitchOffMessage( new GoodbyeMessage.SwitchedOff( false, reason, expectedAvailableTime ) );
+            return SetSwitchOffMessageOnlyOnce( new GoodbyeMessage.SwitchedOff( false, reason, expectedAvailableTime ) );
         }
 
-        bool DoSetSwitchOffMessage( GoodbyeMessage goodbye )
+        bool SetSwitchOffMessageOnlyOnce( GoodbyeMessage goodbye )
         {
             if( Interlocked.CompareExchange( ref _switchOffReason, goodbye, null ) == null )
             {
@@ -475,14 +492,22 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
             if( _switchOffReason != null )
             {
-                monitor.Trace( $"Remote '{Party.FullName}' is off (reason: '{_switchOffReason}'). Skipping its activation." );
+                monitor.Trace( $"Remote '{Party.FullName}' is off ({_switchOffReason}). Skipping its activation." );
             }
             else
             {
-                monitor.Trace( $"Switching remote on '{Party.FullName}'." );
+                monitor.Trace( $"Switching remote '{Party.FullName}' ON." );
                 if( _listeners == null )
                 {
                     _transportManager.TryConnectTo( this );
+                }
+                else
+                {
+                    foreach( var l in _listeners )
+                    {
+                        Throw.DebugAssert( !l.Parties.Contains( this ) );
+                        l.AddParty( this );
+                    }
                 }
             }
             return default;
@@ -498,18 +523,18 @@ namespace CK.AppIdentity.TransportLayer
         internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, TaskCompletionSource? done, GoodbyeMessage offReason )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            bool isDefinitive = offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown;
+            bool isDefinitive = !offReason.IsFromRemote && offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown;
 
+            monitor.Trace( $"Switching remote '{Party.FullName}' OFF: {offReason}" );
             var c = _controller;
             _controller = null;
             if( c != null )
             {
-                monitor.Trace( $"Switching off remote '{Party.FullName}' (reason: '{offReason}')." );
                 // Setup a new ready task only if necessary.
                 if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
                 await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
             }
-            await UpdateConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
+            await UpdateExtremeConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
             // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed
             // and/or this is destroyed.
             await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );

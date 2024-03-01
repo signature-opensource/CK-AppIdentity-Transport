@@ -32,9 +32,10 @@ namespace CK.AppIdentity.TransportLayer
         readonly TransportManagerFeature _exposedFeature;
 
         // ApplicationIdentityService's heart beat handles the BackTask list.
-        readonly BackTask.List _backTasks;
-        readonly BackTask.Head _headIncomingConnection;
-        readonly BackTask.Head _headOutgoingConnection;
+        readonly BackTask<TransportManager>.BackTaskManager _backTasks;
+        readonly BackTask<TransportManager>.Head _headIncomingConnection;
+        readonly BackTask<TransportManager>.Head _headOutgoingConnection;
+        readonly BackTask<TransportManager>.Head _headDelayedKillTransport;
 
         internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
             : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeatBeatPeriod )
@@ -45,9 +46,10 @@ namespace CK.AppIdentity.TransportLayer
             _exposedFeature = new TransportManagerFeature( this );
             agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
-            _backTasks = new BackTask.List( this );
-            _headIncomingConnection = BackTask.Head.Create<IncomingConnectionBackTask>();
-            _headOutgoingConnection = BackTask.Head.Create<OutgoingConnectionBackTask>();
+            _backTasks = new BackTask<TransportManager>.BackTaskManager( this );
+            _headIncomingConnection = BackTask<TransportManager>.Head.Create<IncomingConnectionBackTask>();
+            _headOutgoingConnection = BackTask<TransportManager>.Head.Create<OutgoingConnectionBackTask>();
+            _headDelayedKillTransport = BackTask<TransportManager>.Head.Create<DelayedKillTransportBackTask>();
         }
 
         /// <summary>
@@ -153,6 +155,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Throw.DebugAssert( kind is PeeringIssueKind.IncomingUnknwon
                                       or PeeringIssueKind.IncomingDisallowedTransport
+                                      or PeeringIssueKind.InvalidClockOffset
                                       or PeeringIssueKind.IncomingUnsupportedTransport
                                       or PeeringIssueKind.InitiatorConflict
                                       or PeeringIssueKind.RequiresLocalApproval
@@ -165,7 +168,7 @@ namespace CK.AppIdentity.TransportLayer
                                                message,
                                                remote,
                                                enlistUrl,
-                                               InvalidClockOffset: null,
+                                               InvalidClockOffset: kind is PeeringIssueKind.InvalidClockOffset ? message.ClockOffset : null,
                                                usefulRemoteKey,
                                                LocalMissing: null,
                                                RemoteMissing: null,
@@ -177,12 +180,14 @@ namespace CK.AppIdentity.TransportLayer
         /// </summary>
         internal void OnRemoteConfigurationOrTrustIssue( TransportFeature remote,
                                                          PeeringIssueKind kind,
+                                                         TimeSpan? clockOffset,
                                                          string? enlistUrl,
                                                          RemoteIdentityKeyData? remoteKeyForApproval )
         {
             Throw.DebugAssert( remote != null && remote.TargetAddress != null );
             Throw.DebugAssert( kind is PeeringIssueKind.RequiresRemoteCreation
                                     or PeeringIssueKind.RemoteDisallowedTransport
+                                    or PeeringIssueKind.InvalidClockOffset
                                     or PeeringIssueKind.RemoteUnsupportedTransport
                                     or PeeringIssueKind.InitiatorConflict
                                     or PeeringIssueKind.RequiresLocalApproval
@@ -193,7 +198,7 @@ namespace CK.AppIdentity.TransportLayer
                                                Message: null,
                                                remote,
                                                enlistUrl,
-                                               InvalidClockOffset: null,
+                                               clockOffset,
                                                remoteKeyForApproval,
                                                LocalMissing: null,
                                                RemoteMissing: null,
@@ -202,7 +207,8 @@ namespace CK.AppIdentity.TransportLayer
 
         internal void OnRemoteSwitchedOffIssue( TransportFeature remote, GoodbyeMessage offMessage )
         {
-            Throw.DebugAssert( remote != null && remote.TargetAddress != null );
+            Throw.DebugAssert( remote != null );
+            Throw.DebugAssert( "Evicted => Initiator", offMessage.Kind != GoodbyeKind.Evicted || remote.TargetAddress != null );
             PushTypedJob( new PeeringIssueJob( offMessage.Kind == GoodbyeKind.Evicted
                                                     ? PeeringIssueKind.RemoteHasBeenEvicted
                                                     : PeeringIssueKind.RemoteIsSwitchedOff,
@@ -257,16 +263,27 @@ namespace CK.AppIdentity.TransportLayer
             PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockOffset, evictionMessage ) );
         }
 
-        internal void KillTransport( Transport transport )
+        internal void DelayedKillTransport( Transport transport, int outgoingReconnectDelay )
         {
-            Throw.DebugAssert( transport.Listener != null );
-            PushTypedJob( new KillTransportJob( transport, 0 ) );
+            if( !transport.Lifetime.IsCancellationRequested )
+            {
+                PushTypedJob( new KillTransportJob( transport, outgoingReconnectDelay, Delayed: true ) );
+            }
         }
 
-        internal void KillTransport( Transport transport, int reconnectDelay )
+        /// <summary>
+        /// Handled by <see cref="KillTransportAsync"/>.
+        /// </summary>
+        /// <param name="transport">Can be a in or outgoing.</param>
+        /// <param name="outgoingReconnectDelay">
+        /// Applies only to outgoing: <see cref="int.MaxValue"/> to stop retrying, 0 to retry asap.
+        /// </param>
+        internal void KillTransport( Transport transport, int outgoingReconnectDelay )
         {
-            Throw.DebugAssert( transport.TargetAddress != null );
-            PushTypedJob( new KillTransportJob( transport, reconnectDelay ) );
+            if( transport.OnKilled() )
+            {
+                PushTypedJob( new KillTransportJob( transport, outgoingReconnectDelay, Delayed: false ) );
+            }
         }
 
         internal void SwitchOff( TransportFeature feature, GoodbyeMessage reason )
@@ -303,7 +320,7 @@ namespace CK.AppIdentity.TransportLayer
                                              GoodbyeMessage? RemoteOffMessage );
         sealed record class TryConnectToJob( TransportFeature Remote );
         sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset, GoodbyeMessage.Evicted? EvictionMessage );
-        sealed record class KillTransportJob( Transport Transport, int ReconnectDelay );
+        sealed record class KillTransportJob( Transport Transport, int ReconnectDelay, bool Delayed );
         sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, GoodbyeMessage Reason );
         sealed record class SwitchOnJob( TransportFeature Feature );
 
@@ -312,15 +329,24 @@ namespace CK.AppIdentity.TransportLayer
             switch( job )
             {
                 case KillTransportJob j:
+                    if( j.Delayed )
+                    {
+                        if( !j.Transport.Lifetime.IsCancellationRequested )
+                        {
+                            _backTasks.Initialize<DelayedKillTransportBackTask>( monitor, _headDelayedKillTransport, back => back.OnInitialize( j.Transport, j.ReconnectDelay ) );
+                        }
+                        return default;
+                    }
                     return KillTransportAsync( monitor, j.Transport, j.ReconnectDelay );
                 case TryConnectToJob c:
                     var f = c.Remote;
                     Throw.DebugAssert( f.TargetAddress != null );
                     monitor.Trace( $"Initiating connection to '{f.TargetAddress}' for '{f.Party.FullName}' immediately." );
-                    _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( this, f, 0 ) );
+                    _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( f, 0 ) );
                     return default;
                 case Transport t:
-                    Throw.DebugAssert( "This is necessarily an incoming connection created by a listener.", t.Listener != null );
+                    Throw.DebugAssert( "This is necessarily an incoming connection created by a listener (not yet validated).",
+                                       t.Listener != null && t.Controller == null );
                     monitor.Trace( $"Received transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()}) from listener '{t.Listener.EndPointDescription}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( this, t ) );
                     return default;
@@ -337,17 +363,12 @@ namespace CK.AppIdentity.TransportLayer
             }
             if( job == this )
             {
-                return HandleStopAsync( monitor );
+                _backTasks.Destroy( monitor );
+                // Sends the MicroAgent stop marker.
+                SendStop();
+                return default;
             }
             return base.ExecuteTypedJobAsync( monitor, job );
-        }
-
-        ValueTask HandleStopAsync( IActivityMonitor monitor )
-        {
-            _backTasks.Destroy( monitor );
-            // Sends the MicroAgent stop marker.
-            SendStop();
-            return default;
         }
 
         async ValueTask HandleNewRemoteTransportFeatureAsync( IActivityMonitor monitor, TransportFeature newFeature )
@@ -357,30 +378,7 @@ namespace CK.AppIdentity.TransportLayer
 
         async ValueTask KillTransportAsync( IActivityMonitor monitor, Transport t, int reconnectDelay )
         {
-            if( t.SetHardCondemned() )
-            {
-                // Starts by disposing the current transport before attempting to reconnect.
-                await SafeDestroyTransportAsync( monitor, t );
-                // If the transport is an outgoing connection and has been activated, launch the
-                // reconnection back task.
-                if( t.Controller != null )
-                {
-                    monitor.Trace( $"Killed validated transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()})." );
-                    if( t.TargetAddress != null )
-                    {
-                        var remote = t.Controller.Feature;
-                        if( !remote.IsOff && reconnectDelay != int.MaxValue )
-                        {
-                            monitor.Trace( $"Initiating reconnection attempt to '{remote.TargetAddress}' for '{remote.Party.FullName}' in {reconnectDelay} seconds." );
-                            _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( this, remote, reconnectDelay ) );
-                        }
-                    }
-                }
-            }
-        }
-
-        static async ValueTask SafeDestroyTransportAsync( IActivityMonitor monitor, Transport t )
-        {
+            // Starts by disposing the current transport before attempting to reconnect.
             try
             {
                 await t.DestroyAsync( monitor );
@@ -388,6 +386,24 @@ namespace CK.AppIdentity.TransportLayer
             catch( Exception ex )
             {
                 monitor.Error( $"While destroying transport '{t.GetType():C} - {t.RemoteEndPointDescription}'.", ex );
+            }
+            // If the transport is an outgoing connection and has been activated, launch the
+            // reconnection back task.
+            if( t.Controller != null )
+            {
+                monitor.Trace( $"Killed validated transport '{t.RemoteEndPointDescription}' (#{t.GetHashCode()})." );
+                if( t.TargetAddress != null )
+                {
+                    var remote = t.Controller.Feature;
+                    if( !remote.IsOff && reconnectDelay != int.MaxValue )
+                    {
+                        monitor.Trace( $"Initiating reconnection attempt to '{remote.TargetAddress}' for '{remote.Party.FullName}' in {reconnectDelay} seconds." );
+                        // We are connecting. The ConnectionAvailability should be Connected (but may already be Low or even DangerZone).
+                        // The ConnectionAvailability should be set to Low if it was Connected.
+                        await remote.SetMaxConnectionAvailabilityAsync( monitor, ConnectionAvailability.Low );
+                        _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( remote, reconnectDelay ) );
+                    }
+                }
             }
         }
 
@@ -405,43 +421,42 @@ namespace CK.AppIdentity.TransportLayer
                                                          job.RemoteOffMessage );
         }
 
-        static async ValueTask HandleNewValidTransportAsync( IActivityMonitor monitor, NewValidTransportJob remoteTransport, TransportManagerFeature forPeeringIssue )
+        async ValueTask HandleNewValidTransportAsync( IActivityMonitor monitor,
+                                                      NewValidTransportJob job,
+                                                      TransportManagerFeature forPeeringIssue )
         {
-            Transport t = remoteTransport.Transport;
-            using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{remoteTransport.Remote}'." ) )
+            Transport t = job.Transport;
+            using( monitor.OpenInfo( $"New valid {(t.Listener != null ? "incoming" : "outgoing")} transport '{t}' (#{t.GetHashCode()}) for '{job.Remote}'." ) )
             {
                 // Handle a potential race condition: the Party may be destroyed or switched off.
-                // In such case, the new valid transport must be destroyed but before we should send him
+                // In such case, the new valid transport must be destroyed but before we should send
                 // the appropriate Goodbye message.
-                var remote = remoteTransport.Remote;
+                var remote = job.Remote;
                 var feature = remote.IsDestroyed ? null : remote.GetFeature<TransportFeature>();
                 var offMessage = feature?.SwitchOffMessage;
                 if( feature != null && offMessage == null )
                 {
                     await forPeeringIssue.OnTransportAvailableAsync( monitor, feature );
-                    await feature.OnTransportAppearAsync( monitor, t, remoteTransport.Protocols, remoteTransport.ClockOffset );
+                    await feature.OnTransportAppearAsync( monitor, t, job.Protocols, job.ClockOffset, job.EvictionMessage );
                 }
                 else
                 {
+                    // This transport has not yet been handled by a TransportController: there are
+                    // no receive nor send loop: we can use it to send the offMessage if there's one
+                    // and if it doesn't come from the remote.
                     if( offMessage != null )
                     {
                         monitor.Info( $"Remote '{remote.FullName}' is off: {offMessage}" );
                         if( !offMessage.IsFromRemote )
                         {
-                            // We protect this call from hanging (we have no back task that monitors us here).
-                            // Far from elegant but we are in an edge case.
-                            using var timeLimit = new CancellationTokenSource( 500 );
-                            timeLimit.Token.Register( () => t.SetHardCondemned() );
+                            monitor.Info( "Sending Goodbye message and destroying the new valid transport in 1 second." );
+                            DelayedKillTransport( t, int.MaxValue );
                             await ZeroProtocol.SendGoodbyeMessageAsync( t, offMessage );
+                            return;
                         }
                     }
-                    else if( feature == null )
-                    {
-                        monitor.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Transport feature not found in '{remote.FullName}' party." );
-                    }
                     monitor.Info( "Destroying the new valid transport." );
-                    t.SetHardCondemned();
-                    await SafeDestroyTransportAsync( monitor, t );
+                    KillTransport( t, int.MaxValue );
                 }
             }
         }

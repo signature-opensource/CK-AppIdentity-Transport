@@ -27,13 +27,14 @@ namespace CK.AppIdentity.TransportLayer
         {
             Unknwon = 0,
             DisallowedTransport = 1,
-            InitiatorConflict = 2,
-            UnsupportedTransport = 3,
-            ListenerRequiresLocalApproval = 4,
-            ListenerRequiresRemoteApproval = 5,
-            RequiresBothApproval = 6,
+            InvalidClockOffset = 2,
+            InitiatorConflict = 3,
+            UnsupportedTransport = 4,
+            ListenerRequiresLocalApproval = 5,
+            ListenerRequiresRemoteApproval = 6,
+            RequiresBothApproval = 7,
 
-            MaxValue = 6
+            MaxValue = 7
         }
 
 
@@ -323,13 +324,18 @@ namespace CK.AppIdentity.TransportLayer
         public static async ValueTask<bool> SendRejectRemoteReplyMessageAsync( Transport transport,
                                                                                IRemoteKeys? remoteKeys,
                                                                                ConfigurationOrTrustIssue protocolIssue,
+                                                                               TimeSpan? clockOffset,
                                                                                string? enlistUrl,
                                                                                ulong nonce )
         {
-            using var m = CreateMessage( remoteKeys, protocolIssue, enlistUrl, nonce );
+            using var m = CreateMessage( remoteKeys, protocolIssue, clockOffset, enlistUrl, nonce );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-            static IOutgoingMessage CreateMessage( IRemoteKeys? remoteKeys, ConfigurationOrTrustIssue protocolIssue, string? enlistUrl, ulong nonce )
+            static IOutgoingMessage CreateMessage( IRemoteKeys? remoteKeys,
+                                                   ConfigurationOrTrustIssue protocolIssue,
+                                                   TimeSpan? clockOffset,
+                                                   string? enlistUrl,
+                                                   ulong nonce )
             {
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
@@ -337,6 +343,7 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteByte( DNegoRejectRemote );
                 w.WriteUInt64( nonce );
                 w.WriteByte( (byte)protocolIssue );
+                w.WriteNullableTimeSpan( clockOffset );
                 // To be able to use the ReadString( maxLength ).
                 w.WriteString( enlistUrl ?? string.Empty );
                 // When the incoming remote is not known at all, we don't have local
@@ -361,6 +368,7 @@ namespace CK.AppIdentity.TransportLayer
                                                          RemoteIdentityKey? trustedIdentity,
                                                          out bool nonceFailure,
                                                          out ConfigurationOrTrustIssue issue,
+                                                         out TimeSpan? clockOffset,
                                                          out string? enlistUrl,
                                                          out RemoteIdentityKeyData? currentKeyData,
                                                          out bool foundTrustedKey,
@@ -370,8 +378,10 @@ namespace CK.AppIdentity.TransportLayer
             var r = new FastByteReader( message.Message );
             var discriminator = r.ReadByte();
             Throw.DebugAssert( discriminator == DNegoRejectRemote );
+
             nonceFailure = expectedNonce != r.ReadUInt64();
             issue = (ConfigurationOrTrustIssue)r.ReadByte();
+            clockOffset = r.ReadNullableTimeSpan();
             Throw.CheckData( issue <= ConfigurationOrTrustIssue.MaxValue );
             enlistUrl = r.ReadString( MaxEnlistUrlLength );
             if( enlistUrl.Length == 0 ) enlistUrl = null;
@@ -392,6 +402,8 @@ namespace CK.AppIdentity.TransportLayer
 
         public static async ValueTask<bool> SendRequiredEnlistUrlMessageAsync( Transport transport, string? enlistUrl, ulong nonce )
         {
+            Throw.DebugAssert( "We are on the initiator side.", transport.RemoteKeys != null );
+
             using var m = CreateMessage( transport, enlistUrl, nonce );
             return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -404,8 +416,7 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteUInt64( nonce );
                 // To be able to use the ReadString( maxLength ).
                 w.WriteString( enlistUrl ?? string.Empty );
-                Throw.DebugAssert( "We are on the initiator side.", transport.RemoteKeys != null );
-                ComputeSHA512HashAndAppendSignature( ref w, transport.RemoteKeys.LocalKeys.CurrentIdentity );
+                ComputeSHA512HashAndAppendSignature( ref w, transport.RemoteKeys!.LocalKeys.CurrentIdentity );
                 return builder.CreateMessage( sequence );
             }
         }
@@ -459,7 +470,6 @@ namespace CK.AppIdentity.TransportLayer
                     w.WriteBool( true );
                     GoodbyeMessage.WriteMessage( ref w, offMessage );
                 }
-                w.Commit();
                 WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
                 return builder.CreateMessage( sequence );
             }
@@ -495,66 +505,6 @@ namespace CK.AppIdentity.TransportLayer
             {
                 logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}': {offMessage}." );
                 remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
-                return true;
-            }
-            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{remote.RemoteKeys.Party}'." );
-            return false;
-        }
-
-
-        /// <summary>
-        /// InvalidClockOffset reply message is a signed message with the local identities.
-        /// If the remote has a AutoTrustKey, this reply will also automatically make the remote trust us.
-        /// </summary>
-        /// <param name="transport">The transport.</param>
-        /// <param name="offset">The invalid clock offset.</param>
-        /// <param name="nonce">The received nonce.</param>
-        /// <returns>True if the message has been sent, false if Transport has been canceled.</returns>
-        public static async ValueTask<bool> SendInvalidClockOffsetMessageAsync( Transport transport, TimeSpan offset, ulong nonce )
-        {
-            Throw.DebugAssert( transport.RemoteKeys != null );
-            using var m = CreateAndSignMessage( nonce, offset, transport.RemoteKeys.LocalKeys.Identities );
-            return await transport.SendAsync( 0, m ).ConfigureAwait( false );
-
-            static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan offset, IReadOnlyList<LocalIdentityKey> localIdentities )
-            {
-                var builder = _zeroFactory.CreateBuilder();
-                var sequence = builder.ObtainSequence();
-                var w = new FastByteWriter( sequence );
-                w.WriteByte( DNegoInvalidClockOffset );
-                w.WriteUInt64( nonce );
-                w.WriteTimeSpan( offset );
-                w.Commit();
-                WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
-                return builder.CreateMessage( sequence );
-            }
-        }
-
-        public static bool ReadInvalidClockOffsetMessage( IParallelLogger logger,
-                                                          TransportFeature remote,
-                                                          IncomingMessage message,
-                                                          ulong expectedNonce,
-                                                          out TimeSpan clockOffset,
-                                                          out bool foundTrustedKey )
-        {
-            var r = new FastByteReader( message.Message );
-            var discriminator = r.ReadByte();
-            Throw.DebugAssert( discriminator == DNegoInvalidClockOffset );
-            if( !CheckExpectedNonce( logger, ref r, remote, expectedNonce ) )
-            {
-                foundTrustedKey = false;
-                clockOffset = TimeSpan.Zero;
-                return false;
-            }
-            clockOffset = r.ReadTimeSpan();
-            if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                     remote.RemoteKeys.TrustedIdentity,
-                                                     out foundTrustedKey,
-                                                     out var currentKeyData,
-                                                     out var currentKey ) )
-            {
-                logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}'." );
-                foundTrustedKey |= remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
                 return true;
             }
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{remote.RemoteKeys.Party}'." );
@@ -610,8 +560,6 @@ namespace CK.AppIdentity.TransportLayer
                 {
                     w.WriteString( p.FullName );
                 }
-                w.Commit();
-
                 WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
                 return builder.CreateMessage( sequence );
             }
@@ -684,9 +632,6 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Message sent by the <see cref="IncomingConnectionBackTask"/> when the transport is valid
         /// but <see cref="TransportFeature.DisallowEviction"/> is false.
-        /// <para>
-        /// This message is specific to the negotiation, <see cref="Send"/>
-        /// </para>
         /// </summary>
         /// <param name="incoming">The transport.</param>
         /// <returns>True on success, false if transport has been canceled.</returns>
@@ -704,8 +649,6 @@ namespace CK.AppIdentity.TransportLayer
 
                 w.WriteByte( DNegoEvictionDisallowed );
                 w.WriteUInt64( nonce );
-                w.Commit();
-
                 WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
                 return builder.CreateMessage( sequence );
             }
@@ -764,7 +707,6 @@ namespace CK.AppIdentity.TransportLayer
                 w.WriteUInt64( nonce );
                 WriteMissing( ref w, weAreMissing );
                 WriteMissing( ref w, heIsMissing );
-                w.Commit();
 
                 WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
                 return builder.CreateMessage( sequence );

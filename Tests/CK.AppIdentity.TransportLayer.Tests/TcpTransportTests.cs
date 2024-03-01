@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using static CK.Core.ActivityMonitor;
 using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests
@@ -22,13 +23,12 @@ namespace CK.AppIdentity.TransportLayer.Tests
         }
 
 
-        [CancelAfter( 100*10000 )]
-        [Test]
-        public async Task OutgoingBackTask_is_reused_to_monitor_reconnection_Async( CancellationToken token )
+        [Test, CancelAfter( 7000 )]
+        public async Task Switch_Off_On_and_Shutdown_Listener_Async( CancellationToken token )
         {
             TestHelper.Monitor.Info( "Creating Listener & Sender." );
             using var logCollector = GrandOutput.Default!.CreateMemoryCollector( 1000 );
-            await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+            var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "Test/$Listener";
                 c["AutoTrustKey"] = "Once";
@@ -53,36 +53,76 @@ namespace CK.AppIdentity.TransportLayer.Tests
             listenerTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.Connected );
 
             // Switch-off the listener.
-            TestHelper.Monitor.Info( "Switching Off the Listener." );
+            TestHelper.Monitor.Info( "Test: Switching Off the Listener." );
             listenerTransport.SwitchOff( "Testing OutgoingBackTask!" );
             // There is no "NotReadyTask". We just wait for the ConnectionAvailability to be updated.
-            await Task.WhenAll( WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Connected, token ),
-                                WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Connected, token ) );
+            await Task.WhenAll( WaitForConnectionAvailabilityAsync( listenerTransport, ConnectionAvailability.None, token ),
+                                WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Low, token ) );
 
             var logs = logCollector.ExtractCurrentTexts();
-            logs.Should().ContainInOrder( new[] {
-                "Switching off remote 'Test/$Sender/#Dev' (reason: 'Testing OutgoingBackTask!').",
-                "Received verified bye-bye message from 'Test/$Listener/#Dev': Testing OutgoingBackTask! (Shut up: 00:00:05)",
-                "Initiating reconnection attempt to 'TcpSocketTransportTypeService - 127.0.0.1:37120' for 'Test/$Listener/#Dev' in 5 seconds.",
-                ""
-            } );
+            logs.Should().ContainInOrder(
+                "Test: Switching Off the Listener.",
+                "Switching remote 'Test/$Sender/#Dev' OFF: Switched off, Reason: 'Testing OutgoingBackTask!'.",
+                "Received GoodbyeMessage from '[::ffff:127.0.0.1]:37120': Remote: Switched off, Reason: 'Testing OutgoingBackTask!'.",
+                "Initiating reconnection attempt to 'TcpSocketTransportTypeService - 127.0.0.1:37120' for 'Test/$Listener/#Dev' in 5 seconds."
+            );
 
             // Switch-on the listener.
-            TestHelper.Monitor.Info( "Switching Listener back On." );
+            TestHelper.Monitor.Info( "Test: Switching Listener back On." );
             listenerTransport.SwitchOn();
 
-            await Task.WhenAll( WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.None, token ),
-                                WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.None, token ) );
+            await Task.WhenAll( WaitForConnectionAvailabilityAsync( listenerTransport, ConnectionAvailability.Connected, token ),
+                                WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Connected, token ) );
 
-            logCollector.ExtractCurrentTexts().Should().Contain( "Pouf" );
+            logs = logCollector.ExtractCurrentTexts();
+            logs.Should().ContainInOrder(
+                "Test: Switching Listener back On.",
+                "Switching remote 'Test/$Sender/#Dev' ON.",
+                "Received verified AcceptedProtocolsMessage message from 'Test/$Listener/#Dev'.",
+                "Rebinding TransportController for 'Test/$Listener/#Dev'."
+            );
 
-            static async Task WaitForConnectionAvailabilityAsync( TransportFeature t, ConnectionAvailability connected, CancellationToken token )
+            // Disposing the listener.
+            TestHelper.Monitor.Info( "Test: Disposing the Listener." );
+            await listener.DisposeAsync();
+
+            await Task.WhenAll( WaitForConnectionAvailabilityAsync( listenerTransport, ConnectionAvailability.None, token ),
+                                WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Low, token ) );
+
+            logs = logCollector.ExtractCurrentTexts();
+            logs.Should().ContainInOrder(
+                "Test: Disposing the Listener.",
+                "Stopping ApplicationIdentityService Agent for 'Application: Test/$Listener/#Dev'.",
+                "Switching remote 'Test/$Sender/#Dev' OFF: Shutdown ApplicationIdentityService.",
+                "Received GoodbyeMessage from '[::ffff:127.0.0.1]:37120': Remote: Shutdown ApplicationIdentityService.",
+                "Initiating reconnection attempt to 'TcpSocketTransportTypeService - 127.0.0.1:37120' for 'Test/$Listener/#Dev' in 5 seconds."
+            );
+
+            static async Task WaitForConnectionAvailabilityAsync( TransportFeature t, ConnectionAvailability status, CancellationToken token )
             {
-                while( t.ConnectionAvailability == ConnectionAvailability.Connected )
+                while( t.ConnectionAvailability != status )
                 {
                     await Task.Delay( 100, token );
                 }
             }
+        }
+
+        [Test, CancelAfter( 7000 )]
+        public async Task Initiator_alone_Async( CancellationToken token )
+        {
+            var sender = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = "Test/$Sender";
+                c["AutoTrustKey"] = "Once";
+                c["Parties:0:PartyName"] = "$Listener";
+                c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
+            }, ConfigureFastClock, token: token );
+
+            await Task.Delay( 5000, token );
+
+            await sender.DisposeAsync();
+
+            await Task.Delay( 1000, token );
         }
 
     }

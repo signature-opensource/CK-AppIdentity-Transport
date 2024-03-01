@@ -2,16 +2,8 @@ using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.SymbolStore;
-using System.Numerics;
-using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -30,23 +22,32 @@ namespace CK.AppIdentity.TransportLayer
         readonly Func<Memory<byte>, CancellationToken, ValueTask> _reader;
         readonly string _remoteEndPointDescription;
         readonly IncomingMessageFactory _receiveFactory;
-        // Set by StartReceive: the protocol handlers have been resolved from the
-        // negotiated ones.
-        PeerProtocolHandler[]? _handlers;
+        // StartReceiveAsync sets:
+        //  - _receiveHandlers: With the protocol handlers have been resolved from the negotiated ones.
+        //  - _receiveCTS: A new CancellationTokenSource created right before calling RunReceiveAsync.
+        //                 The Token is provided to _receiveFactory.DoReadAsync for each read.
+        PeerProtocolHandler[]? _receiveHandlers;
+        CancellationTokenSource? _receiveCTS;
+
         // Set when this transport has been accepted.
         TransportController? _controller;
-        // Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
-        // as soon as the Transport has been created (initiator side).
-        [AllowNull]
-        CancellationTokenSource _cts;
 
-        // This is either known at the Transport creation time (initiator) or set
-        // on a initial message if the remote party exists.
+        // Ultimate lifetime. 
+        // Initiator: Lifetime of this transport is provided by the TransportTypeService.TryConnectToAsync
+        //            as soon as the Transport has been created.
+        // Listener: Initialized in the constructor.
+        [AllowNull]
+        CancellationTokenSource _lifeTime;
+
+        // Initiator: This known at the Transport creation time.
+        // Listener: This is set by the IncomingConnectionBackTask if the remote party exists.
         IRemoteKeys? _remoteKeys;
 
-        // Settable at any time: this is a soft condemned that doesn't signal the
-        // LifeTime token.
+        // Set by the TransportController on the TransportManager loop : this is a soft
+        // condemned that doesn't signal the LifeTime token.
         GoodbyeMessage? _goodbyeMessage;
+
+        int _disposed;
 
         /// <summary>
         /// Initializes a new Transport from a <see cref="TransportListener"/>.
@@ -103,13 +104,13 @@ namespace CK.AppIdentity.TransportLayer
             // Starts with the "0 Protocol" support only.
             // Negotiated protocols are set by StartReceiveAsync.
             _receiveFactory = new IncomingMessageFactory( systemClock );
-            _cts = new CancellationTokenSource();
+            _lifeTime = new CancellationTokenSource();
             _remoteKeys = remoteKeys;
         }
 
         internal void SetCancellationSource( CancellationTokenSource cancellation )
         {
-            _cts = cancellation;
+            _lifeTime = cancellation;
         }
 
         internal void SetController( TransportController controller )
@@ -144,7 +145,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Gets whether this transport is condemned (or is already dead).
         /// </summary>
-        public bool IsCondemned => _goodbyeMessage != null || _cts.IsCancellationRequested;
+        public bool IsCondemned => _goodbyeMessage != null || _lifeTime.IsCancellationRequested;
 
         /// <summary>
         /// Gets the goodbye message if it has been set.
@@ -157,7 +158,7 @@ namespace CK.AppIdentity.TransportLayer
         /// <remarks>
         /// This is used as the cancellation token when reading and writing messages.
         /// </remarks>
-        public CancellationToken Lifetime => _cts.Token;
+        public CancellationToken Lifetime => _lifeTime.Token;
 
         /// <summary>
         /// Gets the last received time.
@@ -172,42 +173,43 @@ namespace CK.AppIdentity.TransportLayer
             _remoteKeys = remoteKeys;
         }
 
-        internal bool SetHardCondemned()
+        /// <summary>
+        /// Called by TransportManager.KillTransport before pushing the transport to be disposed:
+        /// this signals the <see cref="Lifetime"/> token and may let some time for the cancellation
+        /// to be honored before disposing the transport.
+        /// Note that we may have already been SoftCondemned.
+        /// </summary>
+        /// <returns>False if this transport was already killed.</returns>
+        internal bool OnKilled()
         {
-            if( !_cts.IsCancellationRequested )
+            // Why does CTS.Cancel() doesn't return a bool?
+            // It has already a CompareExchange!
+            if( Interlocked.CompareExchange( ref _disposed, 1, 0 ) == 0 )
             {
-                _cts.Cancel();
-                // Signals the send loop with a null message: this ensures that even when no
-                // message are waiting, the send loop ends without relying on cancellation exception.
-                if( _goodbyeMessage == null ) _controller?.OnTransportCondemned();
+                // Signal the cancellation first.
+                _lifeTime.Cancel();
+                // Then sends the awaker to the send loop: it will see
+                // a condemn transport end exits.
+                _controller?.OnKilledTransport();
                 return true;
             }
             return false;
         }
 
-        internal void SetSoftCondemned( GoodbyeMessage m, bool overrideCurrentMessage = false )
-        {
-            Throw.DebugAssert( m != null );
-            var done = IsCondemned;
-            if( overrideCurrentMessage || _goodbyeMessage == null ) _goodbyeMessage = m;
-            if( !done ) _controller?.OnTransportCondemned();
-        }
-
         /// <summary>
-        /// Used during the initial negotiation.
-        /// This throws any exception thrown by the underlying transport except the <see cref="OperationCanceledException"/> if
-        /// <see cref="IsCondemned"/> has been set, in such case <see cref="IncomingMessage.Canceled"/> is returned.
+        /// This is thread safe because this can be called from
+        /// the TransportManager loop and from the Receive loop when a Goodbye message
+        /// from the remote has been received.
         /// </summary>
-        /// <param name="maxMessageLength">Optional maximal message length. Defaults to <see cref="int.MaxValue"/> (2 GiB).</param>
-        /// <returns>
-        /// A message that may be one of the special messages <see cref="IncomingMessage.Invalid"/>, <see cref="IncomingMessage.Canceled"/>,
-        /// <see cref="IncomingMessage.Empty"/> or <see cref="IncomingMessage.EmptyAck"/>.
-        /// </returns>
-        internal Task<IncomingMessage> ReadNextAsync( int maxMessageLength = int.MaxValue )
+        internal bool Condemn( GoodbyeMessage m )
         {
-            Throw.DebugAssert( maxMessageLength > 0 );
-            Throw.DebugAssert( "Not started yet.", _controller == null );
-            return _receiveFactory.DoReadAsync( _reader, maxMessageLength, _cts.Token );
+            if( Interlocked.CompareExchange( ref _goodbyeMessage, m, null) == null )
+            {
+                // Stops the receive loop as soon as poosible.
+                _receiveCTS?.Cancel();
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -222,14 +224,14 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( message != null );
             Throw.DebugAssert( message.IsValid );
 
-            if( _cts.IsCancellationRequested ) return ValueTask.FromResult( false );
+            if( _lifeTime.IsCancellationRequested ) return ValueTask.FromResult( false );
 
             var header = ArrayPool<byte>.Shared.Rent( IOutgoingMessage.MaxWirePrefixLength );
             try
             {
                 int len = IOutgoingMessage.WriteWireHeader( protocolNumber, (uint)message.Message.Length, message.IsControl, header );
                 var messagePrefix = header.AsMemory( 0, len );
-                return SendAsync( messagePrefix, message.Message, _cts.Token );
+                return SendAsync( messagePrefix, message.Message, _lifeTime.Token );
             }
             finally
             {
@@ -252,14 +254,14 @@ namespace CK.AppIdentity.TransportLayer
         {
             try
             {
-                await SendAsync( messagePrefix, _cts.Token );
+                await SendAsync( messagePrefix, _lifeTime.Token );
                 if( message.IsSingleSegment )
                 {
-                    await SendAsync( message.First, _cts.Token );
+                    await SendAsync( message.First, _lifeTime.Token );
                 }
                 else
                 {
-                    await SendAsync( message, _cts.Token );
+                    await SendAsync( message, _lifeTime.Token );
                 }
                 return true;
             }
@@ -284,7 +286,7 @@ namespace CK.AppIdentity.TransportLayer
         /// This always returns true except if the operation was canceled and the <paramref name="cancellation"/> token has been signaled.
         /// <para>
         /// <para>
-        /// Default implementation simply calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> on each sequence.
+        /// Default implementation simply calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> on each segment.
         /// </para>
         /// </para>
         /// <para>
@@ -353,6 +355,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Must close any communication handle.
+        /// This is guraranteed to be called once and only once.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
         /// <returns>The awaitable.</returns>

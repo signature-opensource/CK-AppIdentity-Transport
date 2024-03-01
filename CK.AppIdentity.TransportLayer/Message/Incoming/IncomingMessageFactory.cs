@@ -43,6 +43,10 @@ namespace CK.AppIdentity.TransportLayer
             _systemClock = systemClock;
         }
 
+        /// <summary>
+        /// Called by Transport.StartReceiveAsync: the protocols have been negociated.
+        /// </summary>
+        /// <param name="protocols">The negociated protocols.</param>
         internal void SetAllowedProtocols( MessageProtocolMap protocols )
         {
             Throw.DebugAssert( protocols.IsValid );
@@ -96,8 +100,8 @@ namespace CK.AppIdentity.TransportLayer
         /// <see cref="IncomingMessage.Empty"/> or <see cref="IncomingMessage.EmptyAck"/>.
         /// </returns>
         public Task<IncomingMessage> ReadAsync( Func<Memory<byte>, CancellationToken, ValueTask> exactReader,
-                                                 int maxMessageLength = int.MaxValue,
-                                                 CancellationToken cancellation = default )
+                                                int maxMessageLength = int.MaxValue,
+                                                CancellationToken cancellation = default )
         {
             Throw.CheckNotNullArgument( exactReader );
             Throw.CheckOutOfRangeArgument( maxMessageLength > 0 );

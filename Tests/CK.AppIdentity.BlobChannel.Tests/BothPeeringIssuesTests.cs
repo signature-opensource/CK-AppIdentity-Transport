@@ -27,101 +27,87 @@ namespace CK.AppIdentity.BlobChannel.Tests
         }
 
 
-        [Test]
+        [TestCase( true )]
+        [TestCase( false )]
         //[CancelAfter( 7000 )]
-        public async Task MissingProtocols_Async( CancellationToken token )
+        public async Task MissingProtocols_Async( bool senderHasProtocol, CancellationToken token )
         {
             TestHelper.GetCleanTestStoreFolder();
 
-            TestHelper.Monitor.Info( "Creating Listener & Sender." );
+            TestHelper.Monitor.Info( "Tests: Creating Listener & Sender." );
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Listener", ConfigureFastClock, token: token );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", ConfigureFastClock, token: token );
 
-            TestHelper.Monitor.Info( "Creates the sender Party (no protocol)." );
             var senderTransportManager = sender.GetRequiredFeature<TransportManagerFeature>();
-            var senderPeeringIssues = new PeeringIssueCollector( senderTransportManager, skipSameKind: true );
+            var senderIssues = new PeeringIssueCollector( senderTransportManager, skipSameKind: false );
+
+            TestHelper.Monitor.Info( "Tests: Creates the sender Party (no protocol, no AutoTrustKey)." );
             var senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "$Listener";
                 c["Address"] = "tcp:127.0.0.1";
+                if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
             } );
             Throw.DebugAssert( senderParty != null );
             var senderTransport = senderParty.GetFeature<TransportFeature>();
             Throw.DebugAssert( senderTransport != null );
-            senderTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.None, "ConnectionAvailability.None" );
-            senderTransport.ReadyTask.Status.Should().Be( TaskStatus.WaitingForActivation, "ReadyTask is WaitingForActivation." );
 
-            TestHelper.Monitor.Info( "Creates the listener Party (no protocol)." );
+            // An initiator that fails to connect has no associated PeeringIssue: it is simply
+            // not connected.
+            senderTransport.ReadyTask.Status.Should().Be( TaskStatus.WaitingForActivation );
+
             var listenerTransportManager = listener.GetRequiredFeature<TransportManagerFeature>();
-            var listenerPeeringIssues = new PeeringIssueCollector( listenerTransportManager, skipSameKind: true );
-            var listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c => c["PartyName"] = "$Sender" );
+            var listenerIssues = new PeeringIssueCollector( listenerTransportManager, skipSameKind: false );
+
+            TestHelper.Monitor.Info( "Tests: Creates the listener Party (no protocol, no AutoTrustKey)." );
+            var listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
+            {
+                c["PartyName"] = "$Sender";
+                if( !senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+            } );
             Throw.DebugAssert( listenerParty != null );
             var listenerTransport = listenerParty.GetFeature<TransportFeature>();
             Throw.DebugAssert( listenerTransport != null );
 
-            await Task.Delay( 800, token );
+            // Both are RequiresBothApproval.
+            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.RequiresBothApproval, token ),
+                                senderIssues.WaitForAsync( PeeringIssueKind.RequiresBothApproval, token ) );
 
-            TestHelper.Monitor.Info( "Collecting PeeringIssues." );
-            var senderIssues = senderPeeringIssues.GetEventsAndClear();
-            var listenerIssues = listenerPeeringIssues.GetEventsAndClear();
+            // Resolves approvals.
+            await Task.WhenAll( WaitCanAcceptAndAndAcceptRemoteAsync( listenerTransportManager, token ),
+                                WaitCanAcceptAndAndAcceptRemoteAsync( senderTransportManager, token ) );
 
-            senderIssues.Last().Should().Match<PeeringIssue>( i => i.Kind == PeeringIssueKind.RequiresBothApproval && i.CanAcceptRemoteIdentity );
-            listenerIssues.Last().Should().Match<PeeringIssue>( i => i.Kind == PeeringIssueKind.RequiresBothApproval && i.CanAcceptRemoteIdentity );
-            CheckNoConnection( senderTransport, listenerTransport );
+            // Both are MissingProtocols.
+            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token ),
+                                senderIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token ) );
 
-            using( TestHelper.Monitor.OpenInfo( "Destroying sender." ) )
+            TestHelper.Monitor.Info( "Tests: Destroying sender." );
+            await senderParty.DestroyAsync();
+
+            // Listener keeps it MissingProtocols issue (it has never be connected, it cannot have a GoodbyeMessage).
+            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token ),
+                                senderIssues.WaitForAsync( PeeringIssueKind.None, token ) );
+
+
+            TestHelper.Monitor.Info( "Tests: Destroying listener." );
+            await listenerParty.DestroyAsync();
+
+            // A destroyed listener mutates the isse to be an IncomingUnknwon.
+            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.IncomingUnknwon, token ),
+                                senderIssues.WaitForAsync( PeeringIssueKind.None, token ) );
+
+            static async Task WaitCanAcceptAndAndAcceptRemoteAsync( TransportManagerFeature transportManager, CancellationToken token )
             {
-                await senderParty.DestroyAsync();
-                await Task.Delay( 250, token );
-            }
-
-            TestHelper.Monitor.Info( "Collecting PeeringIssues." );
-            senderIssues = senderPeeringIssues.GetEventsAndClear();
-            listenerIssues = listenerPeeringIssues.GetEventsAndClear();
-
-            senderIssues.Should().HaveCount( 1 );
-            senderIssues.Single().Kind.Should().Be( PeeringIssueKind.None, "When an initiator is destroyed, its issue becomes None." );
-            listenerIssues.Should().BeEmpty();
-            CheckNoConnection( senderTransport, listenerTransport );
-
-            using( TestHelper.Monitor.OpenInfo( "Destroying listener." ) )
-            {
-                await listenerParty.DestroyAsync();
-                await Task.Delay( 100, token );
-            }
-
-            TestHelper.Monitor.Info( "Collecting PeeringIssues." );
-            senderIssues = senderPeeringIssues.GetEventsAndClear();
-            listenerIssues = listenerPeeringIssues.GetEventsAndClear();
-            senderIssues.Should().BeEmpty();
-            listenerIssues.Single().Kind.Should().Be( PeeringIssueKind.IncomingUnknwon, "When a listener is destroyed, its issue becomes IncomingUnknwon." );
-
-            using( TestHelper.Monitor.OpenInfo( "Recreating listener and sender." ) )
-            {
-                listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c => c["PartyName"] = "$Sender" );
-                senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
+                for( ; ; )
                 {
-                    c["PartyName"] = "$Listener";
-                    c["Address"] = "tcp:127.0.0.1";
-                } );
-                await Task.Delay( 7000, token );
-            }
-
-            TestHelper.Monitor.Info( "Collecting PeeringIssues." );
-            senderIssues = senderPeeringIssues.GetEventsAndClear();
-            listenerIssues = listenerPeeringIssues.GetEventsAndClear();
-            //senderIssues.Should().HaveCount( 1 );
-            //senderIssues.Last().Should().Match<PeeringIssue>( i => i.Kind == PeeringIssueKind.RequiresBothApproval && i.CanAcceptRemoteIdentity );
-            //listenerIssues.Should().HaveCount( 1 );
-            //listenerIssues.Last().Should().Match<PeeringIssue>( i => i.Kind == PeeringIssueKind.RequiresBothApproval && i.CanAcceptRemoteIdentity );
-            CheckNoConnection( senderTransport, listenerTransport );
-
-            static void CheckNoConnection( TransportFeature senderTransport, TransportFeature listenerTransport )
-            {
-                senderTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.None, "ConnectionAvailability.Connected" );
-                senderTransport.ReadyTask.Status.Should().Be( TaskStatus.WaitingForActivation, "ReadyTask is WaitingForActivation." );
-                listenerTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.None, "ConnectionAvailability.None" );
-                listenerTransport.ReadyTask.Status.Should().Be( TaskStatus.WaitingForActivation, "ReadyTask is WaitingForActivation." );
+                    var accept = transportManager.GetPeeringIssues().FirstOrDefault( i => i.CanAcceptRemoteIdentity );
+                    if( accept != null )
+                    {
+                        accept.AcceptRemoteIdentity( TestHelper.Monitor );
+                        return;
+                    }
+                    await Task.Delay( 50, token );
+                }
             }
         }
 

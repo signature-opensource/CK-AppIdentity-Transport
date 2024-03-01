@@ -1,7 +1,6 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.PerfectEvent;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace CK.AppIdentity.BlobChannel
@@ -37,7 +36,7 @@ namespace CK.AppIdentity.BlobChannel
             var h = CurrentHandler;
             if( h != null )
             {
-                var message = h.CreateMessage( data );
+                IOutgoingMessage message = h.CreateMessage( data );
                 if( h.TryEnqueue( message ) ) return true;
                 message.Release();
             }
@@ -56,7 +55,7 @@ namespace CK.AppIdentity.BlobChannel
             var h = CurrentHandler;
             if( h != null )
             {
-                var message = h.CreateMessage( data );
+                IOutgoingMessage message = h.CreateMessage( data );
                 if( await h.TryEnqueueAsync( message, token ) ) return true;
                 message.Release();
             }

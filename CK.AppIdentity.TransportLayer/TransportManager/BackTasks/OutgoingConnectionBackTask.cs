@@ -12,24 +12,26 @@ using static CK.Core.ActivityMonitorSimpleCollector;
 
 namespace CK.AppIdentity.TransportLayer
 {
+
     /// <summary>
     /// Handles calls to <see cref="TransportTypeService.TryConnectToAsync(IActivityLogger, IRemoteParty, object, CancellationToken)"/>.
-    /// This BackTask is always retried until a valid (tested) outgoing connection is obtained or the remote party is destroyed.
+    /// This BackTask is always retried until a valid (tested) outgoing connection is obtained or the remote party is destroyed or switched off.
     /// </summary>
-    sealed class OutgoingConnectionBackTask : BackTask
+    sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
     {
         TransportFeature? _remote;
         // No timeout on this cts: no Dispose required.
         CancellationTokenSource? _cts;
+        // The run taks returns the retry delay.
         Task<int>? _result;
         // Current start or restart count.
-        int _startCount;
+        int _tryConnectCount;
         // Current start time.
         DateTime _startTime;
         // Transition to true when cancelling because remote.IsOff.
         bool _offlineDecision;
 
-        public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
+        public override void OnDestroy( IActivityMonitor monitor )
         {
             Throw.DebugAssert( _remote != null );
             if( IsStarted && !_cts.IsCancellationRequested )
@@ -49,7 +51,7 @@ namespace CK.AppIdentity.TransportLayer
             }
         }
 
-        public override void Check( IActivityMonitor monitor, TransportManager transportManager )
+        public override void Check( IActivityMonitor monitor, int previousCheckDelay )
         {
             Throw.DebugAssert( _remote != null && _remote.TargetAddress != null );
             if( IsStarted )
@@ -57,11 +59,25 @@ namespace CK.AppIdentity.TransportLayer
                 // Handles a completed result first.
                 if( _result.IsCompleted )
                 {
-                    if( !_result.IsCompletedSuccessfully )
+                    if( _result.IsCompletedSuccessfully )
+                    {
+                        // Successful completion: either the new transport has been provided to the TransportFeature
+                        // by TryConnectToAsync or we have a retry delay.
+#pragma warning disable VSTHRD002 // We have checked that _result.IsCompletedSuccessfully is true. 
+                        int delay = _result.Result;
+#pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
+                        if( delay > 0 )
+                        {
+                            if( !_offlineDecision ) NextCheckDelay = delay;
+                            else monitor.Debug( $"Forgetting the retry in {delay} seconds since '{_remote.Party}' is offline." );
+                        }
+                        // Else (delay is 0), we are done, let this BackTask be reset.
+                    }
+                    else
                     {
                         // We have an error or have been canceled..
                         // The error is typically a parsing error of an incoming message, we increase the retry time.
-                        int retryDelay = Math.Min( _startCount + 1, 30 );
+                        int retryDelay = Math.Min( _tryConnectCount + 1, 30 );
                         if( _result.IsFaulted )
                         {
                             monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} second.", _result.Exception );
@@ -78,34 +94,20 @@ namespace CK.AppIdentity.TransportLayer
                             // Else, regular case: cancellation belongs to us, it is a timeout or a offline decision.
                             // On timeout the delay is the same as for an unexpected error.
                         }
-                        if( !_offlineDecision ) Retry( retryDelay );
-                    }
-                    else
-                    {
-                        // Successful completion: either the new transport has been provided to the TransportFeature
-                        // by TryConnectToAsync or we have a retry delay.
-#pragma warning disable VSTHRD002 // We have checked that _result.IsCompletedSuccessfully is true. 
-                        int delay = _result.Result;
-#pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
-                        if( delay > 0 )
-                        {
-                            if( !_offlineDecision ) Retry( delay );
-                            else monitor.Info( $"Forgetting the retry in {delay} seconds since '{_remote.Party}' is offline." );
-                        }
-                        // Else (delay is 0), we are done, let this BackTask be reset.
+                        if( !_offlineDecision ) NextCheckDelay = retryDelay;
                     }
                     // Forget the completed result.
                     _result = null;
                     return;
                 }
-                // If CancelOperation signaled the CTS and the task is still alive, this is weird.
+                // If CancelOperation signaled our CTS and the task is still alive, this is weird.
                 if( _cts.IsCancellationRequested )
                 {
                     monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
                                   $"OutgoingConnectionBackTask #{GetHashCode()}: Failure to complete cancellation of for Remote '{_remote.Party}'." +
                                   $" Forgetting the current Task." );
                     _result = null;
-                    if( !_offlineDecision ) Retry( 30 );
+                    if( !_offlineDecision ) NextCheckDelay = 30;
                     return;
                 }
                 // If remote became off, we cancel this back task. Retrying is in 1 tick: the task should be canceled then.
@@ -123,12 +125,12 @@ namespace CK.AppIdentity.TransportLayer
                     return;
                 }
                 // Check again asap.
-                Retry( 1 );   
+                NextCheckDelay = 1;   
             }
             else
             {
-                // Check that the remote is alive before starting.
-                if( !_remote.IsOff ) StartOrRestart( transportManager );
+                // Delayed start: check that the remote is alive before starting.
+                if( !_remote.IsOff ) StartTryConnect();
                 return;
             }
         }
@@ -149,25 +151,25 @@ namespace CK.AppIdentity.TransportLayer
                                       CancellationToken.None,
                                       TaskContinuationOptions.ExecuteSynchronously,
                                       TaskScheduler.Default );
-            Retry( 1 );
+            NextCheckDelay = 1;
         }
 
-        public void OnInitialize( TransportManager transportManager, TransportFeature remote, int startDelay )
+        public void OnInitialize( TransportFeature remote, int startDelay )
         {
             Throw.DebugAssert( remote != null && remote.TargetAddress != null && _remote == null );
             _remote = remote;
             if( startDelay == 0 )
             {
                 // Immediate start.
-                StartOrRestart( transportManager );
+                StartTryConnect();
             }
             else
             {
-                Retry( startDelay );
+                NextCheckDelay = startDelay;
             }
         }
 
-        void StartOrRestart( TransportManager transportManager )
+        void StartTryConnect()
         {
             Throw.DebugAssert( _remote != null );
             // Reuse the same CTS if possible.
@@ -175,10 +177,10 @@ namespace CK.AppIdentity.TransportLayer
             {
                 _cts = new CancellationTokenSource();
             }
-            _startCount = 0;
+            _tryConnectCount = 0;
             _startTime = DateTime.UtcNow;
-            _result = TryConnectToAsync( transportManager, _remote, _cts, _startCount++ );
-            Retry( 1 );
+            _result = TryConnectToAsync( TaskManager.Host, _remote, _cts, _tryConnectCount++ );
+            NextCheckDelay = 1;
         }
 
         public override void Reset()
@@ -204,18 +206,20 @@ namespace CK.AppIdentity.TransportLayer
                                                                              cancellation.Token );
                 if( transport == null )
                 {
-                    return OnFailedTransportCreation( transportManager.Logger,
-                                                      currentTryCount,
-                                                      $"Unable to open connection to '{remote.Party}' at '{remote.TargetAddress}'.",
-                                                      exception: null );
+                    return OnInitialFailure( transportManager.Logger,
+                                             remote,
+                                             currentTryCount,
+                                             $"Unable to open connection to",
+                                             exception: null );
                 }
             }
             catch( Exception ex )
             {
-                return OnFailedTransportCreation( transportManager.Logger,
-                                                  currentTryCount,
-                                                  $"Error while creating Transport to '{remote.Party}' at '{remote.TargetAddress}'.",
-                                                  ex );
+                return OnInitialFailure( transportManager.Logger,
+                                         remote,
+                                         currentTryCount,
+                                         $"While creating Transport to",
+                                         ex );
             }
 
             Throw.DebugAssert( transport.RemoteKeys == remote.RemoteKeys );
@@ -239,9 +243,13 @@ namespace CK.AppIdentity.TransportLayer
                 firstAnswer = await transport.ReadNextAsync( ZeroProtocol.FirstAnswerMaxLength ).ConfigureAwait( false );
                 if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty || firstAnswer == IncomingMessage.EmptyAck )
                 {
-                    return OnInvalidMessage( transportManager, currentTryCount, firstAnswer == IncomingMessage.Canceled
-                                                                                    ? $"Canceled first answer from remote '{remote.Party}'."
-                                                                                    : $"Invalid first answer from remote '{remote.Party}'." );
+                    return OnInitialFailure( transportManager.Logger,
+                                                      remote,             
+                                                      currentTryCount,
+                                                      firstAnswer == IncomingMessage.Canceled
+                                                         ? "Canceled received from"
+                                                         : "Empty message received from",
+                                                      exception: null );
                 }
                 var head = firstAnswer.Message.First;
                 Throw.DebugAssert( "The message is not empty (handled above).", head.Length > 0 );
@@ -263,6 +271,7 @@ namespace CK.AppIdentity.TransportLayer
                                                                         trustedIdentity,
                                                                         out bool nonceFailure,
                                                                         out ZeroProtocol.ConfigurationOrTrustIssue pIssue,
+                                                                        out TimeSpan? clockOffset,
                                                                         out string? enlistUrl,
                                                                         out RemoteIdentityKeyData? currentKeyData,
                                                                         out bool foundTrustedKey,
@@ -283,7 +292,7 @@ namespace CK.AppIdentity.TransportLayer
                                                                                             or ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport) )
                             {
                                 // Weird: The only possible issues when the message is not signed are Unknwon and DisallowedTransport
-                                //        and enlistUrl mus be null.
+                                //        and enlistUrl must be null.
                                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                                $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport), " +
                                                                $"EnlistUrl='{enlistUrl}' (must be null). Retrying in 30 seconds." );
@@ -311,7 +320,7 @@ namespace CK.AppIdentity.TransportLayer
                                     ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => PeeringIssueKind.RemoteDisallowedTransport,
                                     _ => Throw.NotSupportedException<PeeringIssueKind>()
                                 };
-                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, enlistUrl, null );
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, enlistUrl, null );
                                 return 5;
                             }
                             // Signature is fine. We update our TrustedIdentity.
@@ -330,6 +339,7 @@ namespace CK.AppIdentity.TransportLayer
 
                             issue = pIssue switch
                             {
+                                ZeroProtocol.ConfigurationOrTrustIssue.InvalidClockOffset => PeeringIssueKind.InvalidClockOffset,
                                 ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict => PeeringIssueKind.InitiatorConflict,
                                 ZeroProtocol.ConfigurationOrTrustIssue.UnsupportedTransport => PeeringIssueKind.RemoteUnsupportedTransport,
                                 ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval => PeeringIssueKind.RequiresRemoteApproval,
@@ -343,7 +353,7 @@ namespace CK.AppIdentity.TransportLayer
                             var usefulRemoteKey = issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
                                                     ? currentKeyData
                                                     : null;
-                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, enlistUrl, usefulRemoteKey );
+                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, clockOffset, enlistUrl, usefulRemoteKey );
                             return 5;
                         }
                     case ZeroProtocol.DNegoOffRemote:
@@ -380,23 +390,6 @@ namespace CK.AppIdentity.TransportLayer
                             }
                             if( retryDelay != 0 ) transportManager.Logger.Trace( $"Retrying in {retryDelay} seconds." );
                             return retryDelay;
-                        }
-                    case ZeroProtocol.DNegoInvalidClockOffset:
-                        {
-                            if( !ZeroProtocol.ReadInvalidClockOffsetMessage( transportManager.Logger,
-                                                                             remote,
-                                                                             firstAnswer,
-                                                                             sentNonce.Value,
-                                                                             out var clockOffset,
-                                                                             out var foundTrustedKey ) )
-                            {
-                                // If the nonce or the verification failed, retries in 30 seconds.
-                                transportManager.Logger.Trace( $"Retrying in 30 seconds." );
-                                return 30;
-                            }
-                            transportManager.Logger.Trace( $"Retrying in 20 seconds." );
-                            transportManager.OnInvalidClockOffsetIssue( null, remote, clockOffset );
-                            return 20;
                         }
                     case ZeroProtocol.DNegoDowngradeProtocol:
                         {
@@ -491,7 +484,11 @@ namespace CK.AppIdentity.TransportLayer
                             return 30;
                         }
                     default:
-                        return OnInvalidMessage( transportManager, currentTryCount, $"Invalid discriminator '{head.Span[0]}' from remote '{remote.Party}'." );
+                        return OnInitialFailure( transportManager.Logger,
+                                                          remote,
+                                                          currentTryCount,
+                                                          $"Invalid first message discriminator '{head.Span[0]}' from",
+                                                          exception: null );
                 }
             }
             finally
@@ -500,22 +497,21 @@ namespace CK.AppIdentity.TransportLayer
                 if( killTransport )
                 {
                     transportManager.Logger.Debug( $"Killing useless Outgoing transport #{transport.GetHashCode()}." );
-                    transportManager.KillTransport( transport );
+                    // This outgoing transport is useless, we don't want the transport manager to initialize another
+                    // back task: this one is enough.
+                    transportManager.KillTransport( transport, int.MaxValue );
                 }
             }
 
-            static int OnFailedTransportCreation( IParallelLogger logger, int currentTryCount, string msg, Exception? exception )
+            static int OnInitialFailure( IParallelLogger logger, TransportFeature remote, int currentTryCount, string msg, Exception? exception )
             {
+                if( remote.IsOff )
+                {
+                    logger.Error( $"{msg} '{remote.Party}' at '{remote.TargetAddress}'. Transport is switched off. Give up.", exception );
+                    return 0;
+                }
                 var retryDelay = Math.Min( currentTryCount + 1, 5 );
-                logger.Error( $"{msg} Retrying in {retryDelay} seconds.", exception );
-                return retryDelay;
-            }
-
-
-            static int OnInvalidMessage( TransportManager transportManager, int currentTryCount, string msg )
-            {
-                int retryDelay = Math.Min( currentTryCount + 1, 30 );
-                transportManager.Logger.Error( $"{msg} Retrying in {retryDelay} seconds." );
+                logger.Error( $"{msg} '{remote.Party}' at '{remote.TargetAddress}'. Retrying in {retryDelay} seconds.", exception );
                 return retryDelay;
             }
         }

@@ -78,43 +78,92 @@ namespace CK.AppIdentity.KeyManagement
             return true;
         }
 
+        public bool ApplyReadTrustInfo( IActivityLineEmitter logger, in ReadTrustInfo trustInfo )
+        {
+            Throw.CheckArgument( trustInfo.CurrentKey == null || trustInfo.CurrentKey.Equals( trustInfo.CurrentKeyData ) );
+            Throw.CheckArgument( !trustInfo.FoundTrustedKey || TrustedIdentity != null );
+            if( trustInfo.FoundTrustedKey )
+            {
+                // We trust the remote (we can update our trusted identity key).
+                if( !TrustedIdentity!.Equals( trustInfo.CurrentKeyData ) )
+                {
+                    logger.Info( $"Updating the remote '{Party}' trusted key that has changed." );
+                    SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
+                    return true;
+                }
+            }
+            else
+            {
+                // We don't trust the remote. Depending on AutoTrustKey we may...
+                if( TrustedIdentity == null )
+                {
+                    if( AutoTrustKey != AutoTrustKey.Never )
+                    {
+                        logger.Warn( $"Initializing the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
+                        SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
+                        return true;
+                    }
+                }
+                else
+                {
+                    if( AutoTrustKey == AutoTrustKey.Always )
+                    {
+                        logger.Warn( $"Updating the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
+                        SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        public bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel )
+        {
+            if( clockOffset > _maxClockOffset || clockOffset < -_maxClockOffset )
+            {
+                if( logLevel != LogLevel.None ) logger.Log( logLevel, $"Invalid nonce creation time '{clockOffset}' for '{_remote}'. It must be less than '{_maxClockOffset}'." );
+                return false;
+            }
+            return true;
+        }
+
+        public bool CheckClockOffset( IActivityLineEmitter logger, DateTime time, out TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error )
+        {
+            Throw.CheckNotNullArgument( logger );
+            Throw.CheckArgument( time.Kind == DateTimeKind.Utc );
+            clockOffset = time - _remote.ApplicationIdentityService.SystemClock.UtcNow;
+            return CheckClockOffset( logger, clockOffset, logLevel );
+        }
+
         public bool CheckNonce( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error )
         {
             return nonce.CheckCreationTimeKind( logger, Party.FullName, logLevel )
                    && CheckNonce( logger, nonce, out _, out _, logLevel );
         }
 
-        public bool CheckNonce( IActivityLineEmitter logger, in TimedNonce nonce, out TimeSpan clockOffset, out bool validClockOffset, LogLevel logLevel = LogLevel.Error )
+        public bool CheckNonce( IActivityLineEmitter logger,
+                                in TimedNonce nonce,
+                                out TimeSpan clockOffset,
+                                out bool validClockOffset,
+                                LogLevel logLevel = LogLevel.Error )
         {
-            Throw.CheckNotNullArgument( logger );
-            Throw.CheckArgument( nonce.CreationTime.Kind == DateTimeKind.Utc );
-            validClockOffset = false;
-            clockOffset = nonce.CreationTime - _remote.ApplicationIdentityService.SystemClock.UtcNow;
-            if( clockOffset > _maxClockOffset || clockOffset < -_maxClockOffset )
-            {
-                if( logLevel != LogLevel.None ) logger.Log( logLevel, $"Invalid nonce creation time '{clockOffset}' for '{_remote}'. It must be less than '{_maxClockOffset}'." );
-                return false;
-            }
-            validClockOffset = true;
+            validClockOffset = CheckClockOffset( logger, nonce.CreationTime, out clockOffset, logLevel );
+            if( !validClockOffset ) return false;
             if( _localKeys.NonceCache.Find( nonce.Nonce ) )
             {
-                if( logLevel != LogLevel.None ) logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated, $"Nonce value '{nonce.Nonce:X}' has already been used for '{_remote}'." );
+                if( logLevel != LogLevel.None ) logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated,
+                                                                      $"Nonce value '{nonce.Nonce:X}' has already been used for '{_remote}'." );
                 return false;
             }
             _localKeys.NonceCache.Add( nonce.Nonce );
             return true;
         }
 
-        public bool CheckNonceValue( ulong nonceValue )
+        public bool CheckAndAddNonceValue( ulong nonceValue )
         {
             if( _localKeys.NonceCache.Find( nonceValue ) ) return false;
             _localKeys.NonceCache.Add( nonceValue );
             return true;
-        }
-
-        public void AddNonceValue( ulong nonce )
-        {
-            _localKeys.NonceCache.Add( nonce );
         }
     }
 }

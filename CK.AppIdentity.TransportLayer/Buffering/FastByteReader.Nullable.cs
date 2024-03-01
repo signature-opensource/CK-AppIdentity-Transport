@@ -38,6 +38,8 @@ namespace CK.AppIdentity.TransportLayer
 
         public DateTime? ReadNullableDateTime() => ReadByte() == 1 ? ReadDateTime() : null;
 
+        public TimeSpan? ReadNullableTimeSpan() => ReadByte() == 1 ? ReadTimeSpan() : null;
+
         public char? ReadNullableChar()
         {
             var v = ReadSmallUInt32();

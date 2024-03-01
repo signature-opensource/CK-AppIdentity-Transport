@@ -1,11 +1,5 @@
 using CK.Core;
-using System;
 using System.Buffers;
-using System.Buffers.Binary;
-using System.Diagnostics;
-using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace CK.AppIdentity.TransportLayer
 {
@@ -39,7 +33,7 @@ namespace CK.AppIdentity.TransportLayer
         public bool IsValid => _refCount != 0;
 
         public bool IsControl => _isControl;
-
+        
         public bool IsData => !_isControl;
 
         public ReadOnlySequence<byte> Message

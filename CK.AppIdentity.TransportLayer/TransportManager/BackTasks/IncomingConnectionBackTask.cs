@@ -3,8 +3,6 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -15,34 +13,39 @@ namespace CK.AppIdentity.TransportLayer
     /// identity that tries to connect: all the dirty work can be "observed from the outer" and the task
     /// totally forgotten if needed. This fully isolate the listener that can never be blocked.
     /// </summary>
-    sealed class IncomingConnectionBackTask : BackTask
+    sealed class IncomingConnectionBackTask : BackTask<TransportManager>
     {
         Transport? _incoming;
-        Task? _result;
+        Task? _runTask;
         DateTime _initializeTime;
 
-        public override void OnDestroy( IActivityMonitor monitor, TransportManager transportManager )
+        public override void OnDestroy( IActivityMonitor monitor )
         {
-            Throw.DebugAssert( _incoming != null && _result != null );
-            transportManager.KillTransport( _incoming );
+            Throw.DebugAssert( _incoming != null && _runTask != null );
+            // Killing the transport (int.MaxValue is ignored as this is an incoming transport but it is clearer).
+            TaskManager.Host.KillTransport( _incoming, int.MaxValue );
         }
 
-        public override void Check( IActivityMonitor monitor, TransportManager transportManager )
+        public override void Check( IActivityMonitor monitor, int previousCheckDelay )
         {
-            Throw.DebugAssert( _incoming != null && _result != null );
-            if( !_result.IsCompleted )
+            Throw.DebugAssert( _incoming != null && _runTask != null );
+            if( !_runTask.IsCompleted )
             {
                 var delta = DateTime.UtcNow - _initializeTime;
                 if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
                 {
                     monitor.Warn( $"Incoming connection timeout ({(int)delta.TotalMilliseconds} ms) for '{_incoming}'. Destroying the transport." );
-                    transportManager.KillTransport( _incoming );
+                    TaskManager.Host.KillTransport( _incoming, int.MaxValue );
+                }
+                else
+                {
+                    NextCheckDelay = 1;
                 }
             }
-            else if( _result.IsFaulted )
+            else if( _runTask.IsFaulted )
             {
-                monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _result.Exception );
-                transportManager.KillTransport( _incoming );
+                monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _runTask.Exception );
+                TaskManager.Host.KillTransport( _incoming, int.MaxValue );
             }
             else
             {
@@ -53,7 +56,7 @@ namespace CK.AppIdentity.TransportLayer
         public override void Reset()
         {
             _incoming = null;
-            _result = null;
+            _runTask = null;
         }
 
         public void OnInitialize( TransportManager transportManager, Transport incoming )
@@ -61,19 +64,18 @@ namespace CK.AppIdentity.TransportLayer
             Throw.DebugAssert( incoming.Listener != null );
             _incoming = incoming;
             _initializeTime = DateTime.UtcNow;
-            _result = Task.Run( () => RunAsync( transportManager, incoming ) );
-            // Take no risk: integer division (to the floor).
-            Throw.DebugAssert( "1 second is the default and the max and it cannot be 0.",
-                               transportManager.SystemClock.HeatBeatPeriod <= 1000 && transportManager.SystemClock.HeatBeatPeriod >= 20 );
-            Retry( 1000 / transportManager.SystemClock.HeatBeatPeriod );
+            _runTask = Task.Run( () => RunAsync( transportManager, incoming ) );
+            NextCheckDelay = 1;
         }
 
+        // Wraps the call to DoRunAsync that does the real job of handling the incoming InitialMessage:
+        // if it returns false, the incoming transport is immediately killed.
         static async Task RunAsync( TransportManager transportManager, Transport incoming )
         {
             var success = await DoRunAsync( transportManager, incoming );
             if( !success )
             {
-                transportManager.KillTransport( incoming );
+                transportManager.KillTransport( incoming, int.MaxValue );
             }
         }
 
@@ -86,21 +88,18 @@ namespace CK.AppIdentity.TransportLayer
 
             var (initialMessage, remote, foundTrustKey) = initialResult.Value;
 
-            // First, we handle invalid clock offset. This has been logged, but nothing has been
-            // impacted (even the nonce has not been checked: this enables to keep a small nonce cache).
-            if( !initialMessage.IsValidClockOffset )
-            {
-                // Signals the InvalidClockOffset peering issue before sending the message.
-                transportManager.OnInvalidClockOffsetIssue( initialMessage, remote, initialMessage.ClockOffset );
-                // Replies the InvalidClockOffset. If this fails, we don't care.
-                await ZeroProtocol.SendInvalidClockOffsetMessageAsync( incoming, initialMessage.ClockOffset, initialMessage.Nonce ).ConfigureAwait( false );
-                return false;
-            }
+            Throw.DebugAssert( "If we have not remote found the Remote, then the ClockOffset is invalid.",
+                               remote != null || !initialMessage.IsValidClockOffset );
 
             // This handles null or untrusted remote and the RemoteTrustInfo.
             // - When the remote is null (because it has not been found in this incoming.Listener.Parties), we try to find him among
-            //   the ApplicationIdentityService.AllRemotes: the issue can then be "IncomingUnknwon", "IncomingDisallowedTransport",
-            //   "InitiatorConflict" or "IncomingUnsupportedTransport".
+            //   the ApplicationIdentityService.AllRemotes:
+            //     - If we can't find him, then the issue is "IncomingUnknwon"
+            //     - If it has no associated TransportFeature the issue is "IncomingDisallowedTransport"
+            //     - A TransportFeature is available so we have its IRemoteKeys.MaxClockOffset:  
+            //        - We can check the clockOffset against the IRemoteKeys.MaxClockOffset: the issue can be "InvalidClockOffset".
+            //        - If our Remote is also an initiator, this is "InitiatorConflict"
+            //        - Otherwise, the Party is bound to another Listener: the issue is "IncomingUnsupportedTransport".
             //   => We resolve the existingParty and updates the remote here so that:
             //      - We can always sign the message except for "IncomingUnknwon" and "IncomingDisallowedTransport".
             //      - the PeeringIssue can have its TransportFeature if possible.
@@ -219,6 +218,12 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 // Let any exception while reading the initial message be a task error.
                 initialMessage = TryParse( transportManager, incoming, message, out var otherVersion, out remote, out foundTrustKey );
+                // Handles null parse result:
+                //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
+                //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
+                //     returned null: signature or nonce check failed. Give up.
+                //   - The otherVersion is greater than our ZeroProtocol.CurrentVersion: send a DowngradeProtocolReplyMessage 
+                //     ang goto retry (once only once and the give up).
                 if( initialMessage == null )
                 {
                     if( otherVersion == -1 )
@@ -246,7 +251,7 @@ namespace CK.AppIdentity.TransportLayer
                         goto retry;
                     }
                     transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{incoming.RemoteEndPointDescription}'." );
-                    return default;
+                    return null;
                 }
             }
             finally
@@ -300,8 +305,8 @@ namespace CK.AppIdentity.TransportLayer
                     return null;
                 }
                 // This is a protocol error.
-                // We do this after the signature check because an invali signature is more impacting.
-                if( !timedNonce.CheckCreationTimeKind(transportManager.Logger, fullName ) )
+                // We do this after the signature check because an invalid signature is more impacting.
+                if( !timedNonce.CheckCreationTimeKind( transportManager.Logger, fullName ) )
                 {
                     return null;
                 }
@@ -320,7 +325,8 @@ namespace CK.AppIdentity.TransportLayer
                     // The nonce (when validClockOffset is true) is always added: we don't want to
                     // forget a nonce because the remote is not trusted right now: if such message
                     // was to be replayed once the legitimate remote has been accepted, we would let
-                    // a bad guy validate its connection... And if DisallowEviction is false: we're dead.
+                    // a bad guy validate its connection... And if DisallowEviction is false this will
+                    // be endless.
                     if( !remote.RemoteKeys.CheckNonce( transportManager.Logger,
                                                        in timedNonce,
                                                        out clockOffset,
@@ -331,7 +337,7 @@ namespace CK.AppIdentity.TransportLayer
                         // The log has been emitted. Give up.
                         return null;
                     }
-                    // We have a known remote, validClockOffset may be false but it is is true then nonce is fine (and in the cache).
+                    // We have a known remote, validClockOffset may be false but if it is true then nonce is fine (and in the cache).
 
                     // Set the party's RemoteKeys on the incoming Transport.
                     // 
@@ -408,7 +414,12 @@ namespace CK.AppIdentity.TransportLayer
                     // exist but this is more than that: it is disallowed.
                     return PeeringIssueKind.IncomingDisallowedTransport;
                 }
-                // The party exists...
+                // The party exists: we can check the clock offset.
+                if( !remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) )
+                {
+                    return PeeringIssueKind.InvalidClockOffset;
+                }
+                // The clock is fine: we now have a single alternative.
                 if( remote.TargetAddress != null )
                 {
                     // ...and it is also an initiator.
@@ -419,6 +430,13 @@ namespace CK.AppIdentity.TransportLayer
                 return PeeringIssueKind.IncomingUnsupportedTransport;
             }
             exists = remote.Party;
+            // Before handling approval issues we must check the clock offset.
+            Throw.DebugAssert( "ClockOffset validity must follow the same rules.",
+                               initialMessage.IsValidClockOffset == remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) );
+            if( !initialMessage.IsValidClockOffset )
+            {
+                return PeeringIssueKind.InvalidClockOffset;
+            }
             // Computing the ternary issue.
             // On our side it's easy:
             bool weTrustHim = foundTrustKey;
@@ -460,6 +478,7 @@ namespace CK.AppIdentity.TransportLayer
             {
                 PeeringIssueKind.IncomingUnknwon => ZeroProtocol.ConfigurationOrTrustIssue.Unknwon,
                 PeeringIssueKind.IncomingDisallowedTransport => ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport,
+                PeeringIssueKind.InvalidClockOffset => ZeroProtocol.ConfigurationOrTrustIssue.InvalidClockOffset,
                 PeeringIssueKind.InitiatorConflict => ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict,
                 PeeringIssueKind.IncomingUnsupportedTransport => ZeroProtocol.ConfigurationOrTrustIssue.UnsupportedTransport,
                 PeeringIssueKind.RequiresLocalApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval,
@@ -476,6 +495,9 @@ namespace CK.AppIdentity.TransportLayer
             var messageSent = await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming,
                                                                                     remote?.RemoteKeys,
                                                                                     pIssue,
+                                                                                    issue is PeeringIssueKind.InvalidClockOffset
+                                                                                        ? initialMessage.ClockOffset
+                                                                                        : null,
                                                                                     enlistUrl,
                                                                                     initialMessage.Nonce ).ConfigureAwait( false );
             if( !messageSent ) return;

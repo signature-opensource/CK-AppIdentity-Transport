@@ -21,28 +21,8 @@
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
-  <Class Name="CK.AppIdentity.TransportLayer.MessageProtocol">
-    <Position X="4.25" Y="3.5" Width="2" />
-    <Members>
-      <Field Name="_fullName" Hidden="true" />
-      <Field Name="_isZeroProtocol" Hidden="true" />
-      <Field Name="_messageFactory" Hidden="true" />
-      <Field Name="_name" Hidden="true" />
-      <Field Name="_version" Hidden="true" />
-      <Field Name="FullNameMaxLength" Hidden="true" />
-      <Property Name="MessageFactory" Hidden="true" />
-      <Method Name="MessageProtocol" Hidden="true" />
-      <Method Name="ToString" Hidden="true" />
-      <Field Name="ZeroProtocol" Hidden="true" />
-      <Field Name="ZeroProtocolName" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>IAAAIAAgCAAAKIAEAAAAAAYIAAACAAAAAACAAAAAAAA=</HashCode>
-      <FileName>MessageProtocol.cs</FileName>
-    </TypeIdentifier>
-  </Class>
   <Class Name="CK.AppIdentity.TransportLayer.IncomingMessage">
-    <Position X="0.5" Y="3" Width="3" />
+    <Position X="4" Y="0.5" Width="3" />
     <Members>
       <Field Name="_buffer" Hidden="true" />
       <Field Name="_message" Hidden="true" />
@@ -61,19 +41,5 @@
     </TypeIdentifier>
     <Lollipop Position="0.2" />
   </Class>
-  <Struct Name="CK.AppIdentity.TransportLayer.MessageProtocolMap">
-    <Position X="4.25" Y="0.5" Width="3.25" />
-    <Members>
-      <Field Name="_protocols" Hidden="true" />
-      <Method Name="Get" Hidden="true" />
-      <Method Name="GetProtocolIndexByName" Hidden="true" />
-      <Method Name="InternalGet" Hidden="true" />
-      <Method Name="MessageProtocolMap" Hidden="true" />
-    </Members>
-    <TypeIdentifier>
-      <HashCode>AQAgQAAAAAAAAABUAAgAAABBAAAAQAAAAAAAAAAAAAA=</HashCode>
-      <FileName>MessageProtocolMap.cs</FileName>
-    </TypeIdentifier>
-  </Struct>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>

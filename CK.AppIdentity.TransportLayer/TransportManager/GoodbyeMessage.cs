@@ -70,6 +70,7 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// An eviction message can be sent only by a listener and received by an initiator.
+        /// <see cref="IsFromRemote"/> is always true.
         /// </summary>
         /// <param name="RemoteEndPointDescription">The newcomer endpoint description.</param>
         /// <param name="InstanceId">The newcomer <see cref="CoreApplicationIdentity.InstanceId"/>.</param>

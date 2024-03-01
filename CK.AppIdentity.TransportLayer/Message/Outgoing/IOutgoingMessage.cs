@@ -54,18 +54,22 @@ namespace CK.AppIdentity.TransportLayer
 
 
         /// <summary>
-        /// 
+        /// Writes the wire header of a message according to a negotiated <see cref="MessageProtocolMap"/>.
+        /// The <see cref="IOutgoingMessageData.Protocol"/> must be found in the negotiated protocols otherwise
+        /// an <see cref="ArgumentException"/> is thrown.
         /// </summary>
-        /// <param name="protocolNumber">The protocol number between 0 and <see cref="MessageProtocolMap.MaxCount"/>.</param>
+        /// <param name="negociatedProtocols">The negociated protocol map.</param>
         /// <param name="message">The message (must be <see cref="IOutgoingMessageData.IsValid"/>).</param>
-        /// <param name="header">Target buffer of at least <see cref="Max"/></param>
-        /// <returns></returns>
-        public static int WriteWireHeader( int protocolNumber, IOutgoingMessage message, Span<byte> header )
+        /// <param name="header">Target buffer: must be least <see cref="MaxWirePrefixLength"/>.</param>
+        /// <returns>The number of bytes written in the <paramref name="header"/>.</returns>
+        public static int WriteWireHeader( MessageProtocolMap negociatedProtocols, IOutgoingMessage message, Span<byte> header )
         {
-            Throw.CheckArgument( protocolNumber >= 0 && protocolNumber <= MessageProtocolMap.MaxCount );
             Throw.CheckArgument( message.IsValid );
             Throw.CheckArgument( header.Length >= MaxWirePrefixLength );
-            return WriteWireHeader( (uint)protocolNumber, (uint)message.Message.Length, message.IsControl, header );
+            var protocolNumber = negociatedProtocols.GetProtocolIndex( message.Protocol );
+            if( protocolNumber < 0 ) Throw.ArgumentException( nameof(message), $"Message protocol '{message.Protocol}' not found in negociated protocols '{negociatedProtocols}'.");
+
+            return WriteWireHeader( 1 + (uint)protocolNumber, (uint)message.Message.Length, message.IsControl, header );
         }
 
         internal static int WriteWireHeader( uint protocolNumber, uint length, bool isControl, Span<byte> header )
@@ -86,7 +90,8 @@ namespace CK.AppIdentity.TransportLayer
 
         sealed class StaticEmpty : IOutgoingMessage
         {
-            int _ackOrEmptyAck;
+            readonly int _ackOrEmptyAck;
+
             public StaticEmpty( int ackOrEmptyAck )
             {
                 _ackOrEmptyAck = ackOrEmptyAck;

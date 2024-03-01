@@ -1,6 +1,8 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.BlobChannel.Tests
 {
@@ -13,6 +15,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
         readonly TransportManagerFeature _transport;
         readonly List<PeeringIssue> _issues;
         readonly bool _skipSameKind;
+        PeeringIssue? _last;
         bool _stopped;
 
         /// <summary>
@@ -34,12 +37,37 @@ namespace CK.AppIdentity.BlobChannel.Tests
             monitor.Info( $"(PeeringIssueCollectorTest {_transport}) PeeringIssue #{e.GetHashCode()} '{e.FullName}' {e.Kind}." );
             lock( _issues )
             {
-                if( !_stopped && (!_skipSameKind || _issues.Count == 0 || _issues[^1].Kind != e.Kind) )
+                if( !_stopped )
                 {
-                    _issues.Add( e.Clone() );
+                    _last = e;
+                    if( !_skipSameKind || _issues.Count == 0 || _issues[^1].Kind != e.Kind )
+                    {
+                        _issues.Add( e.Clone() );
+                    }
                 }
             }
         }
+
+        /// <summary>
+        /// Asynchronously waits until a <paramref name="kind"/> appear if <see cref="Last"/>
+        /// is not already satisfying.
+        /// </summary>
+        /// <param name="kind">The expected kind.</param>
+        /// <param name="token">Cancellation token.</param>
+        /// <returns>The awaitable.</returns>
+        public async Task WaitForAsync( PeeringIssueKind kind, CancellationToken token )
+        {
+            for( ; ; )
+            {
+                if( _last?.Kind == kind ) return;
+                await Task.Delay( 50, token );
+            }
+        }
+
+        /// <summary>
+        /// Gets the non cloned last reveived issue.
+        /// </summary>
+        public PeeringIssue? Last => _last;
 
         /// <summary>
         /// Stops this collector and retrieves the collected PeeringIssues.

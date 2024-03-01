@@ -231,6 +231,7 @@ namespace CK.AppIdentity.TransportLayer
                 protocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
             }
             expectedCommonProtocolCount = r.ReadSmallInt32();
+            // Our SupposedIdentity known by the remote may not exist.
             if( r.ReadBool() )
             {
                 var timeName = r.ReadDateTime();
@@ -326,6 +327,8 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Relevant only for incoming messages.
+        /// This is always false if the remote has not been resolved (<see cref="PeeringIssueKind.IncomingUnknwon"/>
+        /// or <see cref="PeeringIssueKind.IncomingDisallowedTransport"/>). 
         /// </summary>
         public bool IsValidClockOffset => _validClockOffset;
 

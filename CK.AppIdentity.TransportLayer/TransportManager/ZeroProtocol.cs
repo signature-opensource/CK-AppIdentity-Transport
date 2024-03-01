@@ -25,8 +25,7 @@ namespace CK.AppIdentity.TransportLayer
         internal const byte DNegoEvictionDisallowed = 5;
         internal const byte DNegoOffRemote = 6;
         internal const byte DNegoFinalSuccessMessage = 7;
-        internal const byte DNegoInvalidClockOffset = 8;
-        internal const byte DNegoRequiredEnlistUrl = 9;
+        internal const byte DNegoRequiredEnlistUrl = 8;
         // Run discriminators:
         internal const byte DRunGoodbye = 255;
 
@@ -49,6 +48,14 @@ namespace CK.AppIdentity.TransportLayer
 
             static IOutgoingMessage CreateAndSignMessage( GoodbyeMessage message, ISystemClock systemClock, LocalIdentityKey identity )
             {
+                _zeroFactory.Create( sequence =>
+                {
+                    var w = new FastByteWriter( sequence );
+                    w.WriteByte( DRunGoodbye );
+                    CreateAndWriteNonce( ref w, systemClock );
+                    GoodbyeMessage.WriteMessage( ref w, message );
+                    ComputeSHA512HashAndAppendSignature( ref w, identity );
+                } );
                 var builder = _zeroFactory.CreateBuilder();
                 var sequence = builder.ObtainSequence();
                 var w = new FastByteWriter( sequence );

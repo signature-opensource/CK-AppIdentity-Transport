@@ -47,6 +47,16 @@ namespace CK.AppIdentity.TransportLayer
             else WriteByte( 0 );
         }
 
+        public void WriteNullableTimeSpan( TimeSpan? value )
+        {
+            if( value.HasValue )
+            {
+                WriteByte( 1 );
+                WriteTimeSpan( value.Value );
+            }
+            else WriteByte( 0 );
+        }
+
         public void WriteNullableChar( char? value )
         {
             if( value.HasValue )
