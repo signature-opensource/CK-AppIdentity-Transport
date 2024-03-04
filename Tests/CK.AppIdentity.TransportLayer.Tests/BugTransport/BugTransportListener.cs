@@ -8,8 +8,8 @@ namespace CK.AppIdentity.TransportLayer.Tests
     {
         readonly BugTransportTypeService.BugType _bugType;
 
-        public BugTransportListener( BugTransportTypeService transportType, BugTransportTypeService.BugType bugType )
-            : base( transportType )
+        public BugTransportListener( BugTransportTypeService transportType, object opaqueHandle, BugTransportTypeService.BugType bugType )
+            : base( opaqueHandle, transportType )
         {
             _bugType = bugType;
         }

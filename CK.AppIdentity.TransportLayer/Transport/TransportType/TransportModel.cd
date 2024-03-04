@@ -72,7 +72,7 @@
       <Method Name="TcpSocketListener" Hidden="true" />
     </Members>
     <TypeIdentifier>
-      <HashCode>AAQAAAAAAAAEAIAAAAAAAAAQAAAAAgAKAAAAAEAAAAA=</HashCode>
+      <HashCode>AAQAAAAAAAAEAIAAAAQAAAAQAAAAAgAKAAAAAEAAAAA=</HashCode>
       <FileName>Transport\TransportType\Tcp\TcpSocketListener.cs</FileName>
     </TypeIdentifier>
   </Class>

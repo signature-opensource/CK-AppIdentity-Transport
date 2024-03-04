@@ -1,18 +1,12 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
-using Microsoft.VisualBasic;
 using System;
-using System.Buffers;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static CK.Core.ActivityMonitorSimpleCollector;
 
 namespace CK.AppIdentity.TransportLayer
 {
-
     /// <summary>
     /// Handles calls to <see cref="TransportTypeService.TryConnectToAsync(IActivityLogger, IRemoteParty, object, CancellationToken)"/>.
     /// This BackTask is always retried until a valid (tested) outgoing connection is obtained or the remote party is destroyed or switched off.
@@ -77,10 +71,11 @@ namespace CK.AppIdentity.TransportLayer
                     {
                         // We have an error or have been canceled..
                         // The error is typically a parsing error of an incoming message, we increase the retry time.
-                        int retryDelay = Math.Min( _tryConnectCount + 1, 30 );
+                        Throw.DebugAssert( _tryConnectCount > 0 );
+                        int retryDelay = Math.Min( _tryConnectCount, 30 );
                         if( _result.IsFaulted )
                         {
-                            monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} second.", _result.Exception );
+                            monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} seconds.", _result.Exception );
                         }
                         else
                         {
@@ -89,7 +84,7 @@ namespace CK.AppIdentity.TransportLayer
                             {
                                 // Cancellation is not by us and that is weird!
                                 monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                               $"OutgoingConnectionBackTask #{GetHashCode()}: Unexpected cancellation while connecting to '{_remote.Party}'. Retrying in {retryDelay} second." );
+                                               $"OutgoingConnectionBackTask #{GetHashCode()}: Unexpected cancellation while connecting to '{_remote.Party}'. Retrying in {retryDelay} seconds." );
                             }
                             // Else, regular case: cancellation belongs to us, it is a timeout or a offline decision.
                             // On timeout the delay is the same as for an unexpected error.
@@ -120,12 +115,12 @@ namespace CK.AppIdentity.TransportLayer
                 var delta = DateTime.UtcNow - _startTime;
                 if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
                 {
-                    monitor.Trace( $"OutgoingConnectionBackTask #{GetHashCode()}: Timeout ({(int)delta.TotalMilliseconds} ms) while connecting to remote '{_remote.Party}'. Reseting in 1 second." );
+                    monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Timeout ({(int)delta.TotalMilliseconds} ms) while connecting to remote '{_remote.Party}'. Reseting in 1 second." );
                     CancelOperation( monitor, false );
                     return;
                 }
                 // Check again asap.
-                NextCheckDelay = 1;   
+                NextCheckDelay = 1;
             }
             else
             {
@@ -158,6 +153,7 @@ namespace CK.AppIdentity.TransportLayer
         {
             Throw.DebugAssert( remote != null && remote.TargetAddress != null && _remote == null );
             _remote = remote;
+            _tryConnectCount = 0;
             if( startDelay == 0 )
             {
                 // Immediate start.
@@ -173,14 +169,17 @@ namespace CK.AppIdentity.TransportLayer
         {
             Throw.DebugAssert( _remote != null );
             // Reuse the same CTS if possible.
-            if( _cts == null || _cts.IsCancellationRequested )
+            if( _cts == null || !_cts.TryReset() )
             {
                 _cts = new CancellationTokenSource();
             }
-            _tryConnectCount = 0;
             _startTime = DateTime.UtcNow;
             _result = TryConnectToAsync( TaskManager.Host, _remote, _cts, _tryConnectCount++ );
-            NextCheckDelay = 1;
+#pragma warning disable VSTHRD002 // Avoid problematic synchronous waits
+            NextCheckDelay = _result.IsCompletedSuccessfully
+                                ? _result.Result
+                                : 1;
+#pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
         }
 
         public override void Reset()
@@ -244,7 +243,7 @@ namespace CK.AppIdentity.TransportLayer
                 if( !firstAnswer.IsValid || firstAnswer == IncomingMessage.Empty || firstAnswer == IncomingMessage.EmptyAck )
                 {
                     return OnInitialFailure( transportManager.Logger,
-                                                      remote,             
+                                                      remote,
                                                       currentTryCount,
                                                       firstAnswer == IncomingMessage.Canceled
                                                          ? "Canceled received from"

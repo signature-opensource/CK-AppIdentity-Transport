@@ -109,14 +109,14 @@ namespace CK.AppIdentity.TransportLayer.Tests
             return new BugTransport( typedAddress, remoteKeys );
         }
 
-        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress )
+        protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object opaqueHandle, object typedAddress )
         {
             var type = (BugType)typedAddress;
             if( (type & BugType.ListenerCreate) != 0 )
             {
                 throw new Exception( "Bug: ListenerCreate." );
             }
-            return new BugTransportListener( this, type );
+            return new BugTransportListener( this, opaqueHandle, type );
         }
     }
 }

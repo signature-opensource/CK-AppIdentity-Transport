@@ -57,14 +57,14 @@ namespace CK.AppIdentity.TransportLayer
             }
             catch( Exception ex )
             {
-                socket.Dispose();
                 logger.Error( $"Unable to connect a TCP socket to '{ipEndPoint}'.", ex );
+                socket.Dispose();
                 return null;
             }
         }
 
         /// <inheritdoc />
-        internal protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress )
+        internal protected override TransportListener? TryCreateListener( IActivityMonitor monitor, object opaqueHandle, object typedAddress )
         {
             var ipEndPoint = (IPEndPoint)typedAddress;
             try
@@ -83,7 +83,7 @@ namespace CK.AppIdentity.TransportLayer
                 socket.Bind( ipEndPoint );
                 socket.Listen();
                 Throw.DebugAssert( socket.LocalEndPoint is IPEndPoint );
-                return new TcpSocketListener( this, ipEndPoint, socket );
+                return new TcpSocketListener( this, opaqueHandle, ipEndPoint, socket );
             }
             catch( Exception ex )
             {

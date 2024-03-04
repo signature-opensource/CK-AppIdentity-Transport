@@ -23,7 +23,6 @@ namespace CK.AppIdentity.TransportLayer
     {
         // This is set right after the instantiation to avoid a constructor parameter
         // with which the developper must not interact with.
-        [AllowNull]
         internal TransportManager _transportManager;
         readonly ITransportTypeService _transportType;
         TransportFeature[] _parties;
@@ -33,10 +32,17 @@ namespace CK.AppIdentity.TransportLayer
         /// <summary>
         /// Initializes a new TransportListener.
         /// </summary>
+        /// <param name="opaqueHandle">Must be the handle from <see cref="TransportTypeService.TryCreateListener(IActivityMonitor, object, object)"/>.</param>
         /// <param name="transportType">The transport type that manages this listener.</param>
-        protected TransportListener( ITransportTypeService transportType )
+        protected TransportListener( object opaqueHandle, ITransportTypeService transportType )
         {
             Throw.CheckNotNullArgument( transportType );
+            if( opaqueHandle is not TransportManager m )
+            {
+                Throw.ArgumentException( nameof( opaqueHandle ) );
+                return;
+            }
+            _transportManager = m;
             _parties = Array.Empty<TransportFeature>();
             _transportType = transportType;
             _refCount = 1;
@@ -50,28 +56,36 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Adds a remote party that is bound to this listener.
-        /// This needs Interlocked because this is called when parties are created
-        /// from the ApplicationIdentityService's agent loop and by TransportManager's loop
-        /// when Switching On a remote.
+        /// This is called when parties are created from the ApplicationIdentityService's agent loop:
+        /// RemoveParty is also called from the ApplicationIdentityService's agent: we don't need synchronization here.
         /// </summary>
+        /// <param name="monitor">The Application Identity monitor agent.</param>
         /// <param name="party">The valid party for this listener.</param>
-        internal void AddParty( TransportFeature party )
+        internal void AddParty( IActivityMonitor monitor, TransportFeature party )
         {
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
             Throw.DebugAssert( !_parties.Contains( party ) );
-            Util.InterlockedAdd( ref _parties, party );
+            var newArray = new TransportFeature[_parties.Length + 1];
+            Array.Copy( _parties, 0, newArray, 0, _parties.Length );
+            newArray[_parties.Length] = party;
+            _parties = newArray;
         }
 
         /// <summary>
         /// Removes a remote party that is bound to this listener.
-        /// This needs Interlocked because this is called when parties are destroyed
-        /// from the ApplicationIdentityService's agent loop and by TransportManager's loop
-        /// when Switching Off a remote.
+        /// This is called by the ApplicationIdentityService's agent when tearing down the remote.
         /// </summary>
-        /// <param name="party"></param>
-        internal void RemoveParty( TransportFeature party )
+        /// <param name="monitor">The Application Identity monitor agent.</param>
+        /// <param name="party">The destroyed party.</param>
+        internal void RemoveParty( IActivityMonitor monitor, TransportFeature party )
         {
-            Throw.DebugAssert( _parties.Contains( party ) );
-            Util.InterlockedRemove( ref _parties, party );
+            Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
+            int num = Array.IndexOf( _parties, party );
+            Throw.DebugAssert( num >= 0 );
+            var newArray = new TransportFeature[_parties.Length - 1];
+            Array.Copy( _parties, 0, newArray, 0, num );
+            Array.Copy( _parties, num + 1, newArray, num, newArray.Length - num );
+            _parties = newArray;
         }
 
         /// <summary>

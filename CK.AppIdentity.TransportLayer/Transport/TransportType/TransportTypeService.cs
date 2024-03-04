@@ -43,9 +43,10 @@ namespace CK.AppIdentity.TransportLayer
         /// Creates a new listener: the <paramref name="typedAddress"/> is not currently listening.
         /// </summary>
         /// <param name="monitor">The monitor to use.</param>
+        /// <param name="opaqueHandle">Opaque handle that mus be provided as-is to the <see cref="TransportListener()"/></param>
         /// <param name="typedAddress">The listening end point (necessarily a compatible address that has been parsed by this service).</param>
         /// <returns>The transport listener or null if it cannot be created.</returns>
-        internal protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, object typedAddress );
+        internal protected abstract TransportListener? TryCreateListener( IActivityMonitor monitor, object opaqueHandle, object typedAddress );
 
         /// <summary>
         /// Attempts a connection to the provided <paramref name="typedAddress"/>.

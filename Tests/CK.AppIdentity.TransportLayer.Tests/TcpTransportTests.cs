@@ -4,6 +4,8 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using System.Linq;
+using System.Net.Sockets;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using static CK.Core.ActivityMonitor;
@@ -12,7 +14,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests
 {
     [TestFixture]
-    public class TcpTransportTests
+    public partial class TcpTransportTests
     {
         // Uses a 50ms instead of the default 1000ms for tests.
         readonly SystemClockTester _systemClock = new SystemClockTester( 50 );
@@ -21,7 +23,6 @@ namespace CK.AppIdentity.TransportLayer.Tests
         {
             services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
         }
-
 
         [Test, CancelAfter( 7000 )]
         public async Task Switch_Off_On_and_Shutdown_Listener_Async( CancellationToken token )
@@ -107,23 +108,6 @@ namespace CK.AppIdentity.TransportLayer.Tests
             }
         }
 
-        [Test, CancelAfter( 7000 )]
-        public async Task Initiator_alone_Async( CancellationToken token )
-        {
-            var sender = await TestHelper.CreateApplicationServiceAsync( c =>
-            {
-                c["FullName"] = "Test/$Sender";
-                c["AutoTrustKey"] = "Once";
-                c["Parties:0:PartyName"] = "$Listener";
-                c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
-            }, ConfigureFastClock, token: token );
-
-            await Task.Delay( 5000, token );
-
-            await sender.DisposeAsync();
-
-            await Task.Delay( 1000, token );
-        }
 
     }
 }

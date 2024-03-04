@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer
@@ -10,12 +11,14 @@ namespace CK.AppIdentity.TransportLayer
     {
         readonly IPEndPoint _address;
         readonly Socket _listenSocket;
+        readonly CancellationTokenSource _listenCTS;
 
-        public TcpSocketListener( TcpSocketTransportTypeService tcpService, IPEndPoint address, Socket listenSocket )
-            : base( tcpService )
+        public TcpSocketListener( TcpSocketTransportTypeService tcpService, object opaqueHandle, IPEndPoint address, Socket listenSocket )
+            : base( opaqueHandle, tcpService )
         {
             _address = address;
             _listenSocket = listenSocket;
+            _listenCTS = new CancellationTokenSource();
             _ = Task.Run( RunAcceptAsync );
         }
 
@@ -45,25 +48,25 @@ namespace CK.AppIdentity.TransportLayer
 
         internal protected override ValueTask DisposeAsync( IActivityMonitor monitor )
         {
-            _listenSocket.Dispose();
+            _listenCTS.Cancel();
             return default;
         }
 
         async Task RunAcceptAsync()
         {
-            Logger.Info( $"Starting TCP listener on '{_address}'." );
+            Logger.Info( $"Starting '{ToString()}'." );
             while( true )
             {
                 try
                 {
-                    var acceptSocket = await _listenSocket.AcceptAsync();
+                    var acceptSocket = await _listenSocket.AcceptAsync( _listenCTS.Token );
                     // Disable Nagle algorithm: a message is fully buffered. We don't need it.
                     acceptSocket.NoDelay = true;
                     OnIncomingTransport( new TcpSocketTransport( this, acceptSocket ) );
                 }
-                catch( ObjectDisposedException )
+                catch( OperationCanceledException ) when( _listenCTS.IsCancellationRequested ) 
                 {
-                    // Dispose called: we're done.
+                    // Token signaled. We're done.
                     break;
                 }
                 catch( SocketException e ) when( e.SocketErrorCode == SocketError.OperationAborted )
@@ -71,16 +74,25 @@ namespace CK.AppIdentity.TransportLayer
                     // Dispose called: we're done
                     break;
                 }
-                catch( SocketException )
+                catch( SocketException ex )
                 {
-                    Logger.Warn( $"An incoming TCP connection got reset while it was in the backlog on '{_address}'." );
+                    Logger.Warn( $"An incoming TCP connection got reset while it was in the backlog on '{_address}'.", ex );
                 }
                 catch( Exception ex )
                 {
-                    Logger.Error( $"Unexpected error in TCP listener on '{_address}'.", ex );
+                    Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unexpected error in TCP listener on '{_address}'.", ex );
                 }
             }
-            Logger.Info( $"Ending TCP listener on '{_address}'." );
+            Logger.Info( $"Ending '{ToString()}' (disposing Listening socket)." );
+            try
+            {
+                _listenSocket.Dispose();
+            }
+            catch( Exception ex )
+            {
+                Logger.Error( "While disposing TCP listener.", ex );
+            }
+
         }
     }
 }

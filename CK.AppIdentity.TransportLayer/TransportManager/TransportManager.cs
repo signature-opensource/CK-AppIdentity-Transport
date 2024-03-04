@@ -347,7 +347,7 @@ namespace CK.AppIdentity.TransportLayer
                 case NewIncomingTransport j:
                     Throw.DebugAssert( "This is necessarily an incoming connection created by a listener (not yet validated).",
                                        j.Incoming.Listener != null && j.Incoming.Controller == null );
-                    monitor.Trace( $"Received transport '{j.Incoming.RemoteEndPointDescription}' (#{j.Incoming.GetHashCode()}) from listener '{j.Incoming.Listener.EndPointDescription}'. Validating it." );
+                    monitor.Trace( $"Received transport '{j.Incoming.RemoteEndPointDescription}' (#{j.Incoming.GetHashCode()}) from '{j.Incoming.Listener}'. Validating it." );
                     _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime ) );
                     return default;
                 case TransportFeature newFeature:

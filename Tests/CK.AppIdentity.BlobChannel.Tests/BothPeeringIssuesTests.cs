@@ -27,15 +27,32 @@ namespace CK.AppIdentity.BlobChannel.Tests
         }
 
 
-        [TestCase( true )]
-        [TestCase( false )]
+        [TestCase( true, true )]
+        [TestCase( false, true )]
+        [TestCase( true, false )]
+        [TestCase( false, false )]
         //[CancelAfter( 7000 )]
-        public async Task MissingProtocols_Async( bool senderHasProtocol, CancellationToken token )
+        public async Task MissingProtocols_Async( bool senderHasProtocol, bool switchOffListener, CancellationToken token )
         {
+            DotNetEventSourceCollector.Enable( "System.Net.Sockets", System.Diagnostics.Tracing.EventLevel.Verbose );
+            DotNetEventSourceCollector.Enable( "Private.InternalDiagnostics.System.Net.Sockets", System.Diagnostics.Tracing.EventLevel.Verbose );
+            using var autoDisable = Util.CreateDisposableAction( () =>
+            {
+                DotNetEventSourceCollector.Disable( "System.Net.Sockets" );
+                DotNetEventSourceCollector.Disable( "Private.InternalDiagnostics.System.Net.Sockets" );
+            } );
+            TestHelper.Monitor.Info( DotNetEventSourceCollector.GetSources().Select( s => $"{s.Name} - {s.Level}" ).Concatenate() );
+
+
             TestHelper.GetCleanTestStoreFolder();
 
             TestHelper.Monitor.Info( "Tests: Creating Listener & Sender." );
-            await using var listener = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Listener", ConfigureFastClock, token: token );
+            await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = "Test/$Listener";
+                c["AlwaysListening"] = "true";
+
+            }, ConfigureFastClock, token: token );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", ConfigureFastClock, token: token );
 
             var senderTransportManager = sender.GetRequiredFeature<TransportManagerFeature>();
@@ -89,12 +106,57 @@ namespace CK.AppIdentity.BlobChannel.Tests
                                 senderIssues.WaitForAsync( PeeringIssueKind.None, token ) );
 
 
-            TestHelper.Monitor.Info( "Tests: Destroying listener." );
-            await listenerParty.DestroyAsync();
+            if( switchOffListener )
+            {
+                TestHelper.Monitor.Info( "Tests: Switching off listener." );
+                listenerTransport.SwitchOff( "Switching off listener!" );
+                // A switched off listener preseves its issue if any.
+                await listenerIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token );
+            }
+            else
+            {
+                TestHelper.Monitor.Info( "Tests: Destroying listener." );
+                await listenerParty.DestroyAsync();
+                // A destroyed listener mutates the issue to be an IncomingUnknwon.
+                await listenerIssues.WaitForAsync( PeeringIssueKind.IncomingUnknwon, token );
+            }
 
-            // A destroyed listener mutates the isse to be an IncomingUnknwon.
-            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.IncomingUnknwon, token ),
-                                senderIssues.WaitForAsync( PeeringIssueKind.None, token ) );
+            // Obviously no change on the destroyed sender side.
+            await senderIssues.WaitForAsync( PeeringIssueKind.None, token );
+
+            if( switchOffListener )
+            {
+                TestHelper.Monitor.Info( "Tests: Switching listener back on." );
+                listenerTransport.SwitchOn().Should().BeTrue();
+            }
+            else
+            {
+                TestHelper.Monitor.Info( "Tests: Recreating the listener (still no AutoTrustKey but we know each other now)." );
+                listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
+                {
+                    c["PartyName"] = "$Sender";
+                    if( !senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+                } );
+                Throw.DebugAssert( listenerParty != null );
+                listenerTransport = listenerParty.GetFeature<TransportFeature>();
+                Throw.DebugAssert( listenerTransport != null );
+            }
+
+            TestHelper.Monitor.Info( "Tests: Recreating the sender Party (still no AutoTrustKey but we know each other now)." );
+            senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
+            {
+                c["PartyName"] = "$Listener";
+                c["Address"] = "tcp:127.0.0.1";
+                if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+            } );
+            Throw.DebugAssert( senderParty != null );
+            senderTransport = senderParty.GetFeature<TransportFeature>();
+            Throw.DebugAssert( senderTransport != null );
+
+            // Both are still MissingProtocols.
+            await Task.WhenAll( listenerIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token ),
+                                senderIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token ) );
+
 
             static async Task WaitCanAcceptAndAndAcceptRemoteAsync( TransportManagerFeature transportManager, CancellationToken token )
             {

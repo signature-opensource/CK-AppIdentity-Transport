@@ -29,13 +29,13 @@ namespace CK.AppIdentity.TransportLayer.Tests
         [TestCase( BugTransportTypeService.BugType.TransportCreateNull,
             "Unable to open connection to 'Test/$Other/#Dev' at 'BugTransportTypeService - TransportCreateNull'. Retrying in 1 seconds." )]
         [TestCase( BugTransportTypeService.BugType.TransportWrite,
-            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 2 second." )]
+            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 1 seconds." )]
         [TestCase( BugTransportTypeService.BugType.TransportWriteInline,
-            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 2 second." )]
+            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 1 seconds." )]
         [TestCase( BugTransportTypeService.BugType.TransportRead,
-            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 2 second." )]
+            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 1 seconds." )]
         [TestCase( BugTransportTypeService.BugType.TransportReadInline,
-            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 2 second." )]
+            "Unhandled error while connecting to 'Test/$Other/#Dev'. Retrying in 1 seconds." )]
         public async Task OutgoingBackTask_never_stops_when_Transport_cannot_be_created_Async( BugTransportTypeService.BugType bugType,
                                                                                                string error,
                                                                                                CancellationToken token )
@@ -51,14 +51,18 @@ namespace CK.AppIdentity.TransportLayer.Tests
             Throw.DebugAssert( "CreateApplicationServiceAsync has used the TestHelper.Monitor.", GrandOutput.Default != null );
             using var logCollector = GrandOutput.Default.CreateMemoryCollector( 1000 );
 
-            await Task.Delay( 1000, token );
+            await Task.Delay( 1300, token );
             TestHelper.Monitor.Info( "Tests: Switching off the sender." );
             senderTransport.SwitchOff( "Ending test." );
             //await Task.Delay( 5000, token );
 
             logCollector.UpdateCachedEntries();
             var logs = logCollector.CachedTexts;
-            logs.Count( l => l.Contains( error ) ).Should().BeGreaterThan( 1 );
+            logs.Count( l => l.Contains( error ) ).Should().Be( 1 );
+            for( int i = 2; i < 4; i++ )
+            {
+                logs.Count( l => l.Contains( error.Replace( "in 1", $"in {i}" ) ) ).Should().Be( 1, i.ToString() );
+            }
 
             TestHelper.Monitor.Info( "Tests: Done." );
         }

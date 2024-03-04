@@ -23,20 +23,20 @@ namespace CK.AppIdentity.BlobChannel.Tests
         {
             TestHelper.GetCleanTestStoreFolder();
 
-// BlobChannel is an opt-in feature: it must be explicitly allowed.
-await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
-{
-    c["FullName"] = "Test/$Listener";
-    c["Parties:0:PartyName"] = "Sender";
-    c["AllowFeatures"] = "BlobChannel";
-}, token: token );
-await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
-{
-    c["FullName"] = "Test/$Sender";
-    c["Parties:0:PartyName"] = "Listener";
-    c["Parties:0:Address"] = "tcp:127.0.0.1";
-    c["AllowFeatures"] = "BlobChannel";
-}, token: token );
+            // BlobChannel is an opt-in feature: it must be explicitly allowed.
+            await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = "Test/$Listener";
+                c["Parties:0:PartyName"] = "Sender";
+                c["AllowFeatures"] = "BlobChannel";
+            }, token: token );
+            await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = "Test/$Sender";
+                c["Parties:0:PartyName"] = "Listener";
+                c["Parties:0:Address"] = "tcp:127.0.0.1";
+                c["AllowFeatures"] = "BlobChannel";
+            }, token: token );
             var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
             var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 

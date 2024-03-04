@@ -30,18 +30,12 @@ namespace CK.AppIdentity.TransportLayer
 
         /// <summary>
         /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
-        /// The listener should be as ready as possible to handle incoming connections.
+        /// The listener should be as ready as possible to handle incoming connections
+        /// (even if it has no parties registered at the start).
         /// <para>
         /// We want this to be called before starting anything as a configuration validation
         /// (this is called by TransportFeatureDriver.SetupAsync and SetupDynamicRemoteAsync).
-        /// Since there should not be a lot of endpoint and even if it's the case, not a lot of
-        /// calls on this (only called while creating remotes). There is NO concurrent calls to
-        /// TryEnsureListener.
-        /// The only concurrent access is between TryEnsureListener and DisposeListeners and these 2 are
-        /// non concurrent by design:
-        /// - TryEnsureListener is called in the ApplicationIdentity loop (SetupAsync and SetupDynamicRemoteAsync).
-        /// - DisposeListeners is called in the TransportManager loop (by the Stop()) but it is itself called
-        /// by the ApplicationIdentity loop -> TransportFeatureDriver.TeardownAsync that awaits the _transportManager.RunningTask.
+        /// There is NO concurrent calls to TryEnsureListener/OnListenerDisposed.
         /// </para>
         /// </summary>
         /// <param name="monitor">The monitor to signal errors.</param>
@@ -59,12 +53,11 @@ namespace CK.AppIdentity.TransportLayer
                     return exists;
                 }
             }
-            var l = endPoint.Type.TryCreateListener( monitor, endPoint.TypedAddress );
+            var l = endPoint.Type.TryCreateListener( monitor, this, endPoint.TypedAddress );
             if( l != null )
             {
-                l._transportManager = this;
                 _listeners.Add( l );
-                monitor.Trace( $"Created listener '{GetType().Name} - {l.EndPointDescription}'." );
+                monitor.Trace( $"Created listener '{l}'." );
             }
             return l;
         }

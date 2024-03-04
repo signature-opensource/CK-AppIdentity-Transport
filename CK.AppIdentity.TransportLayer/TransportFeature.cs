@@ -503,11 +503,10 @@ namespace CK.AppIdentity.TransportLayer
                 }
                 else
                 {
-                    foreach( var l in _listeners )
-                    {
-                        Throw.DebugAssert( !l.Parties.Contains( this ) );
-                        l.AddParty( this );
-                    }
+                    // We have nothing to do for listeners. This party still
+                    // appears in the associated listeners because it has not
+                    // been "definitly" shutdown, just "regularly" shutdown.
+                    Throw.DebugAssert( _listeners.All( l => l.Parties.Contains( this ) ) );
                 }
             }
             return default;
@@ -523,7 +522,9 @@ namespace CK.AppIdentity.TransportLayer
         internal async ValueTask DoSwitchOffAsync( IActivityMonitor monitor, TaskCompletionSource? done, GoodbyeMessage offReason )
         {
             Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
-            bool isDefinitive = !offReason.IsFromRemote && offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown;
+            // The "Definitive" switch off:
+            Throw.DebugAssert( "The TCS is provided if and only if we are tearing down the party.",
+                               (done != null) == (!offReason.IsFromRemote && offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown) );
 
             monitor.Trace( $"Switching remote '{Party.FullName}' OFF: {offReason}" );
             var c = _controller;
@@ -539,18 +540,13 @@ namespace CK.AppIdentity.TransportLayer
             // and/or this is destroyed.
             await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );
             // When tearing down, dispose the connection availability event bridge.
-            if( isDefinitive )
+            if( done != null )
             {
-                // Removes the party from the listeners (if we were listening).
-                if( _listeners != null )
-                {
-                    foreach( var l in _listeners ) l.RemoveParty( this );
-                }
                 // Update the possible PeeringIssue if any.
                 await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this ).ConfigureAwait( false );
                 _connectionEventBridge.Dispose();
+                done.SetResult();
             }
-            done?.SetResult();
         }
 
         public override string ToString() => $"TransportFeature for '{_party.FullName}'";

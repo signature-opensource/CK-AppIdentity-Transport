@@ -234,20 +234,17 @@ namespace CK.AppIdentity.TransportLayer
                     if( remote != null ) OnRemoteAppeared( exist, remote );
                     else OnRemoteTornDown( exist );
                 }
-                if( exist.Kind != PeeringIssueKind.None )
-                {
-                    exist.Update( kind,
-                                  _transportManager.SystemClock.UtcNow,
-                                  message,
-                                  remote,
-                                  enlistUrl,
-                                  invalidClockOffset,
-                                  remoteKeyForApproval,
-                                  localMissing,
-                                  remoteMissing,
-                                  remoteOffMessage );
-                    _exposedClonedIssues = null;
-                }
+                exist.Update( kind,
+                                _transportManager.SystemClock.UtcNow,
+                                message,
+                                remote,
+                                enlistUrl,
+                                invalidClockOffset,
+                                remoteKeyForApproval,
+                                localMissing,
+                                remoteMissing,
+                                remoteOffMessage );
+                _exposedClonedIssues = null;
                 return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
             }
             // If there is no remote then cleanup in excess unknwon remotes if any
