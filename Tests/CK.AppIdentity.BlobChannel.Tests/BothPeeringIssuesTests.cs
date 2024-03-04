@@ -31,7 +31,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
         [TestCase( false, true )]
         [TestCase( true, false )]
         [TestCase( false, false )]
-        //[CancelAfter( 7000 )]
+        [CancelAfter( 7000 )]
         public async Task MissingProtocols_Async( bool senderHasProtocol, bool switchOffListener, CancellationToken token )
         {
             DotNetEventSourceCollector.Enable( "System.Net.Sockets", System.Diagnostics.Tracing.EventLevel.Verbose );
@@ -41,7 +41,6 @@ namespace CK.AppIdentity.BlobChannel.Tests
                 DotNetEventSourceCollector.Disable( "System.Net.Sockets" );
                 DotNetEventSourceCollector.Disable( "Private.InternalDiagnostics.System.Net.Sockets" );
             } );
-            TestHelper.Monitor.Info( DotNetEventSourceCollector.GetSources().Select( s => $"{s.Name} - {s.Level}" ).Concatenate() );
 
 
             TestHelper.GetCleanTestStoreFolder();
@@ -50,7 +49,10 @@ namespace CK.AppIdentity.BlobChannel.Tests
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "Test/$Listener";
-                c["AlwaysListening"] = "true";
+                // Using AlwaysListening true makes it always work.
+                // But when false, and switchOffListener is also false (the listener is destroyed/recreated), this fails:
+                // the listener never accepts :-(.
+                // c["AlwaysListening"] = "true";
 
             }, ConfigureFastClock, token: token );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", ConfigureFastClock, token: token );
@@ -110,7 +112,7 @@ namespace CK.AppIdentity.BlobChannel.Tests
             {
                 TestHelper.Monitor.Info( "Tests: Switching off listener." );
                 listenerTransport.SwitchOff( "Switching off listener!" );
-                // A switched off listener preseves its issue if any.
+                // A switched off listener preserves its issue if any.
                 await listenerIssues.WaitForAsync( PeeringIssueKind.MissingProtocols, token );
             }
             else
