@@ -49,10 +49,6 @@ namespace CK.AppIdentity.BlobChannel.Tests
             await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "Test/$Listener";
-                // Using AlwaysListening true makes it always work.
-                // But when false, and switchOffListener is also false (the listener is destroyed/recreated), this fails:
-                // the listener never accepts :-(.
-                // c["AlwaysListening"] = "true";
 
             }, ConfigureFastClock, token: token );
             await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", ConfigureFastClock, token: token );

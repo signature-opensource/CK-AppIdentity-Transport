@@ -69,17 +69,8 @@ namespace CK.AppIdentity.TransportLayer
             var ipEndPoint = (IPEndPoint)typedAddress;
             try
             {
-                Socket socket;
-                if( ipEndPoint.Address == IPAddress.Any && Socket.OSSupportsIPv6 )
-                {
-                    socket = new Socket( AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp );
-                    socket.DualMode = true;
-                    ipEndPoint.Address = IPAddress.IPv6Any;
-                }
-                else
-                {
-                    socket = new Socket( ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp );
-                }
+                // This constructor sets DualMode = true if Socket.OSSupportsIPv6 is true.
+                Socket socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
                 socket.Bind( ipEndPoint );
                 socket.Listen();
                 Throw.DebugAssert( socket.LocalEndPoint is IPEndPoint );
