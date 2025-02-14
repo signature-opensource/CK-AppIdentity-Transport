@@ -1,4 +1,4 @@
-﻿namespace CK.AppIdentity.TransportLayer
+namespace CK.Core
 {
     /// <summary>
     /// Simple connection availability model.
