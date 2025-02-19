@@ -2,17 +2,16 @@ using CK.Core;
 using NUnit.Framework;
 using static CK.Testing.MonitorTestHelper;
 
-namespace CK.AppIdentity.TransportLayer.Tests
+namespace CK.AppIdentity.TransportLayer.Tests;
+
+[SetUpFixture]
+public class TestHelperSetupDefaultStorePath
 {
-    [SetUpFixture]
-    public class TestHelperSetupDefaultStorePath
+    [OneTimeSetUp]
+    public void RunBeforeAnyTests()
     {
-        [OneTimeSetUp]
-        public void RunBeforeAnyTests()
-        {
-            var testDefault = TestHelper.TestProjectFolder.AppendPart( "TestStore" );
-            ApplicationIdentityServiceConfiguration.DefaultStoreRootPath = testDefault;
-            Throw.CheckState( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath == testDefault );
-        }
+        var testDefault = TestHelper.TestProjectFolder.AppendPart( "TestStore" );
+        ApplicationIdentityServiceConfiguration.DefaultStoreRootPath = testDefault;
+        Throw.CheckState( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath == testDefault );
     }
 }

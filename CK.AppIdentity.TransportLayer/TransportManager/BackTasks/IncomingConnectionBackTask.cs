@@ -5,580 +5,579 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer
+namespace CK.AppIdentity.TransportLayer;
+
+/// <summary>
+/// This one shot BackTask handles new <see cref="Transport"/> from a <see cref="TransportListener"/>.
+/// The protocol initialization is implemented as a BackTask since we have no clue of the actual remote
+/// identity that tries to connect: all the dirty work can be "observed from the outer" and the task
+/// totally forgotten if needed. This fully isolate the listener that can never be blocked.
+/// </summary>
+sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 {
-    /// <summary>
-    /// This one shot BackTask handles new <see cref="Transport"/> from a <see cref="TransportListener"/>.
-    /// The protocol initialization is implemented as a BackTask since we have no clue of the actual remote
-    /// identity that tries to connect: all the dirty work can be "observed from the outer" and the task
-    /// totally forgotten if needed. This fully isolate the listener that can never be blocked.
-    /// </summary>
-    sealed class IncomingConnectionBackTask : BackTask<TransportManager>
+    Transport? _incoming;
+    Task? _runTask;
+    DateTime _initializeTime;
+
+    public override void OnDestroy( IActivityMonitor monitor )
     {
-        Transport? _incoming;
-        Task? _runTask;
-        DateTime _initializeTime;
+        Throw.DebugAssert( _incoming != null && _runTask != null );
+        // Killing the transport (int.MaxValue is ignored as this is an incoming transport but it is clearer).
+        TaskManager.Host.KillTransport( _incoming, int.MaxValue );
+    }
 
-        public override void OnDestroy( IActivityMonitor monitor )
+    public override void Check( IActivityMonitor monitor, int previousCheckDelay )
+    {
+        Throw.DebugAssert( _incoming != null && _runTask != null );
+        if( !_runTask.IsCompleted )
         {
-            Throw.DebugAssert( _incoming != null && _runTask != null );
-            // Killing the transport (int.MaxValue is ignored as this is an incoming transport but it is clearer).
-            TaskManager.Host.KillTransport( _incoming, int.MaxValue );
-        }
-
-        public override void Check( IActivityMonitor monitor, int previousCheckDelay )
-        {
-            Throw.DebugAssert( _incoming != null && _runTask != null );
-            if( !_runTask.IsCompleted )
+            var delta = DateTime.UtcNow - _initializeTime;
+            if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
             {
-                var delta = DateTime.UtcNow - _initializeTime;
-                if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
-                {
-                    monitor.Warn( $"Incoming connection timeout ({(int)delta.TotalMilliseconds} ms) for '{_incoming}'. Destroying the transport." );
-                    TaskManager.Host.KillTransport( _incoming, int.MaxValue );
-                }
-                else
-                {
-                    NextCheckDelay = 1;
-                }
-            }
-            else if( _runTask.IsFaulted )
-            {
-                monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _runTask.Exception );
+                monitor.Warn( $"Incoming connection timeout ({(int)delta.TotalMilliseconds} ms) for '{_incoming}'. Destroying the transport." );
                 TaskManager.Host.KillTransport( _incoming, int.MaxValue );
             }
             else
             {
-                monitor.Debug( $"IncomingConnectionBackTask #{GetHashCode()} Done (Transport: '{_incoming}')." );
+                NextCheckDelay = 1;
             }
         }
-
-        public override void Reset()
+        else if( _runTask.IsFaulted )
         {
-            _incoming = null;
-            _runTask = null;
+            monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _runTask.Exception );
+            TaskManager.Host.KillTransport( _incoming, int.MaxValue );
         }
-
-        public void OnInitialize( Transport incoming, DateTime incomingTime )
+        else
         {
-            Throw.DebugAssert( incoming.Listener != null );
-            _incoming = incoming;
-            _initializeTime = DateTime.UtcNow;
-            _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
-            NextCheckDelay = 1;
+            monitor.Debug( $"IncomingConnectionBackTask #{GetHashCode()} Done (Transport: '{_incoming}')." );
         }
+    }
 
-        // Wraps the call to DoRunAsync that does the real job of handling the incoming InitialMessage:
-        // if it returns false, the incoming transport is immediately killed.
-        static async Task RunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
+    public override void Reset()
+    {
+        _incoming = null;
+        _runTask = null;
+    }
+
+    public void OnInitialize( Transport incoming, DateTime incomingTime )
+    {
+        Throw.DebugAssert( incoming.Listener != null );
+        _incoming = incoming;
+        _initializeTime = DateTime.UtcNow;
+        _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
+        NextCheckDelay = 1;
+    }
+
+    // Wraps the call to DoRunAsync that does the real job of handling the incoming InitialMessage:
+    // if it returns false, the incoming transport is immediately killed.
+    static async Task RunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
+    {
+        var success = await DoRunAsync( transportManager, incoming, incomingTime );
+        if( !success )
         {
-            var success = await DoRunAsync( transportManager, incoming, incomingTime );
-            if( !success )
-            {
-                transportManager.KillTransport( incoming, int.MaxValue );
-            }
+            transportManager.KillTransport( incoming, int.MaxValue );
         }
+    }
 
-        static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
+    static async Task<bool> DoRunAsync( TransportManager transportManager, Transport incoming, DateTime incomingTime )
+    {
+        Throw.DebugAssert( incoming?.Listener != null );
+
+        var initialResult = await HandleInitialMessageAsync( transportManager, incoming, incomingTime ).ConfigureAwait( false );
+        if( !initialResult.HasValue ) return false;
+
+        var (initialMessage, remote, foundTrustKey) = initialResult.Value;
+
+        Throw.DebugAssert( "If we have not remote found the Remote, then the ClockOffset is invalid.",
+                           remote != null || !initialMessage.IsValidClockOffset );
+
+        // This handles null or untrusted remote and the RemoteTrustInfo.
+        // - When the remote is null (because it has not been found in this incoming.Listener.Parties), we try to find him among
+        //   the ApplicationIdentityService.AllRemotes:
+        //     - If we can't find him, then the issue is "IncomingUnknwon"
+        //     - If it has no associated TransportFeature the issue is "IncomingDisallowedTransport"
+        //     - A TransportFeature is available so we have its IRemoteKeys.MaxClockOffset:  
+        //        - We can check the clockOffset against the IRemoteKeys.MaxClockOffset: the issue can be "InvalidClockOffset".
+        //        - If our Remote is also an initiator, this is "InitiatorConflict"
+        //        - Otherwise, the Party is bound to another Listener: the issue is "IncomingUnsupportedTransport".
+        //   => We resolve the existingParty and updates the remote here so that:
+        //      - We can always sign the message except for "IncomingUnknwon" and "IncomingDisallowedTransport".
+        //      - the PeeringIssue can have its TransportFeature if possible.
+        // - Based on foundTrustKey and initialMessage.RemoteTrustInfo (we can predict that the remote will not be able to trust us),
+        //   the issue can be "RequiresLocalApproval" (foundTrustKey is false), "RequiresRemoteApproval" or "RequiresBothApproval".
+        // - Otherwise the issue is "None".
+        PeeringIssueKind issue = DetectConfigurationOrTrustIssue( transportManager,
+                                                                  incoming,
+                                                                  initialMessage,
+                                                                  ref remote,
+                                                                  foundTrustKey,
+                                                                  out var existingParty );
+
+        if( issue != PeeringIssueKind.None )
         {
-            Throw.DebugAssert( incoming?.Listener != null );
+            await HandleConfigurationOrTrustIssueAsync( transportManager, incoming, initialMessage, remote, issue, existingParty ).ConfigureAwait( false );
+            return false;
+        }
+        Throw.DebugAssert( "We have a trusted remote.", remote != null && foundTrustKey );
 
-            var initialResult = await HandleInitialMessageAsync( transportManager, incoming, incomingTime ).ConfigureAwait( false );
-            if( !initialResult.HasValue ) return false;
-
-            var (initialMessage, remote, foundTrustKey) = initialResult.Value;
-
-            Throw.DebugAssert( "If we have not remote found the Remote, then the ClockOffset is invalid.",
-                               remote != null || !initialMessage.IsValidClockOffset );
-
-            // This handles null or untrusted remote and the RemoteTrustInfo.
-            // - When the remote is null (because it has not been found in this incoming.Listener.Parties), we try to find him among
-            //   the ApplicationIdentityService.AllRemotes:
-            //     - If we can't find him, then the issue is "IncomingUnknwon"
-            //     - If it has no associated TransportFeature the issue is "IncomingDisallowedTransport"
-            //     - A TransportFeature is available so we have its IRemoteKeys.MaxClockOffset:  
-            //        - We can check the clockOffset against the IRemoteKeys.MaxClockOffset: the issue can be "InvalidClockOffset".
-            //        - If our Remote is also an initiator, this is "InitiatorConflict"
-            //        - Otherwise, the Party is bound to another Listener: the issue is "IncomingUnsupportedTransport".
-            //   => We resolve the existingParty and updates the remote here so that:
-            //      - We can always sign the message except for "IncomingUnknwon" and "IncomingDisallowedTransport".
-            //      - the PeeringIssue can have its TransportFeature if possible.
-            // - Based on foundTrustKey and initialMessage.RemoteTrustInfo (we can predict that the remote will not be able to trust us),
-            //   the issue can be "RequiresLocalApproval" (foundTrustKey is false), "RequiresRemoteApproval" or "RequiresBothApproval".
-            // - Otherwise the issue is "None".
-            PeeringIssueKind issue = DetectConfigurationOrTrustIssue( transportManager,
-                                                                      incoming,
-                                                                      initialMessage,
-                                                                      ref remote,
-                                                                      foundTrustKey,
-                                                                      out var existingParty );
-
-            if( issue != PeeringIssueKind.None )
-            {
-                await HandleConfigurationOrTrustIssueAsync( transportManager, incoming, initialMessage, remote, issue, existingParty ).ConfigureAwait( false );
-                return false;
-            }
-            Throw.DebugAssert( "We have a trusted remote.", remote != null && foundTrustKey );
-
-            // Before handling the protocols, if our transport is off, sends the DNegoOffRemote message.
-            var offMessage = remote.SwitchOffMessage;
-            if( offMessage != null )
-            {
-                await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, initialMessage.ClockOffset, offMessage ).ConfigureAwait( false );
-                return false;
-            }
-
-            // Checks the missing protocols on both sides.
-            var commonBest = await HandleProtocolsAsync( transportManager, initialMessage, incoming, remote );
-            if( commonBest == null ) return false;
-
-            // This Transport is now valid (up to us).
-            // But our remote may not accept "eviction". 
-            var current = remote.TransportController;
-            if( current != null && !current.CurrentTransport.IsCondemned )
-            {
-                if( remote.DisallowEviction )
-                {
-                    transportManager.Logger.Warn( $"Incoming call from remote '{remote.Party.FullName}' while already connected to '{current.CurrentTransport}'. " +
-                                                  $"DisallowEviction is true: sending EvictionDisallowedMessage and closing." );
-                    // If this message cannot be sent, we don't care.
-                    await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming, initialMessage.Nonce ).ConfigureAwait( false );
-                    return false;
-                }
-            }
-            // The protocol map is not really needed but it asserts the validity of the protocol list. 
-            var protocolMap = MessageProtocolMap.InternalGet( commonBest );
-
-            // We now have no reason to reject it: we send the accept message: it this fails, it's
-            // useless to put the connection manager at work.
-            if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock,
-                                                                      incoming,
-                                                                      protocolMap,
-                                                                      initialMessage.Nonce,
-                                                                      initialMessage.ClockOffset ).ConfigureAwait( false ) )
-            {
-                // Wait for the final message, either:
-                //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
-                //  - A DNegoFinalSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA512 hash (64 bytes) and
-                //    the signature (its length on one byte and up to 255 bytes).
-                const int MaxInitiatorSuccessMessageLength = 1 + 8 + 8 + 64 + 1 + 255;
-                using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength ).ConfigureAwait( false );
-                if( !finalInitiatorMessage.IsValid
-                    || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
-                    || finalInitiatorMessage.Message.FirstSpan.Length == 0
-                    || (finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalFailureMessage
-                        && finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalSuccessMessage) )
-                {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid final message." );
-                }
-                else if( finalInitiatorMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalFailureMessage )
-                {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
-                }
-                else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
-                {
-                    // Final message is received: the current transport (if any) will be evicted.
-                    var m = new GoodbyeMessage.Evicted( initialMessage.RemoteEndPointDescription, initialMessage.InstanceId );
-                    // By providing the party here instead of the transport feature, we'll check
-                    // that the RemoteParty is not destroyed and the existence of the TransportFeature.
-                    transportManager.NewValidTransport( remote.Party, incoming, protocolMap, finalClockOffset, m );
-                    return true;
-                }
-                else
-                {
-                    // Either the nonce or the signature failed: let this transport die.
-                }
-            }
+        // Before handling the protocols, if our transport is off, sends the DNegoOffRemote message.
+        var offMessage = remote.SwitchOffMessage;
+        if( offMessage != null )
+        {
+            await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, initialMessage.ClockOffset, offMessage ).ConfigureAwait( false );
             return false;
         }
 
-        static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager,
-                                                                                               Transport incoming,
-                                                                                               DateTime incomingTime )
+        // Checks the missing protocols on both sides.
+        var commonBest = await HandleProtocolsAsync( transportManager, initialMessage, incoming, remote );
+        if( commonBest == null ) return false;
+
+        // This Transport is now valid (up to us).
+        // But our remote may not accept "eviction". 
+        var current = remote.TransportController;
+        if( current != null && !current.CurrentTransport.IsCondemned )
         {
-            Throw.DebugAssert( incoming.Listener != null );
-            InitialMessage? initialMessage = null;
-            IncomingMessage? message = null;
-            TransportFeature? remote = null;
-            bool foundTrustKey = false;
-            try
+            if( remote.DisallowEviction )
             {
-                bool downgradedVersion = false;
-                retry:
-                message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength ).ConfigureAwait( false );
-                if( !message.IsValid || message == IncomingMessage.Empty || message == IncomingMessage.EmptyAck )
-                {
-                    if( message == IncomingMessage.Canceled )
-                    {
-                        transportManager.Logger.Debug( $"Canceled read for '{incoming.RemoteEndPointDescription}'." );
-                    }
-                    else
-                    {
-                        transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
-                    }
-                    return null;
-                }
-                // Let any exception while reading the initial message be a task error.
-                initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey );
-                // Handles null parse result:
-                //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
-                //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
-                //     returned null: signature or nonce check failed. Give up.
-                //   - The otherVersion is greater than our ZeroProtocol.CurrentVersion: send a DowngradeProtocolReplyMessage 
-                //     ang goto retry (once only once and the give up).
-                if( initialMessage == null )
-                {
-                    if( otherVersion == -1 )
-                    {
-                        // Nothing to do: this is not a remote!
-                        transportManager.Logger.Warn( $"Initial message received from '{incoming.RemoteEndPointDescription}' miss the 'CK-AppId' prefix." );
-                        return null;
-                    }
-                    if( otherVersion <= ZeroProtocol.CurrentVersion )
-                    {
-                        // We have read the first part of the message.
-                        // If the initialMessage is null it is because its signature has failed the verification or the Nonce check failed (this has been logged).
-                        // We send a one byte message and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
-                        await ZeroProtocol.SendFinalFailureMessageAsync( incoming ).ConfigureAwait( false );
-                        return null;
-                    }
-                    // The remote's version of the InitialMessage is greater than ours.
-                    if( !downgradedVersion )
-                    {
-                        transportManager.Logger.Warn( $"Replying DowngradeProtocolReplyMessage to '{incoming.RemoteEndPointDescription}' (remote version is '{otherVersion}', our is '{ZeroProtocol.CurrentVersion}')." );
-                        await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming ).ConfigureAwait( false );
-                        // If the other can downgrade, it's cool. But do this only once.
-                        downgradedVersion = true;
-                        message.Release();
-                        goto retry;
-                    }
-                    transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{incoming.RemoteEndPointDescription}'." );
-                    return null;
-                }
-            }
-            finally
-            {
-                message?.Dispose();
-            }
-            return (initialMessage, remote, foundTrustKey);
-
-            static InitialMessage? TryParse( TransportManager transportManager,
-                                             Transport incoming,
-                                             DateTime incomingTime,
-                                             IncomingMessage message,
-                                             out int otherVersion,
-                                             out TransportFeature? remote,
-                                             out bool foundTrustKey )
-            {
-                Throw.DebugAssert( "We are listening.", incoming.Listener != null );
-                var r = new FastByteReader( message.Message );
-                if( !InitialMessage.TryParse( ref r,
-                                              out otherVersion,
-                                              out var instanceId,
-                                              out var domainName,
-                                              out var partyName,
-                                              out var environmentName,
-                                              out var fullName,
-                                              out var protocols,
-                                              out var expectedCommonProtocolCount,
-                                              out var canAutoTrust,
-                                              out var supposedIdentity) )
-                {
-                    remote = null;
-                    foundTrustKey = false;
-                    return null;
-                }
-                // Reads the timed nonce.
-                var timedNonce = new TimedNonce( r.ReadDateTime(), r.ReadUInt64() );
-                
-                // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
-                // Accessing the Parties is thread safe.
-                // This COULD have been done by the TransportListener (lookup based on SSL certificates).
-                remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == fullName );
-                Throw.DebugAssert( remote == null || remote.IsListening );
-
-                // We may know the remote (or not). If we do, we may have a trusted identity for it.
-                var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
-                if( !ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out foundTrustKey, out var currentKeyData, out var currentKey ) )
-                {
-                    // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
-                    // This is a serious issue and we cannot do a lot here.
-                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                   $"Unable to verify the signature's incoming message from '{fullName}'." );
-                    return null;
-                }
-                // This is a protocol error.
-                // We do this after the signature check because an invalid signature is more impacting.
-                if( !timedNonce.CheckCreationTimeKind( transportManager.Logger, fullName ) )
-                {
-                    return null;
-                }
-                // The message's signature is verified and the CreationTime.Kind is UTC.
-                // If we have no identified remote, we're done (with an invalid clock offset) but we compute the clockOffset
-                // nevertheless (this may be a warning for the user).
-                bool validClockOffset = false;
-                TimeSpan clockOffset = timedNonce.CreationTime - incomingTime;
-                if( remote != null )
-                {
-                    // Before impacting anything we check the nonce (that checks clock offset).
-                    // The nonce (when validClockOffset is true) is always added: we don't want to
-                    // forget a nonce because the remote is not trusted right now: if such message
-                    // was to be replayed once the legitimate remote has been accepted, we would let
-                    // a bad guy validate its connection... And if DisallowEviction is false this will
-                    // be endless.
-                    validClockOffset = remote.RemoteKeys.CheckClockOffset( transportManager.Logger, clockOffset );
-                    if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce.Nonce ) )
-                    {
-                        // This looks like a replay attack.
-                        // This has already been logged.
-                        return null;
-                    }
-                    // We have a known remote, validClockOffset may be false but if it is true then nonce is fine (and in the cache).
-
-                    // Set the party's RemoteKeys on the incoming Transport.
-                    // 
-                    // Important: The Transport MAY already know the RemoteKeys if the TransportListener was able to
-                    //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
-                    //            initial message as if it was on a non confidential channel.
-                    //            Moreover, we check here the work of the TransportListener and throws if a mismatch of keys happened: our source
-                    //            of truth is the incoming message's FullName.
-                    if( incoming.RemoteKeys == null )
-                    {
-                        incoming.SetKeys( remote.RemoteKeys );
-                    }
-                    else
-                    {
-                        if( incoming.RemoteKeys != remote.RemoteKeys )
-                        {
-                            Throw.InvalidOperationException( $"Buggy TransportListener: remote keys are not the right ones. " +
-                                                             $"Expected keys for '{remote.RemoteKeys.Party}', got '{incoming.RemoteKeys.Party}.'" );
-                        }
-                    }
-                    // We're almost done: if validClockOffset is true (then the nonce is okay) we can update the remote keys with the current one
-                    // (if we trust the remote) and if we don't 
-                    // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
-                    if( validClockOffset )
-                    {
-                        bool isalreadyTrusted = foundTrustKey;
-                        foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustKey, currentKeyData, currentKey );
-                    }
-                }
-                return new InitialMessage( incoming.Listener.EndPointDescription,
-                                           incoming.RemoteEndPointDescription,
-                                           otherVersion,
-                                           instanceId,
-                                           domainName,
-                                           partyName,
-                                           environmentName,
-                                           fullName,
-                                           protocols,
-                                           expectedCommonProtocolCount,
-                                           canAutoTrust,
-                                           supposedIdentity,
-                                           timedNonce.Nonce,
-                                           validClockOffset,
-                                           clockOffset,
-                                           currentKeyData,
-                                           currentKey );
+                transportManager.Logger.Warn( $"Incoming call from remote '{remote.Party.FullName}' while already connected to '{current.CurrentTransport}'. " +
+                                              $"DisallowEviction is true: sending EvictionDisallowedMessage and closing." );
+                // If this message cannot be sent, we don't care.
+                await ZeroProtocol.SendEvictionDisallowedMessageAsync( incoming, initialMessage.Nonce ).ConfigureAwait( false );
+                return false;
             }
         }
+        // The protocol map is not really needed but it asserts the validity of the protocol list. 
+        var protocolMap = MessageProtocolMap.InternalGet( commonBest );
 
-        static PeeringIssueKind DetectConfigurationOrTrustIssue( TransportManager transportManager,
-                                                                 Transport incoming,
-                                                                 InitialMessage initialMessage,
-                                                                 ref TransportFeature? remote,
-                                                                 bool foundTrustKey,
-                                                                 out IRemoteParty? exists )
+        // We now have no reason to reject it: we send the accept message: it this fails, it's
+        // useless to put the connection manager at work.
+        if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock,
+                                                                  incoming,
+                                                                  protocolMap,
+                                                                  initialMessage.Nonce,
+                                                                  initialMessage.ClockOffset ).ConfigureAwait( false ) )
         {
-            // If the remote is not found in the Listener's parties, it may nevertheless exist:
-            // - It may be a Listener but on another tranport listener (UnsupportedTransportIncoming).
-            // - It may be an Initiator (InitiatorConflict).
-            // - The RemoteParty may exist but its TransportFeature is disabled (DisallowedTransportIncoming).
+            // Wait for the final message, either:
+            //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
+            //  - A DNegoFinalSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA512 hash (64 bytes) and
+            //    the signature (its length on one byte and up to 255 bytes).
+            const int MaxInitiatorSuccessMessageLength = 1 + 8 + 8 + 64 + 1 + 255;
+            using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength ).ConfigureAwait( false );
+            if( !finalInitiatorMessage.IsValid
+                || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
+                || finalInitiatorMessage.Message.FirstSpan.Length == 0
+                || (finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalFailureMessage
+                    && finalInitiatorMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoFinalSuccessMessage) )
+            {
+                transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid final message." );
+            }
+            else if( finalInitiatorMessage.Message.FirstSpan[0] == ZeroProtocol.DNegoFinalFailureMessage )
+            {
+                transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
+            }
+            else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
+            {
+                // Final message is received: the current transport (if any) will be evicted.
+                var m = new GoodbyeMessage.Evicted( initialMessage.RemoteEndPointDescription, initialMessage.InstanceId );
+                // By providing the party here instead of the transport feature, we'll check
+                // that the RemoteParty is not destroyed and the existence of the TransportFeature.
+                transportManager.NewValidTransport( remote.Party, incoming, protocolMap, finalClockOffset, m );
+                return true;
+            }
+            else
+            {
+                // Either the nonce or the signature failed: let this transport die.
+            }
+        }
+        return false;
+    }
+
+    static async Task<(InitialMessage,TransportFeature?,bool)?> HandleInitialMessageAsync( TransportManager transportManager,
+                                                                                           Transport incoming,
+                                                                                           DateTime incomingTime )
+    {
+        Throw.DebugAssert( incoming.Listener != null );
+        InitialMessage? initialMessage = null;
+        IncomingMessage? message = null;
+        TransportFeature? remote = null;
+        bool foundTrustKey = false;
+        try
+        {
+            bool downgradedVersion = false;
+            retry:
+            message = await incoming.ReadNextAsync( maxMessageLength: InitialMessage.MaxLength ).ConfigureAwait( false );
+            if( !message.IsValid || message == IncomingMessage.Empty || message == IncomingMessage.EmptyAck )
+            {
+                if( message == IncomingMessage.Canceled )
+                {
+                    transportManager.Logger.Debug( $"Canceled read for '{incoming.RemoteEndPointDescription}'." );
+                }
+                else
+                {
+                    transportManager.Logger.Warn( $"Empty or too long initial message received from '{incoming.RemoteEndPointDescription}'." );
+                }
+                return null;
+            }
+            // Let any exception while reading the initial message be a task error.
+            initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey );
+            // Handles null parse result:
+            //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
+            //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
+            //     returned null: signature or nonce check failed. Give up.
+            //   - The otherVersion is greater than our ZeroProtocol.CurrentVersion: send a DowngradeProtocolReplyMessage 
+            //     ang goto retry (once only once and the give up).
+            if( initialMessage == null )
+            {
+                if( otherVersion == -1 )
+                {
+                    // Nothing to do: this is not a remote!
+                    transportManager.Logger.Warn( $"Initial message received from '{incoming.RemoteEndPointDescription}' miss the 'CK-AppId' prefix." );
+                    return null;
+                }
+                if( otherVersion <= ZeroProtocol.CurrentVersion )
+                {
+                    // We have read the first part of the message.
+                    // If the initialMessage is null it is because its signature has failed the verification or the Nonce check failed (this has been logged).
+                    // We send a one byte message and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
+                    await ZeroProtocol.SendFinalFailureMessageAsync( incoming ).ConfigureAwait( false );
+                    return null;
+                }
+                // The remote's version of the InitialMessage is greater than ours.
+                if( !downgradedVersion )
+                {
+                    transportManager.Logger.Warn( $"Replying DowngradeProtocolReplyMessage to '{incoming.RemoteEndPointDescription}' (remote version is '{otherVersion}', our is '{ZeroProtocol.CurrentVersion}')." );
+                    await ZeroProtocol.SendDowngradeProtocolReplyAsync( incoming ).ConfigureAwait( false );
+                    // If the other can downgrade, it's cool. But do this only once.
+                    downgradedVersion = true;
+                    message.Release();
+                    goto retry;
+                }
+                transportManager.Logger.Warn( $"Invalid InitialMessage version received from '{incoming.RemoteEndPointDescription}'." );
+                return null;
+            }
+        }
+        finally
+        {
+            message?.Dispose();
+        }
+        return (initialMessage, remote, foundTrustKey);
+
+        static InitialMessage? TryParse( TransportManager transportManager,
+                                         Transport incoming,
+                                         DateTime incomingTime,
+                                         IncomingMessage message,
+                                         out int otherVersion,
+                                         out TransportFeature? remote,
+                                         out bool foundTrustKey )
+        {
+            Throw.DebugAssert( "We are listening.", incoming.Listener != null );
+            var r = new FastByteReader( message.Message );
+            if( !InitialMessage.TryParse( ref r,
+                                          out otherVersion,
+                                          out var instanceId,
+                                          out var domainName,
+                                          out var partyName,
+                                          out var environmentName,
+                                          out var fullName,
+                                          out var protocols,
+                                          out var expectedCommonProtocolCount,
+                                          out var canAutoTrust,
+                                          out var supposedIdentity) )
+            {
+                remote = null;
+                foundTrustKey = false;
+                return null;
+            }
+            // Reads the timed nonce.
+            var timedNonce = new TimedNonce( r.ReadDateTime(), r.ReadUInt64() );
+            
+            // The message seems fine. The first thing is to locate our remote across the registered listener's Parties.
+            // Accessing the Parties is thread safe.
+            // This COULD have been done by the TransportListener (lookup based on SSL certificates).
+            remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == fullName );
+            Throw.DebugAssert( remote == null || remote.IsListening );
+
+            // We may know the remote (or not). If we do, we may have a trusted identity for it.
+            var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
+            if( !ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out foundTrustKey, out var currentKeyData, out var currentKey ) )
+            {
+                // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
+                // This is a serious issue and we cannot do a lot here.
+                transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                               $"Unable to verify the signature's incoming message from '{fullName}'." );
+                return null;
+            }
+            // This is a protocol error.
+            // We do this after the signature check because an invalid signature is more impacting.
+            if( !timedNonce.CheckCreationTimeKind( transportManager.Logger, fullName ) )
+            {
+                return null;
+            }
+            // The message's signature is verified and the CreationTime.Kind is UTC.
+            // If we have no identified remote, we're done (with an invalid clock offset) but we compute the clockOffset
+            // nevertheless (this may be a warning for the user).
+            bool validClockOffset = false;
+            TimeSpan clockOffset = timedNonce.CreationTime - incomingTime;
+            if( remote != null )
+            {
+                // Before impacting anything we check the nonce (that checks clock offset).
+                // The nonce (when validClockOffset is true) is always added: we don't want to
+                // forget a nonce because the remote is not trusted right now: if such message
+                // was to be replayed once the legitimate remote has been accepted, we would let
+                // a bad guy validate its connection... And if DisallowEviction is false this will
+                // be endless.
+                validClockOffset = remote.RemoteKeys.CheckClockOffset( transportManager.Logger, clockOffset );
+                if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce.Nonce ) )
+                {
+                    // This looks like a replay attack.
+                    // This has already been logged.
+                    return null;
+                }
+                // We have a known remote, validClockOffset may be false but if it is true then nonce is fine (and in the cache).
+
+                // Set the party's RemoteKeys on the incoming Transport.
+                // 
+                // Important: The Transport MAY already know the RemoteKeys if the TransportListener was able to
+                //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
+                //            initial message as if it was on a non confidential channel.
+                //            Moreover, we check here the work of the TransportListener and throws if a mismatch of keys happened: our source
+                //            of truth is the incoming message's FullName.
+                if( incoming.RemoteKeys == null )
+                {
+                    incoming.SetKeys( remote.RemoteKeys );
+                }
+                else
+                {
+                    if( incoming.RemoteKeys != remote.RemoteKeys )
+                    {
+                        Throw.InvalidOperationException( $"Buggy TransportListener: remote keys are not the right ones. " +
+                                                         $"Expected keys for '{remote.RemoteKeys.Party}', got '{incoming.RemoteKeys.Party}.'" );
+                    }
+                }
+                // We're almost done: if validClockOffset is true (then the nonce is okay) we can update the remote keys with the current one
+                // (if we trust the remote) and if we don't 
+                // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
+                if( validClockOffset )
+                {
+                    bool isalreadyTrusted = foundTrustKey;
+                    foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustKey, currentKeyData, currentKey );
+                }
+            }
+            return new InitialMessage( incoming.Listener.EndPointDescription,
+                                       incoming.RemoteEndPointDescription,
+                                       otherVersion,
+                                       instanceId,
+                                       domainName,
+                                       partyName,
+                                       environmentName,
+                                       fullName,
+                                       protocols,
+                                       expectedCommonProtocolCount,
+                                       canAutoTrust,
+                                       supposedIdentity,
+                                       timedNonce.Nonce,
+                                       validClockOffset,
+                                       clockOffset,
+                                       currentKeyData,
+                                       currentKey );
+        }
+    }
+
+    static PeeringIssueKind DetectConfigurationOrTrustIssue( TransportManager transportManager,
+                                                             Transport incoming,
+                                                             InitialMessage initialMessage,
+                                                             ref TransportFeature? remote,
+                                                             bool foundTrustKey,
+                                                             out IRemoteParty? exists )
+    {
+        // If the remote is not found in the Listener's parties, it may nevertheless exist:
+        // - It may be a Listener but on another tranport listener (UnsupportedTransportIncoming).
+        // - It may be an Initiator (InitiatorConflict).
+        // - The RemoteParty may exist but its TransportFeature is disabled (DisallowedTransportIncoming).
+        if( remote == null )
+        {
+            exists = transportManager.ApplicationIdentityAgent.ApplicationIdentityService
+                                     .AllRemotes.FirstOrDefault( r => r.FullName == initialMessage.FullName );
+            if( exists == null )
+            {
+                // We don't know the incoming at all.
+                return PeeringIssueKind.IncomingUnknwon;
+            }
+            remote = exists.GetFeature<TransportFeature>();
             if( remote == null )
             {
-                exists = transportManager.ApplicationIdentityAgent.ApplicationIdentityService
-                                         .AllRemotes.FirstOrDefault( r => r.FullName == initialMessage.FullName );
-                if( exists == null )
-                {
-                    // We don't know the incoming at all.
-                    return PeeringIssueKind.IncomingUnknwon;
-                }
-                remote = exists.GetFeature<TransportFeature>();
-                if( remote == null )
-                {
-                    // The party exists but has no TransportFeature. From the TransportLayer point of view, it's as if it doesn't
-                    // exist but this is more than that: it is disallowed.
-                    return PeeringIssueKind.IncomingDisallowedTransport;
-                }
-                // The party exists: we can check the clock offset.
-                if( !remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) )
-                {
-                    return PeeringIssueKind.InvalidClockOffset;
-                }
-                // The clock is fine: we now have a single alternative.
-                if( remote.TargetAddress != null )
-                {
-                    // ...and it is also an initiator.
-                    return PeeringIssueKind.InitiatorConflict;
-                }
-                // ...and it listens on another TransportListener.
-                Throw.DebugAssert( remote.IsListening );
-                return PeeringIssueKind.IncomingUnsupportedTransport;
+                // The party exists but has no TransportFeature. From the TransportLayer point of view, it's as if it doesn't
+                // exist but this is more than that: it is disallowed.
+                return PeeringIssueKind.IncomingDisallowedTransport;
             }
-            exists = remote.Party;
-            // Before handling approval issues we must check the clock offset.
-            Throw.DebugAssert( "ClockOffset validity must follow the same rules.",
-                               initialMessage.IsValidClockOffset == remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) );
-            if( !initialMessage.IsValidClockOffset )
+            // The party exists: we can check the clock offset.
+            if( !remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) )
             {
                 return PeeringIssueKind.InvalidClockOffset;
             }
-            // Computing the ternary issue.
-            // On our side it's easy:
-            bool weTrustHim = foundTrustKey;
-            // But does he trust us? Thanks to the RemoteTrustInfo (SupposedIdentity and CanAutoTrust) in the InitialMessage we can
-            // check whether or not he will be able to trust us.
-            // If he can, everything is fine (he will obviously check this on its side with our identities and the signatures).
-            // but if he cannot trust us, there is no point to continue because he will fail to accept us.
-            bool heTrustsUs = true;
-            var supposed = initialMessage.RemoteTrustInfo.SupposedIdentity;
-            if( supposed == null || !remote.RemoteKeys.LocalKeys.Identities.Any( supposed.Equals ) )
+            // The clock is fine: we now have a single alternative.
+            if( remote.TargetAddress != null )
             {
-                // He doesn't know us... Can he auto trust us?
-                if( !initialMessage.RemoteTrustInfo.CanAutoTrust )
-                {
-                    heTrustsUs = false;
-                }
-                else if( weTrustHim )
-                {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' can auto trust us." );
-                }
+                // ...and it is also an initiator.
+                return PeeringIssueKind.InitiatorConflict;
             }
-            if( weTrustHim )
-            {
-                return heTrustsUs ? PeeringIssueKind.None : PeeringIssueKind.RequiresRemoteApproval;
-            }
-            return heTrustsUs ? PeeringIssueKind.RequiresLocalApproval : PeeringIssueKind.RequiresBothApproval;
+            // ...and it listens on another TransportListener.
+            Throw.DebugAssert( remote.IsListening );
+            return PeeringIssueKind.IncomingUnsupportedTransport;
         }
-
-        static async ValueTask HandleConfigurationOrTrustIssueAsync( TransportManager transportManager,
-                                                                     Transport incoming,
-                                                                     InitialMessage initialMessage,
-                                                                     TransportFeature? remote,
-                                                                     PeeringIssueKind issue,
-                                                                     IRemoteParty? existingParty )
+        exists = remote.Party;
+        // Before handling approval issues we must check the clock offset.
+        Throw.DebugAssert( "ClockOffset validity must follow the same rules.",
+                           initialMessage.IsValidClockOffset == remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) );
+        if( !initialMessage.IsValidClockOffset )
         {
-            // Send the RejectRemoteReply message, the PeeringIssueKind value should not be used here: the Zero Protocol must not
-            // depend on this enum.
-            var pIssue = issue switch
-            {
-                PeeringIssueKind.IncomingUnknwon => ZeroProtocol.ConfigurationOrTrustIssue.Unknwon,
-                PeeringIssueKind.IncomingDisallowedTransport => ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport,
-                PeeringIssueKind.InvalidClockOffset => ZeroProtocol.ConfigurationOrTrustIssue.InvalidClockOffset,
-                PeeringIssueKind.InitiatorConflict => ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict,
-                PeeringIssueKind.IncomingUnsupportedTransport => ZeroProtocol.ConfigurationOrTrustIssue.UnsupportedTransport,
-                PeeringIssueKind.RequiresLocalApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval,
-                PeeringIssueKind.RequiresRemoteApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval,
-                PeeringIssueKind.RequiresBothApproval => ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval,
-                _ => Throw.NotSupportedException<ZeroProtocol.ConfigurationOrTrustIssue>()
-            };
-            // When there is a configuration issue or if the remote trust (or can) trust us, there is no point to tranfer an enlist url. 
-            string? enlistUrl = issue is PeeringIssueKind.IncomingUnknwon
-                                         or PeeringIssueKind.RequiresRemoteApproval
-                                         or PeeringIssueKind.RequiresBothApproval
-                                    ? transportManager.GetEnlistRemoteUrl( existingParty, initialMessage.DomainName )
-                                    : null;
-            var messageSent = await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming,
-                                                                                    remote?.RemoteKeys,
-                                                                                    pIssue,
-                                                                                    issue is PeeringIssueKind.InvalidClockOffset
-                                                                                        ? initialMessage.ClockOffset
-                                                                                        : null,
-                                                                                    enlistUrl,
-                                                                                    initialMessage.Nonce ).ConfigureAwait( false );
-            if( !messageSent ) return;
-            // Only if the transport has not been condemned.
-            string? remoteEnlistUrl = null;
-            if( issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval )
-            {
-                // Consider 3 bytes per Utf16 char... This is more than enough.
-                using var enlistReplyMessage = await incoming.ReadNextAsync( 10 + 3 * ZeroProtocol.MaxEnlistUrlLength ).ConfigureAwait( false );
-                if( !enlistReplyMessage.IsValid
-                    || enlistReplyMessage.Protocol != MessageProtocol.ZeroProtocol
-                    || enlistReplyMessage.Message.FirstSpan.Length == 0
-                    || enlistReplyMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoRequiredEnlistUrl )
-                {
-                    transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid RequiredEnlistUrl message." );
-                    return;
-                }
-                if( !ZeroProtocol.ReadRequiredEnlistUrlMessage( enlistReplyMessage,
-                                                                initialMessage.Nonce,
-                                                                initialMessage.GetCurrentRemoteIdentityKey(),
-                                                                out remoteEnlistUrl ) )
-                {
-                    // Weird...
-                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                   $"Signature or nonce check failed for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}'." );
-                    return;
-                }
-            }
-            transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl );
+            return PeeringIssueKind.InvalidClockOffset;
         }
-
-        static async ValueTask<MessageProtocol[]?> HandleProtocolsAsync( TransportManager transportManager,
-                                                                         InitialMessage initialMessage,
-                                                                         Transport incoming,
-                                                                         TransportFeature remote )
+        // Computing the ternary issue.
+        // On our side it's easy:
+        bool weTrustHim = foundTrustKey;
+        // But does he trust us? Thanks to the RemoteTrustInfo (SupposedIdentity and CanAutoTrust) in the InitialMessage we can
+        // check whether or not he will be able to trust us.
+        // If he can, everything is fine (he will obviously check this on its side with our identities and the signatures).
+        // but if he cannot trust us, there is no point to continue because he will fail to accept us.
+        bool heTrustsUs = true;
+        var supposed = initialMessage.RemoteTrustInfo.SupposedIdentity;
+        if( supposed == null || !remote.RemoteKeys.LocalKeys.Identities.Any( supposed.Equals ) )
         {
-            // Let's check the full protocol list we received by intersecting it
-            // with our declared protocol (and selecting the highest common version for each of them).
-            MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )
-                                                                     .GroupBy( p => p.Name )
-                                                                     .Select( g => g.MaxBy( g => g.Version ) )
-                                                                     .ToArray()!;
-            // If the protocols from the other side don't satisfy us or if cannot satisfy him, we compute the
-            // sets of missing on both sides for the PeeringIssues.
-            // We send the MissingProtocolsMessage and let the caller close the connection (if it can do it quick enough).
-            bool weAreSatisfied = commonBest.Length == remote.BestRegisteredProtocols.Count;
-            bool heIsSatisfied = commonBest.Length == initialMessage.ExpectedCommonProtocolCount;
-            if( !weAreSatisfied || !heIsSatisfied )
+            // He doesn't know us... Can he auto trust us?
+            if( !initialMessage.RemoteTrustInfo.CanAutoTrust )
             {
-                List<string>? weAreMissing = null;
-                List<string>? heIsMissing = null;
-                if( !weAreSatisfied )
-                {
-                    Throw.DebugAssert( commonBest.Length < remote.BestRegisteredProtocols.Count );
-                    weAreMissing = remote.RegisteredProtocols.Where( p => !commonBest.Any( c => c.Name == p.Name ) )
-                                                             .Select( p => p.FullName )
-                                                             .ToList();
-                    weAreMissing.Sort();
-                }
-                if( !heIsSatisfied )
-                {
-                    heIsMissing = initialMessage.AvailableProtocols.Where( p => !commonBest.Any( c => IsProtocol( c, p ) ) )
-                                                                   .ToList();
-                    heIsMissing.Sort();
-
-                    static bool IsProtocol( MessageProtocol c, ReadOnlySpan<char> fullName )
-                    {
-                        return c.Name.Length > fullName.Length + 1
-                               && fullName[c.Name.Length] == '.'
-                               && fullName.StartsWith( c.Name, StringComparison.Ordinal );
-                    }
-                }
-                transportManager.Logger.Error( $"Missing protocols for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}':{Environment.NewLine}" +
-                                               $"We (listener) miss: {weAreMissing?.Concatenate()}{Environment.NewLine}" +
-                                               $"He (initiator) misses: {heIsMissing?.Concatenate()}" );
-
-                transportManager.OnMissingProtocolsIssues( initialMessage, remote, weAreMissing, heIsMissing );
-
-                // If this message cannot be sent, we don't care.
-                await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, initialMessage.Nonce, weAreMissing, heIsMissing ).ConfigureAwait( false );
-                return null;
+                heTrustsUs = false;
             }
-            return commonBest;
+            else if( weTrustHim )
+            {
+                transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' can auto trust us." );
+            }
         }
-
-
+        if( weTrustHim )
+        {
+            return heTrustsUs ? PeeringIssueKind.None : PeeringIssueKind.RequiresRemoteApproval;
+        }
+        return heTrustsUs ? PeeringIssueKind.RequiresLocalApproval : PeeringIssueKind.RequiresBothApproval;
     }
+
+    static async ValueTask HandleConfigurationOrTrustIssueAsync( TransportManager transportManager,
+                                                                 Transport incoming,
+                                                                 InitialMessage initialMessage,
+                                                                 TransportFeature? remote,
+                                                                 PeeringIssueKind issue,
+                                                                 IRemoteParty? existingParty )
+    {
+        // Send the RejectRemoteReply message, the PeeringIssueKind value should not be used here: the Zero Protocol must not
+        // depend on this enum.
+        var pIssue = issue switch
+        {
+            PeeringIssueKind.IncomingUnknwon => ZeroProtocol.ConfigurationOrTrustIssue.Unknwon,
+            PeeringIssueKind.IncomingDisallowedTransport => ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport,
+            PeeringIssueKind.InvalidClockOffset => ZeroProtocol.ConfigurationOrTrustIssue.InvalidClockOffset,
+            PeeringIssueKind.InitiatorConflict => ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict,
+            PeeringIssueKind.IncomingUnsupportedTransport => ZeroProtocol.ConfigurationOrTrustIssue.UnsupportedTransport,
+            PeeringIssueKind.RequiresLocalApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval,
+            PeeringIssueKind.RequiresRemoteApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval,
+            PeeringIssueKind.RequiresBothApproval => ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval,
+            _ => Throw.NotSupportedException<ZeroProtocol.ConfigurationOrTrustIssue>()
+        };
+        // When there is a configuration issue or if the remote trust (or can) trust us, there is no point to tranfer an enlist url. 
+        string? enlistUrl = issue is PeeringIssueKind.IncomingUnknwon
+                                     or PeeringIssueKind.RequiresRemoteApproval
+                                     or PeeringIssueKind.RequiresBothApproval
+                                ? transportManager.GetEnlistRemoteUrl( existingParty, initialMessage.DomainName )
+                                : null;
+        var messageSent = await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming,
+                                                                                remote?.RemoteKeys,
+                                                                                pIssue,
+                                                                                issue is PeeringIssueKind.InvalidClockOffset
+                                                                                    ? initialMessage.ClockOffset
+                                                                                    : null,
+                                                                                enlistUrl,
+                                                                                initialMessage.Nonce ).ConfigureAwait( false );
+        if( !messageSent ) return;
+        // Only if the transport has not been condemned.
+        string? remoteEnlistUrl = null;
+        if( issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval )
+        {
+            // Consider 3 bytes per Utf16 char... This is more than enough.
+            using var enlistReplyMessage = await incoming.ReadNextAsync( 10 + 3 * ZeroProtocol.MaxEnlistUrlLength ).ConfigureAwait( false );
+            if( !enlistReplyMessage.IsValid
+                || enlistReplyMessage.Protocol != MessageProtocol.ZeroProtocol
+                || enlistReplyMessage.Message.FirstSpan.Length == 0
+                || enlistReplyMessage.Message.FirstSpan[0] != ZeroProtocol.DNegoRequiredEnlistUrl )
+            {
+                transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid RequiredEnlistUrl message." );
+                return;
+            }
+            if( !ZeroProtocol.ReadRequiredEnlistUrlMessage( enlistReplyMessage,
+                                                            initialMessage.Nonce,
+                                                            initialMessage.GetCurrentRemoteIdentityKey(),
+                                                            out remoteEnlistUrl ) )
+            {
+                // Weird...
+                transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                               $"Signature or nonce check failed for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}'." );
+                return;
+            }
+        }
+        transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl );
+    }
+
+    static async ValueTask<MessageProtocol[]?> HandleProtocolsAsync( TransportManager transportManager,
+                                                                     InitialMessage initialMessage,
+                                                                     Transport incoming,
+                                                                     TransportFeature remote )
+    {
+        // Let's check the full protocol list we received by intersecting it
+        // with our declared protocol (and selecting the highest common version for each of them).
+        MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )
+                                                                 .GroupBy( p => p.Name )
+                                                                 .Select( g => g.MaxBy( g => g.Version ) )
+                                                                 .ToArray()!;
+        // If the protocols from the other side don't satisfy us or if cannot satisfy him, we compute the
+        // sets of missing on both sides for the PeeringIssues.
+        // We send the MissingProtocolsMessage and let the caller close the connection (if it can do it quick enough).
+        bool weAreSatisfied = commonBest.Length == remote.BestRegisteredProtocols.Count;
+        bool heIsSatisfied = commonBest.Length == initialMessage.ExpectedCommonProtocolCount;
+        if( !weAreSatisfied || !heIsSatisfied )
+        {
+            List<string>? weAreMissing = null;
+            List<string>? heIsMissing = null;
+            if( !weAreSatisfied )
+            {
+                Throw.DebugAssert( commonBest.Length < remote.BestRegisteredProtocols.Count );
+                weAreMissing = remote.RegisteredProtocols.Where( p => !commonBest.Any( c => c.Name == p.Name ) )
+                                                         .Select( p => p.FullName )
+                                                         .ToList();
+                weAreMissing.Sort();
+            }
+            if( !heIsSatisfied )
+            {
+                heIsMissing = initialMessage.AvailableProtocols.Where( p => !commonBest.Any( c => IsProtocol( c, p ) ) )
+                                                               .ToList();
+                heIsMissing.Sort();
+
+                static bool IsProtocol( MessageProtocol c, ReadOnlySpan<char> fullName )
+                {
+                    return c.Name.Length > fullName.Length + 1
+                           && fullName[c.Name.Length] == '.'
+                           && fullName.StartsWith( c.Name, StringComparison.Ordinal );
+                }
+            }
+            transportManager.Logger.Error( $"Missing protocols for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}':{Environment.NewLine}" +
+                                           $"We (listener) miss: {weAreMissing?.Concatenate()}{Environment.NewLine}" +
+                                           $"He (initiator) misses: {heIsMissing?.Concatenate()}" );
+
+            transportManager.OnMissingProtocolsIssues( initialMessage, remote, weAreMissing, heIsMissing );
+
+            // If this message cannot be sent, we don't care.
+            await ZeroProtocol.SendMissingProtocolsMessageAsync( incoming, initialMessage.Nonce, weAreMissing, heIsMissing ).ConfigureAwait( false );
+            return null;
+        }
+        return commonBest;
+    }
+
+
 }

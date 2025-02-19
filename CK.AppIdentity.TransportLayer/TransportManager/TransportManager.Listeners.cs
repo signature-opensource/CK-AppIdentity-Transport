@@ -1,71 +1,68 @@
 using CK.Core;
-using System;
-using System.Diagnostics;
 using System.Linq;
 
-namespace CK.AppIdentity.TransportLayer
+namespace CK.AppIdentity.TransportLayer;
+
+
+public sealed partial class TransportManager
 {
-
-    public sealed partial class TransportManager
+    /// <summary>
+    /// Tries to return the configured "EnlistRemoteUrl" that can be displayed on a remote and can be
+    /// used to enlist a not yet known remote into one of our local parties.
+    /// If the IRemoteParty has been found (we have it, it's its TrustedIdentity that is missing), we use
+    /// its Owner local to find the "closest" url pattern.
+    /// If the IRemoteParty is null, we use the DomainName to try to locate a domain that would better host
+    /// this remote than the Local one.
+    /// </summary>
+    /// <param name="party">The remote party if we already know it.</param>
+    /// <param name="domainName">The domain name of the remote.</param>
+    /// <returns></returns>
+    internal string? GetEnlistRemoteUrl( IRemoteParty? party, string domainName )
     {
-        /// <summary>
-        /// Tries to return the configured "EnlistRemoteUrl" that can be displayed on a remote and can be
-        /// used to enlist a not yet known remote into one of our local parties.
-        /// If the IRemoteParty has been found (we have it, it's its TrustedIdentity that is missing), we use
-        /// its Owner local to find the "closest" url pattern.
-        /// If the IRemoteParty is null, we use the DomainName to try to locate a domain that would better host
-        /// this remote than the Local one.
-        /// </summary>
-        /// <param name="party">The remote party if we already know it.</param>
-        /// <param name="domainName">The domain name of the remote.</param>
-        /// <returns></returns>
-        internal string? GetEnlistRemoteUrl( IRemoteParty? party, string domainName )
-        {
-            IParty? closest = party;
-            closest ??= _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName );
-            var u = closest?.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
-            if( u != null ) u = u.Replace( "{DomainName}", domainName );
-            return u;
-        }
+        IParty? closest = party;
+        closest ??= _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName );
+        var u = closest?.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
+        if( u != null ) u = u.Replace( "{DomainName}", domainName );
+        return u;
+    }
 
-        /// <summary>
-        /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
-        /// The listener should be as ready as possible to handle incoming connections
-        /// (even if it has no parties registered at the start).
-        /// <para>
-        /// We want this to be called before starting anything as a configuration validation
-        /// (this is called by TransportFeatureDriver.SetupAsync and SetupDynamicRemoteAsync).
-        /// There is NO concurrent calls to TryEnsureListener/OnListenerDisposed.
-        /// </para>
-        /// </summary>
-        /// <param name="monitor">The monitor to signal errors.</param>
-        /// <param name="endPoint">The listening address.</param>
-        /// <returns>The listener on success, null otherwise.</returns>
-        internal TransportListener? TryEnsureListener( IActivityMonitor monitor, TransportTypeAddress endPoint )
-        {
-            Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
+    /// <summary>
+    /// Ensures that a listener is setup on the <paramref name="endPoint"/>.
+    /// The listener should be as ready as possible to handle incoming connections
+    /// (even if it has no parties registered at the start).
+    /// <para>
+    /// We want this to be called before starting anything as a configuration validation
+    /// (this is called by TransportFeatureDriver.SetupAsync and SetupDynamicRemoteAsync).
+    /// There is NO concurrent calls to TryEnsureListener/OnListenerDisposed.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to signal errors.</param>
+    /// <param name="endPoint">The listening address.</param>
+    /// <returns>The listener on success, null otherwise.</returns>
+    internal TransportListener? TryEnsureListener( IActivityMonitor monitor, TransportTypeAddress endPoint )
+    {
+        Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
 
-            foreach( var exists in _listeners )
+        foreach( var exists in _listeners )
+        {
+            if( exists.IsListeningAddress( endPoint.TypedAddress ) )
             {
-                if( exists.IsListeningAddress( endPoint.TypedAddress ) )
-                {
-                    exists.AddRef( monitor );
-                    return exists;
-                }
+                exists.AddRef( monitor );
+                return exists;
             }
-            var l = endPoint.Type.TryCreateListener( monitor, this, endPoint.TypedAddress );
-            if( l != null )
-            {
-                _listeners.Add( l );
-                monitor.Trace( $"Created listener '{l}'." );
-            }
-            return l;
         }
-
-        internal void OnListenerDisposed( IActivityMonitor monitor, TransportListener listener )
+        var l = endPoint.Type.TryCreateListener( monitor, this, endPoint.TypedAddress );
+        if( l != null )
         {
-            Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
-            _listeners.Remove( listener );
+            _listeners.Add( l );
+            monitor.Trace( $"Created listener '{l}'." );
         }
+        return l;
+    }
+
+    internal void OnListenerDisposed( IActivityMonitor monitor, TransportListener listener )
+    {
+        Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
+        _listeners.Remove( listener );
     }
 }

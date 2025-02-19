@@ -1,89 +1,86 @@
 using CK.Core;
 using System;
-using System.IO;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Xml.Linq;
 
-namespace CK.AppIdentity.KeyManagement
+namespace CK.AppIdentity.KeyManagement;
+
+/// <summary>
+/// Identity key exposed by <see cref="IRemoteKeys.TrustedIdentity"/>.
+/// <para>
+/// A remote key has no NotAfter expiration date because it is useless: a remote key
+/// is provided by a trusted remote and as long as it is provided, it can be used. Remote
+/// keys housekeeping is done automatically: the only persisted key is the most recent
+/// one provided by the remote. Moreover, a slightly expired key can still be used.
+/// </para>
+/// </summary>
+public sealed class RemoteIdentityKey : IPublicKeyData, IEquatable<IPublicKeyData>
 {
+    readonly RemoteIdentityKeyData _keyData;
+    readonly ECDsa _key;
+
     /// <summary>
-    /// Identity key exposed by <see cref="IRemoteKeys.TrustedIdentity"/>.
-    /// <para>
-    /// A remote key has no NotAfter expiration date because it is useless: a remote key
-    /// is provided by a trusted remote and as long as it is provided, it can be used. Remote
-    /// keys housekeeping is done automatically: the only persisted key is the most recent
-    /// one provided by the remote. Moreover, a slightly expired key can still be used.
-    /// </para>
+    /// Initializes a remote public key.
     /// </summary>
-    public sealed class RemoteIdentityKey : IPublicKeyData, IEquatable<IPublicKeyData>
+    /// <param name="keyData">The key data.</param>
+    public RemoteIdentityKey( RemoteIdentityKeyData keyData )
     {
-        readonly RemoteIdentityKeyData _keyData;
-        readonly ECDsa _key;
+        Throw.CheckNotNullArgument( keyData );
+        var k = keyData.PublicKey.GetECDsaPublicKey();
+        if( k == null ) Throw.ArgumentException( $"Unable to obtain the EDCsa key from public key data '{keyData.Name}'." );
+        _key = k;
+        _keyData = keyData;
+    }
 
-        /// <summary>
-        /// Initializes a remote public key.
-        /// </summary>
-        /// <param name="keyData">The key data.</param>
-        public RemoteIdentityKey( RemoteIdentityKeyData keyData )
-        {
-            Throw.CheckNotNullArgument( keyData );
-            var k = keyData.PublicKey.GetECDsaPublicKey();
-            if( k == null ) Throw.ArgumentException( $"Unable to obtain the EDCsa key from public key data '{keyData.Name}'." );
-            _key = k;
-            _keyData = keyData;
-        }
+    /// <summary>
+    /// Initializes a remote public key from a <see cref="LocalIdentityKey"/>.
+    /// </summary>
+    /// <param name="localIdentity">A local identity.</param>
+    public RemoteIdentityKey( LocalIdentityKey localIdentity )
+        : this( new RemoteIdentityKeyData( localIdentity ) )
+    {
+    }
 
-        /// <summary>
-        /// Initializes a remote public key from a <see cref="LocalIdentityKey"/>.
-        /// </summary>
-        /// <param name="localIdentity">A local identity.</param>
-        public RemoteIdentityKey( LocalIdentityKey localIdentity )
-            : this( new RemoteIdentityKeyData( localIdentity ) )
-        {
-        }
+    /// <inheritdoc />
+    public PublicKey PublicKey => _keyData.PublicKey;
 
-        /// <inheritdoc />
-        public PublicKey PublicKey => _keyData.PublicKey;
+    /// <inheritdoc />
+    public ReadOnlyMemory<byte> PublicKeyRawData => _keyData.PublicKeyRawData;
 
-        /// <inheritdoc />
-        public ReadOnlyMemory<byte> PublicKeyRawData => _keyData.PublicKeyRawData;
+    /// <inheritdoc />
+    public string Name => _keyData.Name;
 
-        /// <inheritdoc />
-        public string Name => _keyData.Name;
+    /// <inheritdoc />
+    public DateTime TimeName => _keyData.TimeName;
 
-        /// <inheritdoc />
-        public DateTime TimeName => _keyData.TimeName;
+    /// <inheritdoc cref="RemoteIdentityKeyData.Equals(IPublicKeyData?)" />
+    public bool Equals( IPublicKeyData? other ) => _keyData.Equals( other );
 
-        /// <inheritdoc cref="RemoteIdentityKeyData.Equals(IPublicKeyData?)" />
-        public bool Equals( IPublicKeyData? other ) => _keyData.Equals( other );
+    /// <inheritdoc cref="RemoteIdentityKeyData.Equals(DateTime, Span{byte})" />
+    public bool Equals( DateTime timeName, Span<byte> publicRawData ) => _keyData.Equals( timeName, publicRawData );
 
-        /// <inheritdoc cref="RemoteIdentityKeyData.Equals(DateTime, Span{byte})" />
-        public bool Equals( DateTime timeName, Span<byte> publicRawData ) => _keyData.Equals( timeName, publicRawData );
+    /// <summary>
+    /// Gets the key data of this key.
+    /// </summary>
+    /// <returns>The key data.</returns>
+    public RemoteIdentityKeyData GetKeyData() => _keyData;
 
-        /// <summary>
-        /// Gets the key data of this key.
-        /// </summary>
-        /// <returns>The key data.</returns>
-        public RemoteIdentityKeyData GetKeyData() => _keyData;
+    /// <summary>
+    /// Verifies that a digital signature is valid for the provided hash.
+    /// </summary>
+    /// <param name="hash">The hash that has been signed.</param>
+    /// <param name="signature">The signature.</param>
+    /// <returns>True if the signature has been generated by this key for this hash data; otherwise, false.</returns>
+    public bool VerifyHash( ReadOnlySpan<byte> hash, ReadOnlySpan<byte> signature ) => _key.VerifyHash( hash, signature );
 
-        /// <summary>
-        /// Verifies that a digital signature is valid for the provided hash.
-        /// </summary>
-        /// <param name="hash">The hash that has been signed.</param>
-        /// <param name="signature">The signature.</param>
-        /// <returns>True if the signature has been generated by this key for this hash data; otherwise, false.</returns>
-        public bool VerifyHash( ReadOnlySpan<byte> hash, ReadOnlySpan<byte> signature ) => _key.VerifyHash( hash, signature );
+    /// <inheritdoc />
+    public void WritePublicKeyFile( NormalizedPath fullPath ) => _keyData.WritePublicKeyFile( fullPath );
 
-        /// <inheritdoc />
-        public void WritePublicKeyFile( NormalizedPath fullPath ) => _keyData.WritePublicKeyFile( fullPath );
-
-        /// <summary>
-        /// Disposes the EDCsa verifier.
-        /// </summary>
-        internal void OnTeardown()
-        {
-            _key.Dispose();
-        }
+    /// <summary>
+    /// Disposes the EDCsa verifier.
+    /// </summary>
+    internal void OnTeardown()
+    {
+        _key.Dispose();
     }
 }

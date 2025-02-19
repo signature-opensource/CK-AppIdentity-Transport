@@ -5,46 +5,45 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace CK.AppIdentity.Cris
+namespace CK.AppIdentity.Cris;
+
+/// <summary>
+/// Default implementation of <see cref="IAuthenticationInfoTokenService"/> singleton service
+/// that can be specialized.
+/// </summary>
+public class AuthenticationInfoTokenService : IAuthenticationInfoTokenService
 {
-    /// <summary>
-    /// Default implementation of <see cref="IAuthenticationInfoTokenService"/> singleton service
-    /// that can be specialized.
-    /// </summary>
-    public class AuthenticationInfoTokenService : IAuthenticationInfoTokenService
+    readonly IAuthenticationTypeSystem _typeSystem;
+
+    public AuthenticationInfoTokenService( IAuthenticationTypeSystem typeSystem )
     {
-        readonly IAuthenticationTypeSystem _typeSystem;
+        _typeSystem = typeSystem;
+    }
 
-        public AuthenticationInfoTokenService( IAuthenticationTypeSystem typeSystem )
+    public virtual string CreateAuthenticationToken( IAuthenticationInfo info )
+    {
+        using( var m = (RecyclableMemoryStream)Util.RecyclableStreamManager.GetStream() )
+        using( var w = new BinaryWriter( m ) )
         {
-            _typeSystem = typeSystem;
+            _typeSystem.AuthenticationInfo.Write( w, info );
+            w.Flush();
+            return Encoding.UTF8.GetString( m.GetReadOnlySequence() );
         }
+    }
 
-        public virtual string CreateAuthenticationToken( IAuthenticationInfo info )
+    public virtual IAuthenticationInfo? TryParseAuthenticationToken( ReadOnlySpan<char> token )
+    {
+        using( var m = (RecyclableMemoryStream)Util.RecyclableStreamManager.GetStream() )
+        using( var r = new BinaryReader( m ) )
         {
-            using( var m = (RecyclableMemoryStream)Util.RecyclableStreamManager.GetStream() )
-            using( var w = new BinaryWriter( m ) )
+            Encoding.UTF8.GetBytes( token, m );
+            try
             {
-                _typeSystem.AuthenticationInfo.Write( w, info );
-                w.Flush();
-                return Encoding.UTF8.GetString( m.GetReadOnlySequence() );
+                return _typeSystem.AuthenticationInfo.Read( r );
             }
-        }
-
-        public virtual IAuthenticationInfo? TryParseAuthenticationToken( ReadOnlySpan<char> token )
-        {
-            using( var m = (RecyclableMemoryStream)Util.RecyclableStreamManager.GetStream() )
-            using( var r = new BinaryReader( m ) )
+            catch( InvalidDataException )
             {
-                Encoding.UTF8.GetBytes( token, m );
-                try
-                {
-                    return _typeSystem.AuthenticationInfo.Read( r );
-                }
-                catch( InvalidDataException )
-                {
-                    return null;
-                }
+                return null;
             }
         }
     }
