@@ -4,7 +4,7 @@
       <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="0.4.1--0009-develop" />
+    <PackageReference Include="CK.AppIdentity" Version="0.14.4" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="6.0.19" />
   </ItemGroup>
 </Project>
