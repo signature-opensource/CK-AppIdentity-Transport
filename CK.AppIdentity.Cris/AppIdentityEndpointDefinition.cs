@@ -7,8 +7,8 @@ using System.Diagnostics.CodeAnalysis;
 namespace CK.AppIdentity.Cris;
 
 
-[EndpointDefinition( EndpointKind.Front )]
-public abstract class AppIdentityEndpointDefinition : EndpointDefinition<AppIdentityEndpointDefinition.Data>
+[DIContainerDefinition( DIContainerKind.Endpoint )]
+public abstract class AppIdentityEndpointDefinition : DIContainerDefinition<AppIdentityEndpointDefinition.Data>
 {
     public sealed class Data : IScopedData
     {
@@ -22,13 +22,14 @@ public abstract class AppIdentityEndpointDefinition : EndpointDefinition<AppIden
         }
     }
 
-    public override void ConfigureEndpointServices( IServiceCollection services,
-                                                    Func<IServiceProvider, Data> scopeData,
-                                                    IServiceProviderIsService globalServiceExists )
+    public override void ConfigureContainerServices( IServiceCollection services,
+                                                     Func<IServiceProvider, Data> scopeData,
+                                                     IServiceProviderIsService globalServiceExists )
     {
         services.AddScoped( sp => scopeData( sp )._job.RunnerMonitor! );
         services.AddScoped( sp => scopeData( sp )._job.RunnerMonitor!.ParallelLogger );
         services.AddScoped( sp => scopeData( sp )._job.ExecutionContext! );
         services.AddScoped<ICrisEventContext>( sp => scopeData( sp )._job.ExecutionContext! );
     }
+
 }

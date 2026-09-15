@@ -8,13 +8,13 @@ namespace CK.AppIdentity.Cris;
 public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
 {
     readonly PocoDirectory _pocoDirectory;
-    readonly IEndpointType<AppIdentityEndpointDefinition.Data> _endpoint;
+    readonly IDIContainer<AppIdentityEndpointDefinition.Data> _endpoint;
     readonly CrisExecutionHost _executionHost;
     readonly IAuthenticationInfoTokenService _tokenService;
 
     public CrisChannelFeatureDriver( TransportFeatureDriver transport,
                                      PocoDirectory pocoDirectory,
-                                     IEndpointType<AppIdentityEndpointDefinition.Data> endpoint,
+                                     IDIContainer<AppIdentityEndpointDefinition.Data> endpoint,
                                      CrisExecutionHost executionHost,
                                      IAuthenticationInfoTokenService tokenService )
         : base( transport, isAllowedByDefault: true )

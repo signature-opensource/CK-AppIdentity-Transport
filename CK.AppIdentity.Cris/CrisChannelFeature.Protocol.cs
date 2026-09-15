@@ -1,6 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.Cris;
+using CK.Poco.Exc.Json;
 using System;
 using System.Buffers;
 using System.Text.Json;
@@ -21,6 +22,8 @@ public sealed partial class CrisChannelFeature
     sealed class Protocol : PeerProtocolHandler
     {
         readonly CrisChannelFeature _feature;
+
+        static PocoJsonExportOptions _exportOptions = new( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
 
         public Protocol( CrisChannelFeature feature, ref CreateParameters createParameters )
             : base( ref createParameters )
@@ -72,23 +75,23 @@ public sealed partial class CrisChannelFeature
             return false;
         }
 
-        internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutionHost.ICrisJobResult? result )
-        {
-            var message = MessageFactory.Create( bytes =>
-            {
-                FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte( DRequestResult );
-                w.WriteReadLogKey( id );
-                w.Commit();
-                Write( result, bytes );
-            } );
-            if( TryEnqueueHighPriority( message ) )
-            {
-                return true;
-            }
-            message.Dispose();
-            return false;
-        }
+        //internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutionHost.ICrisJobResult? result )
+        //{
+        //    var message = MessageFactory.Create( bytes =>
+        //    {
+        //        FastByteWriter w = new FastByteWriter( bytes );
+        //        w.WriteByte( DRequestResult );
+        //        w.WriteReadLogKey( id );
+        //        w.Commit();
+        //        Write( result, bytes );
+        //    } );
+        //    if( TryEnqueueHighPriority( message ) )
+        //    {
+        //        return true;
+        //    }
+        //    message.Dispose();
+        //    return false;
+        //}
 
         internal bool TrySendCommandEvent( ActivityMonitor.LogKey id, IEvent e )
         {
@@ -108,11 +111,11 @@ public sealed partial class CrisChannelFeature
             return false;
         }
 
-        static void Write( IPoco? poco, IBufferWriter<byte> bytes )
+        void Write( IPoco poco, IBufferWriter<byte> bytes )
         {
-            using( var w = new Utf8JsonWriter( bytes, new JsonWriterOptions { SkipValidation = true } ) )
+            using( var w = new Utf8JsonWriter( bytes, _exportOptions.WriterOptions ) )
             {
-                poco.Write( w );
+                poco.WriteJson( w, new PocoJsonWriteContext( _feature._pocoDirectory, _exportOptions ) );
             }
         }
 

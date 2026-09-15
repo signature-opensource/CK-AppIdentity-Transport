@@ -6,9 +6,9 @@ namespace CK.AppIdentity.Cris;
 
 public sealed partial class CrisChannelFeature
 {
-    sealed class IncomingCommandExecutor : EndpointCommandExecutor<AppIdentityEndpointDefinition.Data>
+    sealed class IncomingCommandExecutor : ContainerCommandExecutor<AppIdentityEndpointDefinition.Data>
     {
-        public IncomingCommandExecutor( CrisExecutionHost executionHost, IEndpointType<AppIdentityEndpointDefinition.Data> endpoint )
+        public IncomingCommandExecutor( CrisExecutionHost executionHost, IDIContainer<AppIdentityEndpointDefinition.Data> endpoint )
             : base( executionHost, endpoint )
         {
         }
@@ -16,7 +16,14 @@ public sealed partial class CrisChannelFeature
         public void Execute( IAbstractCommand command, ActivityMonitor.Token issuerToken, string? authenticationToken )
         {
             var scopedData = new AppIdentityEndpointDefinition.Data( authenticationToken );
-            var job = new CrisJob( this, scopedData, command, issuerToken, false, null );
+            var job = new CrisJob( executor: this,
+                                   scopedData,
+                                   command,
+                                   issuerToken,
+                                   executingCommand: null,
+                                   deferredExecutionInfo: null,
+                                   onExecutedCommand: null,
+                                   incomingValidationCheck: null );
             scopedData._job = job;
             ExecutionHost.StartJob( job );
         }

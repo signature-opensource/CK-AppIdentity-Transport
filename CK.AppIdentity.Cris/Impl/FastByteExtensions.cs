@@ -57,7 +57,7 @@ static class FastByteExtensions
             reference.Start = (int)r.ReadSmallUInt32();
             reference.Length = (int)r.ReadSmallUInt32();
         }
-        var culture = NormalizedCultureInfo.GetNormalizedCultureInfo( r.ReadString() );
+        var culture = NormalizedCultureInfo.EnsureNormalizedCultureInfo( r.ReadString() );
         return FormattedString.CreateFromProperties( text, placeholders, culture );
     }
 
@@ -84,7 +84,7 @@ static class FastByteExtensions
     public static MCString ReadMCString( this ref FastByteReader r )
     {
         var text = r.ReadString();
-        var formatCulture = NormalizedCultureInfo.GetNormalizedCultureInfo( r.ReadString() );
+        var formatCulture = NormalizedCultureInfo.EnsureNormalizedCultureInfo( r.ReadString() );
         return MCString.CreateFromProperties( text, ReadCodeString( ref r ), formatCulture );
     }
 
@@ -109,11 +109,11 @@ static class FastByteExtensions
 
     public static void WriteCrisValidationResult( this ref FastByteWriter w, CrisValidationResult result )
     {
-        int count = result.Messages.Count;
+        int count = result.ValidationMessages.Length;
         w.WriteSmallInt32( count );
         if( count > 0 )
         {
-            foreach( var m in result.Messages )
+            foreach( var m in result.ValidationMessages )
             {
                 WriteUserMessage( ref w, m );
             }
@@ -138,7 +138,7 @@ static class FastByteExtensions
         {
             messages = Array.Empty<UserMessage>();
         }
-        return new CrisValidationResult( messages, r.ReadNullableString() );
+        return new CrisValidationResult( messages, null, r.ReadNullableString() );
     }
 
 }

@@ -48,8 +48,7 @@ sealed class OutgoingCommand<T> : OutgoingCommand, IOutgoingCommand<T> where T :
 #pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
                 if( r is ICrisResultError error )
                 {
-                    var ex = new CKException( $"Request failed with {error.Messages.Count} errors." );
-                    _result.SetException( ex );
+                    _result.SetException( error.CreateException() );
                 }
                 else
                 {

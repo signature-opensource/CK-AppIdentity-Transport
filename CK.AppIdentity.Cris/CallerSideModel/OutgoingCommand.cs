@@ -74,7 +74,7 @@ public class OutgoingCommand : IOutgoingCommand
         _validation.SetResult( v );
         if( !v.Success )
         {
-            SetResult( logger, errorFactory.Create( e => e.Messages.AddRange( v.Messages ) ) );
+            SetResult( logger, errorFactory.Create( e => e.Errors.AddRange( v.ValidationMessages ) ) );
             return true;
         }
         // TODO: This has nothing to do here (just compiling for the moment).
