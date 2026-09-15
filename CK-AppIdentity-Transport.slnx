@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="NuGet.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Solution Items/Doc/">
+    <File Path="Doc/CK-AppIdentity.pptx" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <File Path="Tests/TestHelper.config" />
+    <Project Path="Tests/CK.AppIdentity.BlobChannel.Tests/CK.AppIdentity.BlobChannel.Tests.csproj" />
+    <Project Path="Tests/CK.AppIdentity.TransportLayer.Tests/CK.AppIdentity.TransportLayer.Tests.csproj" />
+  </Folder>
+  <Project Path="CK.AppIdentity.BlobChannel/CK.AppIdentity.BlobChannel.csproj" />
+  <Project Path="CK.AppIdentity.Cris/CK.AppIdentity.Cris.csproj" />
+  <Project Path="CK.AppIdentity.KeyManagement/CK.AppIdentity.KeyManagement.csproj" />
+  <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />
+</Solution>

@@ -1,4 +1,0 @@
-﻿-- Version: 2
--- Keys below can be removed if needed.
-AZURE_FEED_SIGNATURE_CODE_PAT
- > gZXU5ZweCAbPgRIt+8L9rMoVMclzMkbZy0Jnpxx7nOceizslHFpotRyTx0rs3Yr+qlbkIuEl0ryWwwXA+uBF+k8AjeoGViXqPUyrZyh2m2EPFuJNTh96XTbm9BLZbW7phntIId1oHZ5LpLLRtrw+3w==
