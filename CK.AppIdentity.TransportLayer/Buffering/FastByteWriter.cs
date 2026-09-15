@@ -588,17 +588,7 @@ public ref partial struct FastByteWriter
 
         if( BitConverter.IsLittleEndian )
         {
-#if NET7_0_OR_GREATER
-            Write(MemoryMarshal.AsBytes(new Span<Guid>(ref value)));
-#else
-            EnsureContiguous( Width );
-            if( value.TryWriteBytes( WritableSpan ) )
-            {
-                AdvanceSpan( Width );
-                return;
-            }
-            WriteBytes( value.ToByteArray() );
-#endif
+            WriteBytes( MemoryMarshal.AsBytes( new ReadOnlySpan<Guid>( in value ) ) );
         }
         else
         {

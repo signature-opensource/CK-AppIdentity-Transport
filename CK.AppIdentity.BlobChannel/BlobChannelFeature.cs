@@ -2,6 +2,8 @@ using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.PerfectEvent;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.BlobChannel;
 

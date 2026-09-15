@@ -1,8 +1,9 @@
 using CK.Core;
 using CK.Monitoring;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Shouldly;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,19 @@ public partial class TcpTransportTests
     void ConfigureFastClock( ServiceCollection services )
     {
         services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+    }
+
+    // From: https://docs.shouldly.org/documentation/migrating-from-fluentassertions#no-drop-in-for-containinorder-or-containequivalentof
+    static void ShouldContainInOrder<T>( IEnumerable<T> actual, params T[] expected )
+    {
+        var list = actual.ToList();
+        var idx = -1;
+        foreach( var e in expected )
+        {
+            var next = list.FindIndex( idx + 1, x => EqualityComparer<T>.Default.Equals( x, e ) );
+            next.ShouldBeGreaterThan( idx, $"expected '{e}' after index {idx}, in order" );
+            idx = next;
+        }
     }
 
     [Test, CancelAfter( 7000 )]
@@ -47,8 +61,8 @@ public partial class TcpTransportTests
         await senderTransport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
         await listenerTransport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
 
-        senderTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.Connected );
-        listenerTransport.ConnectionAvailability.Should().Be( ConnectionAvailability.Connected );
+        senderTransport.ConnectionAvailability.ShouldBe( ConnectionAvailability.Connected );
+        listenerTransport.ConnectionAvailability.ShouldBe( ConnectionAvailability.Connected );
 
         // Switch-off the listener.
         TestHelper.Monitor.Info( "Test: Switching Off the Listener." );
@@ -58,11 +72,13 @@ public partial class TcpTransportTests
                             WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Low, token ) );
 
         var logs = logCollector.ExtractCurrentTexts();
-        logs.Should().ContainInOrder(
+        ShouldContainInOrder( logs,
+            [
             "Test: Switching Off the Listener.",
             "Switching remote 'Test/$Sender/#Dev' OFF: Switched off, Reason: 'Testing OutgoingBackTask!'.",
             "Received GoodbyeMessage from '[::ffff:127.0.0.1]:37120': Remote: Switched off, Reason: 'Testing OutgoingBackTask!'.",
             "Initiating reconnection attempt to 'TcpSocketTransportTypeService - 127.0.0.1:37120' for 'Test/$Listener/#Dev' in 5 seconds."
+            ]
         );
 
         // Switch-on the listener.
@@ -73,7 +89,7 @@ public partial class TcpTransportTests
                             WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Connected, token ) );
 
         logs = logCollector.ExtractCurrentTexts();
-        logs.Should().ContainInOrder(
+        ShouldContainInOrder( logs,
             "Test: Switching Listener back On.",
             "Switching remote 'Test/$Sender/#Dev' ON.",
             "Received verified AcceptedProtocolsMessage message from 'Test/$Listener/#Dev'.",
@@ -88,7 +104,7 @@ public partial class TcpTransportTests
                             WaitForConnectionAvailabilityAsync( senderTransport, ConnectionAvailability.Low, token ) );
 
         logs = logCollector.ExtractCurrentTexts();
-        logs.Should().ContainInOrder(
+        ShouldContainInOrder( logs,
             "Test: Disposing the Listener.",
             "Stopping ApplicationIdentityService Agent for 'Application: Test/$Listener/#Dev'.",
             "Switching remote 'Test/$Sender/#Dev' OFF: Shutdown ApplicationIdentityService.",

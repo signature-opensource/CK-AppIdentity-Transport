@@ -1,8 +1,8 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Shouldly;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,8 +38,8 @@ public class ListenerPeeringIssuesTests
         }, token: token );
 
         var listenerTransport = listener.GetRequiredFeature<TransportManagerFeature>();
-        listenerTransport.GetPeeringIssues().Should().BeEmpty();
-        listenerTransport.GetClonedPeeringIssues().Should().BeEmpty();
+        listenerTransport.GetPeeringIssues().ShouldBeEmpty();
+        listenerTransport.GetClonedPeeringIssues().ShouldBeEmpty();
         var collector = new PeeringIssueCollector( listenerTransport, true );
         ApplicationIdentityService? sender = null;
         IRemoteParty? declaredRemote;
@@ -61,23 +61,22 @@ public class ListenerPeeringIssuesTests
 
                 TestHelper.Monitor.Info( "Tests: Check the exposed PeeringIssues and ClonedPeeringIssues and the first issue." );
 
-                listenerTransport.GetPeeringIssues().Should().Contain( theIssue );
+                listenerTransport.GetPeeringIssues().ShouldContain( theIssue );
                 var clonedIssues = listenerTransport.GetClonedPeeringIssues();
-                clonedIssues.Should().HaveCount( 1 );
-                clonedIssues[0].Should().Match<PeeringIssue>( i => i.IsClone )
-                                        .And.NotBeSameAs( theIssue )
-                                        .And.BeEquivalentTo( theIssue, o => o.Excluding( i => i.IsClone ) );
+                clonedIssues.Length.ShouldBe( 1 );
+                // Everything properties should be equal except IsClone.
+                clonedIssues[0].ShouldMatch( i => i.IsClone ).ShouldNotBeSameAs( theIssue );
 
-                theIssue.IsListener.Should().BeTrue();
-                theIssue.IsInitiator.Should().BeFalse();
-                theIssue.Remote.Should().BeNull();
+                theIssue.IsListener.ShouldBeTrue();
+                theIssue.IsInitiator.ShouldBeFalse();
+                theIssue.Remote.ShouldBeNull();
 
-                theIssue.Kind.Should().Be( PeeringIssueKind.IncomingUnknwon );
+                theIssue.Kind.ShouldBe( PeeringIssueKind.IncomingUnknwon );
                 Throw.DebugAssert( theIssue.IncomingRequest != null );
-                theIssue.IncomingRequest.CurrentRemoteIdentity.Should().NotBeNull();
-                theIssue.IncomingRequest.FullName.Should().Be( "Test/$Sender/#Dev" );
-                theIssue.IncomingRequest.AvailableProtocols.Should().BeEquivalentTo( new[] { "Blob.0" } );
-                theIssue.IncomingRequest.IsValidClockOffset.Should().BeFalse( "Always false when IncomingUnknwon or IncomingDisallowedTransport." );
+                theIssue.IncomingRequest.CurrentRemoteIdentity.ShouldNotBeNull();
+                theIssue.IncomingRequest.FullName.ShouldBe( "Test/$Sender/#Dev" );
+                theIssue.IncomingRequest.AvailableProtocols.ShouldBe( ["Blob.0"] );
+                theIssue.IncomingRequest.IsValidClockOffset.ShouldBeFalse( "Always false when IncomingUnknwon or IncomingDisallowedTransport." );
 
                 // Captures the (unresolved) next event task.
                 nextEvent = waiter.NextEvent;
@@ -96,7 +95,7 @@ public class ListenerPeeringIssuesTests
                 var prevMessage = theIssue.IncomingRequest;
                 var theSameIssue = await nextEvent.WaitAsync(token);
                 Throw.DebugAssert( theSameIssue == theIssue );
-                theIssue.Kind.Should().Be( PeeringIssueKind.InitiatorConflict );
+                theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
                 TestHelper.Monitor.Info( "Tests: Wait for the remote's incoming connection." );
                 var alwaysTheSameIssue = await waiter.NextEvent.WaitAsync( token );
@@ -105,7 +104,7 @@ public class ListenerPeeringIssuesTests
                 Throw.DebugAssert( butNotTheSameMessage != prevMessage );
 
                 TestHelper.Monitor.Info( "Tests: No change: still InitiatorConflict." );
-                theIssue.Kind.Should().Be( PeeringIssueKind.InitiatorConflict );
+                theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
                 // Stop using the Waiter from now on.
 
@@ -136,9 +135,9 @@ public class ListenerPeeringIssuesTests
                                                 " (because the sender has its AutoTrustKey = \"Once\")." ) )
             {
                 var issues = listenerTransport.GetPeeringIssues();
-                issues.Should().HaveCount( 1 );
-                issues[0].Kind.Should().Be( PeeringIssueKind.RequiresLocalApproval );
-                issues[0].CanAcceptRemoteIdentity.Should().BeTrue();
+                issues.Length.ShouldBe( 1 );
+                issues[0].Kind.ShouldBe( PeeringIssueKind.RequiresLocalApproval );
+                issues[0].CanAcceptRemoteIdentity.ShouldBeTrue();
 
                 issues[0].AcceptRemoteIdentity( TestHelper.Monitor );
                 while( issues[0].Kind != PeeringIssueKind.None ) ;
@@ -152,8 +151,8 @@ public class ListenerPeeringIssuesTests
                 await blobTester.CheckSendReceiveAsync( false, token );
             }
             var events = collector.StopAndGetEvents();
-            events.Select( e => e.Kind ).Should().BeEquivalentTo( new[]
-            {
+            events.Select( e => e.Kind ).ShouldBe(
+            [
                 // Initial state: the listener's remote is not declared.
                 PeeringIssueKind.IncomingUnknwon,
                 // The listener's remote is also an Initiator.
@@ -164,7 +163,7 @@ public class ListenerPeeringIssuesTests
                 PeeringIssueKind.RequiresLocalApproval,
                 // The listener's remote is Accepted.
                 PeeringIssueKind.None
-            } );
+            ] );
         }
         finally
         {

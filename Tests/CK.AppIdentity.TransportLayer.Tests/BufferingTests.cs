@@ -1,5 +1,5 @@
-using FluentAssertions;
 using NUnit.Framework;
+using Shouldly;
 using System;
 using System.Buffers;
 using System.Numerics;
@@ -64,28 +64,28 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadInt32().Should().Be( DefInt32 );
-            r.ReadUInt32().Should().Be( DefUInt32 );
-            r.ReadInt64().Should().Be( DefInt64 );
-            r.ReadUInt64().Should().Be( DefUInt64 );
-            r.ReadInt16().Should().Be( DefInt16 );
-            r.ReadUInt16().Should().Be( DefUInt16 );
-            r.ReadByte().Should().Be( DefByte );
-            r.ReadSByte().Should().Be( DefSByte );
-            r.ReadDateTime().Should().Be( DefDateTime );
-            r.ReadTimeSpan().Should().Be( DefTimeSpan );
+            r.ReadInt32().ShouldBe( DefInt32 );
+            r.ReadUInt32().ShouldBe( DefUInt32 );
+            r.ReadInt64().ShouldBe( DefInt64 );
+            r.ReadUInt64().ShouldBe( DefUInt64 );
+            r.ReadInt16().ShouldBe( DefInt16 );
+            r.ReadUInt16().ShouldBe( DefUInt16 );
+            r.ReadByte().ShouldBe( DefByte );
+            r.ReadSByte().ShouldBe( DefSByte );
+            r.ReadDateTime().ShouldBe( DefDateTime );
+            r.ReadTimeSpan().ShouldBe( DefTimeSpan );
 
-            r.ReadString().Should().Be( DefString );
+            r.ReadString().ShouldBe( DefString );
 
-            r.ReadDateTimeOffset().Should().Be( DefDateTimeOffset );
-            r.ReadGuid().Should().Be( DefGuid );
-            r.ReadDouble().Should().Be( DefDouble );
-            r.ReadSingle().Should().Be( DefSingle );
-            r.ReadHalf().Should().Be( DefHalf );
-            r.ReadChar().Should().Be( DefChar );
-            r.ReadBool().Should().Be( DefBoolean );
-            r.ReadIndex().Should().Be( DefIndex );
-            r.ReadRange().Should().Be( DefRange );
+            r.ReadDateTimeOffset().ShouldBe( DefDateTimeOffset );
+            r.ReadGuid().ShouldBe( DefGuid );
+            r.ReadDouble().ShouldBe( DefDouble );
+            r.ReadSingle().ShouldBe( DefSingle );
+            r.ReadHalf().ShouldBe( DefHalf );
+            r.ReadChar().ShouldBe( DefChar );
+            r.ReadBool().ShouldBe( DefBoolean );
+            r.ReadIndex().ShouldBe( DefIndex );
+            r.ReadRange().ShouldBe( DefRange );
         } );
     }
 
@@ -103,12 +103,11 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableInt32().Should().Be( null );
-            r.ReadNullableInt32().Should().Be( Int32.MinValue );
-            r.ReadNullableInt32().Should().Be( Int32.MaxValue );
-            r.ReadNullableInt32().Should().Be( 126 );
-        } ).Should()
-        .Be( 1 + 3 * (1 + 4) );
+            r.ReadNullableInt32().ShouldBe( null );
+            r.ReadNullableInt32().ShouldBe( Int32.MinValue );
+            r.ReadNullableInt32().ShouldBe( Int32.MaxValue );
+            r.ReadNullableInt32().ShouldBe( 126 );
+        } ).ShouldBe( 1 + 3 * (1 + 4) );
     }
 
     [Test]
@@ -120,70 +119,69 @@ public class BufferingTests
             //// 1 byte
             w.WriteSmallUInt64( 0 );
             w.WriteSmallUInt64( 127 );
-            (BitOperations.Log2( 127 ) / 7 + 1).Should().Be( 1 );
+            (BitOperations.Log2( 127 ) / 7 + 1).ShouldBe( 1 );
             //// 2 bytes.
             w.WriteSmallUInt64( 128 );
             w.WriteSmallUInt64( 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 - 1 ) / 7 + 1).Should().Be( 2 );
+            (BitOperations.Log2( 128 * 128 - 1 ) / 7 + 1).ShouldBe( 2 );
             // 3 bytes.
             w.WriteSmallUInt64( 128 * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 - 1 ) / 7 + 1).Should().Be( 3 );
+            (BitOperations.Log2( 128 * 128 * 128 - 1 ) / 7 + 1).ShouldBe( 3 );
             // 4 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 - 1 ) / 7 + 1).Should().Be( 4 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 - 1 ) / 7 + 1).ShouldBe( 4 );
             // 5 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L - 1 ) / 7 + 1).Should().Be( 5 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L - 1 ) / 7 + 1).ShouldBe( 5 );
             // 6 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 - 1 ) / 7 + 1).Should().Be( 6 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 - 1 ) / 7 + 1).ShouldBe( 6 );
             // 7 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 * 128 - 1 ) / 7 + 1).Should().Be( 7 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 * 128 - 1 ) / 7 + 1).ShouldBe( 7 );
             // 8 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 - 1 ) / 7 + 1).Should().Be( 8 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 - 1 ) / 7 + 1).ShouldBe( 8 );
             // 9 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 );
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 - 1 );
-            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 - 1) / 7 + 1).Should().Be( 9 );
+            (BitOperations.Log2( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 - 1) / 7 + 1).ShouldBe( 9 );
             // 10 bytes.
             w.WriteSmallUInt64( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 );
             w.WriteSmallUInt64( UInt64.MaxValue );
-            (BitOperations.Log2( UInt64.MaxValue ) / 7 + 1).Should().Be( 10 );
+            (BitOperations.Log2( UInt64.MaxValue ) / 7 + 1).ShouldBe( 10 );
 
             w.Commit();
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadSmallUInt64().Should().Be( 0 );
-            r.ReadSmallUInt64().Should().Be( 127 );
-            r.ReadSmallUInt64().Should().Be( 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 - 1 );
-            r.ReadSmallUInt64().Should().Be( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 );
-            r.ReadSmallUInt64().Should().Be( UInt64.MaxValue );
-        } ).Should()
-        .Be( 2 * 10*11/2, "n(n+1)/2 is the sum of the first integers up to n ;)." );
+            r.ReadSmallUInt64().ShouldBe( 0 );
+            r.ReadSmallUInt64().ShouldBe( 127 );
+            r.ReadSmallUInt64().ShouldBe( 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128L * 128 * 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 - 1 );
+            r.ReadSmallUInt64().ShouldBe( 128 * 128 * 128 * 128 * 128UL * 128 * 128 * 128 * 128 );
+            r.ReadSmallUInt64().ShouldBe( UInt64.MaxValue );
+        } ).ShouldBe( 2 * 10*11/2, "n(n+1)/2 is the sum of the first integers up to n ;)." );
     }
 
     [Test]
@@ -204,11 +202,10 @@ public class BufferingTests
             var r = new FastByteReader( sequence );
             for( uint i = 0; i < 128; ++i )
             {
-                r.ReadByte().Should().Be( (byte)((i << 1) + 1) );
-                r.ReadByte().Should().Be( (byte)((i << 1) + 1) );
+                r.ReadByte().ShouldBe( (byte)((i << 1) + 1) );
+                r.ReadByte().ShouldBe( (byte)((i << 1) + 1) );
             }
-        } ).Should()
-        .Be( 2 * 128 );
+        } ).ShouldBe( 2 * 128 );
     }
 
     [Test]
@@ -225,12 +222,11 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableChar().Should().Be( null );
-            r.ReadNullableChar().Should().Be( Char.MinValue );
-            r.ReadNullableChar().Should().Be( (char)(Char.MinValue + 1) );
-            r.ReadNullableChar().Should().Be( Char.MaxValue );
-        } ).Should()
-            .Be( 1 + 1 + 1 + 3, "Nullable char are int length encoded. MaxValue requires 3 bytes." );
+            r.ReadNullableChar().ShouldBe( null );
+            r.ReadNullableChar().ShouldBe( Char.MinValue );
+            r.ReadNullableChar().ShouldBe( (char)(Char.MinValue + 1) );
+            r.ReadNullableChar().ShouldBe( Char.MaxValue );
+        } ).ShouldBe( 1 + 1 + 1 + 3, "Nullable char are int length encoded. MaxValue requires 3 bytes." );
 
         ReadWrite( bytes =>
         {
@@ -240,9 +236,8 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableChar().Should().Be( 'の' );
-        } ).Should()
-            .Be( 2, "Nullable char are int length encoded, not Utf8 encoding." );
+            r.ReadNullableChar().ShouldBe( 'の' );
+        } ).ShouldBe( 2, "Nullable char are int length encoded, not Utf8 encoding." );
 
         ReadWrite( bytes =>
         {
@@ -259,12 +254,12 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableChar().Should().BeNull();
+            r.ReadNullableChar().ShouldBeNull();
             for( int i = 0x00; i < Char.MaxValue - 1; ++i )
             {
                 //char c = Convert.ToChar( i );
                 //if( char.IsSurrogate( c ) ) continue;
-                r.ReadNullableChar().Should().Be( (char)i );
+                r.ReadNullableChar().ShouldBe( (char)i );
             }
         } );
     }
@@ -274,8 +269,8 @@ public class BufferingTests
     {
         var nan1 = BitConverter.Int64BitsToDouble( -1 );
         var nan2 = BitConverter.Int64BitsToDouble( long.MaxValue );
-        double.IsNaN( nan1 ).Should().BeTrue();
-        double.IsNaN( nan2 ).Should().BeTrue();
+        double.IsNaN( nan1 ).ShouldBeTrue();
+        double.IsNaN( nan2 ).ShouldBeTrue();
         ReadWrite( bytes =>
         {
             var w = new FastByteWriter( bytes );
@@ -288,12 +283,12 @@ public class BufferingTests
         sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableDouble().Should().Be( nan2 );
-            r.ReadNullableDouble().Should().Be( nan1 );
-            r.ReadNullableDouble().Should().Be( null );
-            r.ReadNullableDouble().Should().Be( Math.PI );
+            r.ReadNullableDouble().ShouldBe( nan2 );
+            r.ReadNullableDouble().ShouldBe( nan1 );
+            r.ReadNullableDouble().ShouldBe( null );
+            r.ReadNullableDouble().ShouldBe( Math.PI );
         } )
-        .Should().Be( 1 + 3 * (1 + 8) );
+        .ShouldBe( 1 + 3 * (1 + 8) );
     }
 
     [Test]
@@ -301,8 +296,8 @@ public class BufferingTests
     {
         var nan1 = BitConverter.Int32BitsToSingle( -1 );
         var nan2 = BitConverter.Int32BitsToSingle( int.MaxValue );
-        float.IsNaN( nan1 ).Should().BeTrue();
-        float.IsNaN( nan2 ).Should().BeTrue();
+        float.IsNaN( nan1 ).ShouldBeTrue();
+        float.IsNaN( nan2 ).ShouldBeTrue();
         ReadWrite( bytes =>
         {
             var w = new FastByteWriter( bytes );
@@ -315,12 +310,12 @@ public class BufferingTests
         sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadNullableSingle().Should().Be( nan2 );
-            r.ReadNullableSingle().Should().Be( nan1 );
-            r.ReadNullableSingle().Should().Be( null );
-            r.ReadNullableSingle().Should().Be( (float)Math.PI );
+            r.ReadNullableSingle().ShouldBe( nan2 );
+            r.ReadNullableSingle().ShouldBe( nan1 );
+            r.ReadNullableSingle().ShouldBe( null );
+            r.ReadNullableSingle().ShouldBe( (float)Math.PI );
         } )
-        .Should().Be( 1 + 3 * (1 + 4) );
+        .ShouldBe( 1 + 3 * (1 + 4) );
     }
 
     [TestCase( 16 )]
@@ -338,9 +333,8 @@ public class BufferingTests
         }, sequence =>
         {
             var r = new FastByteReader( sequence );
-            r.ReadString().Should().Be( "" );
-        } ).Should()
-            .Be( 1, "An empty string is only one byte." );
+            r.ReadString().ShouldBe( "" );
+        } ).ShouldBe( 1, "An empty string is only one byte." );
 
 
         ReadWrite( bytes =>
@@ -362,7 +356,7 @@ public class BufferingTests
             for( int i = 1; i < 75000; i += random.Next( 10 ) )
             {
                 s += 'a';
-                r.ReadString().Should().Be( s, $"Round n°{i}." );
+                r.ReadString().ShouldBe( s, $"Round n°{i}." );
             }
         }, minimumBufferSize: minimumBufferSize );
     }

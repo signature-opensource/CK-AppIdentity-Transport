@@ -3,7 +3,6 @@ using System.Net.Sockets;
 using System.Net;
 using System.Threading.Tasks;
 using System.Threading;
-using FluentAssertions;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 
@@ -26,11 +25,11 @@ public partial class TcpTransportTests
 
             var w1 = AcceptAndCloseIncomingConnectionAsync( listenSocket, timeout );
             await SendAndCloseAsync( sendEndPoint, 42, timeout ).ConfigureAwait( false );
-            (await w1).Should().Be( 42 );
+            (await w1).ShouldBe( (byte)42 );
 
             var w2 = AcceptAndCloseIncomingConnectionAsync( listenSocket, timeout );
             await SendAndCloseAsync( sendEndPoint, 217, timeout ).ConfigureAwait( false );
-            (await w2).Should().Be( 217 );
+            (await w2).ShouldBe( (byte)217 );
 
             listenSocket.Dispose();
         }
@@ -76,7 +75,7 @@ public partial class TcpTransportTests
 
             var w1 = AcceptAndLeaveConnectionAsync( listenSocket, timeout );
             await SendAndCloseAsync( sendEndPoint, 42, timeout ).ConfigureAwait( false );
-            (await w1).Should().Be( 42 );
+            (await w1).ShouldBe( (byte)42 );
 
             listenSocket.Dispose();
         }
@@ -86,7 +85,7 @@ public partial class TcpTransportTests
             var acceptSocket = await listenSocket.AcceptAsync( timeout ).ConfigureAwait( false );
             acceptSocket.NoDelay = true; // Disable Nagle algorithm.
             var buffer = new byte[1];
-            acceptSocket.Receive( buffer ).Should().Be( 1 );
+            acceptSocket.Receive( buffer ).ShouldBe( 1 );
             return buffer[0];
         }
     }
@@ -104,7 +103,7 @@ public partial class TcpTransportTests
         using var acceptSocket = await listenSocket.AcceptAsync( timeout ).ConfigureAwait( false );
         acceptSocket.NoDelay = true; // Disable Nagle algorithm.
         var buffer = new byte[1];
-        acceptSocket.Receive( buffer ).Should().Be( 1 );
+        acceptSocket.Receive( buffer ).ShouldBe( 1 );
         return buffer[0];
     }
 }

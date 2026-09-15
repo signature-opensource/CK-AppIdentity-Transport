@@ -1,9 +1,9 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using NUnit.Framework;
+using Shouldly;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -67,7 +67,7 @@ public class BothPeeringIssuesTests
 
         // An initiator that fails to connect has no associated PeeringIssue: it is simply
         // not connected.
-        senderTransport.ReadyTask.Status.Should().Be( TaskStatus.WaitingForActivation );
+        senderTransport.ReadyTask.Status.ShouldBe( TaskStatus.WaitingForActivation );
 
         var listenerTransportManager = listener.GetRequiredFeature<TransportManagerFeature>();
         var listenerIssues = new PeeringIssueCollector( listenerTransportManager, skipSameKind: false );
@@ -123,7 +123,7 @@ public class BothPeeringIssuesTests
         if( switchOffListener )
         {
             TestHelper.Monitor.Info( "Tests: Switching listener back on." );
-            listenerTransport.SwitchOn().Should().BeTrue();
+            listenerTransport.SwitchOn().ShouldBeTrue();
         }
         else
         {

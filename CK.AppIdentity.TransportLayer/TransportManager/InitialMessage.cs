@@ -202,14 +202,14 @@ sealed class InitialMessage : IIncomingRequest
         if( !header.SequenceEqual( _prefix ) )
         {
             otherVersion = -1;
-            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols );
+            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust, out supposedIdentity );
         }
         // If the other's version is greater than ours we must reply with a
         // downgrade version message.
         otherVersion = checked((int)r.ReadSmallUInt32());
         if( otherVersion > ZeroProtocol.CurrentVersion )
         {
-            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols );
+            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust, out supposedIdentity );
         }
         // If a new protocol version appears, the previous versions should be handled here.
         // For now, we have only one version.
@@ -254,7 +254,10 @@ sealed class InitialMessage : IIncomingRequest
                            out string? partyName,
                            out string? environmentName,
                            out string? fullName,
-                           out string[]? protocols )
+                           out string[]? protocols,
+                           out int expectedCommonProtocolCount,
+                           out bool canAutoTrust,
+                           out RemoteIdentityKeyData? supposedIdentity )
         {
             instanceId = null;
             domainName = null;
@@ -262,6 +265,9 @@ sealed class InitialMessage : IIncomingRequest
             environmentName = null;
             fullName = null;
             protocols = null;
+            expectedCommonProtocolCount = 0;
+            canAutoTrust = false;
+            supposedIdentity = null;
             return false;
         }
     }

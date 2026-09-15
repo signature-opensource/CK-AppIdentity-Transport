@@ -1,5 +1,5 @@
-using FluentAssertions;
 using NUnit.Framework;
+using Shouldly;
 using System;
 using System.Buffers;
 using System.Threading.Tasks;
@@ -21,7 +21,7 @@ public class TransportMessageTests
         public Context()
         {
             ProtocolDirectory = new MessageProtocolDirectoryService();
-            ProtocolDirectory.TryRegister( TestHelper.Monitor, "Test", 0, out TestProtocol! ).Should().BeTrue();
+            ProtocolDirectory.TryRegister( TestHelper.Monitor, "Test", 0, out TestProtocol! ).ShouldBeTrue();
             TestMap = MessageProtocolMap.Get( TestProtocol );
             Outgoing = new OutgoingMessageFactory( TestProtocol );
             Incoming = new IncomingMessageFactory( TestMap );
@@ -57,9 +57,9 @@ public class TransportMessageTests
             var reader = new BasicAsyncReader( m, incoming.AllowedProtocols );
             using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync );
 
-            mBack.IsValid.Should().BeTrue();
-            mBack.Protocol.Should().Be( m.Protocol );
-            mBack.Message.ToArray().Should().BeEquivalentTo( m.Message.ToArray() );
+            mBack.IsValid.ShouldBeTrue();
+            mBack.Protocol.ShouldBe( m.Protocol );
+            mBack.Message.ToArray().ShouldBe( m.Message.ToArray() );
         }
 
     }
@@ -94,9 +94,9 @@ public class TransportMessageTests
             var reader = new BasicAsyncReader( m, incoming.AllowedProtocols );
             using var mBack = await incoming.ReadAsync( reader.ReadExactlyAsync ).ConfigureAwait( false );
 
-            mBack.IsValid.Should().BeTrue();
-            mBack.Protocol.Should().Be( m.Protocol );
-            mBack.Message.ToArray().Should().BeEquivalentTo( m.Message.ToArray() );
+            mBack.IsValid.ShouldBeTrue();
+            mBack.Protocol.ShouldBe( m.Protocol );
+            mBack.Message.ToArray().ShouldBe( m.Message.ToArray() );
         }
     }
 

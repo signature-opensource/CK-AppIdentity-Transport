@@ -64,7 +64,7 @@ sealed partial class LocalKeys : ILocalKeys
                                                               X509Certificate2 signer,
                                                               Action<CertificateRequest> configuration )
     {
-        using( var ecdsa = ECDsa.Create( "ECDsa" ) )
+        using( var ecdsa = ECDsa.Create() )
         {
             Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );
             ecdsa.KeySize = 256;
@@ -73,7 +73,9 @@ sealed partial class LocalKeys : ILocalKeys
             // Basic certificate constraints.
             request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: false, false, 0, true ) );
             // The AuthorityKeyIdentifier is the CA's subject key identifier.
-            request.CertificateExtensions.Add( new X509AuthorityKeyIdentifierExtension( signer ) );
+            request.CertificateExtensions.Add( X509AuthorityKeyIdentifierExtension.CreateFromCertificate( signer,
+                                                                                                          includeKeyIdentifier: true,
+                                                                                                          includeIssuerAndSerial: false ) );
 
             configuration( request );
 

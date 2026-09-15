@@ -1,7 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Shouldly;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -202,9 +202,9 @@ public sealed class BlobChannelTester : IAsyncDisposable
     public static async Task SendTestDataAsync( BlobChannelFeature c, CancellationToken token = default )
     {
         await c.Transport.ReadyTask;
-        (await c.TrySendAsync( new byte[] { 1 }, token )).Should().BeTrue();
-        (await c.TrySendAsync( new byte[] { 1, 2 }, token )).Should().BeTrue();
-        (await c.TrySendAsync( new byte[] { 1, 2, 3 }, token )).Should().BeTrue();
+        (await c.TrySendAsync( [1], token )).ShouldBeTrue();
+        (await c.TrySendAsync( [1, 2], token )).ShouldBeTrue();
+        (await c.TrySendAsync( [1, 2, 3], token )).ShouldBeTrue();
     }
 
     /// <summary>
@@ -214,9 +214,9 @@ public sealed class BlobChannelTester : IAsyncDisposable
     /// <param name="c">The channel.</param>
     public static void SendTestData( BlobChannelFeature c )
     {
-        c.TrySend( new byte[] { 1 } ).Should().BeTrue();
-        c.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
-        c.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
+        c.TrySend( [1] ).ShouldBeTrue();
+        c.TrySend( [1, 2] ).ShouldBeTrue();
+        c.TrySend( [1, 2, 3] ).ShouldBeTrue();
     }
 
     /// <summary>
@@ -227,9 +227,9 @@ public sealed class BlobChannelTester : IAsyncDisposable
     public static void CheckTestDataReceived( List<byte[]> received )
     {
         while( received.Count < 3 ) ;
-        received[0].Should().BeEquivalentTo( new byte[] { 1 } );
-        received[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
-        received[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
+        received[0].ShouldBe( [1] );
+        received[1].ShouldBe( [1, 2] );
+        received[2].ShouldBe( [1, 2, 3] );
     }
 
 }

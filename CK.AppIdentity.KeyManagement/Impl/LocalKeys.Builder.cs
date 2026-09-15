@@ -257,7 +257,7 @@ sealed partial class LocalKeys
         static X509Certificate2 CreateIdentityCertificate( string commonName, DateTime notAfter, DateTime now )
         {
             Throw.DebugAssert( notAfter > now );
-            using( var ecdsa = ECDsa.Create( "ECDsa" ) )
+            using( var ecdsa = ECDsa.Create() )
             {
                 Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );
                 ecdsa.KeySize = 256;

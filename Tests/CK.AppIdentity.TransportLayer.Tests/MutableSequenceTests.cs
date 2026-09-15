@@ -1,4 +1,3 @@
-using FluentAssertions;
 using NUnit.Framework;
 using System.Buffers;
 
@@ -15,12 +14,12 @@ public class MutableSequenceTests
         prefix[0] = 1;
         prefix[1] = 2;
         prefix[2] = 3;
-        b.Length.Should().Be( 0 );
+        b.Length.ShouldBe( 0 );
         b.Advance( 3 );
-        b.Length.Should().Be( 3 );
-        b.AddSegment( new byte[] { 4 } );
-        b.Length.Should().Be( 4 );
+        b.Length.ShouldBe( 3 );
+        b.AddSegment( [4] );
+        b.Length.ShouldBe( 4 );
         var s = b.GetReadOnlySequence();
-        s.ToArray().Should().BeEquivalentTo( new byte[] { 1, 2, 3, 4 } );
+        s.ToArray().ShouldBe( [1, 2, 3, 4] );
     }
 }

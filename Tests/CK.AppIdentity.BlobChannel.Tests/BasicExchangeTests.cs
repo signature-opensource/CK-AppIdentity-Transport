@@ -1,8 +1,8 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Shouldly;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -50,7 +50,7 @@ public class BasicExchangeTests
         listenerChannel.Received.Sync += ( monitor, sender, bytes ) =>
         {
             monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
-            sender.Should().BeSameAs( listenerChannel );
+            sender.ShouldBeSameAs( listenerChannel );
             listenerReceived.Add( bytes );
         };
         // Setup Sender reception.
@@ -58,32 +58,32 @@ public class BasicExchangeTests
         senderChannel.Received.Sync += ( monitor, sender, bytes ) =>
         {
             monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
-            sender.Should().BeSameAs( senderChannel );
+            sender.ShouldBeSameAs( senderChannel );
             senderReceived.Add( bytes );
         };
         // Listener => Sender.
         // Before sending, ReadyTask can be awaited.
         await listenerChannel.Transport.ReadyTask.WaitAsync( token );
-        listenerChannel.TrySend( new byte[] { 1 } ).Should().BeTrue();
-        listenerChannel.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
-        listenerChannel.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
+        listenerChannel.TrySend( [1] ).ShouldBeTrue();
+        listenerChannel.TrySend( [1, 2] ).ShouldBeTrue();
+        listenerChannel.TrySend( [1, 2, 3] ).ShouldBeTrue();
 
         // Sender => Listener.
         await senderChannel.Transport.ReadyTask.WaitAsync( token );
-        senderChannel.TrySend( new byte[] { 1 } ).Should().BeTrue();
-        senderChannel.TrySend( new byte[] { 1, 2 } ).Should().BeTrue();
-        senderChannel.TrySend( new byte[] { 1, 2, 3 } ).Should().BeTrue();
+        senderChannel.TrySend( [1] ).ShouldBeTrue();
+        senderChannel.TrySend( [1, 2] ).ShouldBeTrue();
+        senderChannel.TrySend( [1, 2, 3] ).ShouldBeTrue();
 
         // Check data reception.
         while( senderReceived.Count < 3 ) ;
-        senderReceived[0].Should().BeEquivalentTo( new byte[] { 1 } );
-        senderReceived[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
-        senderReceived[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
+        senderReceived[0].ShouldBe( [1] );
+        senderReceived[1].ShouldBe( [1, 2] );
+        senderReceived[2].ShouldBe( [1, 2, 3] );
 
         while( listenerReceived.Count < 3 ) ;
-        listenerReceived[0].Should().BeEquivalentTo( new byte[] { 1 } );
-        listenerReceived[1].Should().BeEquivalentTo( new byte[] { 1, 2 } );
-        listenerReceived[2].Should().BeEquivalentTo( new byte[] { 1, 2, 3 } );
+        listenerReceived[0].ShouldBe( [1] );
+        listenerReceived[1].ShouldBe( [1, 2] );
+        listenerReceived[2].ShouldBe( [1, 2, 3] );
 
         await Task.Delay( 2000, token );
 

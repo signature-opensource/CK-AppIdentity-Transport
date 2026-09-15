@@ -1,6 +1,5 @@
 using CK.Core;
 using CK.Monitoring;
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using System.Linq;
@@ -58,10 +57,10 @@ public class BugTransportTests
 
         logCollector.UpdateCachedEntries();
         var logs = logCollector.CachedTexts;
-        logs.Count( l => l.Contains( error ) ).Should().Be( 1 );
+        logs.Count( l => l.Contains( error ) ).ShouldBe( 1 );
         for( int i = 2; i < 4; i++ )
         {
-            logs.Count( l => l.Contains( error.Replace( "in 1", $"in {i}" ) ) ).Should().Be( 1, i.ToString() );
+            logs.Count( l => l.Contains( error.Replace( "in 1", $"in {i}" ) ) ).ShouldBe( 1, i.ToString() );
         }
 
         TestHelper.Monitor.Info( "Tests: Done." );

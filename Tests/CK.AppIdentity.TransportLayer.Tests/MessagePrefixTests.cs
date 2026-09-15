@@ -1,6 +1,6 @@
 using CK.Core;
-using FluentAssertions;
 using NUnit.Framework;
+using Shouldly;
 using System;
 using System.Buffers.Binary;
 using System.IO;
@@ -17,26 +17,26 @@ public class MessagePrefixTests
     public void write_and_read_MessagePrefix()
     {
         //// Empty message.
-        //WriteAndRead( 0, 0 ).Should().Be( 2 );
+        //WriteAndRead( 0, 0 ).ShouldBe( 2 );
 
         WriteAndReadFor( 0 );
         WriteAndReadFor( 63 );
 
         static void WriteAndReadFor( byte protocol )
         {
-            WriteAndRead( protocol, 1 ).Should().Be( 2 );
-            WriteAndRead( protocol, 255 ).Should().Be( 2 );
+            WriteAndRead( protocol, 1 ).ShouldBe( 2 );
+            WriteAndRead( protocol, 255 ).ShouldBe( 2 );
 
-            WriteAndRead( protocol, 256 ).Should().Be( 3 );
-            WriteAndRead( protocol, 257 ).Should().Be( 3 );
-            WriteAndRead( protocol, 65535 ).Should().Be( 3 );
+            WriteAndRead( protocol, 256 ).ShouldBe( 3 );
+            WriteAndRead( protocol, 257 ).ShouldBe( 3 );
+            WriteAndRead( protocol, 65535 ).ShouldBe( 3 );
 
-            WriteAndRead( protocol, 65536 ).Should().Be( 4 );
-            WriteAndRead( protocol, 65537 ).Should().Be( 4 );
-            WriteAndRead( protocol, 256 * 65536 - 1 ).Should().Be( 4 );
+            WriteAndRead( protocol, 65536 ).ShouldBe( 4 );
+            WriteAndRead( protocol, 65537 ).ShouldBe( 4 );
+            WriteAndRead( protocol, 256 * 65536 - 1 ).ShouldBe( 4 );
 
-            WriteAndRead( protocol, 256 * 65536 ).Should().Be( 5 );
-            WriteAndRead( protocol, int.MaxValue ).Should().Be( 5 );
+            WriteAndRead( protocol, 256 * 65536 ).ShouldBe( 5 );
+            WriteAndRead( protocol, int.MaxValue ).ShouldBe( 5 );
         }
 
         static int WriteAndRead( byte protocol, uint messageLength )
@@ -45,9 +45,9 @@ public class MessagePrefixTests
             int prefixLen = WritePrefix( protocol, messageLength, memory );
             Throw.DebugAssert( prefixLen <= 5 );
             uint readLen = ReadPrefix( memory, out int readPrefixLen, out byte readProtocol );
-            readPrefixLen.Should().Be( prefixLen );
-            readProtocol.Should().Be( protocol );
-            readLen.Should().Be( messageLength );
+            readPrefixLen.ShouldBe( prefixLen );
+            readProtocol.ShouldBe( protocol );
+            readLen.ShouldBe( messageLength );
             return prefixLen;
         }
 
@@ -92,11 +92,11 @@ public class MessagePrefixTests
         var w = new BinaryWriter( m );
 
         w.Write7BitEncodedInt64( 127 );
-        m.Position.Should().Be( 1 );
+        m.Position.ShouldBe( 1 );
 
         m.Position = 0;
         w.Write7BitEncodedInt64( int.MaxValue );
-        m.Position.Should().Be( 5 );
+        m.Position.ShouldBe( 5 );
     }
 
     [Test]
@@ -104,33 +104,33 @@ public class MessagePrefixTests
     {
         const int _maxPrefixLength = 5;
 
-        WriteAndRead( 0 ).Should().Be( 1 );
-        WriteAndRead( 1 ).Should().Be( 1 );
-        WriteAndRead( 2 ).Should().Be( 1 );
+        WriteAndRead( 0 ).ShouldBe( 1 );
+        WriteAndRead( 1 ).ShouldBe( 1 );
+        WriteAndRead( 2 ).ShouldBe( 1 );
 
-        WriteAndRead( 128 - 1 ).Should().Be( 1 );
-        WriteAndRead( 128 ).Should().Be( 2 );
+        WriteAndRead( 128 - 1 ).ShouldBe( 1 );
+        WriteAndRead( 128 ).ShouldBe( 2 );
 
-        WriteAndRead( 128 * 128 - 1 ).Should().Be( 2 );
-        WriteAndRead( 128 * 128 ).Should().Be( 3 );
+        WriteAndRead( 128 * 128 - 1 ).ShouldBe( 2 );
+        WriteAndRead( 128 * 128 ).ShouldBe( 3 );
 
-        WriteAndRead( 128 * 128 * 128 - 1 ).Should().Be( 3 );
-        WriteAndRead( 128 * 128 * 128 ).Should().Be( 4 );
+        WriteAndRead( 128 * 128 * 128 - 1 ).ShouldBe( 3 );
+        WriteAndRead( 128 * 128 * 128 ).ShouldBe( 4 );
 
-        WriteAndRead( 128 * 128 * 128 * 128 - 1 ).Should().Be( 4 );
-        WriteAndRead( 128 * 128 * 128 * 128 ).Should().Be( 5 );
+        WriteAndRead( 128 * 128 * 128 * 128 - 1 ).ShouldBe( 4 );
+        WriteAndRead( 128 * 128 * 128 * 128 ).ShouldBe( 5 );
 
-        WriteAndRead( int.MaxValue - 1 ).Should().Be( 5 );
-        WriteAndRead( int.MaxValue ).Should().Be( 5 );
+        WriteAndRead( int.MaxValue - 1 ).ShouldBe( 5 );
+        WriteAndRead( int.MaxValue ).ShouldBe( 5 );
 
         static int WriteAndRead( int len )
         {
             Span<byte> memory = stackalloc byte[5];
             int prefixLen = WriteLength( (uint)len, memory );
-            prefixLen.Should().BeLessThanOrEqualTo( 5 );
+            prefixLen.ShouldBeLessThanOrEqualTo( 5 );
             int readLen = ReadLength( memory, out int readPrefixLen );
-            readPrefixLen.Should().Be( prefixLen );
-            readLen.Should().Be( len );
+            readPrefixLen.ShouldBe( prefixLen );
+            readLen.ShouldBe( len );
             return prefixLen;
         }
 
@@ -173,35 +173,35 @@ public class MessagePrefixTests
     [Test]
     public void NOT_USED_Write_and_Read_optimized_prefix_length_with_optional_4_bits_highState()
     {
-        WriteAndRead( 0, 0 ).Should().Be( 1 );
-        WriteAndRead( 1, 0 ).Should().Be( 1 );
-        WriteAndRead( 2, 0 ).Should().Be( 1 );
+        WriteAndRead( 0, 0 ).ShouldBe( 1 );
+        WriteAndRead( 1, 0 ).ShouldBe( 1 );
+        WriteAndRead( 2, 0 ).ShouldBe( 1 );
 
-        WriteAndRead( 128 - 1, 0 ).Should().Be( 1 );
-        WriteAndRead( 128, 0 ).Should().Be( 2 );
+        WriteAndRead( 128 - 1, 0 ).ShouldBe( 1 );
+        WriteAndRead( 128, 0 ).ShouldBe( 2 );
 
-        WriteAndRead( 128 * 128 - 1, 0 ).Should().Be( 2 );
-        WriteAndRead( 128 * 128, 0 ).Should().Be( 3 );
+        WriteAndRead( 128 * 128 - 1, 0 ).ShouldBe( 2 );
+        WriteAndRead( 128 * 128, 0 ).ShouldBe( 3 );
 
-        WriteAndRead( 128 * 128 * 128 - 1, 0 ).Should().Be( 3 );
-        WriteAndRead( 128 * 128 * 128, 0 ).Should().Be( 4 );
+        WriteAndRead( 128 * 128 * 128 - 1, 0 ).ShouldBe( 3 );
+        WriteAndRead( 128 * 128 * 128, 0 ).ShouldBe( 4 );
 
-        WriteAndRead( 128 * 128 * 128 * 128 - 1, 0 ).Should().Be( 4 );
-        WriteAndRead( 128 * 128 * 128 * 128, 0 ).Should().Be( 5 );
+        WriteAndRead( 128 * 128 * 128 * 128 - 1, 0 ).ShouldBe( 4 );
+        WriteAndRead( 128 * 128 * 128 * 128, 0 ).ShouldBe( 5 );
 
-        WriteAndRead( int.MaxValue - 1, 0 ).Should().Be( 5 );
-        WriteAndRead( int.MaxValue, 0 ).Should().Be( 5 );
+        WriteAndRead( int.MaxValue - 1, 0 ).ShouldBe( 5 );
+        WriteAndRead( int.MaxValue, 0 ).ShouldBe( 5 );
 
         // When highState is non 0, we always need 5 bytes for the prefix.
         // Maximal highState is 15: 4 bits are available for flags with the 5 bytes prefix.
-        WriteAndRead( 1, 1 ).Should().Be( 5 );
-        WriteAndRead( 3712, 2 ).Should().Be( 5 );
-        WriteAndRead( 46157676, 3 ).Should().Be( 5 );
-        WriteAndRead( 8, 4 ).Should().Be( 5 );
-        WriteAndRead( int.MaxValue, 5 ).Should().Be( 5 );
-        WriteAndRead( int.MaxValue, 8 ).Should().Be( 5 );
-        WriteAndRead( int.MaxValue, 15 ).Should().Be( 5 );
-        FluentActions.Invoking( () => WriteAndRead( int.MaxValue, 16 ) ).Should().Throw<ArgumentException>( "It ends here." );
+        WriteAndRead( 1, 1 ).ShouldBe( 5 );
+        WriteAndRead( 3712, 2 ).ShouldBe( 5 );
+        WriteAndRead( 46157676, 3 ).ShouldBe( 5 );
+        WriteAndRead( 8, 4 ).ShouldBe( 5 );
+        WriteAndRead( int.MaxValue, 5 ).ShouldBe( 5 );
+        WriteAndRead( int.MaxValue, 8 ).ShouldBe( 5 );
+        WriteAndRead( int.MaxValue, 15 ).ShouldBe( 5 );
+        Should.Throw<ArgumentException>( () => WriteAndRead( int.MaxValue, 16 ) );
 
         static int WriteAndRead( int value, byte highState )
         {
@@ -209,9 +209,9 @@ public class MessagePrefixTests
             int prefixLen = WriteLength( value, memory, highState );
             Throw.CheckArgument( prefixLen <= 5 );
             int readLen = ReadLength( memory, out int readPrefixLen, out byte readHighState );
-            readPrefixLen.Should().Be( prefixLen );
-            readHighState.Should().Be( highState );
-            readLen.Should().Be( value );
+            readPrefixLen.ShouldBe( prefixLen );
+            readHighState.ShouldBe( highState );
+            readLen.ShouldBe( value );
             return prefixLen;
         }
 

@@ -1,6 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System.Buffers;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.BlobChannel;
 
