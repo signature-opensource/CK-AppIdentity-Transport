@@ -116,6 +116,9 @@ sealed class InitialMessage : IIncomingRequest
         _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
         _expectedCommonProtocolCount = f.BestRegisteredProtocols.Count;
         _localIdentities = f.RemoteKeys.LocalKeys.Identities;
+        // Outgoing: the ephemeral belongs to the Transport, not here — this object is cached and
+        // reused across connection attempts, and a reused ephemeral would reuse the session key.
+        _remoteEphemeralPublicKey = Array.Empty<byte>();
     }
 
     /// <summary>

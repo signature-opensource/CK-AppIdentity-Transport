@@ -99,6 +99,48 @@ public class RunPhaseProtectionTests
 
     [TestCase( MacAlgorithm.AesGmac )]
     [TestCase( MacAlgorithm.HmacSha256 )]
+    public void An_altered_declared_length_is_rejected( MacAlgorithm alg )
+    {
+        // The whole header is covered, not just its flag byte. A tampered declared length would
+        // also be caught indirectly — it changes how many payload bytes the receiver feeds in —
+        // but indirect coverage is an argument, and this asserts the direct property instead.
+        var (i, l) = Handshake( alg );
+        using( i )
+        using( l )
+        {
+            var header = new byte[] { 0x41, 0x00, 0x01 };   // lenSize=1: two length bytes follow
+            var payload = RandomNumberGenerator.GetBytes( 256 );
+            var tag = new byte[RunPhaseProtection.TagLength];
+            i.SignNext( header, Seq( payload ), tag );
+
+            var lying = new byte[] { 0x41, 0x01, 0x01 };    // same flags, different declared length
+            l.VerifyNext( lying, Seq( payload ), tag ).ShouldBeFalse(
+                "The declared length is part of the authenticated frame." );
+        }
+    }
+
+    [TestCase( MacAlgorithm.AesGmac )]
+    [TestCase( MacAlgorithm.HmacSha256 )]
+    public void Headers_of_different_lengths_do_not_collide( MacAlgorithm alg )
+    {
+        // The GMAC nonce zero-pads the header to 5 bytes, so a 2-byte and a 3-byte header could in
+        // principle pad to the same value. They cannot: byte 0 encodes the length size, so headers
+        // of different lengths already differ there. Asserted rather than reasoned about.
+        var (i, l) = Handshake( alg );
+        using( i )
+        using( l )
+        {
+            var payload = RandomNumberGenerator.GetBytes( 32 );
+            var shortHeader = new byte[] { 0x01, 0x20 };
+            var longHeader = new byte[] { 0x41, 0x20, 0x00 };
+            var tag = new byte[RunPhaseProtection.TagLength];
+            i.SignNext( shortHeader, Seq( payload ), tag );
+            l.VerifyNext( longHeader, Seq( payload ), tag ).ShouldBeFalse();
+        }
+    }
+
+    [TestCase( MacAlgorithm.AesGmac )]
+    [TestCase( MacAlgorithm.HmacSha256 )]
     public void A_replayed_frame_is_rejected( MacAlgorithm alg )
     {
         var (i, l) = Handshake( alg );

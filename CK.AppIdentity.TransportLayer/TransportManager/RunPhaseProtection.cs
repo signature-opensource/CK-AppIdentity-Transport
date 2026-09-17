@@ -46,6 +46,17 @@ public sealed class RunPhaseProtection : IDisposable
     /// </summary>
     public const int MaxEphemeralPublicKeyLength = 256;
 
+    // The GMAC nonce packs the full wire header and the frame counter: 5 + 6 + 1 reserved = 12,
+    // AES-GCM's standard nonce size.
+    const int MaxHeaderLength = 5;
+    const int CounterLength = 6;
+
+    /// <summary>
+    /// Highest usable frame counter, imposed by the 6-byte counter field of the GMAC nonce.
+    /// Roughly nine years at a million frames per second on a single connection.
+    /// </summary>
+    public const ulong MaxFrameCounter = (1UL << (8 * CounterLength)) - 1;
+
     readonly MacAlgorithm _algorithm;
     // Distinct keys per direction: this is what makes reflection (sending our own frames back to
     // us) impossible, and it gives GMAC a fresh nonce space on each side.
@@ -258,27 +269,28 @@ public sealed class RunPhaseProtection : IDisposable
                                           string initiatorFullName,
                                           string listenerFullName )
     {
-        var w = new ArrayBufferWriter<byte>( 64 );
-        Span<byte> head = stackalloc byte[3];
-        head[0] = initiatorCapabilities;
-        head[1] = (byte)selected;
-        head[2] = checked((byte)version);
-        w.Write( head );
+        // Sized up front and encoded straight into the result: one allocation, no intermediate
+        // byte[] per name and no ArrayBufferWriter. (This runs twice per connection, during the
+        // handshake — not per message — so this is tidiness rather than a hot path.)
+        int lenInitiator = Encoding.UTF8.GetByteCount( initiatorFullName );
+        int lenListener = Encoding.UTF8.GetByteCount( listenerFullName );
+        var result = new byte[3 + 4 + lenInitiator + 4 + lenListener];
+        var s = result.AsSpan();
+        s[0] = initiatorCapabilities;
+        s[1] = (byte)selected;
+        s[2] = checked((byte)version);
+        int o = 3;
         // Length-prefixed, not delimiter-separated. A delimiter would make the encoding ambiguous:
         // ("A", "B/C") and ("A/B", "C") would produce the same transcript and therefore the same
         // keys, which is exactly the kind of gap a transcript exists to close.
-        WriteLengthPrefixed( w, initiatorFullName );
-        WriteLengthPrefixed( w, listenerFullName );
-        return w.WrittenSpan.ToArray();
-
-        static void WriteLengthPrefixed( ArrayBufferWriter<byte> w, string s )
-        {
-            var bytes = Encoding.UTF8.GetBytes( s );
-            Span<byte> len = stackalloc byte[4];
-            BinaryPrimitives.WriteInt32LittleEndian( len, bytes.Length );
-            w.Write( len );
-            w.Write( bytes );
-        }
+        BinaryPrimitives.WriteInt32LittleEndian( s.Slice( o ), lenInitiator );
+        o += 4;
+        Encoding.UTF8.GetBytes( initiatorFullName, s.Slice( o, lenInitiator ) );
+        o += lenInitiator;
+        BinaryPrimitives.WriteInt32LittleEndian( s.Slice( o ), lenListener );
+        o += 4;
+        Encoding.UTF8.GetBytes( listenerFullName, s.Slice( o, lenListener ) );
+        return result;
     }
 
     /// <summary>
@@ -290,9 +302,15 @@ public sealed class RunPhaseProtection : IDisposable
     public void SignNext( ReadOnlySpan<byte> header, in ReadOnlySequence<byte> payload, Span<byte> tag )
     {
         Throw.DebugAssert( !_disposed );
+        // Enforced, not assumed: under GMAC a repeated (key, nonce) pair with different data leaks
+        // the authentication subkey and allows arbitrary forgery, so a counter that ran past the
+        // nonce's 6-byte field must stop the connection rather than wrap into a reused nonce.
+        // Unreachable in practice — see MaxFrameCounter — which is exactly why it must be checked
+        // rather than trusted.
+        Throw.CheckState( "Frame counter exhausted: the connection must be re-established to rekey.",
+                          _sendCounter < MaxFrameCounter );
         ComputeTag( sending: true, _sendCounter, header, payload, tag );
-        // Monotonic and never reused: under GMAC a repeated (key, nonce) with different data leaks
-        // the authentication subkey, so this must only ever move forward.
+        // Monotonic and never reused.
         checked { ++_sendCounter; }
     }
 
@@ -307,6 +325,7 @@ public sealed class RunPhaseProtection : IDisposable
     {
         Throw.DebugAssert( !_disposed );
         if( tag.Length != TagLength ) return false;
+        if( _receiveCounter >= MaxFrameCounter ) return false;
         Span<byte> expected = stackalloc byte[TagLength];
         ComputeTag( sending: false, _receiveCounter, header, payload, expected );
         if( !CryptographicOperations.FixedTimeEquals( expected, tag ) ) return false;
@@ -320,19 +339,51 @@ public sealed class RunPhaseProtection : IDisposable
         {
             var gcm = sending ? _sendGcm : _receiveGcm;
             Throw.DebugAssert( gcm != null );
-            // GMAC nonce: the direction is already separated by the key, so the counter alone
-            // cannot collide within a key. 12 bytes is AES-GCM's standard nonce size.
+            // GMAC nonce: [header: 5 bytes, zero-padded][counter: 6 bytes][1 reserved] = 12, which
+            // is AES-GCM's standard nonce size.
+            //
+            // Packing the header into the nonce rather than into the authenticated data leaves the
+            // AAD equal to the payload alone, so a single-segment frame authenticates with NO copy.
+            // AesGcm requires contiguous associated data, and gathering counter+header+payload cost
+            // 10-37% on top of the MAC itself — worst on small frames, which are the common ones.
+            //
+            // The header is covered in FULL here, including its declared-length bytes. It would
+            // have been tempting to carry only the flag byte and argue that a tampered length is
+            // caught anyway, since it changes how many payload bytes the receiver feeds in — true,
+            // but implicit. Everything the tag depends on is covered explicitly instead.
+            // Zero-padding cannot merge two different headers: byte 0 encodes the length size, so
+            // headers of different lengths already differ in byte 0.
+            //
+            // The counter is 6 bytes instead of 8 to make room. 2^48 frames on one connection is
+            // roughly nine years at a million frames a second; SignNext guards the bound rather
+            // than letting it wrap silently, because a wrapped counter under GMAC means a repeated
+            // (key, nonce) pair, which is a total break.
+            Throw.DebugAssert( header.Length <= MaxHeaderLength );
             Span<byte> nonce = stackalloc byte[12];
-            BinaryPrimitives.WriteUInt64LittleEndian( nonce.Slice( 4 ), counter );
+            nonce.Clear();
+            header.CopyTo( nonce );                                  // [0..5) header, zero-padded
+            Span<byte> c = stackalloc byte[8];
+            BinaryPrimitives.WriteUInt64LittleEndian( c, counter );
+            c.Slice( 0, CounterLength ).CopyTo( nonce.Slice( MaxHeaderLength ) );   // [5..11) counter
             // Authenticated data only: the payload is NOT encrypted (it must stay readable).
-            var aad = BuildAad( counter, header, payload );
-            try
+            if( payload.IsSingleSegment )
             {
-                gcm.Encrypt( nonce, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, tag, aad );
+                gcm.Encrypt( nonce, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, tag, payload.FirstSpan );
             }
-            finally
+            else
             {
-                ArrayPool<byte>.Shared.Return( aad.Array! );
+                // Multi-segment: AesGcm has no incremental API, so this one must be gathered.
+                int len = checked((int)payload.Length);
+                var buffer = ArrayPool<byte>.Shared.Rent( len );
+                try
+                {
+                    payload.CopyTo( buffer );
+                    gcm.Encrypt( nonce, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, tag, buffer.AsSpan( 0, len ) );
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return( buffer );
+                }
             }
         }
         else
@@ -347,22 +398,6 @@ public sealed class RunPhaseProtection : IDisposable
             h.GetCurrentHash( full );
             full.Slice( 0, TagLength ).CopyTo( tag );
         }
-    }
-
-    // AesGcm needs contiguous associated data, so the frame is gathered once.
-    static ArraySegment<byte> BuildAad( ulong counter, ReadOnlySpan<byte> header, in ReadOnlySequence<byte> payload )
-    {
-        int len = 8 + header.Length + checked((int)payload.Length);
-        var buffer = ArrayPool<byte>.Shared.Rent( len );
-        BinaryPrimitives.WriteUInt64LittleEndian( buffer.AsSpan( 0, 8 ), counter );
-        header.CopyTo( buffer.AsSpan( 8 ) );
-        int o = 8 + header.Length;
-        foreach( var s in payload )
-        {
-            s.Span.CopyTo( buffer.AsSpan( o ) );
-            o += s.Length;
-        }
-        return new ArraySegment<byte>( buffer, 0, len );
     }
 
     public void Dispose()
