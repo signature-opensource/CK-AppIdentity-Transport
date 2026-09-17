@@ -186,6 +186,16 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
     {
         _remote = null;
         _cts = null;
+        // These two MUST be cleared: this instance goes back to the pool and is reused for
+        // another remote.
+        //  - A leftover _offlineDecision silently swallows every retry delay of the next
+        //    remote (see Check): it would simply never reconnect.
+        //  - A leftover _result makes IsStarted true before StartTryConnect has run, so a
+        //    reuse with a startDelay would consume the stale completed result of the previous
+        //    remote instead of connecting.
+        // _tryConnectCount and _startTime are re-initialized by OnInitialize/StartTryConnect.
+        _offlineDecision = false;
+        _result = null;
     }
 
     static async Task<int> TryConnectToAsync( TransportManager transportManager,
@@ -273,9 +283,9 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                                     out TimeSpan? clockOffset,
                                                                     out string? enlistUrl,
                                                                     out RemoteIdentityKeyData? currentKeyData,
-                                                                    out bool foundTrustedKey,
                                                                     out RemoteIdentityKey? currentKey,
-                                                                    out bool signatureVerified );
+                                                                    out SignatureCheck signatureCheck );
+                        bool signatureVerified = signatureCheck != SignatureCheck.Failed;
                         // We have data but if the nonce we sent is not the one we have in reply, this is a serious issue.
                         if( nonceFailure )
                         {
@@ -322,8 +332,28 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, enlistUrl, null );
                             return 5;
                         }
-                        // Signature is fine. We update our TrustedIdentity.
-                        remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
+                        // The signature verifies, but against what?
+                        // If we already pinned a key for this remote and the reply does not present it,
+                        // the signer is NOT our remote: the legitimate listener would have carried our
+                        // trusted key in its identity list. Acting on such a reply is what lets an on-path
+                        // attacker drive us into the approval UI with its own key (and, for the approval
+                        // to be meaningful at all, the operator must now compare Fingerprint out of band).
+                        if( signatureCheck == SignatureCheck.SelfAsserted
+                            && remote.RemoteKeys.TrustedIdentity != null )
+                        {
+                            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                           $"The reply from '{remote.Party}' is signed by a key we do not trust " +
+                                                           $"(fingerprint '{currentKeyData.GetFingerprint()}') and does not present our trusted key " +
+                                                           $"(fingerprint '{remote.RemoteKeys.TrustedIdentity.GetFingerprint()}'). " +
+                                                           $"Ignoring it. Retrying in 30 seconds." );
+                            return 30;
+                        }
+                        // Either we already trust this key, or we have no trusted key yet and this is the
+                        // trust-on-first-use path (subject to AutoTrustKey / operator approval).
+                        remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger,
+                                                              signatureCheck == SignatureCheck.Trusted,
+                                                              currentKeyData,
+                                                              currentKey );
                         // Thanks to the InitialMessage.RemoteTrustInfo, the remote has detected that we won't be able to trust him:
                         // we must provide him our EnlistUrl (even if it is null).
                         if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
@@ -544,8 +574,18 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             }
             else
             {
+                // ExpectedAvailableTime is remote-supplied: this delay is attacker-controlled.
+                // Clamp in double space before the cast and bound it by MaxCheckDelay. An
+                // unchecked (int) cast here would either make the NextCheckDelay setter throw
+                // from inside the heartbeat (delays above one year, wedging every back task)
+                // or silently wrap negative (beyond ~68 years).
                 var delta = t - remote.Party.ApplicationIdentityService.SystemClock.UtcNow;
-                retryDelay = Math.Max( (int)(delta + clockOffset).TotalSeconds, 5 );
+                var seconds = (delta + clockOffset).TotalSeconds;
+                retryDelay = seconds <= 5
+                                ? 5
+                                : seconds >= BackTask<TransportManager>.MaxCheckDelay
+                                    ? BackTask<TransportManager>.MaxCheckDelay
+                                    : (int)seconds;
             }
         }
         else

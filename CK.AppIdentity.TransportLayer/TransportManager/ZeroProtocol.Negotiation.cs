@@ -111,16 +111,18 @@ static partial class ZeroProtocol // Negotiation
     /// </summary>
     /// <param name="r">The reader.</param>
     /// <param name="alreadyTrusted">Optional trusted key.</param>
-    /// <param name="foundTrustedKey">True if the <paramref name="alreadyTrusted"/> has been found in the keys.</param>
     /// <param name="currentKeyData">Outputs the current key data. This is always computed.</param>
     /// <param name="currentKey">Outputs the remote's current key if it was needed to verify the signature (when the trusted key has not been found).</param>
-    /// <returns>True is the signature's message has been verified, false otherwise.</returns>
-    public static bool ReadIdentityKeysAndVerifySignatures( ref FastByteReader r,
-                                                            RemoteIdentityKey? alreadyTrusted,
-                                                            out bool foundTrustedKey,
-                                                            out RemoteIdentityKeyData currentKeyData,
-                                                            out RemoteIdentityKey? currentKey )
+    /// <returns>
+    /// Whether the signature verifies AND against what. See <see cref="SignatureCheck"/>:
+    /// <see cref="SignatureCheck.SelfAsserted"/> is not an authentication.
+    /// </returns>
+    public static SignatureCheck ReadIdentityKeysAndVerifySignatures( ref FastByteReader r,
+                                                                      RemoteIdentityKey? alreadyTrusted,
+                                                                      out RemoteIdentityKeyData currentKeyData,
+                                                                      out RemoteIdentityKey? currentKey )
     {
+        bool foundTrustedKey;
         Throw.CheckData( r.ReadSmallUInt32() == 0 ); // Version.
         var keyCount = r.ReadSmallUInt32();
         Throw.CheckData( keyCount >= 1 && keyCount <= ILocalKeys.MaxIdentityCount );
@@ -208,9 +210,13 @@ static partial class ZeroProtocol // Negotiation
                 signature = signatureBuffer.Slice( 0, lenSignature );
                 r.ReadBytes( signature );
             }
+            // When foundTrustedKey is false the verifier is the key the sender just supplied in this
+            // very message: verifying against it proves only that the sender holds some private key.
+            // That is why the result distinguishes Trusted from SelfAsserted instead of being a bool.
             var verifier = foundTrustedKey ? alreadyTrusted : currentKey;
             Throw.DebugAssert( verifier != null );
-            return verifier.VerifyHash( hashData, signature );
+            if( !verifier.VerifyHash( hashData, signature ) ) return SignatureCheck.Failed;
+            return foundTrustedKey ? SignatureCheck.Trusted : SignatureCheck.SelfAsserted;
         }
         finally
         {
@@ -370,9 +376,8 @@ static partial class ZeroProtocol // Negotiation
                                                      out TimeSpan? clockOffset,
                                                      out string? enlistUrl,
                                                      out RemoteIdentityKeyData? currentKeyData,
-                                                     out bool foundTrustedKey,
                                                      out RemoteIdentityKey? currentKey,
-                                                     out bool signatureVerified )
+                                                     out SignatureCheck signatureCheck )
     {
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
@@ -387,12 +392,12 @@ static partial class ZeroProtocol // Negotiation
         // Do we have the identity keys and the signatures?
         if( r.ReadBool() )
         {
-            signatureVerified = ReadIdentityKeysAndVerifySignatures( ref r, trustedIdentity, out foundTrustedKey, out currentKeyData, out currentKey );
+            signatureCheck = ReadIdentityKeysAndVerifySignatures( ref r, trustedIdentity, out var read, out currentKey );
+            currentKeyData = read;
         }
         else
         {
-            signatureVerified = false;
-            foundTrustedKey = false;
+            signatureCheck = SignatureCheck.Failed;
             currentKeyData = null;
             currentKey = null;
         }
@@ -496,18 +501,21 @@ static partial class ZeroProtocol // Negotiation
         {
             offMessage = GoodbyeMessage.ReadMessage( ref r );
         }
-        if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                 remote.RemoteKeys.TrustedIdentity,
-                                                 out var foundTrustedKey,
-                                                 out var currentKeyData,
-                                                 out var currentKey ) )
+        var check = ReadIdentityKeysAndVerifySignatures( ref r,
+                                                         remote.RemoteKeys.TrustedIdentity,
+                                                         out var currentKeyData,
+                                                         out var currentKey );
+        // Switching a remote off on the strength of a self-asserted signature would let anyone
+        // answering on this connection take it down with a single packet and no key material.
+        if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, currentKeyData, currentKey ) )
         {
-            logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}': {offMessage}." );
-            remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
-            return true;
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                          $"Received {(check == SignatureCheck.Failed ? "unverifiable" : "untrusted (self-asserted)")} " +
+                          $"Remote Off message from '{remote.RemoteKeys.Party}'." );
+            return false;
         }
-        logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Remote Off message from '{remote.RemoteKeys.Party}'." );
-        return false;
+        logger.Info( $"Received verified Remote Off message from '{remote.RemoteKeys.Party}': {offMessage}." );
+        return true;
     }
 
     public static ValueTask<bool> SendDowngradeProtocolReplyAsync( Transport transport )
@@ -603,28 +611,26 @@ static partial class ZeroProtocol // Negotiation
             protocols[i] = p;
         }
         var map = MessageProtocolMap.InternalGet( protocols );
-        if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                 remote.RemoteKeys.TrustedIdentity,
-                                                 out foundTrustedKey,
-                                                 out var currentKeyData,
-                                                 out var currentKey ) )
+        var check = ReadIdentityKeysAndVerifySignatures( ref r,
+                                                         remote.RemoteKeys.TrustedIdentity,
+                                                         out var currentKeyData,
+                                                         out var currentKey );
+        foundTrustedKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, check, currentKeyData, currentKey );
+        if( !foundTrustedKey )
         {
-            transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
-            foundTrustedKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustedKey, currentKeyData, currentKey );
-            if( !foundTrustedKey )
-            {
-                return default;
-            }
-            var missingProtocols = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
-            if( missingProtocols.Any() )
-            {
-                transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missingProtocols.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
-                return default;
-            }
-            return map;
+            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                           $"Received {(check == SignatureCheck.Failed ? "unverifiable" : "untrusted (self-asserted)")} " +
+                                           $"AcceptedProtocolsMessage message from '{remote.Party}'." );
+            return default;
         }
-        transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
-        return default;
+        transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
+        var missingProtocols = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
+        if( missingProtocols.Any() )
+        {
+            transportManager.Logger.Error( $"Remote '{remote.Party.FullName}' cannot support protocols: '{missingProtocols.Select( p => p.FullName ).Concatenate( "' ,'" )}'." );
+            return default;
+        }
+        return map;
 
     }
 
@@ -665,18 +671,19 @@ static partial class ZeroProtocol // Negotiation
         {
             return false;
         }
-        if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                 remote.RemoteKeys.TrustedIdentity,
-                                                 out var foundTrustedKey,
-                                                 out var currentKeyData,
-                                                 out var currentKey ) )
+        var check = ReadIdentityKeysAndVerifySignatures( ref r,
+                                                         remote.RemoteKeys.TrustedIdentity,
+                                                         out var currentKeyData,
+                                                         out var currentKey );
+        if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, currentKeyData, currentKey ) )
         {
-            logger.Info( $"Received verified Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
-            remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
-            return true;
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                          $"Received {(check == SignatureCheck.Failed ? "unverifiable" : "untrusted (self-asserted)")} " +
+                          $"Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
+            return false;
         }
-        logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
-        return false;
+        logger.Info( $"Received verified Eviction Disallowed message from '{remote.RemoteKeys.Party}'." );
+        return true;
     }
 
     /// <summary>
@@ -747,18 +754,19 @@ static partial class ZeroProtocol // Negotiation
         {
             return false;
         }
-        if( ReadIdentityKeysAndVerifySignatures( ref r,
-                                                 remote.RemoteKeys.TrustedIdentity,
-                                                 out var foundTrustedKey,
-                                                 out var currentKeyData,
-                                                 out var currentKey ) )
+        var check = ReadIdentityKeysAndVerifySignatures( ref r,
+                                                         remote.RemoteKeys.TrustedIdentity,
+                                                         out var currentKeyData,
+                                                         out var currentKey );
+        if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, currentKeyData, currentKey ) )
         {
-            logger.Info( $"Received verified MissingProtocols message from '{remote.Party}'." );
-            remote.RemoteKeys.OnReadIdentityKeys( logger, foundTrustedKey, currentKeyData, currentKey );
-            return true;
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                          $"Received {(check == SignatureCheck.Failed ? "unverifiable" : "untrusted (self-asserted)")} " +
+                          $"MissingProtocols message from '{remote.Party}'." );
+            return false;
         }
-        logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable MissingProtocols message from '{remote.Party}'." );
-        return false;
+        logger.Info( $"Received verified MissingProtocols message from '{remote.Party}'." );
+        return true;
 
         static bool ReadProtocols( ref FastByteReader r, TransportFeature remote, IParallelLogger logger, out string[]? protocols )
         {

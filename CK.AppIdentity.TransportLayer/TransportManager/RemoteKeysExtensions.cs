@@ -72,4 +72,35 @@ static class RemoteKeysExtensions
         return false;
     }
 
+    /// <summary>
+    /// Applies <see cref="OnReadIdentityKeys"/> to a <see cref="SignatureCheck"/> and tells whether the
+    /// message may be acted upon, that is whether the sender is authenticated as this remote.
+    /// <para>
+    /// This is the single place where "the signature verifies" becomes "this really is our remote".
+    /// A <see cref="SignatureCheck.SelfAsserted"/> message is authenticated only if
+    /// <see cref="IRemoteKeys.AutoTrustKey"/> just adopted the presented key — which is a
+    /// trust-on-first-use decision, not a proof.
+    /// </para>
+    /// </summary>
+    /// <param name="this">This remote keys.</param>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="check">The signature check result.</param>
+    /// <param name="currentKeyData">Current remote's identity key data (null when the message was unsigned).</param>
+    /// <param name="currentKey">The current key if it is known (already instantiated).</param>
+    /// <returns>True if the message can be trusted, false if it must be discarded.</returns>
+    public static bool IsTrustedAfterRead( this IRemoteKeys @this,
+                                           IParallelLogger logger,
+                                           SignatureCheck check,
+                                           RemoteIdentityKeyData? currentKeyData,
+                                           RemoteIdentityKey? currentKey )
+    {
+        if( check == SignatureCheck.Failed || currentKeyData == null ) return false;
+        bool trusted = check == SignatureCheck.Trusted;
+        // OnReadIdentityKeys returns true when it (re)set the TrustedIdentity: either our trusted key
+        // was found and simply rotated, or AutoTrustKey adopted the presented one. In both cases the
+        // remote is trusted from now on.
+        trusted |= @this.OnReadIdentityKeys( logger, trusted, currentKeyData, currentKey );
+        return trusted;
+    }
+
 }

@@ -72,7 +72,7 @@ public ref partial struct FastByteReader
     /// <returns>The array.</returns>
     public byte[] ReadBytes( uint count )
     {
-        if( count == 0 ) Array.Empty<byte>();
+        if( count == 0 ) return Array.Empty<byte>();
         var bytes = new byte[count];
         ReadBytes( bytes.AsSpan() );
         return bytes;

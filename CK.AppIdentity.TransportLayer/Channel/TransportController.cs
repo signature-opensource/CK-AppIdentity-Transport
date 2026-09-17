@@ -367,7 +367,12 @@ sealed partial class TransportController
                         var goodbye = ZeroProtocol.ReadGoodbyeMessage( receiveMonitor, _transport, m );
                         if( goodbye == null )
                         {
-                            // Fatal protocol error.
+                            // Fatal protocol error (ReadGoodbyeMessage has logged the reason).
+                            // Returning false only breaks the receive loop: we must also kill the
+                            // transport, otherwise it keeps reporting Connected, the send loop keeps
+                            // writing and nothing is ever read again. Same handling as any other
+                            // invalid message: retry asap if we are an outgoing connection.
+                            _transportManager.KillTransport( _transport, 0 );
                             return false;
                         }
                         receiveMonitor.Info( $"Received GoodbyeMessage from '{_transport.RemoteEndPointDescription}': {goodbye}" );

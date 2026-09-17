@@ -119,8 +119,24 @@ public sealed class PeeringIssue
 
     /// <summary>
     /// Gets the remote public identity that can be approved by calling <see cref="AcceptRemoteIdentity(IActivityMonitor)"/>.
+    /// <para>
+    /// This key is simply the one the other side sent: nothing in the protocol proves it belongs to
+    /// the party named by <see cref="FullName"/>. Show <see cref="RemoteKeyFingerprintForApproval"/>
+    /// to whoever approves it and have them compare it out of band.
+    /// </para>
     /// </summary>
     public RemoteIdentityKeyData? RemoteKeyForApproval => _remoteKeyForApproval;
+
+    /// <summary>
+    /// Gets the <see cref="PublicKeyDataExtensions.GetFingerprint(IPublicKeyData)"/> of <see cref="RemoteKeyForApproval"/>,
+    /// null when there is no key to approve.
+    /// <para>
+    /// This is the only thing that makes <see cref="AcceptRemoteIdentity(IActivityMonitor)"/> an
+    /// authentication decision rather than a blind one: an approval UI should display it and ask
+    /// for confirmation against a value obtained through another channel.
+    /// </para>
+    /// </summary>
+    public string? RemoteKeyFingerprintForApproval => _remoteKeyForApproval?.GetFingerprint();
 
     /// <summary>
     /// Gets the missing local protocols.

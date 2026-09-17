@@ -299,7 +299,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
             // We may know the remote (or not). If we do, we may have a trusted identity for it.
             var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
-            if( !ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out foundTrustKey, out var currentKeyData, out var currentKey ) )
+            var signatureCheck = ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out var currentKeyData, out var currentKey );
+            foundTrustKey = signatureCheck == SignatureCheck.Trusted;
+            if( signatureCheck == SignatureCheck.Failed )
             {
                 // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
                 // This is a serious issue and we cannot do a lot here.
@@ -359,8 +361,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 // If the AutoTrustKey does its job, we can accept the incoming connection immediately.
                 if( validClockOffset )
                 {
-                    bool isalreadyTrusted = foundTrustKey;
-                    foundTrustKey |= remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger, foundTrustKey, currentKeyData, currentKey );
+                    // foundTrustKey stays the acceptance gate: a SelfAsserted signature only becomes
+                    // trusted here if AutoTrustKey adopts the presented key (L6: the unused
+                    // isalreadyTrusted local was dropped).
+                    foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, currentKeyData, currentKey );
                 }
             }
             return new InitialMessage( incoming.Listener.EndPointDescription,
@@ -561,7 +565,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
                 static bool IsProtocol( MessageProtocol c, ReadOnlySpan<char> fullName )
                 {
-                    return c.Name.Length > fullName.Length + 1
+                    // fullName is a "Name.Version": it must be longer than the bare Name plus its '.'.
+                    return fullName.Length > c.Name.Length + 1
                            && fullName[c.Name.Length] == '.'
                            && fullName.StartsWith( c.Name, StringComparison.Ordinal );
                 }

@@ -119,7 +119,7 @@ public sealed class OutgoingMessageFactory : IDisposable
 
         public bool IsControl { get; }
 
-        public bool IsData => !IsData;
+        public bool IsData => !IsControl;
 
         public ReadOnlySequence<byte> Message { get; }
 

@@ -90,7 +90,22 @@ abstract class BackTask<THost>
                 ++handled;
                 var previous = t._nextCheckDelay;
                 t._nextCheckDelay = 0;
-                t.Check( monitor, previous );
+                try
+                {
+                    t.Check( monitor, previous );
+                }
+                catch( Exception ex )
+                {
+                    // Check must never take the heartbeat down with it: the Dequeue below happens
+                    // after this call, so an escaping exception would leave this task at the head
+                    // of the queue forever and starve every other back task (incoming negotiations,
+                    // reconnections, delayed kills).
+                    // We cannot trust the state of a task that threw: force it to be Reset and
+                    // returned to its pool.
+                    monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                   $"Unhandled error while checking {t.GetType().Name} #{t.GetHashCode()}. Resetting it.", ex );
+                    t._nextCheckDelay = 0;
+                }
                 if( t._nextCheckDelay > 0 )
                 {
                     _queue.Enqueue( t,  _tick + t._nextCheckDelay );
@@ -134,7 +149,20 @@ abstract class BackTask<THost>
             }
             Throw.DebugAssert( t._head == head );
             t._nextCheckDelay = 0;
-            onInitialize( t );
+            try
+            {
+                onInitialize( t );
+            }
+            catch( Exception ex )
+            {
+                // Same reasoning as OnHeartBeat: an initializer that throws (typically the
+                // NextCheckDelay setter rejecting an out-of-range, remote-influenced delay)
+                // would otherwise escape the manager loop and leak this instance, since it is
+                // neither enqueued nor returned to the free list.
+                monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                               $"Unhandled error while initializing {t.GetType().Name} #{t.GetHashCode()}. Resetting it.", ex );
+                t._nextCheckDelay = 0;
+            }
             if( t._nextCheckDelay == 0 )
             {
                 Reset( monitor, t );

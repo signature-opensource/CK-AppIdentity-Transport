@@ -127,10 +127,14 @@ sealed partial class LocalKeys
             var fileName = name + ".pfx";
             monitor.Info( $"Creating a new identity key: '{fileName}' that will expire on {currentIdentity.NotAfter:yyyy-MM-dd}." );
             // Let any exception flow here. This is not recoverable.
-            var pwd = protector.Protect( Util.GetRandomBase64UrlString( 20 ) );
+            // The PFX password is the CLEAR random string; only the .pwd side file is protected.
+            // Note the overload pairing: Protect(byte[]) here must be read back by Unprotect(byte[])
+            // in TryLoadPassword. Using the string overload on one side only produces a payload that
+            // a real IDataProtector cannot unprotect, which trashes every stored identity at startup.
+            var pwd = Util.GetRandomBase64UrlString( 20 );
             var fullName = identityPath.AppendPart( fileName );
             File.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
-            File.WriteAllText( fullName + PasswordExtension, pwd );
+            File.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
             return (name, fullName);
         }
 

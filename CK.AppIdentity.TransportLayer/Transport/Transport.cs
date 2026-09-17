@@ -219,19 +219,22 @@ public abstract partial class Transport
     /// </summary>
     /// <param name="message">The valid message to send.</param>
     /// <returns>True if the message has been sent, false if <see cref="IsCondemned"/> has been signaled.</returns>
-    internal ValueTask<bool> SendAsync( uint protocolNumber, IOutgoingMessage message )
+    internal async ValueTask<bool> SendAsync( uint protocolNumber, IOutgoingMessage message )
     {
         Throw.DebugAssert( message != null );
         Throw.DebugAssert( message.IsValid );
 
-        if( _lifeTime.IsCancellationRequested ) return ValueTask.FromResult( false );
+        if( _lifeTime.IsCancellationRequested ) return false;
 
+        // The header must stay rented until the send has actually completed: the underlying
+        // socket keeps referencing it across every await below. Returning it earlier puts a
+        // live buffer back in the shared pool and mis-frames the stream.
         var header = ArrayPool<byte>.Shared.Rent( IOutgoingMessage.MaxWirePrefixLength );
         try
         {
             int len = IOutgoingMessage.WriteWireHeader( protocolNumber, (uint)message.Message.Length, message.IsControl, header );
             var messagePrefix = header.AsMemory( 0, len );
-            return SendAsync( messagePrefix, message.Message, _lifeTime.Token );
+            return await SendAsync( messagePrefix, message.Message, _lifeTime.Token ).ConfigureAwait( false );
         }
         finally
         {
