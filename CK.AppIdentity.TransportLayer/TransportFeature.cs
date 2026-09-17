@@ -258,6 +258,18 @@ public sealed class TransportFeature
     public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
 
     /// <summary>
+    /// Maximum number of messages queued for sending to this remote before producers are pushed
+    /// back.
+    /// <para>
+    /// This queue used to be unbounded: while a remote was down nothing drained it, so producers
+    /// grew memory without limit and then flooded everything out on reconnect. Note it bounds the
+    /// queue by message count, not by bytes — a channel carrying large payloads should cap those
+    /// sizes itself.
+    /// </para>
+    /// </summary>
+    public const int SenderQueueCapacity = 4096;
+
+    /// <summary>
     /// Gets the MAC algorithm protecting the current connection, null when not connected.
     /// <para>
     /// Which primitive a connection uses is decided per connection from what both machines can

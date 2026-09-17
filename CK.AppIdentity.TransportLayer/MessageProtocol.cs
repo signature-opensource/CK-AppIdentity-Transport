@@ -32,13 +32,45 @@ public sealed class MessageProtocol
                                                                                TransportLayer.ZeroProtocol.CurrentVersion,
                                                                                true );
 
-    internal MessageProtocol( string fullName, string name, ushort version, bool isZeroProtocol )
+    /// <summary>
+    /// Default cap on an incoming message for a channel protocol.
+    /// <para>
+    /// A declared length is attacker-chosen, so it must be bounded before anything is allocated for
+    /// it. The run-phase read used to accept <see cref="int.MaxValue"/>, meaning a peer could ask
+    /// for a 2 GiB buffer with a 5-byte header — and once frames are authenticated, that allocation
+    /// happens *before* the MAC can reject it.
+    /// </para>
+    /// <para>
+    /// A channel that legitimately carries more can raise it at registration.
+    /// </para>
+    /// </summary>
+    public const int DefaultMaxIncomingMessageLength = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// Cap for the "0 Protocol". Its run-phase traffic is tiny (keep-alive and goodbye) but the
+    /// same instance carries the handshake, whose messages are the largest thing it ever sees, so
+    /// this is generous while still being four orders of magnitude below 2 GiB.
+    /// </summary>
+    public const int ZeroProtocolMaxIncomingMessageLength = 1024 * 1024;
+
+    readonly int _maxIncomingMessageLength;
+
+    /// <summary>
+    /// Gets the maximum length accepted for an incoming message of this protocol. A longer declared
+    /// length is rejected before the payload is read.
+    /// </summary>
+    public int MaxIncomingMessageLength => _maxIncomingMessageLength;
+
+    internal MessageProtocol( string fullName, string name, ushort version, bool isZeroProtocol, int maxIncomingMessageLength = 0 )
     {
         Throw.DebugAssert( fullName.Length <= FullNameMaxLength );
         _fullName = fullName;
         _name = name;
         _version = version;
         _isZeroProtocol = isZeroProtocol;
+        _maxIncomingMessageLength = maxIncomingMessageLength > 0
+                                        ? maxIncomingMessageLength
+                                        : (isZeroProtocol ? ZeroProtocolMaxIncomingMessageLength : DefaultMaxIncomingMessageLength);
         // If the concurrent MessageProtocolDirectoryService.TryRegister loses an instance, we don't care
         // to dispose this since the lost instance will never be used and no message can be pooled.
         _messageFactory = new OutgoingMessageFactory( this );

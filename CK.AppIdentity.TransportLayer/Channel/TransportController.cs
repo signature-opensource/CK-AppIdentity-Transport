@@ -29,9 +29,23 @@ sealed partial class TransportController
     {
         _transportManager = transportManager;
         _feature = feature;
+        // The high priority channel stays UNBOUNDED on purpose: it carries control traffic and the
+        // goodbye path, it is low volume, and dropping one of those would be worse than the memory
+        // it can hold.
         _highPriorityChannel = Channel.CreateUnbounded<IOutgoingMessage>( _unboundOptions );
-        // This channel should be bounded.
-        _senderChannel = Channel.CreateUnbounded<IOutgoingMessage?>( _unboundOptions );
+        // The normal sender channel is bounded. While a remote is down nothing drains it, so an
+        // unbounded one let producers grow memory without limit and then flooded everything out on
+        // reconnect.
+        //
+        // FullMode.Wait is what gives each caller the behaviour it asks for: TryEnqueue returns
+        // false immediately when full (callers already handle that), while TryEnqueueAsync and
+        // WaitToEnqueueAsync block, which is real back-pressure onto the producer.
+        _senderChannel = Channel.CreateBounded<IOutgoingMessage?>(
+                            new BoundedChannelOptions( TransportFeature.SenderQueueCapacity )
+                            {
+                                SingleReader = true,
+                                FullMode = BoundedChannelFullMode.Wait
+                            } );
         _sendTask = Task.CompletedTask;
         _transport = transport;
         _transport.SetController( this );
@@ -70,6 +84,10 @@ sealed partial class TransportController
     {
         if( _highPriorityChannel.Writer.TryWrite( message ) )
         {
+            // The awaker may be dropped now that this channel is bounded, and that is harmless: a
+            // full channel means the send loop has work queued, so it is not parked waiting to be
+            // woken — it will reach the high priority reader on its next pass. The awaker only
+            // matters when the loop is idle, and an idle loop implies a channel that is not full.
             _senderChannel.Writer.TryWrite( null );
             return true;
         }
@@ -168,6 +186,9 @@ sealed partial class TransportController
 
     internal void OnKilledTransport()
     {
+        // Same reasoning as TryEnqueueHighPriority: if this is dropped because the channel is full,
+        // the send loop is busy rather than parked and will observe the condemned transport on its
+        // next iteration.
         _senderChannel.Writer.TryWrite( null );
     }
 

@@ -165,13 +165,20 @@ public sealed class IncomingMessageFactory : IDisposable
                 protocol = _protocols.Protocols[(int)protocolNumber - 1];
             }
             _lastReceived = _systemClock.UtcNow;
+            // The declared length is chosen by the peer, so it is bounded by what THIS protocol
+            // accepts before a single byte of payload is read. Both length checks below happen
+            // before any allocation for the message, so this is the whole of the defence: without
+            // it a 5-byte header could ask for a 2 GiB buffer — and with frames authenticated, that
+            // allocation would happen before the MAC could reject it.
+            Throw.DebugAssert( protocol != null );
+            int maxLength = Math.Min( maxMessageLength, protocol.MaxIncomingMessageLength );
             int messageLength;
             int lenSize = firstByte >> 6;
             if( lenSize == 0 )
             {
                 // 1 byte length message. 
                 messageLength = header.Span[1];
-                if( messageLength > maxMessageLength ) return IncomingMessage.Invalid;
+                if( messageLength > maxLength ) return IncomingMessage.Invalid;
                 if( messageLength == 0 )
                 {
                     // In the run phase even an empty keep-alive carries its tag, so a truly zero
@@ -208,7 +215,7 @@ public sealed class IncomingMessageFactory : IDisposable
             // Now we can compute the message length: the 1 to 3 bytes are here.
             messageLength = (int)(BinaryPrimitives.ReadUInt32LittleEndian( header.Slice( 1 ).Span ) & (uint)((1ul << (lenSize + 1 << 3)) - 1));
             // If the resulting length is less than 256, it means that the data is simply invalid.
-            if( messageLength < 256 || messageLength > maxMessageLength )
+            if( messageLength < 256 || messageLength > maxLength )
             {
                 return IncomingMessage.Invalid;
             }

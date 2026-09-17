@@ -28,7 +28,16 @@ public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDi
     /// <param name="version">Protocol version.</param>
     /// <param name="registered">The unique registration.</param>
     /// <returns>True on success, false otherwise.</returns>
-    public bool TryRegister( IActivityMonitor monitor, string name, ushort version, [NotNullWhen(true)]out MessageProtocol? registered )
+    /// <param name="maxIncomingMessageLength">
+    /// Cap on an incoming message of this protocol, 0 for <see cref="MessageProtocol.DefaultMaxIncomingMessageLength"/>.
+    /// A channel that legitimately carries larger messages must raise it here: the declared length
+    /// is attacker-chosen and is refused above this bound before anything is allocated for it.
+    /// </param>
+    public bool TryRegister( IActivityMonitor monitor,
+                             string name,
+                             ushort version,
+                             [NotNullWhen( true )] out MessageProtocol? registered,
+                             int maxIncomingMessageLength = 0 )
     {
         Throw.CheckNotNullArgument( name );
         name = name.Trim();
@@ -39,7 +48,7 @@ public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDi
         else
         {
             var fullName = FormatFullName( name, version );
-            registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, false ), ( n, exist ) => exist );
+            registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, false, maxIncomingMessageLength ), ( n, exist ) => exist );
             return true;
         }
         registered = null;
