@@ -55,6 +55,24 @@ sealed class AdversarialPeer : IAsyncDisposable
         return c;
     }
 
+    /// <summary>
+    /// The default TCP port a real <see cref="ApplicationIdentityService"/> listens on.
+    /// </summary>
+    public const int DefaultListenerPort = 37120;
+
+    /// <summary>
+    /// Opens an outbound connection, so the harness can play the hostile INITIATOR against a real
+    /// listener. That is the direction exposed to the network, and the one the nonce replay cache
+    /// and the clock-offset checks defend.
+    /// </summary>
+    public static async Task<PeerConnection> ConnectAsync( int port = DefaultListenerPort,
+                                                           CancellationToken cancellation = default )
+    {
+        var client = new TcpClient();
+        await client.ConnectAsync( IPAddress.Loopback, port, cancellation );
+        return new PeerConnection( client );
+    }
+
     public async ValueTask DisposeAsync()
     {
         _listener.Stop();

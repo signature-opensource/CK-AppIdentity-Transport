@@ -38,6 +38,54 @@ static class PeerMessages
     public const byte GoodbyeApplicationIdentityShutdown = 3;
 
     /// <summary>
+    /// The initiator's opening message, for driving a REAL listener.
+    /// <para>
+    /// Everything here is attacker-chosen, including <paramref name="fullName"/>: the listener
+    /// resolves the remote party by the claimed name and only afterwards asks whether the
+    /// signature means anything.
+    /// </para>
+    /// </summary>
+    /// <param name="fullName">The claimed party name, in its full form, e.g. "Test/$Init/#Dev".</param>
+    /// <param name="nonceCreationTime">Nonce timestamp: the listener derives the clock offset from it.</param>
+    /// <param name="nonce">The 64-bit nonce. Reusing one is what the replay cache must catch.</param>
+    public static byte[] InitialMessage( string fullName,
+                                         string instanceId,
+                                         IReadOnlyList<string> availableProtocols,
+                                         int expectedCommonProtocolCount,
+                                         DateTime nonceCreationTime,
+                                         ulong nonce,
+                                         IReadOnlyList<PeerIdentity> signWith,
+                                         PeerPublicKey? supposedIdentity = null,
+                                         bool canAutoTrust = false )
+    {
+        return Build( ( ref FastByteWriter w ) =>
+        {
+            w.WriteBytes( PeerInitialMessage.Prefix );
+            w.WriteSmallUInt32( 0 );                      // ZeroProtocol.CurrentVersion
+            w.WriteString( instanceId );
+            w.WriteString( fullName );
+            w.WriteSmallUInt32( (uint)availableProtocols.Count );
+            foreach( var p in availableProtocols ) w.WriteString( p );
+            w.WriteSmallInt32( expectedCommonProtocolCount );
+            if( supposedIdentity != null )
+            {
+                w.WriteBool( true );
+                w.WriteDateTime( supposedIdentity.TimeName );
+                w.WriteSmallUInt32( (uint)supposedIdentity.SubjectPublicKeyInfo.Length );
+                w.WriteBytes( supposedIdentity.SubjectPublicKeyInfo );
+            }
+            else
+            {
+                w.WriteBool( false );
+            }
+            w.WriteBool( canAutoTrust );
+            // The timed nonce.
+            w.WriteDateTime( nonceCreationTime );
+            w.WriteUInt64( nonce );
+        }, signWith );
+    }
+
+    /// <summary>
     /// The listener's success reply: the negotiated protocol list, signed.
     /// </summary>
     /// <param name="nonce">Must echo the initiator's nonce.</param>
