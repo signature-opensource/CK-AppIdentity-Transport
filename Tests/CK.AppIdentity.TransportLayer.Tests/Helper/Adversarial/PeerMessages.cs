@@ -54,6 +54,8 @@ static class PeerMessages
                                          int expectedCommonProtocolCount,
                                          DateTime nonceCreationTime,
                                          ulong nonce,
+                                         byte[] ephemeralPublicKey,
+                                         byte macCapabilities,
                                          IReadOnlyList<PeerIdentity> signWith,
                                          PeerPublicKey? supposedIdentity = null,
                                          bool canAutoTrust = false )
@@ -79,6 +81,10 @@ static class PeerMessages
                 w.WriteBool( false );
             }
             w.WriteBool( canAutoTrust );
+            // Per-connection key agreement material, inside the signed region.
+            w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
+            w.WriteBytes( ephemeralPublicKey );
+            w.WriteByte( macCapabilities );
             // The timed nonce.
             w.WriteDateTime( nonceCreationTime );
             w.WriteUInt64( nonce );
@@ -97,6 +103,8 @@ static class PeerMessages
                                             TimeSpan initialClockOffset,
                                             DateTime now,
                                             IReadOnlyList<string> protocolFullNames,
+                                            byte[] ephemeralPublicKey,
+                                            MacAlgorithm macAlgorithm,
                                             IReadOnlyList<PeerIdentity> signWith )
     {
         return Build( ( ref FastByteWriter w ) =>
@@ -107,7 +115,46 @@ static class PeerMessages
             w.WriteDateTime( now );
             w.WriteSmallUInt32( (uint)protocolFullNames.Count );
             foreach( var p in protocolFullNames ) w.WriteString( p );
+            // The listener's half of the key agreement plus its selection.
+            w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
+            w.WriteBytes( ephemeralPublicKey );
+            w.WriteByte( (byte)macAlgorithm );
         }, signWith );
+    }
+
+    /// <summary>
+    /// The usual success reply: echoes the initiator's nonce, accepts exactly the protocols it
+    /// offered, and completes the key agreement with a fresh ephemeral and the strongest MAC both
+    /// sides can run.
+    /// </summary>
+    /// <param name="initial">The initial message being answered.</param>
+    /// <param name="now">Our current time.</param>
+    /// <param name="signWith">Identities to present and sign with — the knob the C2 tests turn.</param>
+    /// <param name="ephemeral">
+    /// Our ephemeral key pair. A fresh one is created when null; a test passes an existing one to
+    /// REUSE it across connections, which a real peer never does.
+    /// </param>
+    public static byte[] AcceptedProtocols( PeerInitialMessage initial,
+                                            DateTime now,
+                                            IReadOnlyList<PeerIdentity> signWith,
+                                            PeerEphemeral? ephemeral = null )
+    {
+        bool owned = ephemeral == null;
+        ephemeral ??= new PeerEphemeral();
+        try
+        {
+            return AcceptedProtocols( initial.Nonce,
+                                      TimeSpan.Zero,
+                                      now,
+                                      initial.AvailableProtocols,
+                                      ephemeral.PublicKey,
+                                      RunPhaseProtection.Select( initial.MacCapabilities ),
+                                      signWith );
+        }
+        finally
+        {
+            if( owned ) ephemeral.Dispose();
+        }
     }
 
     /// <summary>

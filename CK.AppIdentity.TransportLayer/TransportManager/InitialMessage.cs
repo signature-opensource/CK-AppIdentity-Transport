@@ -75,6 +75,11 @@ sealed class InitialMessage : IIncomingRequest
     readonly TimeSpan _clockOffset;
     readonly ulong _nonce;
     readonly bool _validClockOffset;
+    // The initiator's per-connection ECDH public key and the MAC primitives it can run.
+    // Incoming only: on the outgoing side these belong to the Transport, because this object is
+    // cached on the TransportFeature and reused across connection attempts.
+    readonly byte[] _remoteEphemeralPublicKey;
+    readonly byte _remoteMacCapabilities;
 
     sealed class ProtocolAdapter : IReadOnlyCollection<string>
     {
@@ -132,7 +137,9 @@ sealed class InitialMessage : IIncomingRequest
                            bool validClockOffset,
                            TimeSpan clockOffset,
                            RemoteIdentityKeyData currentRemoteIdentity,
-                           RemoteIdentityKey? currentRemoteIdentityKey )
+                           RemoteIdentityKey? currentRemoteIdentityKey,
+                           byte[] remoteEphemeralPublicKey,
+                           byte remoteMacCapabilities )
     {
         _endPointDescription = endPointDescription;
         _remoteEndPointDescription = remoteEndPointDescription;
@@ -151,8 +158,20 @@ sealed class InitialMessage : IIncomingRequest
         _clockOffset = clockOffset;
         _currentRemoteIdentity = currentRemoteIdentity;
         _currentRemoteIdentityKey = currentRemoteIdentityKey;
+        _remoteEphemeralPublicKey = remoteEphemeralPublicKey;
+        _remoteMacCapabilities = remoteMacCapabilities;
         _localIdentities = Array.Empty<LocalIdentityKey>();
     }
+
+    /// <summary>
+    /// Gets the initiator's ephemeral ECDH public key (incoming messages only).
+    /// </summary>
+    public ReadOnlySpan<byte> RemoteEphemeralPublicKey => _remoteEphemeralPublicKey;
+
+    /// <summary>
+    /// Gets the MAC primitives the initiator can run (incoming messages only).
+    /// </summary>
+    public byte RemoteMacCapabilities => _remoteMacCapabilities;
 
     public void WriteCurrentVersion( ref FastByteWriter w )
     {

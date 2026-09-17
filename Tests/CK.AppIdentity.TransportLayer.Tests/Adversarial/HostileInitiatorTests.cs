@@ -37,13 +37,19 @@ public class HostileInitiatorTests
         }, ConfigureFastClock, token: token );
 
     byte[] BuildInitial( string claimedFullName, PeerIdentity key, ulong nonce )
-        => PeerMessages.InitialMessage( claimedFullName,
+    {
+        // A fresh ephemeral per connection, exactly as a real initiator does.
+        using var ephemeral = new PeerEphemeral();
+        return PeerMessages.InitialMessage( claimedFullName,
                                         instanceId: "AdvInstance",
                                         availableProtocols: Array.Empty<string>(),
                                         expectedCommonProtocolCount: 0,
                                         nonceCreationTime: _systemClock.UtcNow,
                                         nonce: nonce,
+                                        ephemeralPublicKey: ephemeral.PublicKey,
+                                        macCapabilities: RunPhaseProtection.LocalCapabilities,
                                         signWith: new[] { key } );
+    }
 
     static ulong NewNonce() => BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) );
 

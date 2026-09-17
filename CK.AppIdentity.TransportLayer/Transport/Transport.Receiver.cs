@@ -57,6 +57,14 @@ public abstract partial class Transport
         Throw.DebugAssert( protocols.IsValid );
         Throw.DebugAssert( handlers.Length == protocols.Protocols.Count );
         _receiveFactory.SetAllowedProtocols( protocols );
+        // The run phase starts here for both peers, right after FinalSuccess. From now on every
+        // frame in both directions carries an authentication tag: the handshake messages that came
+        // before were signed instead.
+        Throw.DebugAssert( "The handshake must have derived the session keys.", _protection != null );
+        _receiveFactory.SetRunPhaseProtection( _protection );
+        // Flip the send side at the same instant, so both directions start counting from zero
+        // together. Set AFTER the receive factory, before any handler can be invoked.
+        _runPhase = true;
         _receiveHandlers = handlers;
         // The LifeTime drives the receive CTS: this is a safety net.
         // There is no need to unregister the callback here.

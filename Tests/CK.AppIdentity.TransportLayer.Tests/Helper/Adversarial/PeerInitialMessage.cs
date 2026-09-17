@@ -28,6 +28,15 @@ sealed class PeerInitialMessage
     public PeerPublicKey? SupposedIdentity { get; init; }
     public required bool CanAutoTrust { get; init; }
 
+    /// <summary>
+    /// The initiator's per-connection ephemeral ECDH public key: one half of the run-phase key
+    /// agreement that protects every frame after the handshake.
+    /// </summary>
+    public required byte[] EphemeralPublicKey { get; init; }
+
+    /// <summary>The MAC primitives the initiator can run, as a capability bit set.</summary>
+    public required byte MacCapabilities { get; init; }
+
     /// <summary>Creation time of the timed nonce (used by the peer to compute the clock offset).</summary>
     public required DateTime NonceCreationTime { get; init; }
 
@@ -72,6 +81,12 @@ sealed class PeerInitialMessage
         if( r.ReadBool() ) supposed = ReadKey( ref r );
         bool canAutoTrust = r.ReadBool();
 
+        // Per-connection key agreement material, written inside the signed region right after the
+        // cached message content and before the nonce.
+        uint lenEphemeral = r.ReadSmallUInt32();
+        var ephemeral = r.ReadBytes( lenEphemeral );
+        byte macCaps = r.ReadByte();
+
         // The timed nonce.
         var nonceTime = r.ReadDateTime();
         ulong nonce = r.ReadUInt64();
@@ -103,6 +118,8 @@ sealed class PeerInitialMessage
             ExpectedCommonProtocolCount = expectedCommon,
             SupposedIdentity = supposed,
             CanAutoTrust = canAutoTrust,
+            EphemeralPublicKey = ephemeral,
+            MacCapabilities = macCaps,
             NonceCreationTime = nonceTime,
             Nonce = nonce,
             Identities = identities,

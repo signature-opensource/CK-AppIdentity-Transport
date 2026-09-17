@@ -2,6 +2,7 @@ using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Buffers;
+using System.Security.Cryptography;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,22 @@ public abstract partial class Transport
     // Set by the TransportController on the TransportManager loop : this is a soft
     // condemned that doesn't signal the LifeTime token.
     GoodbyeMessage? _goodbyeMessage;
+
+    // The ephemeral ECDH key pair of THIS connection, and the session protection derived from it.
+    //
+    // Both live here and nowhere else, on purpose. A Transport is created per connection and is
+    // never pooled (TcpSocketListener and TcpSocketTransportTypeService always construct a new one),
+    // so a session key physically cannot outlive its connection. Holding them on the long-lived
+    // TransportFeature would reuse the ephemeral across connections — and a reused key under
+    // AES-GMAC means a repeated (key, nonce) pair, which leaks the authentication subkey and allows
+    // arbitrary forgery. That is a total break, not a degradation.
+    //
+    // DO NOT make Transport poolable, and do not add session resumption without rekeying.
+    ECDiffieHellman? _ephemeral;
+    RunPhaseProtection? _protection;
+    // Set by StartReceiveAsync: the symmetric moment both peers enter the run phase.
+    volatile bool _runPhase;
+    readonly object _sendProtectionLock = new object();
 
     int _disposed;
 
@@ -168,6 +185,48 @@ public abstract partial class Transport
 
     internal IRemoteKeys? RemoteKeys => _remoteKeys;
 
+    /// <summary>
+    /// Gets the run-phase protection once the handshake has derived it, null during the handshake.
+    /// </summary>
+    internal RunPhaseProtection? Protection => _protection;
+
+    /// <summary>
+    /// Creates this connection's ephemeral key pair and returns its public part for the handshake.
+    /// Called exactly once per transport.
+    /// </summary>
+    internal byte[] CreateEphemeralPublicKey()
+    {
+        Throw.DebugAssert( "One ephemeral per connection, created once.", _ephemeral == null );
+        _ephemeral = RunPhaseProtection.CreateEphemeral();
+        return _ephemeral.PublicKey.ExportSubjectPublicKeyInfo();
+    }
+
+    /// <summary>
+    /// Derives this connection's session keys from the peer's ephemeral public key.
+    /// </summary>
+    /// <returns>False if the peer's key or the selected algorithm is unusable.</returns>
+    internal bool DeriveProtection( IParallelLogger logger,
+                                    ReadOnlySpan<byte> remoteEphemeralPublicKey,
+                                    MacAlgorithm algorithm,
+                                    ulong nonce,
+                                    ReadOnlySpan<byte> transcript,
+                                    bool isInitiator )
+    {
+        Throw.DebugAssert( "Derived once, after CreateEphemeralPublicKey.", _ephemeral != null && _protection == null );
+        try
+        {
+            _protection = RunPhaseProtection.Derive( _ephemeral, remoteEphemeralPublicKey, algorithm, nonce, transcript, isInitiator );
+            logger.Debug( $"Session established with '{_remoteEndPointDescription}': {algorithm}, session {_protection.SessionId}." );
+            return true;
+        }
+        catch( Exception ex )
+        {
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                          $"Unable to derive the session keys with '{_remoteEndPointDescription}'.", ex );
+            return false;
+        }
+    }
+
     internal void SetKeys( IRemoteKeys remoteKeys )
     {
         Throw.DebugAssert( _remoteKeys == null );
@@ -230,12 +289,32 @@ public abstract partial class Transport
         // The header must stay rented until the send has actually completed: the underlying
         // socket keeps referencing it across every await below. Returning it earlier puts a
         // live buffer back in the shared pool and mis-frames the stream.
-        var header = ArrayPool<byte>.Shared.Rent( IOutgoingMessage.MaxWirePrefixLength );
+        var header = ArrayPool<byte>.Shared.Rent( IOutgoingMessage.MaxWirePrefixLength + RunPhaseProtection.TagLength );
         try
         {
-            int len = IOutgoingMessage.WriteWireHeader( protocolNumber, (uint)message.Message.Length, message.IsControl, header );
-            var messagePrefix = header.AsMemory( 0, len );
-            return await SendAsync( messagePrefix, message.Message, _lifeTime.Token ).ConfigureAwait( false );
+            // Gate on the run-phase flag, NOT on _protection being derived. The listener derives its
+            // keys BEFORE it sends AcceptedProtocols, and the initiator before it sends FinalSuccess;
+            // both of those are handshake messages that the peer still reads unprotected, because it
+            // has not derived yet. The two sides only become symmetric at StartReceiveAsync.
+            var protection = _runPhase ? _protection : null;
+            if( protection == null )
+            {
+                // Handshake: these messages carry their own signature instead.
+                int len = IOutgoingMessage.WriteWireHeader( protocolNumber, (uint)message.Message.Length, message.IsControl, header );
+                return await SendAsync( header.AsMemory( 0, len ), message.Message, _lifeTime.Token ).ConfigureAwait( false );
+            }
+            // Run phase: the declared length covers payload + tag, and the tag is computed over the
+            // header too, so a frame cannot be retargeted at another protocol or silently resized.
+            uint wireLength = (uint)message.Message.Length + RunPhaseProtection.TagLength;
+            int lenHeader = IOutgoingMessage.WriteWireHeader( protocolNumber, wireLength, message.IsControl, header );
+            var tag = header.AsMemory( lenHeader, RunPhaseProtection.TagLength );
+            lock( _sendProtectionLock )
+            {
+                // Sends are serialized per transport, but the counter must advance exactly once per
+                // frame and in the same order the bytes hit the socket.
+                protection.SignNext( header.AsSpan( 0, lenHeader ), message.Message, tag.Span );
+            }
+            return await SendAsync( header.AsMemory( 0, lenHeader ), message.Message, tag, _lifeTime.Token ).ConfigureAwait( false );
         }
         finally
         {
@@ -254,6 +333,34 @@ public abstract partial class Transport
     /// <param name="message">The message body.</param>
     /// <param name="messagePrefix">The message prefix.</param>
     /// <returns>False if the <paramref name="cancellation"/> has been signaled, true otherwise.</returns>
+    /// <summary>
+    /// Run-phase send: header, payload, then the authentication tag.
+    /// </summary>
+    async ValueTask<bool> SendAsync( ReadOnlyMemory<byte> messagePrefix,
+                                     ReadOnlySequence<byte> message,
+                                     ReadOnlyMemory<byte> tag,
+                                     CancellationToken cancellation )
+    {
+        try
+        {
+            await SendAsync( messagePrefix, _lifeTime.Token );
+            if( message.IsSingleSegment )
+            {
+                await SendAsync( message.First, _lifeTime.Token );
+            }
+            else
+            {
+                await SendAsync( message, _lifeTime.Token );
+            }
+            await SendAsync( tag, _lifeTime.Token );
+            return true;
+        }
+        catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
+        {
+            return false;
+        }
+    }
+
     protected virtual async ValueTask<bool> SendAsync( ReadOnlyMemory<byte> messagePrefix, ReadOnlySequence<byte> message, CancellationToken cancellation )
     {
         try

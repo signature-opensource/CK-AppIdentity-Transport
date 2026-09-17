@@ -59,11 +59,18 @@ public sealed class RunPhaseProtection : IDisposable
     ulong _receiveCounter;
     bool _disposed;
 
-    RunPhaseProtection( MacAlgorithm algorithm, byte[] sendKey, byte[] receiveKey )
+    // Always c2l then l2c, regardless of which side we are: this makes SessionId identical on both
+    // peers, which is the whole point of showing it in a log.
+    readonly byte[] _c2l;
+    readonly byte[] _l2c;
+
+    RunPhaseProtection( MacAlgorithm algorithm, byte[] sendKey, byte[] receiveKey, byte[] c2l, byte[] l2c )
     {
         _algorithm = algorithm;
         _sendKey = sendKey;
         _receiveKey = receiveKey;
+        _c2l = c2l;
+        _l2c = l2c;
         if( algorithm == MacAlgorithm.AesGmac )
         {
             _sendGcm = new AesGcm( sendKey, TagLength );
@@ -91,8 +98,8 @@ public sealed class RunPhaseProtection : IDisposable
             Span<byte> h = stackalloc byte[32];
             using var inc = IncrementalHash.CreateHash( HashAlgorithmName.SHA256 );
             inc.AppendData( "CK-AppId session id"u8 );
-            inc.AppendData( _sendKey );
-            inc.AppendData( _receiveKey );
+            inc.AppendData( _c2l );
+            inc.AppendData( _l2c );
             inc.GetCurrentHash( h );
             return Convert.ToHexString( h.Slice( 0, 8 ) );
         }
@@ -184,8 +191,8 @@ public sealed class RunPhaseProtection : IDisposable
             HKDF.DeriveKey( HashAlgorithmName.SHA256, shared, l2c, salt, Info( transcript, "l2c"u8 ) );
 
             return isInitiator
-                    ? new RunPhaseProtection( algorithm, sendKey: c2l, receiveKey: l2c )
-                    : new RunPhaseProtection( algorithm, sendKey: l2c, receiveKey: c2l );
+                    ? new RunPhaseProtection( algorithm, sendKey: c2l, receiveKey: l2c, c2l, l2c )
+                    : new RunPhaseProtection( algorithm, sendKey: l2c, receiveKey: c2l, c2l, l2c );
         }
         finally
         {
@@ -218,10 +225,21 @@ public sealed class RunPhaseProtection : IDisposable
         head[1] = (byte)selected;
         head[2] = checked((byte)version);
         w.Write( head );
-        w.Write( Encoding.UTF8.GetBytes( initiatorFullName ) );
-        w.Write( " "u8 );
-        w.Write( Encoding.UTF8.GetBytes( listenerFullName ) );
+        // Length-prefixed, not delimiter-separated. A delimiter would make the encoding ambiguous:
+        // ("A", "B/C") and ("A/B", "C") would produce the same transcript and therefore the same
+        // keys, which is exactly the kind of gap a transcript exists to close.
+        WriteLengthPrefixed( w, initiatorFullName );
+        WriteLengthPrefixed( w, listenerFullName );
         return w.WrittenSpan.ToArray();
+
+        static void WriteLengthPrefixed( ArrayBufferWriter<byte> w, string s )
+        {
+            var bytes = Encoding.UTF8.GetBytes( s );
+            Span<byte> len = stackalloc byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian( len, bytes.Length );
+            w.Write( len );
+            w.Write( bytes );
+        }
     }
 
     /// <summary>

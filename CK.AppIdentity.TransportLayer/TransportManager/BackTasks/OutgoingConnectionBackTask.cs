@@ -458,7 +458,9 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                                                         remote,
                                                                                         sentNonce.Value,
                                                                                         out var foundTrustKey,
-                                                                                        out var finalClockOffset );
+                                                                                        out var finalClockOffset,
+                                                                                        out var listenerEphemeral,
+                                                                                        out var macAlgorithm );
                         if( !protocolMap.IsValid )
                         {
                             await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
@@ -474,6 +476,35 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             {
                                 transportManager.Logger.Error( "Retrying in 30 seconds." );
                             }
+                            return 30;
+                        }
+                        // The listener echoed the algorithm it selected: it must be one we offered,
+                        // otherwise it is trying to move us onto something we did not advertise.
+                        if( listenerEphemeral == null
+                            || (RunPhaseProtection.LocalCapabilities & (1 << (int)macAlgorithm)) == 0 )
+                        {
+                            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                           $"Remote '{remote.Party}' selected MAC algorithm '{macAlgorithm}' which we did not offer. " +
+                                                           $"Retrying in 30 seconds." );
+                            await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
+                            return 30;
+                        }
+                        // Derive with the SAME transcript the listener used: our advertised
+                        // capabilities, its selection, the version and both names. If any of it was
+                        // altered in flight the two sides get different keys and the first frame fails.
+                        var transcript = RunPhaseProtection.BuildTranscript( RunPhaseProtection.LocalCapabilities,
+                                                                             macAlgorithm,
+                                                                             ZeroProtocol.CurrentVersion,
+                                                                             remote.Party.Owner.FullName,
+                                                                             remote.Party.FullName );
+                        if( !transport.DeriveProtection( transportManager.Logger,
+                                                         listenerEphemeral,
+                                                         macAlgorithm,
+                                                         sentNonce.Value,
+                                                         transcript,
+                                                         isInitiator: true ) )
+                        {
+                            await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
                             return 30;
                         }
                         // We are ready to accept the transport.

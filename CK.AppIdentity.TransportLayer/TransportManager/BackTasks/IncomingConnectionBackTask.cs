@@ -149,13 +149,43 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // The protocol map is not really needed but it asserts the validity of the protocol list. 
         var protocolMap = MessageProtocolMap.InternalGet( commonBest );
 
+        // Key agreement. The algorithm is the strongest BOTH sides can execute: a hardware floor,
+        // not a preference, so there is no ranking for an attacker to influence.
+        var macAlgorithm = RunPhaseProtection.Select( initialMessage.RemoteMacCapabilities );
+        if( macAlgorithm == MacAlgorithm.Invalid )
+        {
+            transportManager.Logger.Error( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' " +
+                                           $"advertises no usable MAC algorithm (0x{initialMessage.RemoteMacCapabilities:X2}). Closing." );
+            return false;
+        }
+        var ourEphemeral = incoming.CreateEphemeralPublicKey();
+        // The transcript goes into the key derivation, not merely into the signature: if any of it
+        // was tampered with, the two sides derive different keys and the first run-phase frame
+        // fails. It fails closed, with no explicit "was this modified?" check to forget.
+        var transcript = RunPhaseProtection.BuildTranscript( initialMessage.RemoteMacCapabilities,
+                                                             macAlgorithm,
+                                                             ZeroProtocol.CurrentVersion,
+                                                             initialMessage.FullName,
+                                                             remote.Party.Owner.FullName );
+        if( !incoming.DeriveProtection( transportManager.Logger,
+                                        initialMessage.RemoteEphemeralPublicKey,
+                                        macAlgorithm,
+                                        initialMessage.Nonce,
+                                        transcript,
+                                        isInitiator: false ) )
+        {
+            return false;
+        }
+
         // We now have no reason to reject it: we send the accept message: it this fails, it's
         // useless to put the connection manager at work.
         if( await ZeroProtocol.SendAcceptedProtocolsMessageAsync( transportManager.SystemClock,
                                                                   incoming,
                                                                   protocolMap,
                                                                   initialMessage.Nonce,
-                                                                  initialMessage.ClockOffset ).ConfigureAwait( false ) )
+                                                                  initialMessage.ClockOffset,
+                                                                  ourEphemeral,
+                                                                  macAlgorithm ).ConfigureAwait( false ) )
         {
             // Wait for the final message, either:
             //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
@@ -288,6 +318,13 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 foundTrustKey = false;
                 return null;
             }
+            // The initiator's per-connection key agreement material, written inside the signed
+            // region right after the cached message content.
+            uint lenEphemeral = r.ReadSmallUInt32();
+            Throw.CheckData( lenEphemeral > 0 && lenEphemeral <= RunPhaseProtection.MaxEphemeralPublicKeyLength );
+            var remoteEphemeral = r.ReadBytes( lenEphemeral );
+            byte remoteMacCapabilities = r.ReadByte();
+
             // Reads the timed nonce.
             var timedNonce = new TimedNonce( r.ReadDateTime(), r.ReadUInt64() );
             
@@ -383,7 +420,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        validClockOffset,
                                        clockOffset,
                                        currentKeyData,
-                                       currentKey );
+                                       currentKey,
+                                       remoteEphemeral,
+                                       remoteMacCapabilities );
         }
     }
 

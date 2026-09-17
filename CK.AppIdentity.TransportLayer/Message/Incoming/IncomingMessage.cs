@@ -77,15 +77,21 @@ public sealed class IncomingMessage : IRefCounted, IDisposable
     internal IncomingMessage( IncomingMessageFactory messageFactory,
                               MessageProtocol protocol,
                               MutableSequence<byte> buffer,
-                              int prefixLength )
+                              int prefixLength,
+                              int suffixLength = 0 )
     {
         Throw.DebugAssert( messageFactory != null && buffer != null && prefixLength > 0 && buffer.Length > 2 );
         Throw.DebugAssert( prefixLength >= 2 && prefixLength <= IOutgoingMessage.MaxWirePrefixLength );
+        Throw.DebugAssert( suffixLength >= 0 && prefixLength + suffixLength <= buffer.Length );
         _messageFactory = messageFactory;
         _buffer = buffer;
         _protocol = protocol;
         _wireMessage = buffer.GetReadOnlySequence();
-        _message =  _wireMessage.Slice( prefixLength );
+        // suffixLength is the run-phase authentication tag: it is part of the wire message but must
+        // not be visible to the channel, which only ever sees the payload it sent.
+        _message = suffixLength == 0
+                    ? _wireMessage.Slice( prefixLength )
+                    : _wireMessage.Slice( prefixLength, _wireMessage.Length - prefixLength - suffixLength );
         _refCount = 1;
     }
 

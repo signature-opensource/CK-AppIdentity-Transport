@@ -61,11 +61,7 @@ public class C2OtherReadersTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial.Nonce,
-                                                                        TimeSpan.Zero,
-                                                                        _systemClock.UtcNow,
-                                                                        initial.AvailableProtocols,
-                                                                        new[] { goodKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { goodKey } ), token );
             (await c1.ReadFrameAsync( token )).Discriminator
                 .ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "The baseline handshake must succeed first." );
             await feature.ReadyTask.WaitAsync( token );

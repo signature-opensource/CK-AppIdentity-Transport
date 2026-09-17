@@ -290,11 +290,19 @@ static partial class ZeroProtocol // Negotiation
     /// <returns>A nonce or null if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
     public static async ValueTask<ulong?> SendInitialMessageAsync( ISystemClock systemClock, Transport transport, InitialMessage initialMessage, int version )
     {
-        using var m = CreateAndSignMessage( systemClock, initialMessage, version, out var nonce );
+        // The ephemeral key belongs to THIS connection: it is created on the Transport, never on
+        // the TransportFeature, whose OutgoingInitialMessage is cached and reused across attempts.
+        // Writing it here rather than inside InitialMessage keeps that cached content untouched.
+        var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
+        using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey, out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
-        static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock, InitialMessage initialMessage, int version, out ulong nonce )
+        static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock,
+                                                      InitialMessage initialMessage,
+                                                      int version,
+                                                      byte[] ephemeralPublicKey,
+                                                      out ulong nonce )
         {
             Throw.DebugAssert( initialMessage.LocalIdentities.Count > 0 );
             var builder = _zeroFactory.CreateBuilder();
@@ -305,6 +313,11 @@ static partial class ZeroProtocol // Negotiation
             Throw.CheckArgument( version == CurrentVersion );
             // Writes the message content (cuurent version).
             initialMessage.WriteCurrentVersion( ref w );
+
+            // Per-connection key agreement material, inside the signed region.
+            w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
+            w.WriteBytes( ephemeralPublicKey );
+            w.WriteByte( RunPhaseProtection.LocalCapabilities );
 
             // Writes the nonce (creation time and 64 bits nonce) ang gets its value:
             // the creation time will be used to compute the clock offset and the nonce value will
@@ -542,16 +555,21 @@ static partial class ZeroProtocol // Negotiation
                                                                            Transport transport,
                                                                            MessageProtocolMap protocolMap,
                                                                            ulong nonce,
-                                                                           TimeSpan initialClockOffset )
+                                                                           TimeSpan initialClockOffset,
+                                                                           byte[] ephemeralPublicKey,
+                                                                           MacAlgorithm macAlgorithm )
     {
         Throw.DebugAssert( transport.RemoteKeys != null );
-        using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset, transport.RemoteKeys.LocalKeys.Identities );
+        using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset,
+                                            ephemeralPublicKey, macAlgorithm, transport.RemoteKeys.LocalKeys.Identities );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
         static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock,
                                                       in MessageProtocolMap protocolMap,
                                                       ulong nonce,
                                                       TimeSpan initialClockOffset,
+                                                      byte[] ephemeralPublicKey,
+                                                      MacAlgorithm macAlgorithm,
                                                       IReadOnlyList<LocalIdentityKey> localIdentities )
         {
             var builder = _zeroFactory.CreateBuilder();
@@ -567,6 +585,10 @@ static partial class ZeroProtocol // Negotiation
             {
                 w.WriteString( p.FullName );
             }
+            // The listener's half of the key agreement plus its selection, inside the signed region.
+            w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
+            w.WriteBytes( ephemeralPublicKey );
+            w.WriteByte( (byte)macAlgorithm );
             WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
             return builder.CreateMessage( sequence );
         }
@@ -577,12 +599,16 @@ static partial class ZeroProtocol // Negotiation
                                                                       TransportFeature remote,
                                                                       ulong expectedNonce,
                                                                       out bool foundTrustedKey,
-                                                                      out TimeSpan currentClockOffset )
+                                                                      out TimeSpan currentClockOffset,
+                                                                      out byte[]? ephemeralPublicKey,
+                                                                      out MacAlgorithm macAlgorithm )
     {
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
         Throw.DebugAssert( discriminator == DNegoAcceptedProtocolsMessage );
         foundTrustedKey = false;
+        ephemeralPublicKey = null;
+        macAlgorithm = MacAlgorithm.Invalid;
         if( !CheckExpectedNonce( transportManager.Logger, ref r, remote, expectedNonce ) )
         {
             currentClockOffset = TimeSpan.Zero;
@@ -611,6 +637,11 @@ static partial class ZeroProtocol // Negotiation
             protocols[i] = p;
         }
         var map = MessageProtocolMap.InternalGet( protocols );
+        // The listener's half of the key agreement and the algorithm it selected.
+        uint lenEphemeral = r.ReadSmallUInt32();
+        Throw.CheckData( lenEphemeral > 0 && lenEphemeral <= RunPhaseProtection.MaxEphemeralPublicKeyLength );
+        ephemeralPublicKey = r.ReadBytes( lenEphemeral );
+        macAlgorithm = (MacAlgorithm)r.ReadByte();
         var check = ReadIdentityKeysAndVerifySignatures( ref r,
                                                          remote.RemoteKeys.TrustedIdentity,
                                                          out var currentKeyData,

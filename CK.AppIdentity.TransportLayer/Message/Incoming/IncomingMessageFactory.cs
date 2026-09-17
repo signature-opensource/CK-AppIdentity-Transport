@@ -1,4 +1,5 @@
 using CK.Core;
+using System.Buffers;
 using System.Buffers.Binary;
 using System;
 using System.Threading;
@@ -20,6 +21,9 @@ public sealed class IncomingMessageFactory : IDisposable
     DateTime _lastReceived;
     MutableSequence<byte>? _cachedOneBuffer;
     readonly ISystemClock _systemClock;
+    // Null during the handshake (those messages are signed instead) and set once the transport
+    // enters the run phase.
+    RunPhaseProtection? _protection;
 
     /// <summary>
     /// We work with an initial and first buffer of 4K. This is enough for small messages and
@@ -46,6 +50,38 @@ public sealed class IncomingMessageFactory : IDisposable
     {
         Throw.DebugAssert( protocols.IsValid );
         _protocols = protocols;
+    }
+
+    /// <summary>
+    /// Called by Transport.StartReceiveAsync: from now on every frame carries an authentication tag
+    /// and is rejected unless it verifies, in order, against the session key.
+    /// </summary>
+    internal void SetRunPhaseProtection( RunPhaseProtection protection )
+    {
+        Throw.DebugAssert( protection != null && _protection == null );
+        _protection = protection;
+    }
+
+    /// <summary>
+    /// Verifies a fully read frame and returns it with its tag hidden, or null when the frame is
+    /// not authentic or arrived out of order.
+    /// </summary>
+    IncomingMessage? VerifyAndCreate( MessageProtocol protocol, MutableSequence<byte> buffer, int prefixLength )
+    {
+        Throw.DebugAssert( _protection != null );
+        const int tagLength = RunPhaseProtection.TagLength;
+        var wire = buffer.GetReadOnlySequence();
+        long payloadLength = wire.Length - prefixLength - tagLength;
+        if( payloadLength < 0 ) return null;
+
+        Span<byte> header = stackalloc byte[IOutgoingMessage.MaxWirePrefixLength];
+        wire.Slice( 0, prefixLength ).CopyTo( header );
+        Span<byte> tag = stackalloc byte[tagLength];
+        wire.Slice( wire.Length - tagLength ).CopyTo( tag );
+
+        return _protection.VerifyNext( header.Slice( 0, prefixLength ), wire.Slice( prefixLength, payloadLength ), tag )
+                ? new IncomingMessage( this, protocol, buffer, prefixLength, tagLength )
+                : null;
     }
 
     /// <summary>
@@ -138,6 +174,9 @@ public sealed class IncomingMessageFactory : IDisposable
                 if( messageLength > maxMessageLength ) return IncomingMessage.Invalid;
                 if( messageLength == 0 )
                 {
+                    // In the run phase even an empty keep-alive carries its tag, so a truly zero
+                    // length frame can only be an unprotected one: it must not be accepted.
+                    if( _protection != null ) return IncomingMessage.Invalid;
                     return protocolNumber == 0
                             ? ((firstByte & OutgoingMessage.IsControlFlag) != 0 ? IncomingMessage.EmptyAck : IncomingMessage.Empty)
                             : Throw.InvalidDataException<IncomingMessage>( $"Forbidden 0 length message received for protocol '{protocol}'." );
@@ -145,6 +184,20 @@ public sealed class IncomingMessageFactory : IDisposable
                 // The whole message (255 bytes max.) necessarily fits in the header.
                 await exactReader( header.Slice( 2, messageLength ), cancellation ).ConfigureAwait( false );
                 buffer.Advance( 2 + messageLength );
+                if( _protection != null )
+                {
+                    var verified = VerifyAndCreate( protocol, buffer, prefixLength: 2 );
+                    if( verified == null ) return IncomingMessage.Invalid;
+                    // An authenticated keep-alive is a frame whose payload is empty once the tag is
+                    // removed: it still had to be signed to get here.
+                    if( verified.Message.IsEmpty && protocolNumber == 0 )
+                    {
+                        verified.Dispose();
+                        return (firstByte & OutgoingMessage.IsControlFlag) != 0 ? IncomingMessage.EmptyAck : IncomingMessage.Empty;
+                    }
+                    releaseBuffer = false;
+                    return verified;
+                }
                 releaseBuffer = false;
                 return new IncomingMessage( this, protocol, buffer, prefixLength: 2 );
             }
@@ -170,8 +223,7 @@ public sealed class IncomingMessageFactory : IDisposable
                 header = header.Slice( 0, messageLength );
                 await exactReader( header, cancellation ).ConfigureAwait( false );
                 buffer.Advance( header.Length );
-                releaseBuffer = false;
-                return new IncomingMessage( this, protocol, buffer, prefixLength: lenSize + 2 );
+                return Finish( protocol, buffer, lenSize + 2, ref releaseBuffer );
             }
             // There is more than the initial buffer. Fills it.
             await exactReader( header, cancellation ).ConfigureAwait( false );
@@ -191,8 +243,7 @@ public sealed class IncomingMessageFactory : IDisposable
                 await exactReader( buffer.GetMemory( messageLength ).Slice( 0, messageLength ), cancellation ).ConfigureAwait( false );
                 buffer.Advance( messageLength );
             }
-            releaseBuffer = false;
-            return new IncomingMessage( this, protocol, buffer, prefixLength: lenSize + 2 );
+            return Finish( protocol, buffer, lenSize + 2, ref releaseBuffer );
         }
         catch( OperationCanceledException ) when( cancellation.IsCancellationRequested )
         {
@@ -202,6 +253,22 @@ public sealed class IncomingMessageFactory : IDisposable
         {
             if( releaseBuffer ) Release( buffer );
         }
+    }
+
+    /// <summary>
+    /// Completes a fully read frame: verifies its tag when the run phase is protected.
+    /// </summary>
+    IncomingMessage Finish( MessageProtocol protocol, MutableSequence<byte> buffer, int prefixLength, ref bool releaseBuffer )
+    {
+        if( _protection != null )
+        {
+            var verified = VerifyAndCreate( protocol, buffer, prefixLength );
+            if( verified == null ) return IncomingMessage.Invalid;
+            releaseBuffer = false;
+            return verified;
+        }
+        releaseBuffer = false;
+        return new IncomingMessage( this, protocol, buffer, prefixLength );
     }
 
     MutableSequence<byte> GetBuffer()

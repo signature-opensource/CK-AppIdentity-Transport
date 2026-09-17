@@ -57,11 +57,7 @@ public class AdversarialHandshakeTests
 
         // Accept exactly the protocols the initiator offered: the initiator checks that all of its
         // BestRegisteredProtocols are satisfied.
-        var reply = PeerMessages.AcceptedProtocols( initial.Nonce,
-                                                    initialClockOffset: TimeSpan.Zero,
-                                                    now: _systemClock.UtcNow,
-                                                    protocolFullNames: initial.AvailableProtocols,
-                                                    signWith: new[] { peerKey } );
+        var reply = PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } );
         await connection.SendZeroFrameAsync( reply, token );
 
         // The initiator must now verify us and answer FinalSuccess.
@@ -103,11 +99,7 @@ public class AdversarialHandshakeTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial.Nonce,
-                                                                        TimeSpan.Zero,
-                                                                        _systemClock.UtcNow,
-                                                                        initial.AvailableProtocols,
-                                                                        new[] { peerKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } ), token );
             var final = await c1.ReadFrameAsync( token );
             final.Discriminator.ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "Baseline must succeed first." );
         }
@@ -121,11 +113,7 @@ public class AdversarialHandshakeTests
         initial2.SupposedIdentity!.SubjectPublicKeyInfo.ShouldBe( peerKey.SubjectPublicKeyInfo,
                                                                   "It must be the key adopted on the first connection." );
 
-        await c2.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial2.Nonce,
-                                                                     TimeSpan.Zero,
-                                                                     _systemClock.UtcNow,
-                                                                     initial2.AvailableProtocols,
-                                                                     new[] { evilKey } ), token );
+        await c2.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial2, _systemClock.UtcNow, new[] { evilKey } ), token );
 
         // The initiator must not send FinalSuccess to a key it does not trust.
         var answer = await ReadFrameOrNullAsync( c2, token );

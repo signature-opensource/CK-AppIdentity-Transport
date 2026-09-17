@@ -56,3 +56,27 @@ sealed class PeerIdentity : IDisposable
 
     public void Dispose() => _key.Dispose();
 }
+
+/// <summary>
+/// The harness's ephemeral ECDH key pair for one connection, mirroring what a real peer creates
+/// per <c>Transport</c>. Exists so an adversarial test can also present a WRONG or reused
+/// ephemeral, which a real peer never would.
+/// </summary>
+sealed class PeerEphemeral : IDisposable
+{
+    readonly ECDiffieHellman _key;
+
+    public PeerEphemeral()
+    {
+        _key = ECDiffieHellman.Create( ECCurve.NamedCurves.nistP256 );
+        PublicKey = _key.PublicKey.ExportSubjectPublicKeyInfo();
+    }
+
+    /// <summary>The public half, as it travels on the wire.</summary>
+    public byte[] PublicKey { get; }
+
+    /// <summary>The key pair, for deriving the session when the harness needs to speak the run phase.</summary>
+    public ECDiffieHellman Key => _key;
+
+    public void Dispose() => _key.Dispose();
+}
