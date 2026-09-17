@@ -191,6 +191,23 @@ public abstract partial class Transport
     internal RunPhaseProtection? Protection => _protection;
 
     /// <summary>
+    /// Gets the MAC algorithm negotiated for this connection, null until the handshake has derived
+    /// the session keys.
+    /// <para>
+    /// Worth surfacing: which primitive a connection ends up using depends on what the two machines
+    /// can execute, so on a fleet whose hardware is not known in advance this is the only way to
+    /// find out what is actually running.
+    /// </para>
+    /// </summary>
+    public MacAlgorithm? NegotiatedMacAlgorithm => _protection?.Algorithm;
+
+    /// <summary>
+    /// Gets a short non-secret identifier of this connection's session keys, null during the
+    /// handshake. Both peers compute the same value, so it can be matched across two logs.
+    /// </summary>
+    public string? SessionId => _protection?.SessionId;
+
+    /// <summary>
     /// Creates this connection's ephemeral key pair and returns its public part for the handshake.
     /// Called exactly once per transport.
     /// </summary>

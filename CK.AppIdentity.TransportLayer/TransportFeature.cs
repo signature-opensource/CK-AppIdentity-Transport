@@ -258,6 +258,22 @@ public sealed class TransportFeature
     public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
 
     /// <summary>
+    /// Gets the MAC algorithm protecting the current connection, null when not connected.
+    /// <para>
+    /// Which primitive a connection uses is decided per connection from what both machines can
+    /// execute, so on a fleet whose hardware support is not known in advance this is how to find
+    /// out what is actually running.
+    /// </para>
+    /// </summary>
+    public MacAlgorithm? NegotiatedMacAlgorithm => _controller?.CurrentTransport.NegotiatedMacAlgorithm;
+
+    /// <summary>
+    /// Gets the session identifier of the current connection, null when not connected.
+    /// Both peers compute the same value, so it can be matched across two logs.
+    /// </summary>
+    public string? SessionId => _controller?.CurrentTransport.SessionId;
+
+    /// <summary>
     /// Gets the current connection availability.
     /// </summary>
     public ConnectionAvailability ConnectionAvailability => _connectionAvailabilty;

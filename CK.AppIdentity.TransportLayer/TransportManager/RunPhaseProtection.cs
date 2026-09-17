@@ -114,7 +114,12 @@ public sealed class RunPhaseProtection : IDisposable
     /// there is no ordering for an attacker to influence, only a floor set by physics.
     /// </para>
     /// </summary>
-    public static byte LocalCapabilities
+    public static byte LocalCapabilities => (byte)(HardwareCapabilities & (_capabilityRestriction ?? 0xFF));
+
+    /// <summary>
+    /// What this machine can actually execute, ignoring any restriction.
+    /// </summary>
+    public static byte HardwareCapabilities
     {
         get
         {
@@ -127,6 +132,40 @@ public sealed class RunPhaseProtection : IDisposable
             return caps;
         }
     }
+
+    static byte? _capabilityRestriction;
+
+    /// <summary>
+    /// Restricts what this process advertises. Null (the default) advertises everything the
+    /// hardware supports.
+    /// <para>
+    /// This can only ever <em>remove</em> capabilities — the value is masked by
+    /// <see cref="HardwareCapabilities"/>, so it cannot claim a primitive the machine cannot run.
+    /// That is what keeps it from being a downgrade lever: restricting yourself is safe, and both
+    /// primitives are strong, so the worst a restriction can do is cost performance.
+    /// </para>
+    /// <para>
+    /// Two uses. Tests force the HMAC path so that it is exercised end to end even on hardware that
+    /// would always choose GMAC — otherwise the fallback, which is the path that runs on machines
+    /// without AES-NI, would never actually be run anywhere. An operator may also want it to avoid
+    /// software AES on a machine whose hardware support is uncertain.
+    /// </para>
+    /// </summary>
+    public static byte? CapabilityRestriction
+    {
+        get => _capabilityRestriction;
+        set
+        {
+            Throw.CheckArgument( "At least one primitive must remain advertisable.",
+                                 value == null || (HardwareCapabilities & value.Value) != 0 );
+            _capabilityRestriction = value;
+        }
+    }
+
+    /// <summary>
+    /// Restriction value that advertises HMAC-SHA256 only.
+    /// </summary>
+    public const byte HmacOnly = 1 << (int)MacAlgorithm.HmacSha256;
 
     /// <summary>
     /// Selects the algorithm both sides can run, preferring <see cref="MacAlgorithm.AesGmac"/>.
