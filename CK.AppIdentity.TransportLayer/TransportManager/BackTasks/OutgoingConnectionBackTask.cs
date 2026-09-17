@@ -132,7 +132,14 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
 
     void CancelOperation( IActivityMonitor monitor, bool offline )
     {
-        Throw.DebugAssert( IsStarted && !_cts.IsCancellationRequested );
+        // Only IsStarted can be asserted here.
+        // _cts is SHARED with the Transport: TryConnectToAsync calls transport.SetCancellationSource( cancellation )
+        // on it, so the connect task's finally (KillTransport -> OnKilled -> _lifeTime.Cancel()) can cancel it
+        // concurrently with this loop. A caller that checks !_cts.IsCancellationRequested may therefore find it
+        // false again by the time we get here — asserting it is a race, and it used to take the whole agent down
+        // during teardown (the exception escaped OnDestroy, the MicroAgent died and DisposeAsync never returned).
+        // Cancel() below is idempotent, so the already-cancelled case simply needs tolerating.
+        Throw.DebugAssert( IsStarted );
 
         if( offline )
         {

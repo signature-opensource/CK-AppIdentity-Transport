@@ -29,13 +29,18 @@ public class AdversarialPeerTests
     [Test, CancelAfter( 20000 )]
     public async Task Harness_parses_a_real_InitialMessage_Async( CancellationToken token )
     {
+        // Trusted keys persist in the store per REMOTE name, across local parties and across runs.
+        // This test asserts on "we trust nothing yet", so it must start from that state.
+        const string remote = "$AdvParse";
+        PeerStore.ClearRemoteTrust( $"Test/{remote}" );
+
         await using var peer = new AdversarialPeer();
 
         // A real initiator that will connect out to the harness.
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$AdvSender";
-            c["Parties:0:PartyName"] = "$AdvPeer";
+            c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
         }, ConfigureFastClock, token: token );
 
@@ -90,12 +95,15 @@ public class AdversarialPeerTests
         // Silence is a valid hostile behaviour: the initiator must keep retrying, and every
         // attempt must carry a NEW nonce. A repeated nonce would mean a replayed handshake is
         // indistinguishable from a retry.
+        const string remote = "$AdvSilentPeer";
+        PeerStore.ClearRemoteTrust( $"Test/{remote}" );
+
         await using var peer = new AdversarialPeer();
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$AdvSilent";
-            c["Parties:0:PartyName"] = "$AdvPeer";
+            c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
         }, ConfigureFastClock, token: token );
 

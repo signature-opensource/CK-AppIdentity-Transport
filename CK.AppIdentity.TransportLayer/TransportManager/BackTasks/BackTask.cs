@@ -72,7 +72,20 @@ abstract class BackTask<THost>
             {
                 while( _queue.Count > 0 )
                 {
-                    _queue.Dequeue().OnDestroy( monitor );
+                    var t = _queue.Dequeue();
+                    try
+                    {
+                        t.OnDestroy( monitor );
+                    }
+                    catch( Exception ex )
+                    {
+                        // Same reasoning as OnHeartBeat and Initialize, and this one is the worst of the three:
+                        // Destroy runs on the teardown path, so an escaping exception kills the MicroAgent and
+                        // DisposeAsync never completes — the whole service hangs instead of shutting down.
+                        // Whatever this task failed to clean up, the remaining ones must still be destroyed.
+                        monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                       $"Unhandled error while destroying {t.GetType().Name} #{t.GetHashCode()}. Continuing teardown.", ex );
+                    }
                 }
             }
         }
