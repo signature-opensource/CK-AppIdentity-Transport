@@ -16,6 +16,16 @@ public ref partial struct FastByteReader
     int _bufferPos;
     int _bufferSize;
     readonly ReadOnlySequence<byte> _sequence;
+    // Total length of every segment before _currentSpan. The head is at the absolute offset
+    // _consumedBeforeCurrentSpan + _bufferPos.
+    //
+    // This must be tracked: _nextSequencePosition CANNOT serve as the origin for the head.
+    // ReadOnlySequence.TryGet advances the position it is given, and MoveNext calls it twice on its
+    // first invocation (once to step off the start, once to fetch the segment), so after the first
+    // segment _nextSequencePosition points one segment PAST _currentSpan. Computing the head from it
+    // overshot by a whole segment, which made GetBeforeHead hash the wrong bytes — and threw outright
+    // once the overshoot ran past the end of the sequence.
+    long _consumedBeforeCurrentSpan;
 
     public FastByteReader( ReadOnlySequence<byte> sequence )
     {
@@ -24,27 +34,29 @@ public ref partial struct FastByteReader
         _bufferPos = 0;
         _bufferSize = _currentSpan.Length;
         _sequence = sequence;
+        _consumedBeforeCurrentSpan = 0;
     }
 
     /// <summary>
+    /// Gets the absolute offset of the head in the sequence.
+    /// </summary>
+    long HeadOffset => _consumedBeforeCurrentSpan + _bufferPos;
+
+    /// <summary>
     /// Gets the currently read sequence.
+    /// <para>
+    /// This is what the Zero Protocol hashes to verify a signature, so it must be exact for
+    /// multi-segment messages (incoming messages use 4 KiB segments).
+    /// </para>
     /// </summary>
     /// <returns>The data read so far.</returns>
-    public ReadOnlySequence<byte> GetBeforeHead()
-    {
-        var start = _sequence.GetPosition( _bufferPos, _nextSequencePosition );
-        return _sequence.Slice( 0, start );
-    }
+    public ReadOnlySequence<byte> GetBeforeHead() => _sequence.Slice( 0, HeadOffset );
 
     /// <summary>
     /// Gets the current remainder of the sequence.
     /// </summary>
     /// <returns>The remainder.</returns>
-    public ReadOnlySequence<byte> GetAfterHead()
-    {
-        var start = _sequence.GetPosition( _bufferPos, _nextSequencePosition );
-        return _sequence.Slice( start );
-    }
+    public ReadOnlySequence<byte> GetAfterHead() => _sequence.Slice( HeadOffset );
 
     [MethodImpl( MethodImplOptions.NoInlining )]
     void MoveNext()
@@ -60,6 +72,9 @@ public ref partial struct FastByteReader
             _currentSpan = memory.Span;
             Throw.InvalidDataException( "End of Sequence reached." );
         }
+        // MoveNext is only ever called with the current segment exhausted, so the segment we are
+        // leaving now lies entirely behind the head.
+        _consumedBeforeCurrentSpan += _bufferSize;
         _currentSpan = memory.Span;
         _bufferPos = 0;
         _bufferSize = _currentSpan.Length;
