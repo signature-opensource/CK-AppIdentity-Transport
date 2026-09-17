@@ -10,9 +10,10 @@ namespace CK.AppIdentity.TransportLayer;
 
 
 /// <summary>
-/// A Transport is able to send and receive <see cref="TransportMessage"/>.
+/// A Transport is able to send <see cref="IOutgoingMessage"/> and receive <see cref="IncomingMessage"/>.
 /// <para>
-/// It is instantiated by a <see cref="TransportListener"/> or by <see cref="TransportTypeService.TryConnectAsync(IActivityLogger, TransportTypeAddress, CancellationToken)"/>.
+/// It is instantiated by a <see cref="TransportListener"/> or
+/// by <see cref="TransportTypeService.TryConnectAsync(IParallelLogger, TransportTypeAddress, IRemoteKeys, CancellationToken)"/>.
 /// </para>
 /// </summary>
 public abstract partial class Transport
