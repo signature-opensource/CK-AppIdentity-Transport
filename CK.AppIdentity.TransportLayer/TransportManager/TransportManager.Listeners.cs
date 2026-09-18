@@ -4,7 +4,9 @@ using System.Linq;
 namespace CK.AppIdentity.TransportLayer;
 
 
-public sealed partial class TransportManager
+// Accessibility is stated on the other part only: a partial type takes the accessibility of any
+// part that declares one, so writing "public" here alone would publish the whole surface.
+sealed partial class TransportManager
 {
     /// <summary>
     /// Tries to return the configured "EnlistRemoteUrl" that can be displayed on a remote and can be

@@ -1,4 +1,3 @@
-using CK.AppIdentity.BlobChannel;
 using CK.AppIdentity.TransportLayer;
 
 namespace CK.AppIdentity.TransportLayer.Tests;

@@ -3,7 +3,7 @@ using CK.Core;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.BlobChannel;
+namespace CK.AppIdentity.TransportLayer;
 
 /// <summary>
 /// Base class for <see cref="ChannelFeature"/> drivers.

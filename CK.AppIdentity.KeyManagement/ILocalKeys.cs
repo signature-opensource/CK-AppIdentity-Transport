@@ -15,6 +15,16 @@ public interface ILocalKeys
     const int MinAllowedOfflineDays = 7;
 
     /// <summary>
+    /// Maximal number of days for <see cref="AllowedOfflineDays"/>: ten years.
+    /// <para>
+    /// The value is scaled and handed to <c>DateTime.AddDays</c> to compute a certificate expiry, so
+    /// leaving it unbounded lets a configuration typo throw out of the key builder and stop the
+    /// service from starting at all, rather than being clamped and warned about.
+    /// </para>
+    /// </summary>
+    const int MaxAllowedOfflineDays = 3650;
+
+    /// <summary>
     /// Default value of <see cref="AllowedOfflineDays"/>.
     /// </summary>
     const int DefaultAllowedOfflineDays = 60;

@@ -312,6 +312,10 @@ public ref partial struct FastByteReader
     {
         var header = ReadByte();
         var numBytes = BitOperations.TrailingZeroCount( 0x0100U | header ) + 1;
+        // Same bound as the fast path. Without it, malformed input fails differently depending on
+        // where a segment boundary happens to fall: InvalidDataException on one side, a shift past 64
+        // and an OverflowException from the checked cast on the other.
+        if( numBytes > 5 ) Throw.InvalidDataException();
         // Widen to a ulong for the 5-byte case
         ulong result = header;
         // Read additional bytes as needed
@@ -530,11 +534,19 @@ public ref partial struct FastByteReader
     static string ReadMultiSegment( ref FastByteReader reader, int len )
     {
         var array = ArrayPool<byte>.Shared.Rent( len );
-        var span = array.AsSpan( 0, len );
-        reader.ReadBytes( span );
-        var res = Encoding.UTF8.GetString( span );
-        ArrayPool<byte>.Shared.Return( array );
-        return res;
+        try
+        {
+            var span = array.AsSpan( 0, len );
+            // ReadBytes throws on truncated data, which is remote-supplied: without the finally the
+            // buffer never returns to the pool, and a peer that keeps sending truncated strings
+            // drains it one rent at a time.
+            reader.ReadBytes( span );
+            return Encoding.UTF8.GetString( span );
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return( array );
+        }
     }
 
     /// <summary>

@@ -236,7 +236,7 @@ sealed partial class RemoteKeys : IRemoteKeys
     public bool CheckNonce( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error )
     {
         return nonce.CheckCreationTimeKind( logger, Party.FullName, logLevel )
-               && CheckClockOffset( logger, nonce.CreationTime - _remote.ApplicationIdentityService.SystemClock.UtcNow )
+               && CheckClockOffset( logger, nonce.CreationTime - _remote.ApplicationIdentityService.SystemClock.UtcNow, logLevel )
                && CheckAndAddNonceValue( logger, nonce, logLevel );
     }
 }

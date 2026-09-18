@@ -10,6 +10,22 @@ namespace CK.AppIdentity.TransportLayer;
 /// </summary>
 public abstract class GoodbyeMessage
 {
+    /// <summary>Maximal length of a remote end point description on the wire.</summary>
+    public const int MaxEndPointDescriptionLength = 300;
+
+    /// <summary>Maximal length of an instance id on the wire.</summary>
+    public const int MaxInstanceIdLength = 64;
+
+    /// <summary>
+    /// Maximal length of a switch-off reason on the wire.
+    /// <para>
+    /// One constant for the writer, the reader and the check. Reading with a larger bound than the
+    /// one the value is validated against accepts strings no correct sender can produce, and the
+    /// discrepancy surfaces only as a Debug-only assert failing on someone else's machine.
+    /// </para>
+    /// </summary>
+    public const int MaxReasonLength = 255;
+
     GoodbyeKind _kind;
 
     GoodbyeMessage( GoodbyeKind kind ) => _kind = kind;
@@ -79,8 +95,15 @@ public abstract class GoodbyeMessage
         internal Evicted( string remoteEndPointDescription, string instanceId )
             : base( GoodbyeKind.Evicted )
         {
-            Throw.DebugAssert( !string.IsNullOrWhiteSpace( remoteEndPointDescription ) && remoteEndPointDescription.Length <= 300 && remoteEndPointDescription.IsNormalized() );
-            Throw.DebugAssert( !string.IsNullOrWhiteSpace( instanceId ) && instanceId.Length <= 64 && Base64UrlHelper.IsBase64UrlCharacters( instanceId ) );
+            // CheckData, not DebugAssert: both of these arrive from the wire on the receiving side and
+            // are surfaced to an operator afterwards. A DebugAssert is compiled out of Release, which
+            // is precisely the build where a peer gets to choose them.
+            Throw.CheckData( !string.IsNullOrWhiteSpace( remoteEndPointDescription )
+                             && remoteEndPointDescription.Length <= MaxEndPointDescriptionLength
+                             && remoteEndPointDescription.IsNormalized() );
+            Throw.CheckData( !string.IsNullOrWhiteSpace( instanceId )
+                             && instanceId.Length <= MaxInstanceIdLength
+                             && Base64UrlHelper.IsBase64UrlCharacters( instanceId ) );
             RemoteEndPointDescription = remoteEndPointDescription;
             InstanceId = instanceId;
         }
@@ -115,7 +138,7 @@ public abstract class GoodbyeMessage
 
         internal static Evicted Read( ref FastByteReader r )
         {
-            return new Evicted( r.ReadString( 300 ), r.ReadString( 64 ) );
+            return new Evicted( r.ReadString( MaxEndPointDescriptionLength ), r.ReadString( MaxInstanceIdLength ) );
         }
     }
 
@@ -127,7 +150,9 @@ public abstract class GoodbyeMessage
         internal SwitchedOff( bool isFromRemote, string reason, DateTime? expectedAvailableTime )
             : base( GoodbyeKind.SwitchedOff )
         {
-            Throw.DebugAssert( reason.IsNormalized() && reason.Length < 256 && expectedAvailableTime?.Kind is null or DateTimeKind.Utc );
+            Throw.CheckData( reason.IsNormalized()
+                             && reason.Length <= MaxReasonLength
+                             && expectedAvailableTime?.Kind is null or DateTimeKind.Utc );
             IsFromRemote = isFromRemote;
             Reason = reason;
             ExpectedAvailableTime = expectedAvailableTime;
@@ -160,10 +185,8 @@ public abstract class GoodbyeMessage
 
         internal static SwitchedOff Read( ref FastByteReader r )
         {
-            var reason = r.ReadString( 300 );
-            var at = r.ReadNullableDateTime();
-            Throw.CheckData( reason.IsNormalized() && at?.Kind is null or DateTimeKind.Utc );
-            return new SwitchedOff( true, reason, at );
+            // The constructor validates: one place, both directions.
+            return new SwitchedOff( true, r.ReadString( MaxReasonLength ), r.ReadNullableDateTime() );
         }
     }
 

@@ -505,7 +505,10 @@ public ref partial struct FastByteWriter
             // this is our fast path... if there are 128 bytes available. 
             Throw.DebugAssert( 42 * 3 == 126 );
             nuint pos = (uint)_bufferPos;
-            if( (uint)pos + sLen * 3 <= (uint)_currentSpan.Length )
+            // The +1 is the length prefix written at pos: the bytes go to pos+1, so the room needed is
+            // one more than the worst-case expansion. Without it an exact fit passes this check and
+            // then throws out of Encoding.GetBytes, one byte short.
+            if( (uint)pos + 1 + sLen * 3 <= (uint)_currentSpan.Length )
             {
                 int actualByteCount = Encoding.UTF8.GetBytes( value, _currentSpan.Slice( (int)pos + 1 ) );
                 _currentSpan[(int)pos] = (byte)((actualByteCount << 1) + 1);

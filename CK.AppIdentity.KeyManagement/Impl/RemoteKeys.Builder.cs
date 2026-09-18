@@ -84,7 +84,10 @@ sealed partial class RemoteKeys
         {
             AutoTrustKey autoTrust = AutoTrustKey.Never;
             var a = configuration.TryLookupValue( nameof( AutoTrustKey ) );
-            if( a != null && !Enum.TryParse( a, true, out autoTrust ) )
+            // Enum.TryParse also accepts numerals and any combination of them, so "1" parses as Once
+            // and "7" as an undefined value that passes every "!= Never" test. IsDefined rejects both:
+            // this is a security switch, a typo in it must not silently grant trust.
+            if( a != null && !(Enum.TryParse( a, true, out autoTrust ) && Enum.IsDefined( autoTrust )) )
             {
                 monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AutoTrustKey )}' value, " +
                               $"expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. " +
@@ -101,7 +104,13 @@ sealed partial class RemoteKeys
         {
             try
             {
-                return new RemoteIdentityKeyData( timeName, PublicKey.CreateFromSubjectPublicKeyInfo( File.ReadAllBytes( path ), out _ ) );
+                var content = File.ReadAllBytes( path );
+                var key = PublicKey.CreateFromSubjectPublicKeyInfo( content, out int bytesRead );
+                // A file holding a valid key followed by anything else is not this key's file: accepting
+                // it silently means a trusted identity whose bytes on disk are not the bytes we trust.
+                // The wire path checks this too.
+                Throw.CheckData( bytesRead == content.Length );
+                return new RemoteIdentityKeyData( timeName, key );
             }
             catch ( Exception ex )
             {

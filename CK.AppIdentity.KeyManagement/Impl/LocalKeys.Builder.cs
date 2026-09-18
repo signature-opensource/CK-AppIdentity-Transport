@@ -151,6 +151,11 @@ sealed partial class LocalKeys
                         monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:AllowedOfflineDays' is too small: using {nameof(ILocalKeys.MinAllowedOfflineDays)} = {ILocalKeys.MinAllowedOfflineDays}." );
                         allowedOfflineDays = ILocalKeys.MinAllowedOfflineDays;
                     }
+                    else if( allowedOfflineDays > ILocalKeys.MaxAllowedOfflineDays )
+                    {
+                        monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:AllowedOfflineDays' is too big: using {nameof(ILocalKeys.MaxAllowedOfflineDays)} = {ILocalKeys.MaxAllowedOfflineDays}." );
+                        allowedOfflineDays = ILocalKeys.MaxAllowedOfflineDays;
+                    }
                     return allowedOfflineDays;
                 }
                 else

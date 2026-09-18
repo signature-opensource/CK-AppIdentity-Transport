@@ -44,14 +44,6 @@ static partial class ZeroProtocol
 
         static IOutgoingMessage CreateAndSignMessage( GoodbyeMessage message, ISystemClock systemClock, LocalIdentityKey identity )
         {
-            _zeroFactory.Create( sequence =>
-            {
-                var w = new FastByteWriter( sequence );
-                w.WriteByte( DRunGoodbye );
-                CreateAndWriteNonce( ref w, systemClock );
-                GoodbyeMessage.WriteMessage( ref w, message );
-                ComputeSHA512HashAndAppendSignature( ref w, identity );
-            } );
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
             var w = new FastByteWriter( sequence );
