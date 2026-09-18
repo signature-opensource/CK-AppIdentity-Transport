@@ -414,22 +414,27 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
                 // Set the party's RemoteKeys on the incoming Transport.
                 // 
-                // Important: The Transport MAY already know the RemoteKeys if the TransportListener was able to
-                //            open a SSL certified connection with already available SSL certificates but we don't care here: we handle the
-                //            initial message as if it was on a non confidential channel.
-                //            Moreover, we check here the work of the TransportListener and throws if a mismatch of keys happened: our source
-                //            of truth is the incoming message's FullName.
+                // Important: The Transport MAY already know the RemoteKeys when the TransportListener could identify
+                //            the peer from the transport itself — a certificate on a secured connection. We still
+                //            handle the initial message as if the channel were not confidential, and we hold the
+                //            two answers against each other: our source of truth is the message's signed FullName.
+                //
+                // A mismatch is not a bug in the listener, and must not be reported as one. It means the peer
+                // proved possession of one party's credential on the transport and then signed a message claiming
+                // to be a different party. Both statements are authenticated and they contradict each other, so
+                // the only safe reading is that something is impersonating one of the two — which is exactly what
+                // this cross-check exists to catch, and it is the peer's fault, not ours.
                 if( incoming.RemoteKeys == null )
                 {
                     incoming.SetKeys( remote.RemoteKeys );
                 }
-                else
+                else if( incoming.RemoteKeys != remote.RemoteKeys )
                 {
-                    if( incoming.RemoteKeys != remote.RemoteKeys )
-                    {
-                        Throw.InvalidOperationException( $"Buggy TransportListener: remote keys are not the right ones. " +
-                                                         $"Expected keys for '{remote.RemoteKeys.Party}', got '{incoming.RemoteKeys.Party}.'" );
-                    }
+                    transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                   $"Incoming connection identified as '{incoming.RemoteKeys.Party}' by the transport " +
+                                                   $"presented a signed InitialMessage claiming to be '{remote.RemoteKeys.Party}'. " +
+                                                   $"Refusing it." );
+                    return null;
                 }
                 // We're almost done: if validClockOffset is true (then the nonce is okay) we can update the remote keys with the current one
                 // (if we trust the remote) and if we don't 

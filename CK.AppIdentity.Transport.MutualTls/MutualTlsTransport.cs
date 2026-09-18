@@ -29,13 +29,22 @@ sealed class MutualTlsTransport : Transport
     readonly ReadOnlyMemory<byte> _localBinding;
     readonly ReadOnlyMemory<byte> _remoteBinding;
 
-    /// <summary>Incoming: accepted by a listener, the peer not yet identified.</summary>
+    /// <summary>
+    /// Incoming: accepted by a listener.
+    /// <para>
+    /// <paramref name="remoteKeys"/> is the listener's answer to "whose certificate is this?", or
+    /// null when nothing it serves issued it. Null is an ordinary outcome, not a failure: it is what
+    /// a first-contact peer looks like, and it puts the connection on the same path a cleartext one
+    /// takes, which is what keeps trust-on-first-use working over this transport.
+    /// </para>
+    /// </summary>
     public MutualTlsTransport( MutualTlsListener listener,
                                SslStream ssl,
                                Socket socket,
                                ReadOnlyMemory<byte> localBinding,
-                               ReadOnlyMemory<byte> remoteBinding )
-        : base( listener, socket.RemoteEndPoint?.ToString() )
+                               ReadOnlyMemory<byte> remoteBinding,
+                               IRemoteKeys? remoteKeys )
+        : base( listener, socket.RemoteEndPoint?.ToString(), remoteKeys )
     {
         _ssl = ssl;
         _socket = socket;

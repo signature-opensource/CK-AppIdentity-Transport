@@ -20,6 +20,22 @@ Read [its README](CK.AppIdentity.TransportLayer/README.md) before building on it
 protected and what deliberately is not. Messages are authenticated; **payloads are not encrypted**,
 because readable packets on the wire are a requirement for deployments that audit their own traffic.
 
+## CK.AppIdentity.Transport.MutualTls
+The `mtls:` transport: the same handshake and framing inside a mutually authenticated TLS channel, for
+deployments that need payloads unreadable on the wire. It coexists with `tcp:` and is selected per
+remote by address, because the two requirements — audit every packet, and let nobody read them — are
+genuinely opposed and the choice belongs to whoever configures the remote.
+
+Certificates are issued by each party's own identity key and need no configuration at all. See
+[its README](CK.AppIdentity.Transport.MutualTls/README.md), in particular what authenticates the peer:
+it is not the certificate.
+
+## CK.AppIdentity.TransportLayer.Testing
+Test helpers shared by the test projects, including the adversarial peer — an independent
+implementation of the wire format used to drive real parties with messages the production code would
+never produce. Not a published package; it exists so that a second, divergent copy of the harness does
+not appear.
+
 ## CK.AppIdentity.BlobChannel
 A channel that carries opaque `byte[]` between two parties. More a worked example of a channel than a
 useful one, and the shortest path to seeing how a protocol plugs in.

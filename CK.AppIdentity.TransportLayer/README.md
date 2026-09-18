@@ -12,6 +12,8 @@ a dedicated listening address for a Domain or even for a specific Remote.
 
 An `Address` or a `ListeningAddress` are mere strings: their exact syntax depends on the type of Transport that
 must be used. This type must be specified (there is no default) with the standard URI protocol syntax: 'tcp:', 'quic:', 'pipe:', etc.
+`tcp:` ships here; [`mtls:`](../CK.AppIdentity.Transport.MutualTls/README.md) is the same handshake inside a
+mutually authenticated TLS channel and lives in its own package.
 
 A `ListeningAddress` property at one level can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. This is valid
@@ -22,6 +24,13 @@ transport listener must be used: the `ListeningTypes`:
   - It can be a simple string: 'all' to allow all the  `ListeningAddress` defined above, or one of the types (like 'tcp').
   - A comma separated string or an array of strings that are the transport type names to use.
 This `ListeningTypes` property defaults to 'all': the remote can freely choose the transport type to use.
+
+Two consequences worth knowing when a party listens on more than one type. A transport type that declares a
+default listening address injects it into any party that already has **two or more** configured listening
+addresses — so registering a transport can open a port nobody wrote down, on a party that was already
+multi-homed. And with the default 'all', a remote configured for a cleartext transport connects in the clear
+and authenticates correctly even though a secured listener was available: `ListeningTypes` set to that one
+type is how a deployment requires the secured one.
 
 ## TransportMessage
 A [`TransportMessage`](Message/TransportMessage.cs) is a `ReadOnlySequence<byte>` with a prefixed length and a Protocol number.
@@ -170,6 +179,24 @@ What this means when you build on it:
 - An observer can read the identity keys exchanged in the handshake. They are public keys; this
   costs nothing beyond telling the observer which parties are talking.
 
-A transport that does encrypt — mutual TLS, selected per remote by address — is the intended answer
-for deployments that need confidentiality, and it coexists with `tcp:` rather than replacing it. The
-two requirements are genuinely opposed, so the choice belongs to whoever configures the remote.
+A transport that does encrypt — [`mtls:`](../CK.AppIdentity.Transport.MutualTls/README.md), selected
+per remote by address — is the answer for deployments that need confidentiality, and it coexists with
+`tcp:` rather than replacing it. The two requirements are genuinely opposed, so the choice belongs to
+whoever configures the remote.
+
+### Binding a secured transport to the identity
+
+A transport that terminates TLS, or anything else that authenticates a peer at its own layer, must say
+so inside the handshake or the two authentications remain independent — two locks on one door, and an
+attacker picks whichever is easier.
+
+`Transport.LocalCertificateBinding` and `RemoteCertificateBinding` are how that is done. A transport
+that presents a certificate reports the SHA-256 of what it presented and of what it received; the
+handshake carries the first inside the signed transcript and checks the peer's against the second.
+Anything terminating the channel in between has to present a certificate of its own, and cannot make
+either peer sign a statement about a certificate that peer never held.
+
+A transport that presents nothing leaves both empty, which is the `tcp:` case: both sides then agree
+that nothing is bound, and the field costs one byte. The asymmetric cases — one side stating a
+certificate, the other having received none — are refused as invalid data, which is what makes a
+transport mismatch visible instead of silently half-working.

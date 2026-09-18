@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Net;
@@ -116,6 +117,50 @@ sealed class MutualTlsListener : TransportListener
     }
 
     /// <summary>
+    /// Works out which of this listener's parties presented <paramref name="peerCertificate"/>, by
+    /// checking whose pinned identity signed it.
+    /// <para>
+    /// The identity issues the TLS credential, so the certificate's own key says nothing about who
+    /// this is — what identifies it is the signature on it. That signature is checked against the
+    /// bare pinned key (<see cref="IdentityIssuance"/>), which is what lets this work without the
+    /// identity certificate ever being distributed.
+    /// </para>
+    /// <para>
+    /// Returning null is normal and is not a rejection. A peer this listener has never trusted — the
+    /// first contact of a party that is about to be adopted — resolves to nothing and continues
+    /// exactly as it would on a cleartext connection, which is what keeps one code path for the trust
+    /// decision. Deciding trust here instead would close the door on every new party.
+    /// </para>
+    /// <para>
+    /// What the answer is worth: it is a lookup, and the incoming path holds it against the signed
+    /// InitialMessage before anything is built on it. A peer that makes this resolve to somebody else
+    /// has to hold that somebody's identity private key, and is then caught claiming a different name
+    /// in a message it signed itself.
+    /// </para>
+    /// </summary>
+    IRemoteKeys? TryResolveRemote( X509Certificate2 peerCertificate )
+    {
+        var authority = IdentityIssuance.TryGetAuthorityKeyIdentifier( peerCertificate );
+        if( authority == null ) return null;
+        // Parties is an immutable array swapped on change, so this needs no synchronization.
+        foreach( var party in Parties )
+        {
+            var trusted = party.RemoteKeys.TrustedIdentity;
+            if( trusted == null ) continue;
+            // The identifier narrows to one candidate for free; the signature is what decides.
+            if( !authority.Equals( IdentityIssuance.GetKeyIdentifier( trusted ), StringComparison.Ordinal ) ) continue;
+            if( IdentityIssuance.WasIssuedBy( peerCertificate, trusted ) )
+            {
+                // Worth a line: it is the only place the transport says who it thinks this is, before
+                // the peer has said anything, and it is what the InitialMessage is then held against.
+                Logger.Info( $"Incoming mTLS connection identified as '{party.Party.FullName}' from its certificate." );
+                return party.RemoteKeys;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Completes the TLS handshake and hands the connection over, or closes it.
     /// <para>
     /// The slot taken by the accept loop is released on every path that does not reach
@@ -174,7 +219,8 @@ sealed class MutualTlsListener : TransportListener
                                                     ssl,
                                                     socket,
                                                     localBinding,
-                                                    TlsCredential.ComputeBinding( peerCertificate ) );
+                                                    TlsCredential.ComputeBinding( peerCertificate ),
+                                                    TryResolveRemote( peerCertificate ) );
             // Cannot return false: the slot is already ours.
             OnIncomingTransport( transport, sourceKey, slotReserved: true, acceptedAtUtc );
             handedOver = true;
