@@ -127,22 +127,37 @@ sealed partial class RemoteKeys : IRemoteKeys
         return true;
     }
 
-    public bool CheckAndAddNonceValue( IActivityLineEmitter logger, ulong nonceValue, LogLevel logLevel = LogLevel.Error )
+    public bool CheckAndAddNonceValue( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error )
     {
-        if( _localKeys.NonceCache.Find( nonceValue ) )
+        // Partitioned by remote and checked-and-added in one operation: two concurrent connections
+        // replaying the same nonce must not both pass.
+        bool ok = _localKeys.NonceCache.CheckAndAdd( _remote.FullName,
+                                                     nonce.Nonce,
+                                                     nonce.CreationTime,
+                                                     _remote.ApplicationIdentityService.SystemClock.UtcNow,
+                                                     _maxClockOffset,
+                                                     out bool evicted );
+        if( evicted )
         {
-            if( logLevel != LogLevel.None ) logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated,
-                                                                  $"Nonce value '{nonceValue:X}' has already been used for '{_remote}'." );
-            return false;
+            // Only a peer handshaking far faster than any legitimate one reaches this, and the
+            // degradation is confined to that peer. Worth saying out loud: its replay window is
+            // now shorter than configured.
+            logger.Log( LogLevel.Warn, ActivityMonitor.Tags.ToBeInvestigated,
+                        $"Nonce cache for '{_remote}' is full ({LocalNonceCache.MaxEntriesPerRemote} entries within " +
+                        $"{_maxClockOffset}): dropping still-valid entries. This remote is handshaking abnormally fast." );
         }
-        _localKeys.NonceCache.Add( nonceValue );
-        return true;
+        if( !ok && logLevel != LogLevel.None )
+        {
+            logger.Log( logLevel, ActivityMonitor.Tags.ToBeInvestigated,
+                        $"Nonce value '{nonce.Nonce:X}' has already been used for '{_remote}'." );
+        }
+        return ok;
     }
 
     public bool CheckNonce( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error )
     {
         return nonce.CheckCreationTimeKind( logger, Party.FullName, logLevel )
                && CheckClockOffset( logger, nonce.CreationTime - _remote.ApplicationIdentityService.SystemClock.UtcNow )
-               && CheckAndAddNonceValue( logger, nonce.Nonce, logLevel );
+               && CheckAndAddNonceValue( logger, nonce, logLevel );
     }
 }

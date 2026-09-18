@@ -366,7 +366,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 // a bad guy validate its connection... And if DisallowEviction is false this will
                 // be endless.
                 validClockOffset = remote.RemoteKeys.CheckClockOffset( transportManager.Logger, clockOffset );
-                if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce.Nonce ) )
+                if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) )
                 {
                     // This looks like a replay attack.
                     // This has already been logged.

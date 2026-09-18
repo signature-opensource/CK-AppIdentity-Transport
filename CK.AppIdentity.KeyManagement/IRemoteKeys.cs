@@ -14,6 +14,28 @@ public interface IRemoteKeys
     public static readonly TimeSpan DefaultMaxClockOffset = TimeSpan.FromMinutes( 5 );
 
     /// <summary>
+    /// Upper bound accepted for the "MaxClockOffset" configuration option (20 minutes).
+    /// <para>
+    /// Because no remote can be configured above it, a handshake nonce older than this can never be
+    /// replayed against any remote — which is what lets the persisted replay cache drop stale
+    /// entries when it is loaded.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan MaxAllowedClockOffset = TimeSpan.FromMinutes( 20 );
+
+    /// <summary>
+    /// Maximum number of handshake nonces retained per remote.
+    /// <para>
+    /// The replay cache is bounded by <see cref="MaxClockOffset"/>, not by this: an entry is dropped
+    /// when it can no longer be replayed at all. This is only a memory guard, and a legitimate peer
+    /// cannot approach it — the reconnect back-off caps attempts at roughly one per second, so even
+    /// a 20 minute window holds around 1200 entries. Reaching it means a peer is handshaking
+    /// abnormally fast, and the resulting loss is confined to that peer.
+    /// </para>
+    /// </summary>
+    public const int MaxNonceCacheEntries = 4096;
+
+    /// <summary>
     /// Gets the <see cref="IOwnedParty.Owner"/> party keys.
     /// </summary>
     ILocalKeys LocalKeys { get; }
@@ -98,7 +120,7 @@ public interface IRemoteKeys
     /// <param name="nonceValue">The nonce value to check and add.</param>
     /// <param name="logLevel">Log level used to log the failure. Use <see cref="LogLevel.None"/> to not log anything.</param>
     /// <returns>True if the nonce has been added.</returns>
-    bool CheckAndAddNonceValue( IActivityLineEmitter logger, ulong nonceValue, LogLevel logLevel = LogLevel.Error );
+    bool CheckAndAddNonceValue( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error );
 
     /// <summary>
     /// Checks that the provided <paramref name="nonce"/> has a UTC creation time, is in range regarding <see cref="MaxClockOffset"/> and

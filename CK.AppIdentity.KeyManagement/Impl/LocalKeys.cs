@@ -34,7 +34,12 @@ sealed partial class LocalKeys : ILocalKeys
         local.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
     }
 
-    void OnHeartbeat( IActivityMonitor monitor, int callCount ) => _nonceCache.Save( monitor );
+    void OnHeartbeat( IActivityMonitor monitor, int callCount )
+    {
+        // Prune first: an idle process must not hold nonces that can no longer be replayed.
+        _nonceCache.Prune( _local.ApplicationIdentityService.SystemClock.UtcNow, IRemoteKeys.DefaultMaxClockOffset );
+        _nonceCache.Save( monitor );
+    }
 
     public ILocalParty Party => _local;
 
