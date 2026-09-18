@@ -19,6 +19,7 @@ public sealed class PeeringIssue
     InitialMessage? _initialMessage;
     TransportFeature? _remote;
     string? _enlistUrl;
+    bool _enlistUrlIsAuthenticated;
     TimeSpan? _invalidClockOffset;
     RemoteIdentityKeyData? _remoteKeyForApproval;
     IReadOnlyList<string>? _localMissingProtocols;
@@ -37,6 +38,7 @@ public sealed class PeeringIssue
                            InitialMessage? initialMessage,
                            TransportFeature? remote,
                            string? enlistUrl,
+                           bool enlistUrlIsAuthenticated,
                            TimeSpan? invalidClockOffset,
                            RemoteIdentityKeyData? remoteKeyForApproval,
                            IReadOnlyList<string>? localMissingProtocols,
@@ -52,6 +54,7 @@ public sealed class PeeringIssue
         _initialMessage = initialMessage;
         _remote = remote;
         _enlistUrl = enlistUrl;
+        _enlistUrlIsAuthenticated = enlistUrlIsAuthenticated;
         _invalidClockOffset = invalidClockOffset;
         _remoteKeyForApproval = remoteKeyForApproval;
         _localMissingProtocols = localMissingProtocols;
@@ -108,6 +111,26 @@ public sealed class PeeringIssue
     /// </para>
     /// </summary>
     public string? EnlistUrl => _enlistUrl;
+
+    /// <summary>
+    /// Gets whether <see cref="EnlistUrl"/> can be trusted to come from the party it claims to.
+    /// <para>
+    /// A listener resolves this URL from its own configuration, so its own issues always carry an
+    /// authenticated one. An initiator receives it in the rejection reply, and that reply is
+    /// <b>unsigned</b> when the listener does not know us — which is precisely the
+    /// <see cref="PeeringIssueKind.RequiresRemoteCreation"/> case this URL exists for. It is then a
+    /// claim by whoever answered the connection, not by the remote we meant to reach: an on-path
+    /// attacker, or anyone who wins the race to the port, can substitute their own. The same applies
+    /// when the reply is signed by a key we are seeing for the first time.
+    /// </para>
+    /// <para>
+    /// This is false far more often than it is true, and that is not a defect to be fixed by hiding
+    /// the URL: enlisting is how an unknown party is onboarded, so the URL must reach the operator.
+    /// What must reach them with it is that <b>following it is a trust decision</b>, to be confirmed
+    /// out of band exactly like a key fingerprint. Surface it as such; never auto-follow it.
+    /// </para>
+    /// </summary>
+    public bool IsEnlistUrlAuthenticated => _enlistUrlIsAuthenticated;
 
     /// <summary>
     /// Gets the non null invalid clock offset if <see cref="Kind"/> is <see cref="PeeringIssueKind.InvalidClockOffset"/>.
@@ -219,6 +242,7 @@ public sealed class PeeringIssue
                           InitialMessage? message,
                           TransportFeature? remote,
                           string? enlistUrl,
+                          bool enlistUrlIsAuthenticated,
                           TimeSpan? invalidClockOffset,
                           RemoteIdentityKeyData? remoteKeyForApproval,
                           IReadOnlyList<string>? localMissingProtocols,
@@ -234,6 +258,7 @@ public sealed class PeeringIssue
             _initialMessage = message;
             _remote = remote;
             _enlistUrl = enlistUrl;
+            _enlistUrlIsAuthenticated = enlistUrlIsAuthenticated;
             _invalidClockOffset = invalidClockOffset;
             _remoteKeyForApproval = remoteKeyForApproval;
             _localMissingProtocols = localMissingProtocols;

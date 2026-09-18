@@ -304,14 +304,22 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         // signed in this case because the remote system must not pick a Localkeys provider at random among its root and
                         // potential TenantDomains). And vice versa.
                         // We check a Protocol error here.
-                        if( (currentKeyData == null) != (enlistUrl == null && pIssue is ZeroProtocol.ConfigurationOrTrustIssue.Unknwon
-                                                                                        or ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport) )
+                        if( (currentKeyData == null) != (pIssue is ZeroProtocol.ConfigurationOrTrustIssue.Unknwon
+                                                                  or ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport) )
                         {
-                            // Weird: The only possible issues when the message is not signed are Unknwon and DisallowedTransport
-                            //        and enlistUrl must be null.
+                            // Weird: The only possible issues when the message is not signed are Unknwon and DisallowedTransport.
+                            // This is an equivalence: those two are exactly the cases where the listener could not resolve us
+                            // (IncomingConnectionBackTask.cs:441-453), so it has no local keys to sign with, and every other
+                            // issue implies a resolved remote and therefore a signature.
+                            //
+                            // This condition used to also require enlistUrl == null for the unsigned case, which made the
+                            // enlistment flow unreachable: the listener sends its EnlistRemoteUrl precisely for Unknwon, so
+                            // configuring one turned every stranger's knock into this protocol error and a 30s retry loop,
+                            // and no RequiresRemoteCreation issue was ever raised. Nothing consumed the URL because nothing
+                            // could ever receive it.
                             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                           $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport), " +
-                                                           $"EnlistUrl='{enlistUrl}' (must be null). Retrying in 30 seconds." );
+                                                           $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport " +
+                                                           $"when the reply is not signed). Retrying in 30 seconds." );
                             return 30;
                         }
                         // Check the signature if it must be signed.
@@ -336,7 +344,11 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                 ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => PeeringIssueKind.RemoteDisallowedTransport,
                                 _ => Throw.NotSupportedException<PeeringIssueKind>()
                             };
-                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, enlistUrl, null );
+                            // The reply is unsigned by construction here, so the URL is a claim by
+                            // whoever answered the connection. It is still the only way a stranger
+                            // learns where to enlist, so it is surfaced — marked.
+                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, enlistUrl,
+                                                                                enlistUrlIsAuthenticated: false, null );
                             return 5;
                         }
                         // The signature verifies, but against what?
@@ -389,7 +401,11 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         var usefulRemoteKey = issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
                                                 ? currentKeyData
                                                 : null;
-                        transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, clockOffset, enlistUrl, usefulRemoteKey );
+                        // Signed — but SelfAsserted only proves the sender holds some key: reaching here
+                        // with SelfAsserted means we had no trusted key to compare against (TOFU).
+                        transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, clockOffset, enlistUrl,
+                                                                            enlistUrlIsAuthenticated: signatureCheck == SignatureCheck.Trusted,
+                                                                            usefulRemoteKey );
                         return 5;
                     }
                 case ZeroProtocol.DNegoOffRemote:

@@ -135,6 +135,7 @@ sealed partial class TransportManager : MicroAgent
                                            initialMessage,
                                            remote,
                                            EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
                                            invalidClockOffset,
                                            RemoteKeyForApproval: null,
                                            LocalMissing: null,
@@ -162,6 +163,12 @@ sealed partial class TransportManager : MicroAgent
                                            message,
                                            remote,
                                            enlistUrl,
+                                           // Listener side, and this is NOT our own URL: it is the one the
+                                           // remote sent back in its RequiredEnlistUrl reply. That reply is
+                                           // only ever requested for RequiresLocal/BothApproval — the cases
+                                           // that exist precisely because we do not trust its key yet — so
+                                           // its signature verifies against a key it supplied itself.
+                                           EnlistUrlIsAuthenticated: false,
                                            InvalidClockOffset: kind is PeeringIssueKind.InvalidClockOffset ? message.ClockOffset : null,
                                            usefulRemoteKey,
                                            LocalMissing: null,
@@ -172,10 +179,17 @@ sealed partial class TransportManager : MicroAgent
     /// <summary>
     /// Initiator only.
     /// </summary>
+    /// <param name="enlistUrlIsAuthenticated">
+    /// False when <paramref name="enlistUrl"/> came from a reply that did not verify against the key
+    /// we already trust for this remote — an unsigned rejection, or one signed by a key we are only
+    /// seeing for the first time. Such a URL is a claim by whoever answered the connection, not by
+    /// the remote we meant to reach.
+    /// </param>
     internal void OnRemoteConfigurationOrTrustIssue( TransportFeature remote,
                                                      PeeringIssueKind kind,
                                                      TimeSpan? clockOffset,
                                                      string? enlistUrl,
+                                                     bool enlistUrlIsAuthenticated,
                                                      RemoteIdentityKeyData? remoteKeyForApproval )
     {
         Throw.DebugAssert( remote != null && remote.TargetAddress != null );
@@ -192,6 +206,7 @@ sealed partial class TransportManager : MicroAgent
                                            Message: null,
                                            remote,
                                            enlistUrl,
+                                           enlistUrlIsAuthenticated,
                                            clockOffset,
                                            remoteKeyForApproval,
                                            LocalMissing: null,
@@ -209,6 +224,7 @@ sealed partial class TransportManager : MicroAgent
                                            Message: null,
                                            remote,
                                            EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
                                            InvalidClockOffset: null,
                                            RemoteKeyForApproval: null,
                                            LocalMissing: null,
@@ -223,6 +239,7 @@ sealed partial class TransportManager : MicroAgent
                                            Message: null,
                                            remote,
                                            EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
                                            InvalidClockOffset: null,
                                            RemoteKeyForApproval: null,
                                            LocalMissing: null,
@@ -240,6 +257,7 @@ sealed partial class TransportManager : MicroAgent
                                            initialMessage,
                                            remote,
                                            EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
                                            InvalidClockOffset: null,
                                            RemoteKeyForApproval: null,
                                            LocalMissing: localMissing,
@@ -306,6 +324,10 @@ sealed partial class TransportManager : MicroAgent
                                          InitialMessage? Message,
                                          TransportFeature? Remote,
                                          string? EnlistUrl,
+                                         // Deliberately positional next to EnlistUrl and without a default:
+                                         // a URL an operator is invited to act on must never reach the issue
+                                         // pipeline without its provenance travelling with it.
+                                         bool EnlistUrlIsAuthenticated,
                                          TimeSpan? InvalidClockOffset,
                                          RemoteIdentityKeyData? RemoteKeyForApproval,
                                          IReadOnlyList<string>? LocalMissing,
@@ -408,6 +430,7 @@ sealed partial class TransportManager : MicroAgent
                                                      job.Message,
                                                      job.Remote,
                                                      job.EnlistUrl,
+                                                     job.EnlistUrlIsAuthenticated,
                                                      job.InvalidClockOffset,
                                                      job.RemoteKeyForApproval,
                                                      job.LocalMissing,
