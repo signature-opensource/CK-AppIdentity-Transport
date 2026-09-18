@@ -50,11 +50,13 @@ public sealed partial class CrisChannelFeature
             return false;
         }
 
-        protected override bool OnSendMessage( IParallelLogger logger, IOutgoingMessageData message, out IOutgoingMessage? replacement )
+        protected override void OnMessageSent( IParallelLogger logger, IOutgoingMessageData message )
         {
+            // Deliberately here rather than in OnSendMessage: SetSentDate is once-only by contract
+            // ("there is no TrySetSentDate"), and OnSendMessage runs again on every retry of a
+            // failed send. The second call threw, which killed the transport, which reconnected and
+            // peeked the same message — an endless loop on a poisoned queue head.
             if( message.Source is OutgoingCommand r ) r.SetSentDate( logger, DateTime.UtcNow );
-            replacement = null;
-            return true;
         }
 
         internal bool TrySendValidationMessage( ActivityMonitor.LogKey id, CrisValidationResult validationResult )

@@ -322,11 +322,27 @@ sealed partial class TransportController
                         }
                         else
                         {
-                            // If the send is canceled, returns without consuming the message.
+                            // If the send is canceled, returns without consuming the message: the
+                            // loop will peek it again, which is why OnSendMessage above must be
+                            // side effect free.
                             if( !await transport.SendAsync( (uint)protocolNumber + 1, toSend ).ConfigureAwait( false ) )
                             {
                                 replacement?.Release();
                                 return false;
+                            }
+                            // Sent for real, exactly once. Side effects belong here, not in
+                            // OnSendMessage — CRIS used to set the command's sent date there, and a
+                            // retried send called it twice: the second SetResult threw, killing the
+                            // transport, which reconnected and peeked the same message again.
+                            try
+                            {
+                                currentHandler.OnMessageSent( transportManager.Logger, m );
+                            }
+                            catch( Exception ex )
+                            {
+                                // The message is already gone: this must not make the loop resend it.
+                                transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                               $"Unhandled error in {currentHandler.GetType():C}.OnMessageSent for '{m.Protocol}'.", ex );
                             }
                         }
                     }

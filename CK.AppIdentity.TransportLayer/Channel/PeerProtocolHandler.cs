@@ -109,7 +109,12 @@ public abstract class PeerProtocolHandler
     /// Called right before a message is sent to the remote. Does nothing by default (always returns true).
     /// <para>
     /// The <paramref name="replacement"/> can be used to implement version conversion if the message's protocol differ
-    /// from this <see cref="Protocol"/>. 
+    /// from this <see cref="Protocol"/>.
+    /// </para>
+    /// <para>
+    /// <b>This must be side effect free.</b> A send that fails leaves the message in the queue so that
+    /// it can be retried, and this is called again on each attempt — possibly many times for one
+    /// message. Anything that must happen exactly once belongs in <see cref="OnMessageSent"/>.
     /// </para>
     /// </summary>
     /// <param name="logger">The logger to use.</param>
@@ -120,5 +125,27 @@ public abstract class PeerProtocolHandler
     {
         replacement = null;
         return true;
+    }
+
+    /// <summary>
+    /// Called once the message has actually reached the transport. Does nothing by default.
+    /// <para>
+    /// This is where a side effect belongs — unlike <see cref="OnSendMessage"/> it runs exactly once
+    /// per message, and only when the send succeeded.
+    /// </para>
+    /// <para>
+    /// The message is the one that was queued, not any replacement produced by
+    /// <see cref="OnSendMessage"/>, so that <see cref="IOutgoingMessageData.Source"/> is still the
+    /// object the application enqueued.
+    /// </para>
+    /// <para>
+    /// An exception thrown here is logged and swallowed: the message is already gone, so failing
+    /// must not push the send loop into resending it.
+    /// </para>
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="message">The message that was sent.</param>
+    internal protected virtual void OnMessageSent( IParallelLogger logger, IOutgoingMessageData message )
+    {
     }
 }
