@@ -205,7 +205,23 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // listeners and if the party is the initiator it must start to try to connect.
         // Before being able to start exchanging with others, we must know the message protocols
         // that are supported: CloseChannelRegistration does this.
-        var t = new TransportFeature( _transportManager, r, listeners, target, remoteKeys, disallowEviction );
+        // Only meaningful for an initiator, but read regardless: a remote that switches between
+        // listening and dialling must not silently lose its configured value.
+        TimeSpan? negotiationTimeout = null;
+        var nt = r.Configuration.Configuration.TryLookupValue( "NegotiationTimeout" );
+        if( nt != null )
+        {
+            if( int.TryParse( nt, out var seconds ) && seconds >= 1 && seconds <= 600 )
+            {
+                negotiationTimeout = TimeSpan.FromSeconds( seconds );
+            }
+            else
+            {
+                context.Monitor.Warn( $"Invalid '{r.Configuration.Configuration.Path}:NegotiationTimeout' = '{nt}'. " +
+                                      $"Expected a number of seconds between 1 and 600. Using the default." );
+            }
+        }
+        var t = new TransportFeature( _transportManager, r, listeners, target, remoteKeys, disallowEviction, negotiationTimeout );
         // We add the feature here to the remote so that channels can use it.
         // And we wait a successful initialization to "publish" the new TransportFeature to the
         // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature

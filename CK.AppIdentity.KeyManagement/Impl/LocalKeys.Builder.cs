@@ -44,7 +44,7 @@ sealed partial class LocalKeys
             //   => The first one is the one to use, the current one, because it is the most recent one.
             List<LocalIdentityKey> identities = LoadIdentityKeys( monitor, protector, now, identityPath );
             // The certificate to consider is the last one of the list.
-            // If it cannot guaranty the "AllowedOfflineDays", we must issue a new identity valid from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
+            // If it cannot guarantee the "AllowedOfflineDays", we must issue a new identity valid from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
             if( identities.Count == 0 || identities[0].NotAfter < today.AddDays( (allowedOfflineDays / renewalFrequency) + 1 ) )
             {
                 var newOne = CreateIdentityCertificate( _local.FullName,
@@ -55,7 +55,7 @@ sealed partial class LocalKeys
                 // Printing newOne.NotAfter here would state the new key's expiry as the justification
                 // for its own creation, which reads plausibly and tells an operator nothing.
                 else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {identities[0].NotAfter:yyyy-MM-dd}. " +
-                                   $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
+                                   $"It is not enough to guarantee AllowedOfflineDays = {allowedOfflineDays}." );
 
                 var (name, filePath) = SaveIdentityFileAndPassword( monitor, protector, now, identityPath, newOne );
 
@@ -242,12 +242,25 @@ sealed partial class LocalKeys
                                tags: ActivityMonitor.Tags.ToBeInvestigated );
                 success = false;
             }
-            var expectedSubject = $"CN=\"{_local.FullName}\"";
-            if( c.Subject != expectedSubject )
+            // Compare the DECODED common name, never the rendered Subject string.
+            //
+            // X500DistinguishedName.Name runs the value through a DN formatter, and whether that
+            // formatter quotes depends on the characters in the name and on the platform: on Windows
+            // CertNameToStr quotes for , + = " \n < > ; # and edge whitespace. A full name like
+            // Test/$Party/#Dev contains a '#', so it renders quoted here and would render unquoted on
+            // a name without one — an equality test against a hand-built "CN=\"…\"" literal therefore
+            // passes or fails on the punctuation of the party name and on the host OS. A key that
+            // fails it is not merely rejected, it is TRASHED, so getting this wrong destroys the
+            // identity every remote has pinned.
+            //
+            // GetNameInfo decodes the attribute and hands back the value itself, with no formatter in
+            // the way.
+            var actualName = c.GetNameInfo( X509NameType.SimpleName, forIssuer: false );
+            if( !string.Equals( actualName, _local.FullName, StringComparison.Ordinal ) )
             {
                 LogAndCleanup( monitor,
                                filePath,
-                               $"Invalid certificate subject (expected '{expectedSubject}', got '{c.Subject}') for '{filePath}'." );
+                               $"Invalid certificate common name (expected '{_local.FullName}', got '{actualName}') for '{filePath}'." );
                 success = false;
             }
             if( !c.HasPrivateKey )

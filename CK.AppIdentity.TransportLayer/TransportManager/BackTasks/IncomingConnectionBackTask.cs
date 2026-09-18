@@ -34,7 +34,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         if( !_runTask.IsCompleted )
         {
             var delta = DateTime.UtcNow - _initializeTime;
-            if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
+            if( delta > TimeSpan.FromMilliseconds( TransportManager.IncomingNegotiationTimeout ) )
             {
                 monitor.Warn( $"Incoming connection timeout ({(int)delta.TotalMilliseconds} ms) for '{_incoming}'. Destroying the transport." );
                 TaskManager.Host.KillTransport( _incoming, int.MaxValue );
@@ -46,7 +46,19 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         }
         else if( _runTask.IsFaulted )
         {
-            monitor.Warn( $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", _runTask.Exception );
+            var ex = _runTask.Exception;
+            if( ConnectionFault.IsPeerFault( ex ) )
+            {
+                // An unauthenticated peer sending garbage is an ordinary event on a listening port.
+                // One short line, no stack.
+                monitor.Warn( $"Incoming connection for '{_incoming}' failed on its own data " +
+                              $"({ConnectionFault.ShortName( ex! )}). Destroying the transport." );
+            }
+            else
+            {
+                monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                               $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", ex );
+            }
             TaskManager.Host.KillTransport( _incoming, int.MaxValue );
         }
         else
@@ -110,14 +122,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // This handles null or untrusted remote and the RemoteTrustInfo.
         // - When the remote is null (because it has not been found in this incoming.Listener.Parties), we try to find him among
         //   the ApplicationIdentityService.AllRemotes:
-        //     - If we can't find him, then the issue is "IncomingUnknwon"
+        //     - If we can't find him, then the issue is "IncomingUnknown"
         //     - If it has no associated TransportFeature the issue is "IncomingDisallowedTransport"
         //     - A TransportFeature is available so we have its IRemoteKeys.MaxClockOffset:  
         //        - We can check the clockOffset against the IRemoteKeys.MaxClockOffset: the issue can be "InvalidClockOffset".
         //        - If our Remote is also an initiator, this is "InitiatorConflict"
         //        - Otherwise, the Party is bound to another Listener: the issue is "IncomingUnsupportedTransport".
         //   => We resolve the existingParty and updates the remote here so that:
-        //      - We can always sign the message except for "IncomingUnknwon" and "IncomingDisallowedTransport".
+        //      - We can always sign the message except for "IncomingUnknown" and "IncomingDisallowedTransport".
         //      - the PeeringIssue can have its TransportFeature if possible.
         // - Based on foundTrustKey and initialMessage.RemoteTrustInfo (we can predict that the remote will not be able to trust us),
         //   the issue can be "RequiresLocalApproval" (foundTrustKey is false), "RequiresRemoteApproval" or "RequiresBothApproval".
@@ -459,7 +471,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             if( exists == null )
             {
                 // We don't know the incoming at all.
-                return PeeringIssueKind.IncomingUnknwon;
+                return PeeringIssueKind.IncomingUnknown;
             }
             remote = exists.GetFeature<TransportFeature>();
             if( remote == null )
@@ -530,7 +542,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // depend on this enum.
         var pIssue = issue switch
         {
-            PeeringIssueKind.IncomingUnknwon => ZeroProtocol.ConfigurationOrTrustIssue.Unknwon,
+            PeeringIssueKind.IncomingUnknown => ZeroProtocol.ConfigurationOrTrustIssue.Unknown,
             PeeringIssueKind.IncomingDisallowedTransport => ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport,
             PeeringIssueKind.InvalidClockOffset => ZeroProtocol.ConfigurationOrTrustIssue.InvalidClockOffset,
             PeeringIssueKind.InitiatorConflict => ZeroProtocol.ConfigurationOrTrustIssue.InitiatorConflict,
@@ -540,8 +552,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             PeeringIssueKind.RequiresBothApproval => ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval,
             _ => Throw.NotSupportedException<ZeroProtocol.ConfigurationOrTrustIssue>()
         };
-        // When there is a configuration issue or if the remote trust (or can) trust us, there is no point to tranfer an enlist url. 
-        string? enlistUrl = issue is PeeringIssueKind.IncomingUnknwon
+        // When there is a configuration issue or if the remote trust (or can) trust us, there is no point to transfer an enlist url. 
+        string? enlistUrl = issue is PeeringIssueKind.IncomingUnknown
                                      or PeeringIssueKind.RequiresRemoteApproval
                                      or PeeringIssueKind.RequiresBothApproval
                                 ? transportManager.GetEnlistRemoteUrl( existingParty, initialMessage.DomainName )

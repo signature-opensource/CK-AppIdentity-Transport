@@ -75,7 +75,20 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                     int retryDelay = Math.Min( _tryConnectCount, 30 );
                     if( _result.IsFaulted )
                     {
-                        monitor.Error( $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} seconds.", _result.Exception );
+                        var ex = _result.Exception;
+                        if( ConnectionFault.IsPeerFault( ex ) )
+                        {
+                            // The listener we dialled sent something malformed or dropped us. That is
+                            // the remote's doing, not a fault here: short line, no stack, so a peer
+                            // that keeps doing it cannot flood the log with our frames.
+                            monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: '{_remote.Party}' failed the exchange " +
+                                          $"({ConnectionFault.ShortName( ex! )}). Retrying in {retryDelay} seconds." );
+                        }
+                        else
+                        {
+                            monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                           $"OutgoingConnectionBackTask #{GetHashCode()}: Unhandled error while connecting to '{_remote.Party}'. Retrying in {retryDelay} seconds.", ex );
+                        }
                     }
                     else
                     {
@@ -111,9 +124,11 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                 CancelOperation( monitor, offline: true );
                 return;
             }
-            // The attempt is still running. If it takes more than NegotiationTimeout seconds, cancel it.
+            // The attempt is still running. This budget is the remote's own, not the listener's: it
+            // covers the TCP connect as well as the exchange, and a remote we configured is not a
+            // denial-of-service surface the way an unauthenticated stranger is.
             var delta = DateTime.UtcNow - _startTime;
-            if( delta > TimeSpan.FromMilliseconds( TransportManager.NegotiationTimeout ) )
+            if( delta > _remote.OutgoingNegotiationTimeout )
             {
                 monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Timeout ({(int)delta.TotalMilliseconds} ms) while connecting to remote '{_remote.Party}'. Reseting in 1 second." );
                 CancelOperation( monitor, false );
@@ -305,21 +320,21 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         // signed in this case because the remote system must not pick a Localkeys provider at random among its root and
                         // potential TenantDomains). And vice versa.
                         // We check a Protocol error here.
-                        if( (currentKeyData == null) != (pIssue is ZeroProtocol.ConfigurationOrTrustIssue.Unknwon
+                        if( (currentKeyData == null) != (pIssue is ZeroProtocol.ConfigurationOrTrustIssue.Unknown
                                                                   or ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport) )
                         {
-                            // Weird: The only possible issues when the message is not signed are Unknwon and DisallowedTransport.
+                            // Weird: The only possible issues when the message is not signed are Unknown and DisallowedTransport.
                             // This is an equivalence: those two are exactly the cases where the listener could not resolve us
                             // (IncomingConnectionBackTask.cs:441-453), so it has no local keys to sign with, and every other
                             // issue implies a resolved remote and therefore a signature.
                             //
                             // Note what this must NOT also require: that an unsigned reply carries a null enlistUrl.
-                            // The listener sends its EnlistRemoteUrl precisely for Unknwon, which is an unsigned reply
+                            // The listener sends its EnlistRemoteUrl precisely for Unknown, which is an unsigned reply
                             // by construction, so demanding a null one here makes the whole enlistment flow unreachable
                             // — every stranger's knock becomes this protocol error and a 30s retry loop, and no
                             // RequiresRemoteCreation issue is ever raised for an operator to act on.
                             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                                           $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport " +
+                                                           $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknown or DisallowedTransport " +
                                                            $"when the reply is not signed). Retrying in 30 seconds." );
                             return 30;
                         }
@@ -341,7 +356,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             Throw.DebugAssert( !signatureVerified );
                             issue = pIssue switch
                             {
-                                ZeroProtocol.ConfigurationOrTrustIssue.Unknwon => PeeringIssueKind.RequiresRemoteCreation,
+                                ZeroProtocol.ConfigurationOrTrustIssue.Unknown => PeeringIssueKind.RequiresRemoteCreation,
                                 ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => PeeringIssueKind.RemoteDisallowedTransport,
                                 _ => Throw.NotSupportedException<PeeringIssueKind>()
                             };
@@ -394,8 +409,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval => PeeringIssueKind.RequiresRemoteApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval => PeeringIssueKind.RequiresLocalApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval => PeeringIssueKind.RequiresBothApproval,
-                            // Unknwon and DisallowedTransport are already handled.
-                            ZeroProtocol.ConfigurationOrTrustIssue.Unknwon => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
+                            // Unknown and DisallowedTransport are already handled.
+                            ZeroProtocol.ConfigurationOrTrustIssue.Unknown => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
                             ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
                             _ => Throw.NotSupportedException<PeeringIssueKind>( pIssue.ToString() )
                         };
@@ -431,7 +446,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             else
                             {
                                 // PartyDestroyed and ApplicationIdentityShutdown: this can be transient (restart of the application
-                                // or suppresion of a dynamic party to add it back with a different configuration).
+                                // or suppression of a dynamic party to add it back with a different configuration).
                                 // We don't switch of our remote, we just emit an issue.
                                 retryDelay = 5;
                             }
@@ -611,7 +626,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
     /// </summary>
     /// <param name="remote">The remote feature.</param>
     /// <param name="clockOffset">The clock offset.</param>
-    /// <param name="offMessage">The swithed off message.</param>
+    /// <param name="offMessage">The switched off message.</param>
     /// <returns>The retry delay. 0 for no retry.</returns>
     internal static int HandleRemoteSwitchedOff( TransportFeature remote, TimeSpan clockOffset, GoodbyeMessage.SwitchedOff offMessage )
     {

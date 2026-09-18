@@ -433,7 +433,7 @@ sealed partial class TransportController
                                 if( reconnectDelay == 0 ) reconnectDelay = int.MaxValue;
                                 break;
                             // PartyDestroyed and ApplicationIdentityShutdown: this can be transient (restart of the application
-                            // or suppresion of a dynamic party to add it back with a different configuration).
+                            // or suppression of a dynamic party to add it back with a different configuration).
                             // We don't switch of our remote, we just emit an issue.
                             default:
                                 reconnectDelay = 5;

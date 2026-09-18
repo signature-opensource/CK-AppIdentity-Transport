@@ -1,4 +1,6 @@
 using CK.AppIdentity.TransportLayer.Tests.Adversarial;
+using CK.Monitoring;
+using System.Collections.Generic;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -141,6 +143,53 @@ public class ReconnectBackOffTests
         f.FlapCount.ShouldBe( 1,
             "A connection that lasted is evidence the remote is healthy: the history is forgotten and " +
             "this kill starts a fresh sequence, so the next retry is prompt again." );
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_peer_sending_an_impossible_downgrade_is_not_reported_as_our_fault_Async( CancellationToken token )
+    {
+        // Two findings meet here.
+        //
+        // A downgrade can only name a version below the current one. Reading it without checking lets
+        // the value reach SendInitialMessageAsync and fail an ARGUMENT check from inside the connect
+        // task, which surfaces as an unhandled error about this code — for something a peer did.
+        //
+        // And a fault the peer caused must not be logged as an Error with a stack: on this path a
+        // remote can produce one per reconnection, which is a log-volume problem and puts routine
+        // noise in the bucket an operator watches for real faults.
+        PeerStore.ClearRemoteTrust( "Test/$M14DownPeer" );
+        using var logs = GrandOutput.Default!.CreateMemoryCollector( 2000 );
+        await using var peer = new AdversarialPeer();
+        await using var sender = await CreateSenderAsync( "M14Down", "$M14DownPeer", peer.Address, token );
+
+        await using( var c = await peer.AcceptAsync( token ) )
+        {
+            await c.ReadInitialMessageAsync( token );
+            // "Use version 7" — a version this side cannot possibly produce.
+            await c.SendZeroFrameAsync( PeerMessages.Build( ( ref FastByteWriter w ) =>
+            {
+                w.WriteByte( PeerMessages.DNegoDowngradeProtocol );
+                w.WriteSmallUInt32( 7 );
+            }, signWith: null ), token );
+        }
+
+        // ExtractCurrentTexts DRAINS the collector, so accumulate: re-reading it in a poll loop
+        // throws away everything logged before the poll that finally matches.
+        var texts = new List<string>();
+        var deadline = DateTime.UtcNow.AddSeconds( 20 );
+        while( DateTime.UtcNow < deadline )
+        {
+            texts.AddRange( logs.ExtractCurrentTexts() );
+            if( texts.Any( t => t.Contains( "failed the exchange" ) ) ) break;
+            await Task.Delay( 50, token );
+        }
+        texts.AddRange( logs.ExtractCurrentTexts() );
+
+        texts.ShouldContain( t => t.Contains( "failed the exchange" ),
+            "The initiator must report the peer's impossible downgrade — silence would make the " +
+            "assertion below pass for the wrong reason." );
+        texts.ShouldNotContain( t => t.Contains( "Unhandled error while connecting" ),
+            "That wording says the fault is ours. It is the peer's: it sent a version we cannot speak." );
     }
 
     static async Task WaitForAsync( Func<bool> condition, string what, CancellationToken token, int seconds = 30 )

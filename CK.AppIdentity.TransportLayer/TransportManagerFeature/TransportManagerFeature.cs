@@ -32,6 +32,7 @@ public sealed class TransportManagerFeature
     TimeSpan _keepAliveIdleTime;
     TimeSpan _keepAliveProbeInterval;
     int _keepAliveProbeCount;
+    TimeSpan _defaultOutgoingNegotiationTimeout;
     PeeringIssue[]? _exposedIssues;
     PeeringIssue[]? _exposedClonedIssues;
 
@@ -48,6 +49,7 @@ public sealed class TransportManagerFeature
         _keepAliveIdleTime = TimeSpan.FromSeconds( 30 );
         _keepAliveProbeInterval = TimeSpan.FromSeconds( 5 );
         _keepAliveProbeCount = 3;
+        _defaultOutgoingNegotiationTimeout = TimeSpan.FromSeconds( 15 );
     }
 
 
@@ -63,7 +65,7 @@ public sealed class TransportManagerFeature
     public PerfectEvent<TransportFeature> ConnectionAvailabilityChanged => _connectionAvailabilityChanged.PerfectEvent;
 
     /// <summary>
-    /// Gets or sets the maximal number of memorized <see cref="PeeringIssue"/> for truly unknwon remotes
+    /// Gets or sets the maximal number of memorized <see cref="PeeringIssue"/> for truly unknown remotes
     /// (for <see cref="PeeringIssue.IsListener"/>: <see cref="PeeringIssue.Remote"/> is null).
     /// Must be between 5 and 100, defaults to 5.
     /// </summary>
@@ -165,6 +167,34 @@ public sealed class TransportManagerFeature
         {
             Throw.CheckOutOfRangeArgument( value > TimeSpan.Zero );
             _stableConnectionTime = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets how long an OUTGOING connection attempt may take before it is abandoned and
+    /// retried, for remotes that do not configure their own. Defaults to 15 seconds, must be at least
+    /// one second.
+    /// <para>
+    /// A remote can override it with its <c>NegotiationTimeout</c> configuration entry, in seconds —
+    /// one fleet may sit on a LAN and another behind a satellite link, and a single number cannot
+    /// serve both.
+    /// </para>
+    /// <para>
+    /// This is not the mirror of <see cref="TransportManager.IncomingNegotiationTimeout"/> and must
+    /// not be tuned like it. That one bounds what a stranger can hold; this one is a reachability
+    /// budget for a party you configured, where there is no such exposure. It also covers more: the
+    /// window opens before the TCP connect, so it has to absorb the connect, roughly two and a half
+    /// round trips, and any retransmission — a single lost packet costs a second or more on its own,
+    /// before a signature is computed.
+    /// </para>
+    /// </summary>
+    public TimeSpan DefaultOutgoingNegotiationTimeout
+    {
+        get => _defaultOutgoingNegotiationTimeout;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value >= TimeSpan.FromSeconds( 1 ) );
+            _defaultOutgoingNegotiationTimeout = value;
         }
     }
 
@@ -427,7 +457,7 @@ public sealed class TransportManagerFeature
             _exposedClonedIssues = null;
             return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
         }
-        // If there is no remote then cleanup in excess unknwon remotes if any
+        // If there is no remote then cleanup in excess unknown remotes if any
         // before adding the new one.
         if( remote == null )
         {

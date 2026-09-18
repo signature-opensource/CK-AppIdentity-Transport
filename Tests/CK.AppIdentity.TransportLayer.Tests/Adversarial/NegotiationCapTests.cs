@@ -17,7 +17,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// A connection costs a pooled buffer, a task, a back task, an SPKI import and an ECDSA verification
 /// before the listener knows whether it has ever heard of the peer — and it cannot skip that work for
 /// an unknown party, because an unknown party knocking is the intended onboarding flow (M8).
-/// <c>NegotiationTimeout</c> bounds how long one of those lasts. Nothing bounded how many ran at once.
+/// <c>IncomingNegotiationTimeout</c> bounds how long one of those lasts. Nothing bounds how many run at once.
 /// </para>
 /// <para>
 /// A peer that connects and then says nothing holds its slot for the full timeout, which is what these
@@ -59,7 +59,7 @@ public class NegotiationCapTests
     /// <para>
     /// This is THE observable that distinguishes refused from admitted, and the counters are not: a
     /// refused connection is closed at accept time, while an admitted silent one is held for the full
-    /// <c>NegotiationTimeout</c> (2 s) waiting for an InitialMessage. Asserting only on
+    /// <c>IncomingNegotiationTimeout</c> (2 s) waiting for an InitialMessage. Asserting only on
     /// <c>CurrentNegotiationCount</c>/<c>RefusedNegotiationCount</c> would pass even against a gate
     /// whose verdict is computed and then ignored: those counters are maintained inside the decision
     /// being tested, so they prove it was taken, not that it was obeyed.
@@ -105,7 +105,7 @@ public class NegotiationCapTests
 
             // The behaviour, not just the bookkeeping.
             (await IsDroppedWithinAsync( fourth, 750, token )).ShouldBeTrue(
-                "The refused connection is closed at accept time, long before NegotiationTimeout." );
+                "The refused connection is closed at accept time, long before IncomingNegotiationTimeout." );
             (await IsDroppedWithinAsync( peers[0], 750, token )).ShouldBeFalse(
                 "An admitted one is held, waiting for its InitialMessage. Without this the test would " +
                 "pass on a gate whose verdict is computed and ignored." );
@@ -132,7 +132,7 @@ public class NegotiationCapTests
             for( int i = 0; i < 3; ++i ) peers.Add( await SilentPeerAsync( token ) );
             await WaitForAsync( () => f.CurrentNegotiationCount == 3, $"the gate to fill (round {round})", token );
 
-            // Dropping the connection ends the negotiation without waiting out NegotiationTimeout.
+            // Dropping the connection ends the negotiation without waiting out IncomingNegotiationTimeout.
             foreach( var p in peers ) await p.DisposeAsync();
             await WaitForAsync( () => f.CurrentNegotiationCount == 0, $"the slots to come back (round {round})", token );
         }

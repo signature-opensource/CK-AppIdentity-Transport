@@ -46,6 +46,8 @@ public sealed class TransportFeature
     ConnectionAvailability _connectionAvailabilty;
     TimeSpan? _clockOffset;
     bool _disallowEviction;
+    // Null when this remote does not configure one: the manager default is then read at each use.
+    readonly TimeSpan? _configuredNegotiationTimeout;
 
     // Reconnection back-off state. It belongs HERE, on the remote, and not on
     // OutgoingConnectionBackTask: that task is created fresh for each reconnection and returned to a
@@ -62,7 +64,8 @@ public sealed class TransportFeature
                                TransportListener[]? listeners,
                                TransportTypeAddress? target,
                                IRemoteKeys remoteKeys,
-                               bool disallowEviction )
+                               bool disallowEviction,
+                               TimeSpan? negotiationTimeout )
     {
         Throw.DebugAssert( "Either we are listening or we are targeting.", ( listeners == null) != (target == null) );
         _transportManager = transportManager;
@@ -79,6 +82,7 @@ public sealed class TransportFeature
         _bestRegisteredProtocols = new List<MessageProtocol>( MessageProtocolMap.MaxCount );
         _readyTask = new TaskCompletionSource();
         _disallowEviction = disallowEviction;
+        _configuredNegotiationTimeout = negotiationTimeout;
     }
 
     internal async Task OnTransportAppearAsync( IActivityMonitor monitor,
@@ -287,6 +291,25 @@ public sealed class TransportFeature
     /// Defaults to <see cref="Util.UtcMinValue"/>.
     /// </summary>
     public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
+
+    /// <summary>
+    /// Gets how long an outgoing connection attempt to this remote may take before it is abandoned
+    /// and retried: this remote's <c>NegotiationTimeout</c> configuration entry (in seconds) when it
+    /// has one, otherwise <see cref="TransportManagerFeature.DefaultOutgoingNegotiationTimeout"/>.
+    /// <para>
+    /// Per remote because the right value is a property of the link, not of this process: a remote on
+    /// the same switch and one behind a satellite hop cannot share a number. Falling back to the
+    /// manager's default rather than capturing it means raising that default still reaches every
+    /// remote that did not ask for something specific.
+    /// </para>
+    /// <para>
+    /// Note what this budget must cover, which is more than the exchange: the window opens before the
+    /// TCP connect, so it contains the connect, roughly two and a half round trips, and any
+    /// retransmission. The signatures are the cheap part of it.
+    /// </para>
+    /// </summary>
+    public TimeSpan OutgoingNegotiationTimeout
+        => _configuredNegotiationTimeout ?? _transportManager.Feature.DefaultOutgoingNegotiationTimeout;
 
     /// <summary>
     /// Gets how many times in a row a connection to this remote was established and then died

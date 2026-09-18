@@ -15,10 +15,22 @@ namespace CK.AppIdentity.TransportLayer;
 sealed partial class TransportManager : MicroAgent
 {
     /// <summary>
-    /// Maximal time in milliseconds allowed for a connection to be negotiated.
+    /// Maximal time in milliseconds an INCOMING connection may spend negotiating before it is killed.
     /// This delay is not based on the heartbeat rate.
+    /// <para>
+    /// This is a denial-of-service control, not a reachability budget: it bounds how long a stranger
+    /// who has authenticated nothing holds one of the slots
+    /// <see cref="TransportManagerFeature.MaxConcurrentNegotiation"/> counts. It is deliberately short,
+    /// and deliberately NOT the same number as the outgoing side uses — see
+    /// <see cref="TransportFeature.OutgoingNegotiationTimeout"/>. Raising this to suit a slow link
+    /// would multiply what an unauthenticated peer can hold.
+    /// </para>
+    /// <para>
+    /// The span it covers starts after the connection is accepted: reading the InitialMessage,
+    /// verifying one signature, replying, and reading the final message — roughly one round trip.
+    /// </para>
     /// </summary>
-    public const int NegotiationTimeout = 2000;
+    public const int IncomingNegotiationTimeout = 2000;
 
     readonly AppIdentityAgent _agent;
     readonly MessageProtocolDirectoryService _protocolDirectory;
@@ -110,7 +122,7 @@ sealed partial class TransportManager : MicroAgent
         Throw.DebugAssert( IsInApplicationIdentityLoop( monitor ) );
         // When a new feature is created, we immediately raise the Feature.TransportChanged event
         // from the ApplicationIdentity loop but we push a job to update the possible peering issue
-        // for the unknwon remote (only the full name is none from an incoming message) because
+        // for the unknown remote (only the full name is none from an incoming message) because
         // the peering issues are managed only from the TransportManager loop.
         PushTypedJob( t );
         return _exposedFeature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, t );
@@ -176,7 +188,7 @@ sealed partial class TransportManager : MicroAgent
     /// </summary>
     internal void OnIncomingConfigurationOrTrustIssue( InitialMessage message, TransportFeature? remote, PeeringIssueKind kind, string? enlistUrl )
     {
-        Throw.DebugAssert( kind is PeeringIssueKind.IncomingUnknwon
+        Throw.DebugAssert( kind is PeeringIssueKind.IncomingUnknown
                                   or PeeringIssueKind.IncomingDisallowedTransport
                                   or PeeringIssueKind.InvalidClockOffset
                                   or PeeringIssueKind.IncomingUnsupportedTransport

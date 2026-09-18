@@ -506,11 +506,33 @@ public ref partial struct FastByteReader
     /// <returns>The string.</returns>
     public string ReadString()
     {
-        int len = (int)ReadSmallUInt32();
+        int len = CheckedLength( ReadSmallUInt32() );
         if( len == 0 ) return String.Empty;
         if( TryReadBytes( len, out var span ) )
             return Encoding.UTF8.GetString( span );
         return ReadMultiSegment( ref this, len );
+    }
+
+    /// <summary>
+    /// Validates a length declared by the input against the bytes that actually remain.
+    /// <para>
+    /// A declared length is chosen by whoever wrote the data, and the value is used to rent or
+    /// allocate before a single byte of the payload is read. Bounding the message does not bound this:
+    /// a twenty byte message can claim a two gigabyte string, which is an amplification, not a big
+    /// message. The remaining bytes are the one limit that is always correct — nothing can legitimately
+    /// claim more than is left — and it needs no constant to be chosen and kept up to date.
+    /// </para>
+    /// <para>
+    /// Taking the value as a <see cref="uint"/> also matters: an unchecked cast to <see cref="int"/>
+    /// turns anything above <see cref="int.MaxValue"/> negative, which slips past a "length is not too
+    /// big" test and then fails as an <see cref="ArgumentOutOfRangeException"/> out of a slice rather
+    /// than the <see cref="System.IO.InvalidDataException"/> the protocol layer expects and handles.
+    /// </para>
+    /// </summary>
+    int CheckedLength( uint len )
+    {
+        Throw.CheckData( len <= (ulong)(_sequence.Length - HeadOffset) );
+        return (int)len;
     }
 
     /// <summary>
@@ -523,7 +545,9 @@ public ref partial struct FastByteReader
     public string ReadString( int maxLength )
     {
         Throw.CheckOutOfRangeArgument( maxLength >= 0 );
-        int len = (int)ReadSmallUInt32();
+        // CheckedLength first: maxLength is a semantic limit ("an instance id is at most 64
+        // characters"), not a defence. The structural one still applies under it.
+        int len = CheckedLength( ReadSmallUInt32() );
         if( len == 0 ) return String.Empty;
         Throw.CheckData( len <= maxLength );
         if( TryReadBytes( len, out var span ) )

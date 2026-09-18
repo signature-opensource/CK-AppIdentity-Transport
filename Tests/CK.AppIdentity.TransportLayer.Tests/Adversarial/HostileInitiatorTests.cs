@@ -1,10 +1,12 @@
 using CK.AppIdentity.TransportLayer.Tests.Adversarial;
+using CK.Monitoring;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;

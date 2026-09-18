@@ -31,13 +31,13 @@ public enum PeeringIssueKind
     /// This applies only to listeners.
     /// </para>
     /// </summary>
-    IncomingUnknwon,
+    IncomingUnknown,
 
     /// <summary>
     /// The target remote doesn't know us at all. If <see cref="PeeringIssue.EnlistUrl"/> is not null, it
     /// may be used by an authorized user of the remote system to create (and allow) us.
     /// <para>
-    /// This applies only to initiators (this mirrors <see cref="IncomingUnknwon"/>).
+    /// This applies only to initiators (this mirrors <see cref="IncomingUnknown"/>).
     /// </para>
     /// </summary>
     RequiresRemoteCreation,

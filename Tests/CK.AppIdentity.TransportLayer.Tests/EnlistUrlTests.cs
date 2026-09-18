@@ -126,7 +126,7 @@ public class EnlistUrlTests
 
         var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull( "The listener records the stranger as an unknown incoming." );
-        issue!.Kind.ShouldBe( PeeringIssueKind.IncomingUnknwon );
+        issue!.Kind.ShouldBe( PeeringIssueKind.IncomingUnknown );
         issue.EnlistUrl.ShouldBeNull(
             "The listener sent its URL to the stranger; it has no URL of the stranger's to record." );
     }

@@ -8,7 +8,7 @@ namespace CK.AppIdentity.TransportLayer;
 /// <para>
 /// Everything an incoming connection costs before the listener knows whether it is talking to a
 /// party it has ever heard of — a pooled read buffer, a <c>Task.Run</c>, a back task, an SPKI import
-/// and an ECDSA verification — is spent on an unauthenticated peer's say-so. <c>NegotiationTimeout</c>
+/// and an ECDSA verification — is spent on an unauthenticated peer's say-so. <c>IncomingNegotiationTimeout</c>
 /// bounds how long one of those lasts; it does not bound how many run at once.
 /// </para>
 /// <para>

@@ -55,28 +55,6 @@ public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDi
         return false;
     }
 
-    static bool TryParse( ref string fullName, out string name, out ushort version )
-    {
-        fullName = fullName.Trim();
-        int idx = fullName.IndexOf( '.' );
-        if( idx < 0 )
-        {
-            name = fullName;
-            fullName = FormatFullName( name, version = 0 );
-            return true;
-        }
-        if( idx > 0
-            && idx < fullName.Length - 1
-            && ushort.TryParse(fullName.AsSpan(idx), out version ) )
-        {
-            name = fullName.Substring(0, idx);
-            return true;
-        }
-        name = string.Empty;
-        version = 0;
-        return false;
-    }
-
     internal static string FormatFullName( string name, int version ) => $"{name}.{version}";
 
     void IDisposable.Dispose()

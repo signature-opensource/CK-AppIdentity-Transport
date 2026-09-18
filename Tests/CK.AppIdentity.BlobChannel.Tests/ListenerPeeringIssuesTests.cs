@@ -25,7 +25,7 @@ public class ListenerPeeringIssuesTests
 
     [Test]
     [CancelAfter( 7000 )]
-    public async Task UnknwonIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async( CancellationToken token )
+    public async Task UnknownIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async( CancellationToken token )
     {
         TestHelper.GetCleanTestStoreFolder();
 
@@ -50,12 +50,12 @@ public class ListenerPeeringIssuesTests
                 // Captures the (unresolved) next event task.
                 var nextEvent = waiter.NextEvent;
 
-                TestHelper.Monitor.Info( "Tests: Starts the sender. It is unknown for the listener. One UnknwonIncoming issue appears." );
+                TestHelper.Monitor.Info( "Tests: Starts the sender. It is unknown for the listener. One UnknownIncoming issue appears." );
                 // We need this remote to retry quickly, we use a heartbeat of 50 ms instead of 1000 ms.
                 // It will automatically trust the listener identity.
                 sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
 
-                TestHelper.Monitor.Info( "Tests: Wait for the first UnknwonIncoming event." );
+                TestHelper.Monitor.Info( "Tests: Wait for the first UnknownIncoming event." );
                 var theIssue = await nextEvent.WaitAsync( token );
                 Throw.DebugAssert( theIssue != null );
 
@@ -71,12 +71,12 @@ public class ListenerPeeringIssuesTests
                 theIssue.IsInitiator.ShouldBeFalse();
                 theIssue.Remote.ShouldBeNull();
 
-                theIssue.Kind.ShouldBe( PeeringIssueKind.IncomingUnknwon );
+                theIssue.Kind.ShouldBe( PeeringIssueKind.IncomingUnknown );
                 Throw.DebugAssert( theIssue.IncomingRequest != null );
                 theIssue.IncomingRequest.CurrentRemoteIdentity.ShouldNotBeNull();
                 theIssue.IncomingRequest.FullName.ShouldBe( "Test/$Sender/#Dev" );
                 theIssue.IncomingRequest.AvailableProtocols.ShouldBe( ["Blob.0"] );
-                theIssue.IncomingRequest.IsValidClockOffset.ShouldBeFalse( "Always false when IncomingUnknwon or IncomingDisallowedTransport." );
+                theIssue.IncomingRequest.IsValidClockOffset.ShouldBeFalse( "Always false when IncomingUnknown or IncomingDisallowedTransport." );
 
                 // Captures the (unresolved) next event task.
                 nextEvent = waiter.NextEvent;
@@ -88,7 +88,7 @@ public class ListenerPeeringIssuesTests
                     c["Address"] = "1.0.2.3";
                 } );
                 Throw.DebugAssert( declaredRemote != null );
-                // When the remote appears, the existing issue kind transitions from IncomingUnknwon to InitiatorConflict
+                // When the remote appears, the existing issue kind transitions from IncomingUnknown to InitiatorConflict
                 // because the OnRemoteAppeared method check that the new remote has a TargetAddress (without waiting for
                 // the next incoming request).
                 // (This is the same object since we haven't clone the issue.)
@@ -154,7 +154,7 @@ public class ListenerPeeringIssuesTests
             events.Select( e => e.Kind ).ShouldBe(
             [
                 // Initial state: the listener's remote is not declared.
-                PeeringIssueKind.IncomingUnknwon,
+                PeeringIssueKind.IncomingUnknown,
                 // The listener's remote is also an Initiator.
                 PeeringIssueKind.InitiatorConflict,
                 // The buggy listener's remote is removed.

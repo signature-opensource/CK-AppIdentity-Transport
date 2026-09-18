@@ -113,8 +113,8 @@ public class BothPeeringIssuesTests
         {
             TestHelper.Monitor.Info( "Tests: Destroying listener." );
             await listenerParty.DestroyAsync();
-            // A destroyed listener mutates the issue to be an IncomingUnknwon.
-            await listenerIssues.WaitForAsync( PeeringIssueKind.IncomingUnknwon, token );
+            // A destroyed listener mutates the issue to be an IncomingUnknown.
+            await listenerIssues.WaitForAsync( PeeringIssueKind.IncomingUnknown, token );
         }
 
         // Obviously no change on the destroyed sender side.

@@ -24,7 +24,7 @@ static partial class ZeroProtocol // Negotiation
 
     public enum ConfigurationOrTrustIssue : byte
     {
-        Unknwon = 0,
+        Unknown = 0,
         DisallowedTransport = 1,
         InvalidClockOffset = 2,
         InitiatorConflict = 3,
@@ -311,7 +311,7 @@ static partial class ZeroProtocol // Negotiation
 
             // There is currently only one version.
             Throw.CheckArgument( version == CurrentVersion );
-            // Writes the message content (cuurent version).
+            // Writes the message content (current version).
             initialMessage.WriteCurrentVersion( ref w );
 
             // Per-connection key agreement material, inside the signed region.
@@ -543,12 +543,29 @@ static partial class ZeroProtocol // Negotiation
         return transport.SendAsync( 0, _downgradeProtocolReplyMessage );
     }
 
+    /// <summary>
+    /// Reads the version a listener asks us to fall back to.
+    /// <para>
+    /// A downgrade can only name a version below <see cref="CurrentVersion"/>: that is what "downgrade"
+    /// means, and a version we cannot produce is not a negotiation, it is an invalid payload. Checking
+    /// it here puts it on the path every other malformed message takes, instead of letting it reach
+    /// <c>SendInitialMessageAsync</c> and fail an argument check from inside the connect task — which
+    /// surfaces as an unhandled error about our own code rather than as what it is, a peer sending
+    /// something it must not.
+    /// </para>
+    /// <para>
+    /// With a single version defined, no value can satisfy this and every downgrade message is
+    /// invalid. That is correct, not a placeholder: there is nothing below version 0 to fall back to.
+    /// </para>
+    /// </summary>
     public static int ReadDowngradeProtocolReplyMessage( IncomingMessage message )
     {
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
         Throw.DebugAssert( discriminator == DNegoDowngradeProtocol );
-        return (int)r.ReadSmallUInt32();
+        var version = r.ReadSmallUInt32();
+        Throw.CheckData( version < CurrentVersion );
+        return (int)version;
     }
 
     public static async ValueTask<bool> SendAcceptedProtocolsMessageAsync( ISystemClock systemClock,

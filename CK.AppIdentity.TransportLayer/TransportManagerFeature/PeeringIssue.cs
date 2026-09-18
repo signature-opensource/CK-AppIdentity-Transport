@@ -283,13 +283,13 @@ public sealed class PeeringIssue
             // If we are the initiator and the transport feature dispappear,
             // there is no point to keep this issue.
             // But if we are listening, we can keep it (with a null Remote) we then are either
-            // IncomingUnknwon (if the party itself is destroyed) or IncomingDisallowedTransport
+            // IncomingUnknown (if the party itself is destroyed) or IncomingDisallowedTransport
             // if the party is still alive.
             if( _remote.IsListening )
             {
                 if( _remote.Party.IsDestroyed )
                 {
-                    _kind = PeeringIssueKind.IncomingUnknwon;
+                    _kind = PeeringIssueKind.IncomingUnknown;
                 }
                 else
                 {
@@ -317,7 +317,7 @@ public sealed class PeeringIssue
         lock( _lock )
         {
             Throw.DebugAssert( "An existing issue without remote has an initial message.", _initialMessage != null );
-            // When a remote appears locally and this issue is in IncomingUnknwon state
+            // When a remote appears locally and this issue is in IncomingUnknown state
             // then it becomes known:
             // - If the newcomer is a listener:
             //      - If the initial message has a IncomingEndPointDescription that is not one of the
@@ -371,8 +371,8 @@ public sealed class PeeringIssue
         Throw.DebugAssert( "RequiresRemoteCreation => IsInitiator",
                            kind != PeeringIssueKind.RequiresRemoteCreation || isInitiator );
 
-        Throw.DebugAssert( "IncomingUnknwon => IsListener",
-                            kind != PeeringIssueKind.IncomingUnknwon || isListener );
+        Throw.DebugAssert( "IncomingUnknown => IsListener",
+                            kind != PeeringIssueKind.IncomingUnknown || isListener );
 
         Throw.DebugAssert( "InvalidClockOffset => a non null value for the offset.",
                            (kind is not PeeringIssueKind.InvalidClockOffset) || invalidClockOffset.HasValue );

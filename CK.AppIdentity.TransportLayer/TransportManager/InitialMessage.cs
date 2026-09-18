@@ -352,7 +352,7 @@ sealed class InitialMessage : IIncomingRequest
 
     /// <summary>
     /// Relevant only for incoming messages.
-    /// This is always false if the remote has not been resolved (<see cref="PeeringIssueKind.IncomingUnknwon"/>
+    /// This is always false if the remote has not been resolved (<see cref="PeeringIssueKind.IncomingUnknown"/>
     /// or <see cref="PeeringIssueKind.IncomingDisallowedTransport"/>). 
     /// </summary>
     public bool IsValidClockOffset => _validClockOffset;
