@@ -58,7 +58,8 @@ static class PeerMessages
                                          byte macCapabilities,
                                          IReadOnlyList<PeerIdentity> signWith,
                                          PeerPublicKey? supposedIdentity = null,
-                                         bool canAutoTrust = false )
+                                         bool canAutoTrust = false,
+                                         byte[]? certificateBinding = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -85,6 +86,8 @@ static class PeerMessages
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( macCapabilities );
+            // What this side states about the certificate it is presenting, inside the signed region.
+            WriteCertificateBinding( ref w, certificateBinding );
             // The timed nonce.
             w.WriteDateTime( nonceCreationTime );
             w.WriteUInt64( nonce );
@@ -105,7 +108,8 @@ static class PeerMessages
                                             IReadOnlyList<string> protocolFullNames,
                                             byte[] ephemeralPublicKey,
                                             MacAlgorithm macAlgorithm,
-                                            IReadOnlyList<PeerIdentity> signWith )
+                                            IReadOnlyList<PeerIdentity> signWith,
+                                            byte[]? certificateBinding = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -119,7 +123,19 @@ static class PeerMessages
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( (byte)macAlgorithm );
+            // What this side states about the certificate it is presenting, inside the signed region.
+            WriteCertificateBinding( ref w, certificateBinding );
         }, signWith );
+    }
+
+    /// <summary>
+    /// Writes the certificate binding field: length then bytes, a length of 0 meaning that this side
+    /// presents no certificate. One byte on a cleartext connection.
+    /// </summary>
+    static void WriteCertificateBinding( ref FastByteWriter w, byte[]? binding )
+    {
+        w.WriteSmallUInt32( (uint)(binding?.Length ?? 0) );
+        if( binding != null ) w.WriteBytes( binding );
     }
 
     /// <summary>
@@ -134,10 +150,15 @@ static class PeerMessages
     /// Our ephemeral key pair. A fresh one is created when null; a test passes an existing one to
     /// REUSE it across connections, which a real peer never does.
     /// </param>
+    /// <param name="certificateBinding">
+    /// What to state about the certificate we are presenting. Null is the truth on a cleartext
+    /// connection; anything else is the claim a relay would have to make.
+    /// </param>
     public static byte[] AcceptedProtocols( PeerInitialMessage initial,
                                             DateTime now,
                                             IReadOnlyList<PeerIdentity> signWith,
-                                            PeerEphemeral? ephemeral = null )
+                                            PeerEphemeral? ephemeral = null,
+                                            byte[]? certificateBinding = null )
     {
         bool owned = ephemeral == null;
         ephemeral ??= new PeerEphemeral();
@@ -149,7 +170,8 @@ static class PeerMessages
                                       initial.AvailableProtocols,
                                       ephemeral.PublicKey,
                                       RunPhaseProtection.Select( initial.MacCapabilities ),
-                                      signWith );
+                                      signWith,
+                                      certificateBinding );
         }
         finally
         {

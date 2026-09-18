@@ -37,6 +37,12 @@ sealed class PeerInitialMessage
     /// <summary>The MAC primitives the initiator can run, as a capability bit set.</summary>
     public required byte MacCapabilities { get; init; }
 
+    /// <summary>
+    /// What the initiator states about the certificate it is presenting: the SHA-256 of its DER, or
+    /// null when it presents none — which is every cleartext connection.
+    /// </summary>
+    public byte[]? CertificateBinding { get; init; }
+
     /// <summary>Creation time of the timed nonce (used by the peer to compute the clock offset).</summary>
     public required DateTime NonceCreationTime { get; init; }
 
@@ -87,6 +93,11 @@ sealed class PeerInitialMessage
         var ephemeral = r.ReadBytes( lenEphemeral );
         byte macCaps = r.ReadByte();
 
+        // What the initiator states about the certificate it presented, still inside the signed
+        // region: length then bytes, 0 meaning none.
+        uint lenBinding = r.ReadSmallUInt32();
+        var certificateBinding = lenBinding == 0 ? null : r.ReadBytes( lenBinding );
+
         // The timed nonce.
         var nonceTime = r.ReadDateTime();
         ulong nonce = r.ReadUInt64();
@@ -120,6 +131,7 @@ sealed class PeerInitialMessage
             CanAutoTrust = canAutoTrust,
             EphemeralPublicKey = ephemeral,
             MacCapabilities = macCaps,
+            CertificateBinding = certificateBinding,
             NonceCreationTime = nonceTime,
             Nonce = nonce,
             Identities = identities,

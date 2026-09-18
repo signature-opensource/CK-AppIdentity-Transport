@@ -486,6 +486,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                 case ZeroProtocol.DNegoAcceptedProtocolsMessage:
                     {
                         var protocolMap = ZeroProtocol.TryReadAcceptedProtocolsMessage( transportManager,
+                                                                                        transport,
                                                                                         firstAnswer,
                                                                                         remote,
                                                                                         sentNonce.Value,

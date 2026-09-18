@@ -208,6 +208,36 @@ public abstract partial class Transport
     public string? SessionId => _protection?.SessionId;
 
     /// <summary>
+    /// Length of a certificate binding: the SHA-256 of a certificate's DER.
+    /// </summary>
+    public const int CertificateBindingLength = 32;
+
+    /// <summary>
+    /// Gets the SHA-256 of the DER of the certificate this side presents on this connection, or an
+    /// empty memory when this transport presents none.
+    /// <para>
+    /// Each side states this inside the signed Zero Protocol transcript, and each checks the peer's
+    /// statement against <see cref="RemoteCertificateBinding"/>. Something that terminates the
+    /// underlying channel between the two peers has to present a certificate of its own, so what the
+    /// peer signed and what actually arrived no longer agree and the handshake fails before any
+    /// payload flows. Binding to the certificate rather than to the key it contains is what
+    /// <c>SslStream</c> can answer for on both sides.
+    /// </para>
+    /// <para>
+    /// A transport that is not certificate based leaves both of these empty, and the two peers then
+    /// agree that nothing is bound — which is also how a peer that believes it is on a secured
+    /// transport discovers that it is not.
+    /// </para>
+    /// </summary>
+    public virtual ReadOnlyMemory<byte> LocalCertificateBinding => default;
+
+    /// <summary>
+    /// Gets the SHA-256 of the DER of the certificate the peer presented on this connection, or an
+    /// empty memory when none was presented. See <see cref="LocalCertificateBinding"/>.
+    /// </summary>
+    public virtual ReadOnlyMemory<byte> RemoteCertificateBinding => default;
+
+    /// <summary>
     /// Creates this connection's ephemeral key pair and returns its public part for the handshake.
     /// Called exactly once per transport.
     /// </summary>

@@ -40,6 +40,10 @@ sealed class InitialMessage : IIncomingRequest
                                + 1 // Is there a RemoteTrustInfo.SupposedIdentity?
                                + 1 // RemoteTrustInfo.CanAutoTrust?
                                + MaxPublicKeySize // The SupposedIdentity: TimeName + public key bytes.
+                               + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
+                               + 1 // Its MAC capabilities.
+                               + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.
+                               + 8 + 8 // The timed nonce: creation time and value.
                                + 5 // Number of public keys (allows uint.MaxValue)
                                + MaxPublicKeyCount * (4 + MaxPublicKeySize)
                                + MaxPublicKeyCount * MaxSignatureSize;

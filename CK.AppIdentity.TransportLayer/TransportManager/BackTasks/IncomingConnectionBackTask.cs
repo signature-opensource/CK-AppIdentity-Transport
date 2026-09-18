@@ -353,6 +353,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             var remoteEphemeral = r.ReadBytes( lenEphemeral );
             byte remoteMacCapabilities = r.ReadByte();
 
+            // What the initiator states about the certificate it presented. Read now because it sits
+            // inside the signed region; checked below, once the signature says whose statement it is.
+            var attestedBinding = ZeroProtocol.ReadCertificateBinding( ref r );
+
             // Reads the timed nonce.
             var timedNonce = new TimedNonce( r.ReadDateTime(), r.ReadUInt64() );
             
@@ -374,6 +378,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                $"Unable to verify the signature's incoming message from '{fullName}'." );
                 return null;
             }
+            // The statement is signed by whoever sent it, so it can now be held against what arrived.
+            ZeroProtocol.CheckCertificateBinding( attestedBinding, incoming );
             // This is a protocol error.
             // We do this after the signature check because an invalid signature is more impacting.
             if( !timedNonce.CheckCreationTimeKind( transportManager.Logger, fullName ) )

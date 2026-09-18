@@ -13,8 +13,15 @@ namespace CK.AppIdentity.TransportLayer;
 static partial class ZeroProtocol // Negotiation
 {
     public const int FirstAnswerMaxLength = 1 // One byte discriminator.
+                                            + 8 + 8 + 8 // Nonce, the offset it computed and its current time.
                                             + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
-                                            + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength);
+                                            + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength)
+                                            + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The listener's ephemeral ECDH public key.
+                                            + 1 // The MAC algorithm it selected.
+                                            + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.
+                                            + 5 // Number of public keys.
+                                            + ILocalKeys.MaxIdentityCount * (4 + 8 + ILocalKeys.MaxPublicKeySize)
+                                            + ILocalKeys.MaxIdentityCount * 256; // One signature each, byte-length prefixed.
 
     // Static messages use no initialization lock (we don't care of the rare case where 2 concurrent messages will be instantiated).
     // DNegoDowngradeProtocol followed by our CurrentVersion: it can be static.
@@ -61,6 +68,57 @@ static partial class ZeroProtocol // Negotiation
     /// <param name="r">The reader.</param>
     /// <returns>The nonce.</returns>
     static TimedNonce ReadNonce( ref FastByteReader r ) => new TimedNonce( r.ReadDateTime(), r.ReadUInt64() );
+
+    /// <summary>
+    /// Writes what this side states about the certificate it is presenting: length then bytes, a
+    /// length of 0 meaning that this transport presents none. One byte on a cleartext transport.
+    /// <para>
+    /// This must be written before <see cref="WriteIdentityKeysAndSign"/>, which hashes everything
+    /// already in the sequence: the statement is worth nothing unless it is signed.
+    /// </para>
+    /// </summary>
+    static void WriteCertificateBinding( ref FastByteWriter w, ReadOnlyMemory<byte> binding )
+    {
+        w.WriteSmallUInt32( (uint)binding.Length );
+        if( binding.Length > 0 ) w.WriteBytes( binding.Span );
+    }
+
+    /// <summary>
+    /// Reads what the peer states about the certificate it is presenting. The result is checked by
+    /// <see cref="CheckCertificateBinding"/> once the message's signature has been verified — an
+    /// unsigned statement about a certificate says nothing about who made it, and reporting a relay
+    /// on the strength of one would name an attack every time a scanner sends noise.
+    /// </summary>
+    public static byte[]? ReadCertificateBinding( ref FastByteReader r )
+    {
+        uint len = r.ReadSmallUInt32();
+        Throw.CheckData( len == 0 || len == Transport.CertificateBindingLength );
+        return len == 0 ? null : r.ReadBytes( len );
+    }
+
+    /// <summary>
+    /// Checks the peer's statement against the certificate the transport actually received.
+    /// <para>
+    /// The two must say the same thing. Anything that terminates the channel between the peers has to
+    /// present a certificate of its own, so a relay shows up here as a statement that does not match
+    /// what arrived. The two asymmetric cases are just as wrong and are worth their own message: they
+    /// are a transport mismatch, one side believing it is secured while the other is not.
+    /// </para>
+    /// </summary>
+    public static void CheckCertificateBinding( byte[]? attested, Transport transport )
+    {
+        var actual = transport.RemoteCertificateBinding;
+        if( attested == null )
+        {
+            Throw.CheckData( "The peer presented a certificate but stated none.", actual.IsEmpty );
+        }
+        else
+        {
+            Throw.CheckData( "The peer stated a certificate on a connection that presented none.", !actual.IsEmpty );
+            Throw.CheckData( "The peer stated a certificate that is not the one it presented.",
+                             attested.AsSpan().SequenceEqual( actual.Span ) );
+        }
+    }
 
     /// <summary>
     /// Writes the identity keys (public parts), computes a SHA512 hash and writes the computed
@@ -294,7 +352,8 @@ static partial class ZeroProtocol // Negotiation
         // the TransportFeature, whose OutgoingInitialMessage is cached and reused across attempts.
         // Writing it here rather than inside InitialMessage keeps that cached content untouched.
         var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
-        using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey, out var nonce );
+        using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey,
+                                            transport.LocalCertificateBinding, out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
@@ -302,6 +361,7 @@ static partial class ZeroProtocol // Negotiation
                                                       InitialMessage initialMessage,
                                                       int version,
                                                       byte[] ephemeralPublicKey,
+                                                      ReadOnlyMemory<byte> certificateBinding,
                                                       out ulong nonce )
         {
             Throw.DebugAssert( initialMessage.LocalIdentities.Count > 0 );
@@ -318,6 +378,9 @@ static partial class ZeroProtocol // Negotiation
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( RunPhaseProtection.LocalCapabilities );
+
+            // What this side is presenting on the channel underneath, inside the signed region.
+            WriteCertificateBinding( ref w, certificateBinding );
 
             // Writes the nonce (creation time and 64 bits nonce) ang gets its value:
             // the creation time will be used to compute the clock offset and the nonce value will
@@ -578,7 +641,8 @@ static partial class ZeroProtocol // Negotiation
     {
         Throw.DebugAssert( transport.RemoteKeys != null );
         using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset,
-                                            ephemeralPublicKey, macAlgorithm, transport.RemoteKeys.LocalKeys.Identities );
+                                            ephemeralPublicKey, macAlgorithm, transport.LocalCertificateBinding,
+                                            transport.RemoteKeys.LocalKeys.Identities );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
         static IOutgoingMessage CreateAndSignMessage( ISystemClock systemClock,
@@ -587,6 +651,7 @@ static partial class ZeroProtocol // Negotiation
                                                       TimeSpan initialClockOffset,
                                                       byte[] ephemeralPublicKey,
                                                       MacAlgorithm macAlgorithm,
+                                                      ReadOnlyMemory<byte> certificateBinding,
                                                       IReadOnlyList<LocalIdentityKey> localIdentities )
         {
             var builder = _zeroFactory.CreateBuilder();
@@ -606,12 +671,15 @@ static partial class ZeroProtocol // Negotiation
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( (byte)macAlgorithm );
+            // What this side is presenting on the channel underneath, inside the signed region.
+            WriteCertificateBinding( ref w, certificateBinding );
             WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
             return builder.CreateMessage( sequence );
         }
     }
 
     public static MessageProtocolMap TryReadAcceptedProtocolsMessage( TransportManager transportManager,
+                                                                      Transport transport,
                                                                       IncomingMessage message,
                                                                       TransportFeature remote,
                                                                       ulong expectedNonce,
@@ -659,6 +727,9 @@ static partial class ZeroProtocol // Negotiation
         Throw.CheckData( lenEphemeral > 0 && lenEphemeral <= RunPhaseProtection.MaxEphemeralPublicKeyLength );
         ephemeralPublicKey = r.ReadBytes( lenEphemeral );
         macAlgorithm = (MacAlgorithm)r.ReadByte();
+        // Read now because it sits inside the signed region; checked below, once the signature says
+        // whose statement this is.
+        var attestedBinding = ReadCertificateBinding( ref r );
         var check = ReadIdentityKeysAndVerifySignatures( ref r,
                                                          remote.RemoteKeys.TrustedIdentity,
                                                          out var currentKeyData,
@@ -672,6 +743,7 @@ static partial class ZeroProtocol // Negotiation
             return default;
         }
         transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
+        CheckCertificateBinding( attestedBinding, transport );
         var missingProtocols = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
         if( missingProtocols.Any() )
         {
