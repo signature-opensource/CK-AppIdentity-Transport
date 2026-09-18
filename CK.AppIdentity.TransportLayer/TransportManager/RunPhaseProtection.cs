@@ -299,9 +299,12 @@ public sealed class RunPhaseProtection : IDisposable
     /// <param name="header">The wire header.</param>
     /// <param name="payload">The frame payload.</param>
     /// <param name="tag">Receives <see cref="TagLength"/> bytes.</param>
-    public void SignNext( ReadOnlySpan<byte> header, in ReadOnlySequence<byte> payload, Span<byte> tag )
+    public bool SignNext( ReadOnlySpan<byte> header, in ReadOnlySequence<byte> payload, Span<byte> tag )
     {
-        Throw.DebugAssert( !_disposed );
+        // A racing teardown may have disposed us between the caller reading the reference and this
+        // call. Report it rather than crashing: the transport is already dying, so the frame simply
+        // does not go out.
+        if( _disposed ) return false;
         // Enforced, not assumed: under GMAC a repeated (key, nonce) pair with different data leaks
         // the authentication subkey and allows arbitrary forgery, so a counter that ran past the
         // nonce's 6-byte field must stop the connection rather than wrap into a reused nonce.
@@ -312,6 +315,7 @@ public sealed class RunPhaseProtection : IDisposable
         ComputeTag( sending: true, _sendCounter, header, payload, tag );
         // Monotonic and never reused.
         checked { ++_sendCounter; }
+        return true;
     }
 
     /// <summary>
@@ -323,7 +327,7 @@ public sealed class RunPhaseProtection : IDisposable
     /// <returns>True if the frame is authentic and in order.</returns>
     public bool VerifyNext( ReadOnlySpan<byte> header, in ReadOnlySequence<byte> payload, ReadOnlySpan<byte> tag )
     {
-        Throw.DebugAssert( !_disposed );
+        if( _disposed ) return false;
         if( tag.Length != TagLength ) return false;
         if( _receiveCounter >= MaxFrameCounter ) return false;
         Span<byte> expected = stackalloc byte[TagLength];

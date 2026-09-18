@@ -286,6 +286,16 @@ public sealed class TransportFeature
     public string? SessionId => _controller?.CurrentTransport.SessionId;
 
     /// <summary>
+    /// Gets the current transport, null before the first connection.
+    /// <para>
+    /// Note this instance is replaced on every reconnection: a caller that wants to observe ONE
+    /// connection — its session, or that its keys were released when it died — must hold the
+    /// instance rather than re-read this property.
+    /// </para>
+    /// </summary>
+    public Transport? CurrentTransport => _controller?.CurrentTransport;
+
+    /// <summary>
     /// Gets the current connection availability.
     /// </summary>
     public ConnectionAvailability ConnectionAvailability => _connectionAvailabilty;

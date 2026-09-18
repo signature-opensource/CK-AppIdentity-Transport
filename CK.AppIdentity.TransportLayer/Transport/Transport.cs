@@ -325,12 +325,16 @@ public abstract partial class Transport
             uint wireLength = (uint)message.Message.Length + RunPhaseProtection.TagLength;
             int lenHeader = IOutgoingMessage.WriteWireHeader( protocolNumber, wireLength, message.IsControl, header );
             var tag = header.AsMemory( lenHeader, RunPhaseProtection.TagLength );
+            bool signed;
             lock( _sendProtectionLock )
             {
                 // Sends are serialized per transport, but the counter must advance exactly once per
                 // frame and in the same order the bytes hit the socket.
-                protection.SignNext( header.AsSpan( 0, lenHeader ), message.Message, tag.Span );
+                signed = protection.SignNext( header.AsSpan( 0, lenHeader ), message.Message, tag.Span );
             }
+            // False only when a concurrent teardown disposed the session keys. The transport is
+            // already dying: report "not sent" rather than putting an unauthenticated frame out.
+            if( !signed ) return false;
             return await SendAsync( header.AsMemory( 0, lenHeader ), message.Message, tag, _lifeTime.Token ).ConfigureAwait( false );
         }
         finally
@@ -475,10 +479,22 @@ public abstract partial class Transport
         }
     }
 
-    internal ValueTask DestroyAsync( IActivityMonitor monitor )
+    internal async ValueTask DestroyAsync( IActivityMonitor monitor )
     {
         _receiveFactory.Dispose();
-        return DisposeAsync( monitor );
+        // Close the communication handle FIRST: that is what ends the send and receive loops, so
+        // the key material is released once nothing is still using it.
+        await DisposeAsync( monitor );
+        // Requirement A of the C1-b design: the session keys and the ephemeral private key die with
+        // the connection they belong to. Without this they outlive it until the GC gets round to
+        // them, and each connection leaks a CNG handle.
+        //
+        // Nulling _protection also makes the release observable (NegotiatedMacAlgorithm and
+        // SessionId go null), and means a late frame finds no protection rather than a disposed one.
+        var protection = Interlocked.Exchange( ref _protection, null );
+        protection?.Dispose();
+        var ephemeral = Interlocked.Exchange( ref _ephemeral, null );
+        ephemeral?.Dispose();
     }
 
     /// <summary>
