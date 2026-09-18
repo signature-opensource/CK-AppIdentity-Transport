@@ -8,6 +8,9 @@ sealed partial class RemoteKeys : IRemoteKeys
     internal const string PublicIdentityFilePattern = "Identity.*.public";
     readonly LocalKeys _localKeys;
     readonly IRemoteParty _remote;
+    // Guards _identity AND the .public files that mirror it: the pair must change together, and both
+    // back tasks and an operator approving a PeeringIssue can get here from different threads.
+    readonly object _trustLock;
     RemoteIdentityKey? _identity;
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
@@ -24,6 +27,7 @@ sealed partial class RemoteKeys : IRemoteKeys
                 TimeSpan maxClockOffset,
                 RemoteNonceCache nonceCache )
     {
+        _trustLock = new object();
         _localKeys = localKeys;
         _remote = remote;
         _identity = identity;
@@ -52,7 +56,7 @@ sealed partial class RemoteKeys : IRemoteKeys
     internal void OnTeardown( IActivityMonitor monitor, bool destroyed )
     {
         _remote.ApplicationIdentityService.Heartbeat.Sync -= OnHeartbeat;
-        _identity?.OnTeardown();
+        lock( _trustLock ) _identity?.OnTeardown();
         if( destroyed ) _nonceCache.Delete( monitor );
         else _nonceCache.Save( monitor );
     }
@@ -69,13 +73,36 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKeyData? identity )
     {
-        if( !SaveDifferingKey( logger, identity ) ) return false;
-        _identity = identity != null ? new RemoteIdentityKey( identity ) : null;
-        return true;
+        lock( _trustLock )
+        {
+            if( !SaveDifferingKey( logger, identity ) ) return false;
+            _identity = identity != null ? new RemoteIdentityKey( identity ) : null;
+            return true;
+        }
     }
 
     public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
     {
+        lock( _trustLock )
+        {
+            if( !SaveDifferingKey( logger, identity ) ) return false;
+            _identity = identity;
+            return true;
+        }
+    }
+
+    // Must be called with _trustLock held.
+    //
+    // The replaced key is deliberately NOT disposed here. A concurrent handshake may be inside
+    // RemoteIdentityKey.VerifyHash on that very instance — it took its reference before this
+    // rotation — and disposing under it turns a legitimate connection into a spurious authentication
+    // failure. The ECDsa wraps a SafeHandle, so not disposing costs one finalizable object per
+    // rotation and nothing more; rotations are an AllowedOfflineDays affair, tens of days apart.
+    // Trading that for a correctness hazard would be a bad bargain. The current key IS disposed, at
+    // OnTeardown, when nothing can be using it any more.
+    bool DoSetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
+    {
+        Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
         if( !SaveDifferingKey( logger, identity ) ) return false;
         _identity = identity;
         return true;
@@ -114,43 +141,60 @@ sealed partial class RemoteKeys : IRemoteKeys
         return true;
     }
 
+    /// <summary>
+    /// The single implementation of "a verified message just told us something about this remote's
+    /// keys". <c>RemoteKeysExtensions.OnReadIdentityKeys</c> delegates here.
+    /// <para>
+    /// It used to exist twice, verbatim, with only the extension being called (L2) — and the decision
+    /// was a read of <see cref="TrustedIdentity"/>, then a second read of the same field inside
+    /// <c>SaveDifferingKey</c>, then a write, all from back tasks running on their own threads. Two
+    /// connections rotating a key at the same time could each see the old key, each write their own
+    /// <c>.public</c> file and each trash the old one, leaving a store with two identity files and no
+    /// agreement about which is trusted — a mess that outlives the process, since that is what the
+    /// next start reads.
+    /// </para>
+    /// <para>
+    /// Deciding and writing under one lock fixes that. What it deliberately does not try to fix is a
+    /// stale message landing after a newer one and moving the trusted key back to an earlier one of
+    /// the remote's own keys: that message was signed by a key we trust, the key it names is in the
+    /// remote's own list, and the remote's next connection presents its current key again and pulls
+    /// us forward. It is staleness, not a downgrade an attacker can force, and it heals itself.
+    /// </para>
+    /// </summary>
     public bool ApplyReadTrustInfo( IActivityLineEmitter logger, in ReadTrustInfo trustInfo )
     {
         Throw.CheckArgument( trustInfo.CurrentKey == null || trustInfo.CurrentKey.Equals( trustInfo.CurrentKeyData ) );
         Throw.CheckArgument( !trustInfo.FoundTrustedKey || TrustedIdentity != null );
-        if( trustInfo.FoundTrustedKey )
+        lock( _trustLock )
         {
-            // We trust the remote (we can update our trusted identity key).
-            if( !TrustedIdentity!.Equals( trustInfo.CurrentKeyData ) )
+            // Re-read under the lock: the caller computed FoundTrustedKey against whatever was
+            // trusted when it verified the signature, which another connection may have changed.
+            var current = _identity;
+            if( trustInfo.FoundTrustedKey )
             {
-                logger.Info( $"Updating the remote '{Party}' trusted key that has changed." );
-                SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
-                return true;
+                // We trust the remote (we can update our trusted identity key).
+                if( current != null && !current.Equals( trustInfo.CurrentKeyData ) )
+                {
+                    logger.Info( $"Updating the remote '{Party}' trusted key that has changed." );
+                    return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
+                }
             }
-        }
-        else
-        {
-            // We don't trust the remote. Depending on AutoTrustKey we may...
-            if( TrustedIdentity == null )
+            else if( current == null )
             {
+                // We have no trusted key. Depending on AutoTrustKey we may adopt the presented one.
                 if( AutoTrustKey != AutoTrustKey.Never )
                 {
                     logger.Warn( $"Initializing the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
-                    SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
-                    return true;
+                    return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
                 }
             }
-            else
+            else if( AutoTrustKey == AutoTrustKey.Always )
             {
-                if( AutoTrustKey == AutoTrustKey.Always )
-                {
-                    logger.Warn( $"Updating the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
-                    SetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
-                    return true;
-                }
+                logger.Warn( $"Updating the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
+                return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
             }
+            return false;
         }
-        return false;
     }
 
     public bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error )

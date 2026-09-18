@@ -36,40 +36,12 @@ static class RemoteKeysExtensions
                                            RemoteIdentityKey? currentKey )
     {
         Throw.CheckArgument( currentKey == null || currentKey.Equals( currentKeyData ) );
-        if( foundTrustedKey )
-        {
-            Throw.DebugAssert( @this.TrustedIdentity != null );
-            // We trust the remote (we can update our trusted identity key).
-            if( !@this.TrustedIdentity.Equals( currentKeyData ) )
-            {
-                logger.Info( $"Updating the remote '{@this.Party}' trusted key that has changed." );
-                @this.SetTrustedIdentity( logger, currentKey ?? new RemoteIdentityKey( currentKeyData ) );
-                return true;
-            }
-        }
-        else
-        {
-            // We don't trust the remote. Depending on AutoTrustKey we may...
-            if( @this.TrustedIdentity == null )
-            {
-                if( @this.AutoTrustKey != AutoTrustKey.Never )
-                {
-                    logger.Warn( $"Initializing the remote '{@this.Party}' trusted key because its '{nameof( AutoTrustKey )}' is {@this.AutoTrustKey}." );
-                    @this.SetTrustedIdentity( logger, currentKey ?? new RemoteIdentityKey( currentKeyData ) );
-                    return true;
-                }
-            }
-            else
-            {
-                if( @this.AutoTrustKey == AutoTrustKey.Always )
-                {
-                    logger.Warn( $"Updating the remote '{@this.Party}' trusted key because its '{nameof( AutoTrustKey )}' is {@this.AutoTrustKey}." );
-                    @this.SetTrustedIdentity( logger, currentKey ?? new RemoteIdentityKey( currentKeyData ) );
-                    return true;
-                }
-            }
-        }
-        return false;
+        // This body used to be a verbatim copy of IRemoteKeys.ApplyReadTrustInfo, and only this copy
+        // was ever called (L2). Two copies of the most security-sensitive decision in the codebase is
+        // one too many — and the duplication hid that neither of them was safe to run concurrently,
+        // which is what a remote's trust update actually does. The decision now lives with the state
+        // it reads and writes, under that object's lock.
+        return @this.ApplyReadTrustInfo( logger, new ReadTrustInfo( foundTrustedKey, currentKeyData, currentKey ) );
     }
 
     /// <summary>
