@@ -18,6 +18,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
     Transport? _incoming;
     Task? _runTask;
     DateTime _initializeTime;
+    string? _sourceKey;
+    bool _holdsNegotiationSlot;
 
     public override void OnDestroy( IActivityMonitor monitor )
     {
@@ -55,14 +57,28 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
     public override void Reset()
     {
+        // The single release point for the admission slot taken when this connection was accepted.
+        // The BackTaskManager calls Reset exactly once per Initialize, on every path — including the
+        // ones where Check or the initializer threw, which it forces to a reset precisely so nothing
+        // is stranded. A slot leaked here would be permanent: the cap would tighten with every
+        // failure until no connection could ever be accepted again.
+        if( _holdsNegotiationSlot )
+        {
+            _holdsNegotiationSlot = false;
+            TaskManager.Host.NegotiationGate.Release( _sourceKey );
+        }
         _incoming = null;
         _runTask = null;
+        _sourceKey = null;
     }
 
-    public void OnInitialize( Transport incoming, DateTime incomingTime )
+    public void OnInitialize( Transport incoming, DateTime incomingTime, string? sourceKey )
     {
         Throw.DebugAssert( incoming.Listener != null );
         _incoming = incoming;
+        _sourceKey = sourceKey;
+        // TransportManager.IncomingTransport reserved it before queuing this.
+        _holdsNegotiationSlot = true;
         _initializeTime = DateTime.UtcNow;
         _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
         NextCheckDelay = 1;

@@ -62,7 +62,16 @@ sealed class TcpSocketListener : TransportListener
                 var acceptSocket = await _listenSocket.AcceptAsync( _listenCTS.Token );
                 // Disable Nagle algorithm: a message is fully buffered. We don't need it.
                 acceptSocket.NoDelay = true;
-                OnIncomingTransport( new TcpSocketTransport( this, acceptSocket ) );
+                // The address without the port: with it, every connection would be its own source and
+                // the per-source limit would never bind.
+                var sourceKey = (acceptSocket.RemoteEndPoint as IPEndPoint)?.Address.ToString();
+                if( !OnIncomingTransport( new TcpSocketTransport( this, acceptSocket ), sourceKey ) )
+                {
+                    // Refused before anything was read or queued. We still hold the socket, so close
+                    // it here rather than routing a kill through the manager's queue — which is what
+                    // a flood would otherwise grow.
+                    acceptSocket.Dispose();
+                }
             }
             catch( OperationCanceledException ) when( _listenCTS.IsCancellationRequested ) 
             {

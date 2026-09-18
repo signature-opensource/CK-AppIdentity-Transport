@@ -24,6 +24,7 @@ sealed partial class TransportManager : MicroAgent
     readonly MessageProtocolDirectoryService _protocolDirectory;
     readonly List<TransportListener> _listeners;
     readonly TransportManagerFeature _exposedFeature;
+    readonly NegotiationGate _negotiationGate;
 
     // ApplicationIdentityService's heart beat handles the BackTask list.
     readonly BackTask<TransportManager>.BackTaskManager _backTasks;
@@ -37,6 +38,8 @@ sealed partial class TransportManager : MicroAgent
         _agent = agent;
         _protocolDirectory = protocolDirectory;
         _listeners = new List<TransportListener>();
+        // Before _exposedFeature: the feature exposes the gate's settings.
+        _negotiationGate = new NegotiationGate( Logger );
         _exposedFeature = new TransportManagerFeature( this );
         agent.ApplicationIdentityService.AddFeature( _exposedFeature );
 
@@ -116,9 +119,23 @@ sealed partial class TransportManager : MicroAgent
         PushTypedJob( new TryConnectToJob( remote ) );
     }
 
-    internal void IncomingTransport( Transport t, DateTime incomingTime )
+    /// <summary>
+    /// Gets the admission control for incoming, not yet authenticated, negotiations.
+    /// </summary>
+    internal NegotiationGate NegotiationGate => _negotiationGate;
+
+    /// <summary>
+    /// Called by a listener for a newly accepted connection. Returns false when the connection must
+    /// be refused: the listener is then responsible for closing it, and nothing has been queued, so a
+    /// flood cannot grow the job queue either.
+    /// </summary>
+    internal bool IncomingTransport( Transport t, DateTime incomingTime, string? sourceKey )
     {
-        PushTypedJob( new NewIncomingTransport( t, incomingTime ) );
+        if( !_negotiationGate.TryReserve( sourceKey ) ) return false;
+        // Reserved here, released by IncomingConnectionBackTask.Reset: the BackTaskManager calls it
+        // exactly once per Initialize, on every path including the ones that threw.
+        PushTypedJob( new NewIncomingTransport( t, incomingTime, sourceKey ) );
+        return true;
     }
 
     /// <summary>
@@ -334,7 +351,7 @@ sealed partial class TransportManager : MicroAgent
                                          IReadOnlyList<string>? RemoteMissing,
                                          GoodbyeMessage? RemoteOffMessage );
     sealed record class TryConnectToJob( TransportFeature Remote );
-    sealed record class NewIncomingTransport( Transport Incoming, DateTime IncomingTime );
+    sealed record class NewIncomingTransport( Transport Incoming, DateTime IncomingTime, string? SourceKey );
     sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset, GoodbyeMessage.Evicted? EvictionMessage );
     sealed record class KillTransportJob( Transport Transport, int ReconnectDelay, bool Delayed );
     sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, GoodbyeMessage Reason );
@@ -364,7 +381,7 @@ sealed partial class TransportManager : MicroAgent
                 Throw.DebugAssert( "This is necessarily an incoming connection created by a listener (not yet validated).",
                                    j.Incoming.Listener != null && j.Incoming.Controller == null );
                 monitor.Trace( $"Received transport '{j.Incoming.RemoteEndPointDescription}' (#{j.Incoming.GetHashCode()}) from '{j.Incoming.Listener}'. Validating it." );
-                _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime ) );
+                _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime, j.SourceKey ) );
                 return default;
             case TransportFeature newFeature:
                 return HandleNewRemoteTransportFeatureAsync( monitor, newFeature );

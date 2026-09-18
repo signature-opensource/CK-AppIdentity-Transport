@@ -133,12 +133,24 @@ public abstract class TransportListener
 
     /// <summary>
     /// Must be called when a new <see cref="Transport"/> is connected.
+    /// <para>
+    /// When false is returned the connection is refused by admission control (too many negotiations
+    /// in flight, see <see cref="TransportManagerFeature.MaxConcurrentNegotiation"/>) and nothing has
+    /// been queued for it: the caller must close the underlying resource itself. Refusal is silent on
+    /// the wire — a legitimate peer simply reconnects with its usual back-off.
+    /// </para>
     /// </summary>
     /// <param name="transport">The new transport.</param>
-    protected void OnIncomingTransport( Transport transport )
+    /// <param name="sourceKey">
+    /// The peer's address WITHOUT the port, when this transport type can provide one. Including the
+    /// port would make every connection a distinct source and the per-source limit meaningless. Null
+    /// disables the per-source limit for this connection.
+    /// </param>
+    /// <returns>True if the connection was admitted.</returns>
+    protected bool OnIncomingTransport( Transport transport, string? sourceKey = null )
     {
         Throw.CheckNotNullArgument( transport );
-        _transportManager.IncomingTransport( transport, _transportManager.SystemClock.UtcNow );
+        return _transportManager.IncomingTransport( transport, _transportManager.SystemClock.UtcNow, sourceKey );
     }
 
     /// <summary>

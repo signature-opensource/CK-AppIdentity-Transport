@@ -68,6 +68,48 @@ public sealed class TransportManagerFeature
     }
 
     /// <summary>
+    /// Gets or sets how many incoming connections may be negotiating at once. Defaults to 64,
+    /// must be between 1 and 10000.
+    /// <para>
+    /// Everything an incoming connection costs before it has authenticated — a pooled buffer, a task,
+    /// a back task, an SPKI import and an ECDSA verification — is spent on an unauthenticated peer's
+    /// say-so. Beyond this many in flight, new connections are closed without being read.
+    /// </para>
+    /// </summary>
+    public int MaxConcurrentNegotiation
+    {
+        get => _transportManager.NegotiationGate.MaxTotal;
+        set => _transportManager.NegotiationGate.MaxTotal = value;
+    }
+
+    /// <summary>
+    /// Gets or sets how many incoming connections may be negotiating at once from a single source
+    /// address. Defaults to 16, must be between 1 and 10000.
+    /// <para>
+    /// This is what stops one peer from occupying every slot of <see cref="MaxConcurrentNegotiation"/>.
+    /// Raise it when many legitimate parties share one address — several local parties on one host, or
+    /// a NAT gateway in front of a fleet — since they cannot be told apart here.
+    /// </para>
+    /// </summary>
+    public int MaxConcurrentNegotiationPerSource
+    {
+        get => _transportManager.NegotiationGate.MaxPerSource;
+        set => _transportManager.NegotiationGate.MaxPerSource = value;
+    }
+
+    /// <summary>
+    /// Gets how many incoming connections are currently negotiating.
+    /// </summary>
+    public int CurrentNegotiationCount => _transportManager.NegotiationGate.Count;
+
+    /// <summary>
+    /// Gets how many incoming connections have been refused by admission control since the start.
+    /// A number that keeps climbing is either an attack or a <see cref="MaxConcurrentNegotiation"/>
+    /// set below what this deployment legitimately needs.
+    /// </summary>
+    public long RefusedNegotiationCount => _transportManager.NegotiationGate.TotalRefused;
+
+    /// <summary>
     /// Gets a snapshot of the peering issues. Issues are dynamic, they can be updated at any time.
     /// <para>
     /// Use <see cref="GetClonedPeeringIssues"/> for a non dynamic snapshot: an array of immutable <see cref="PeeringIssue.Clone"/> is returned.
