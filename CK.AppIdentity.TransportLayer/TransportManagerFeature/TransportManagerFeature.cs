@@ -27,7 +27,6 @@ public sealed class TransportManagerFeature
     readonly PerfectEventSender<PeeringIssue> _peeringIssueChanged;
     readonly Dictionary<string, PeeringIssue> _peeringIssues;
     int _maxUnknownRemoteCount;
-    int _unknwonRemoteCount;
     PeeringIssue[]? _exposedIssues;
     PeeringIssue[]? _exposedClonedIssues;
 
@@ -94,6 +93,41 @@ public sealed class TransportManagerFeature
     public int IssueCount => _peeringIssues.Count;
 
     /// <summary>
+    /// Gets the current number of issues for truly unknown remotes, the ones capped
+    /// by <see cref="MaxUnknownRemoteCount"/>.
+    /// <para>
+    /// This is derived rather than tracked. A hand-maintained counter was incremented for each
+    /// new unknown remote but not decremented for the entries the very same call trimmed, so it
+    /// drifted upwards on every trim and the cap collapsed to one: each new unknown remote
+    /// flushed every other one. An unauthenticated peer sending random full names could erase
+    /// the operator's diagnostics at will. Counting at most <see cref="MaxUnknownRemoteCount"/>
+    /// plus the known remotes is not worth a counter that can lie.
+    /// </para>
+    /// </summary>
+    public int UnknownRemoteCount
+    {
+        get
+        {
+            lock( _peeringIssues )
+            {
+                return CountUnknownRemotes();
+            }
+        }
+    }
+
+    // Writes all happen on the TransportManager loop: callers already on the loop don't need
+    // the lock (they enumerate _peeringIssues the same way), only concurrent readers do.
+    int CountUnknownRemotes()
+    {
+        int c = 0;
+        foreach( var i in _peeringIssues.Values )
+        {
+            if( i.Remote == null ) ++c;
+        }
+        return c;
+    }
+
+    /// <summary>
     /// Tries to find the <see cref="PeeringIssue"/> by its <see cref="PeeringIssue.FullName"/>.
     /// </summary>
     /// <param name="fullName">The party's full name to lookup.</param>
@@ -149,7 +183,6 @@ public sealed class TransportManagerFeature
                 // This should not happen!
                 monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
                               $"Transport available for an existing PeeringIssue with no available Remote." );
-                --_unknwonRemoteCount;
             }
             issue.SetNoneIssueKind();
             lock( _peeringIssues )
@@ -187,21 +220,23 @@ public sealed class TransportManagerFeature
 
     void OnRemoteTornDown( PeeringIssue issue )
     {
+        // The issue either disappears or survives with a null Remote: either way
+        // UnknownRemoteCount follows from the dictionary, there is nothing to maintain here.
         if( issue.OnRemoteTornDown() )
         {
-            _peeringIssues.Remove( issue.FullName );
+            // Under the lock like every other mutation: readers (Find, GetPeeringIssues,
+            // UnknownRemoteCount) can run on any thread.
+            lock( _peeringIssues )
+            {
+                _peeringIssues.Remove( issue.FullName );
+            }
             _exposedIssues = null;
-        }
-        else
-        {
-            _unknwonRemoteCount++;
         }
         _exposedClonedIssues = null;
     }
 
     void OnRemoteAppeared( PeeringIssue issue, TransportFeature remote )
     {
-        _unknwonRemoteCount--;
         issue.OnRemoteAppeared( remote );
         _exposedClonedIssues = null;
     }
@@ -250,7 +285,8 @@ public sealed class TransportManagerFeature
         // before adding the new one.
         if( remote == null )
         {
-            int inExcess = ++_unknwonRemoteCount - _maxUnknownRemoteCount;
+            // +1 for the one about to be added: end up with at most _maxUnknownRemoteCount.
+            int inExcess = CountUnknownRemotes() + 1 - _maxUnknownRemoteCount;
             if( inExcess > 0 )
             {
                 return AddNewUnknownAndTrimExcessAsync( monitor,
@@ -289,8 +325,10 @@ public sealed class TransportManagerFeature
                                                 IReadOnlyList<string>? remoteMissingProtocols,
                                                 int inExcess )
     {
+        // Oldest first: the point of the cap is to keep what is still relevant. Ordering by
+        // descending LastUpdated evicted the freshest diagnostics and kept the stalest ones.
         var toRemove = _peeringIssues.Values.Where( i => i.Remote == null )
-                                            .OrderByDescending( i => i.LastUpdated )
+                                            .OrderBy( i => i.LastUpdated )
                                             .Take( inExcess )
                                             .ToArray();
         monitor.Info( $"Removing peering issues for unknown remotes: '{toRemove.Select( i => i.FullName ).Concatenate( "', '" )}'. Max {_maxUnknownRemoteCount} has been reached." );
