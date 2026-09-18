@@ -29,6 +29,9 @@ public sealed class TransportManagerFeature
     int _maxUnknownRemoteCount;
     int _maxFlapReconnectDelay;
     TimeSpan _stableConnectionTime;
+    TimeSpan _keepAliveIdleTime;
+    TimeSpan _keepAliveProbeInterval;
+    int _keepAliveProbeCount;
     PeeringIssue[]? _exposedIssues;
     PeeringIssue[]? _exposedClonedIssues;
 
@@ -42,6 +45,9 @@ public sealed class TransportManagerFeature
         _maxUnknownRemoteCount = 5;
         _maxFlapReconnectDelay = 30;
         _stableConnectionTime = TimeSpan.FromMinutes( 1 );
+        _keepAliveIdleTime = TimeSpan.FromSeconds( 30 );
+        _keepAliveProbeInterval = TimeSpan.FromSeconds( 5 );
+        _keepAliveProbeCount = 3;
     }
 
 
@@ -68,6 +74,62 @@ public sealed class TransportManagerFeature
         {
             Throw.CheckOutOfRangeArgument( value >= 5 && value <= 100 );
             _maxUnknownRemoteCount = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets how long a connection may receive nothing before we ask the remote whether it is
+    /// still there. Defaults to 30 seconds. <see cref="TimeSpan.Zero"/> disables keep-alive entirely.
+    /// <para>
+    /// Without this, a connection that dies without saying so — peer power loss, a NAT table entry
+    /// expiring, a cable — stays <see cref="ConnectionAvailability.Connected"/> for ever. Writes into
+    /// a half-open socket keep succeeding into the kernel buffer, so the send side does not notice
+    /// either; what notices is the absence of an answer.
+    /// </para>
+    /// <para>
+    /// The probe and its acknowledgment are Zero Protocol messages, so in the run phase they carry a
+    /// MAC like every other frame: a peer that cannot authenticate cannot hold a dead link open.
+    /// </para>
+    /// </summary>
+    public TimeSpan KeepAliveIdleTime
+    {
+        get => _keepAliveIdleTime;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value >= TimeSpan.Zero );
+            _keepAliveIdleTime = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets how long to wait for an answer before probing again. Defaults to 5 seconds,
+    /// must be strictly positive.
+    /// </summary>
+    public TimeSpan KeepAliveProbeInterval
+    {
+        get => _keepAliveProbeInterval;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value > TimeSpan.Zero );
+            _keepAliveProbeInterval = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets how many unanswered probes condemn the connection. Defaults to 3, must be at
+    /// least 1.
+    /// <para>
+    /// More than one on purpose: a single lost frame must not kill a healthy connection on the sort
+    /// of link these parties run over.
+    /// </para>
+    /// </summary>
+    public int KeepAliveProbeCount
+    {
+        get => _keepAliveProbeCount;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value >= 1 );
+            _keepAliveProbeCount = value;
         }
     }
 

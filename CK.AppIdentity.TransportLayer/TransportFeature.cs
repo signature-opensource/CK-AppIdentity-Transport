@@ -162,6 +162,23 @@ public sealed class TransportFeature
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Keep-alive verdict on the current connection. Unanswered probes lower the availability to
+    /// <see cref="ConnectionAvailability.DangerZone"/> — a value that was declared and never produced
+    /// before there was anything able to notice a connection going quiet. An answer puts it back.
+    /// <para>
+    /// Only the transition is signalled, so a healthy link that idles for days raises nothing: the
+    /// probe is answered, health never changes, and no event is emitted.
+    /// </para>
+    /// </summary>
+    internal Task SetKeepAliveHealthAsync( IActivityMonitor monitor, bool healthy )
+    {
+        Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
+        return healthy
+                ? UpdateExtremeConnectionAvailabilityAsync( monitor )
+                : SetMaxConnectionAvailabilityAsync( monitor, ConnectionAvailability.DangerZone );
+    }
+
     internal Task SetMaxConnectionAvailabilityAsync( IActivityMonitor monitor, ConnectionAvailability max )
     {
         Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );

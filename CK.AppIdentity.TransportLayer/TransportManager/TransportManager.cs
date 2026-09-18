@@ -31,6 +31,7 @@ sealed partial class TransportManager : MicroAgent
     readonly BackTask<TransportManager>.Head _headIncomingConnection;
     readonly BackTask<TransportManager>.Head _headOutgoingConnection;
     readonly BackTask<TransportManager>.Head _headDelayedKillTransport;
+    readonly BackTask<TransportManager>.Head _headKeepAlive;
 
     internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
         : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeatBeatPeriod )
@@ -47,6 +48,7 @@ sealed partial class TransportManager : MicroAgent
         _headIncomingConnection = BackTask<TransportManager>.Head.Create<IncomingConnectionBackTask>();
         _headOutgoingConnection = BackTask<TransportManager>.Head.Create<OutgoingConnectionBackTask>();
         _headDelayedKillTransport = BackTask<TransportManager>.Head.Create<DelayedKillTransportBackTask>();
+        _headKeepAlive = BackTask<TransportManager>.Head.Create<KeepAliveBackTask>();
     }
 
     /// <summary>
@@ -123,6 +125,15 @@ sealed partial class TransportManager : MicroAgent
     /// Gets the admission control for incoming, not yet authenticated, negotiations.
     /// </summary>
     internal NegotiationGate NegotiationGate => _negotiationGate;
+
+    /// <summary>
+    /// Called by <see cref="KeepAliveBackTask"/>, whose Check is synchronous while setting the
+    /// availability raises an event: this goes back through the loop rather than blocking it.
+    /// </summary>
+    internal void SignalKeepAliveHealth( TransportFeature feature, bool healthy )
+    {
+        PushTypedJob( new KeepAliveHealthJob( feature, healthy ) );
+    }
 
     /// <summary>
     /// Called by a listener for a newly accepted connection. Returns false when the connection must
@@ -356,6 +367,7 @@ sealed partial class TransportManager : MicroAgent
     sealed record class KillTransportJob( Transport Transport, int ReconnectDelay, bool Delayed );
     sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, GoodbyeMessage Reason );
     sealed record class SwitchOnJob( TransportFeature Feature );
+    sealed record class KeepAliveHealthJob( TransportFeature Feature, bool Healthy );
 
     protected override ValueTask ExecuteTypedJobAsync( IActivityMonitor monitor, object job )
     {
@@ -389,6 +401,8 @@ sealed partial class TransportManager : MicroAgent
                 return HandlePeeringIssueAsync( monitor, p );
             case NewValidTransportJob j:
                 return HandleNewValidTransportAsync( monitor, j, _exposedFeature );
+            case KeepAliveHealthJob k:
+                return new ValueTask( k.Feature.SetKeepAliveHealthAsync( monitor, k.Healthy ) );
             case SwitchOnJob on:
                 return on.Feature.DoSwitchOnAsync( monitor );
             case SwitchOffJob off:
@@ -485,6 +499,9 @@ sealed partial class TransportManager : MicroAgent
             {
                 await forPeeringIssue.OnTransportAvailableAsync( monitor, feature );
                 await feature.OnTransportAppearAsync( monitor, t, job.Protocols, job.ClockOffset, job.EvictionMessage );
+                // The transport has a controller from here, so it can send. One watcher per live
+                // transport: it ends itself when the transport is condemned and goes back to the pool.
+                _backTasks.Initialize<KeepAliveBackTask>( monitor, _headKeepAlive, back => back.OnInitialize( t ) );
             }
             else
             {
