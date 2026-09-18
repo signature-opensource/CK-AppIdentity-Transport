@@ -51,7 +51,9 @@ sealed partial class LocalKeys
                                                         today.AddDays( ((renewalFrequency + 1) * allowedOfflineDays) / renewalFrequency ),
                                                         now );
                 if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
-                else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {newOne.NotAfter:yyyy-MM-dd}. " +
+                // L22: this reported newOne.NotAfter — the expiry of the key just created — as the
+                // reason for creating it. The reason is the EXISTING key's expiry.
+                else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {identities[0].NotAfter:yyyy-MM-dd}. " +
                                    $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
 
                 var (name, filePath) = SaveIdentityFileAndPassword( monitor, protector, now, identityPath, newOne );
@@ -214,16 +216,23 @@ sealed partial class LocalKeys
         {
             ECDsa? privateKey = null;
             bool success = true;
-            if( c.NotAfter <= now.AddDays( 1 ) )
+            // X509Certificate2.NotAfter/NotBefore are LOCAL time while now is UtcNow: comparing them
+            // raw compares tick values and silently applies the machine's UTC offset to the decision,
+            // up to ±14 h. East of UTC a key looks fresher than it is and rotation happens late; west
+            // of UTC it looks expired and LogAndCleanup TRASHES it. LocalIdentityKey.cs:31 already
+            // converts; this path (which runs on every load, not only on creation) did not.
+            var notAfter = c.NotAfter.ToUniversalTime();
+            var notBefore = c.NotBefore.ToUniversalTime();
+            if( notAfter <= now.AddDays( 1 ) )
             {
-                LogAndCleanup( monitor, filePath, $"Expired certificate '{filePath}'." );
+                LogAndCleanup( monitor, filePath, $"Expired certificate '{filePath}' (NotAfter: {notAfter:u})." );
                 success = false;
             }
-            if( c.NotBefore >= now )
+            if( notBefore >= now )
             {
                 LogAndCleanup( monitor,
                                filePath,
-                               $"Certificate '{filePath}' is not yet valid (NotBefore: {c.NotBefore}). This is not supported.",
+                               $"Certificate '{filePath}' is not yet valid (NotBefore: {notBefore:u}). This is not supported.",
                                tags: ActivityMonitor.Tags.ToBeInvestigated );
                 success = false;
             }
@@ -267,18 +276,23 @@ sealed partial class LocalKeys
                                                       ecdsa,
                                                       HashAlgorithmName.SHA256 );
 
-                // key usage: Digital Signature and Certificate signing.
-                request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature,
+                // Key usage: signing, and nothing else. This key signs message transcripts, and would
+                // sign the TLS CertificateVerify of a mutual TLS transport: both are DigitalSignature.
+                // KeyCertSign authorises signing OTHER certificates, which nothing here does — see
+                // LocalKeys.CreateSignedCertificate, which now needs a dedicated CA key.
+                request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.DigitalSignature,
                                                                               critical: true ) );
 
-                // Sets basic certificate constraints: this certificate is not intended
-                // be used to sign other CA certificates but is a CA.
-                request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: true,
-                                                                                      hasPathLengthConstraint: true,
+                // This is an end-entity certificate: it is presented as a leaf and never issues
+                // anything. Asserting CA:true on a leaf is what makes a certificate dangerous if it
+                // ever reaches an OS trust store, and is rejected outright by strict validators.
+                request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: false,
+                                                                                      hasPathLengthConstraint: false,
                                                                                       pathLengthConstraint: 0,
                                                                                       critical: true ) );
                 // This subject key identifier: let's use the standard SHA1 of the public key here.
-                request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, critical: true ) );
+                // RFC 5280 §4.2.1.2: "Conforming CAs MUST mark this extension as non-critical."
+                request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, critical: false ) );
 
                 // certificate expiry: Valid from yesterday to notAfter.
                 var notBefore = now.AddDays( -1 );
