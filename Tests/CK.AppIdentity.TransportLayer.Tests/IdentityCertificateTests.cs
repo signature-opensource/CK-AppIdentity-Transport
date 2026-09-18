@@ -19,11 +19,12 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// Findings M9 and M10: the identity certificate's profile, and the time base it is judged against.
 /// <para>
 /// M9 — the certificate was minted with <c>KeyCertSign</c> and <c>BasicConstraints(CA:true)</c> for a
-/// key whose only job is signing messages. Nothing needs to sign certificates; the one helper that
-/// would (<c>LocalKeys.CreateSignedCertificate</c>) has no callers. A certificate that asserts the
-/// authority to mint other certificates signs anything if it ever reaches an OS trust store, and is
-/// rejected outright by strict validators when presented as an end-entity leaf — which is what a
-/// mutual TLS transport would do with it.
+/// key whose only job is signing messages. Nothing needs to sign certificates: the trust model pins
+/// this key directly, so there is no CA anywhere and nothing to issue. (The unused
+/// <c>CreateSignedCertificate</c> helper that would have needed it was deleted with this fix.) A
+/// certificate that asserts the authority to mint other certificates signs anything if it ever
+/// reaches an OS trust store, and is rejected outright by strict validators when presented as an
+/// end-entity leaf — which is what a mutual TLS transport would do with it.
 /// </para>
 /// <para>
 /// M10 — <see cref="X509Certificate2.NotAfter"/> is local time and was compared raw against

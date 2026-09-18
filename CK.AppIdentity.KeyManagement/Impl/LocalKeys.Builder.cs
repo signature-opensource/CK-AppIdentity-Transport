@@ -278,8 +278,8 @@ sealed partial class LocalKeys
 
                 // Key usage: signing, and nothing else. This key signs message transcripts, and would
                 // sign the TLS CertificateVerify of a mutual TLS transport: both are DigitalSignature.
-                // KeyCertSign authorises signing OTHER certificates, which nothing here does — see
-                // LocalKeys.CreateSignedCertificate, which now needs a dedicated CA key.
+                // KeyCertSign authorises signing OTHER certificates. Nothing does that: the trust
+                // model pins this key directly, so there is no CA anywhere and nothing to issue.
                 request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.DigitalSignature,
                                                                               critical: true ) );
 
