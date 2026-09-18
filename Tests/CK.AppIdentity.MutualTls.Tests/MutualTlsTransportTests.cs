@@ -145,6 +145,57 @@ public class MutualTlsTransportTests
         }
     }
 
+    [Test, CancelAfter( 60000 )]
+    public async Task Silent_clients_do_not_stall_the_accept_loop_Async( CancellationToken token )
+    {
+        // A TLS handshake is a round trip. If the listener performed it on the accept loop, a client
+        // that connects and then says nothing would hold every subsequent accept until its budget ran
+        // out — a denial of service costing the attacker one socket and no cryptography at all.
+        //
+        // Three silent sockets are parked first, then a legitimate party connects. Serialised, it
+        // would wait three timeouts; the assertion is that it does not wait even one.
+        var listener = await CreateAsync( c =>
+        {
+            c["FullName"] = "Test/$ListenerStall";
+            c["AutoTrustKey"] = "Once";
+            c["AlwaysListening"] = "True";
+            c["ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Parties:0:PartyName"] = "$SenderStall";
+        }, token );
+        await using( listener )
+        {
+            var silent = new TcpClient[3];
+            try
+            {
+                for( int i = 0; i < silent.Length; ++i )
+                {
+                    silent[i] = new TcpClient();
+                    await silent[i].ConnectAsync( "127.0.0.1", Port, token );
+                }
+
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                await using var sender = await CreateAsync( c =>
+                {
+                    c["FullName"] = "Test/$SenderStall";
+                    c["AutoTrustKey"] = "Once";
+                    c["Parties:0:PartyName"] = "$ListenerStall";
+                    c["Parties:0:Address"] = $"mtls:127.0.0.1:{Port}";
+                }, token );
+                var senderSide = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
+                await senderSide.ReadyTask.WaitAsync( token );
+                watch.Stop();
+
+                senderSide.ConnectionAvailability.ShouldBe( ConnectionAvailability.Connected );
+                watch.ElapsedMilliseconds.ShouldBeLessThan( 2000,
+                    "The handshake of a silent peer must not be on the path of anybody else's." );
+            }
+            finally
+            {
+                foreach( var s in silent ) s?.Dispose();
+            }
+        }
+    }
+
     [Test, CancelAfter( 30000 )]
     public async Task A_cleartext_client_gets_nowhere_on_the_mtls_port_Async( CancellationToken token )
     {
