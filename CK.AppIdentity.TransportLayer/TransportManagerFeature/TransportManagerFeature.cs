@@ -27,6 +27,8 @@ public sealed class TransportManagerFeature
     readonly PerfectEventSender<PeeringIssue> _peeringIssueChanged;
     readonly Dictionary<string, PeeringIssue> _peeringIssues;
     int _maxUnknownRemoteCount;
+    int _maxFlapReconnectDelay;
+    TimeSpan _stableConnectionTime;
     PeeringIssue[]? _exposedIssues;
     PeeringIssue[]? _exposedClonedIssues;
 
@@ -38,6 +40,8 @@ public sealed class TransportManagerFeature
         _peeringIssues = new Dictionary<string, PeeringIssue>();
         _transportManager = transportManager;
         _maxUnknownRemoteCount = 5;
+        _maxFlapReconnectDelay = 30;
+        _stableConnectionTime = TimeSpan.FromMinutes( 1 );
     }
 
 
@@ -64,6 +68,41 @@ public sealed class TransportManagerFeature
         {
             Throw.CheckOutOfRangeArgument( value >= 5 && value <= 100 );
             _maxUnknownRemoteCount = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the longest delay, in heartbeats, between two reconnection attempts to a remote
+    /// that keeps accepting us and then dropping us. Defaults to 30, must be between 1 and
+    /// <see cref="BackTask{THost}.MaxCheckDelay"/>.
+    /// <para>
+    /// Failing to <em>connect</em> is cheap — nothing is negotiated — and keeps its own shorter
+    /// back-off. This one covers the expensive case: a peer that accepts, negotiates and then drops
+    /// us costs two signatures and two verifications per side, every cycle.
+    /// </para>
+    /// </summary>
+    public int MaxFlapReconnectDelay
+    {
+        get => _maxFlapReconnectDelay;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value >= 1 && value <= BackTask<TransportManager>.MaxCheckDelay );
+            _maxFlapReconnectDelay = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets how long a connection must last before it stops counting as one more turn of a
+    /// flap and resets <see cref="TransportFeature.FlapCount"/>. Defaults to one minute, must be
+    /// strictly positive.
+    /// </summary>
+    public TimeSpan StableConnectionTime
+    {
+        get => _stableConnectionTime;
+        set
+        {
+            Throw.CheckOutOfRangeArgument( value > TimeSpan.Zero );
+            _stableConnectionTime = value;
         }
     }
 

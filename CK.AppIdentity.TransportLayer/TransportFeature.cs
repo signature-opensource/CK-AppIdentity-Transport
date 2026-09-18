@@ -47,6 +47,15 @@ public sealed class TransportFeature
     TimeSpan? _clockOffset;
     bool _disallowEviction;
 
+    // Reconnection back-off state. It lives HERE, on the remote, and not on OutgoingConnectionBackTask:
+    // that task is created fresh for each reconnection and returned to a pool, and OnInitialize zeroes
+    // its try count. A counter on it therefore only ever backs off consecutive failures to CONNECT
+    // within one attempt series, and restarts from nothing every time a connection is established and
+    // then dies — which is the expensive case, since every cycle costs a full negotiation.
+    int _flapCount;
+    // Util.UtcMinValue when no transport is currently live.
+    DateTime _connectedSince;
+
     internal TransportFeature( TransportManager transportManager,
                                IRemoteParty remote,
                                TransportListener[]? listeners,
@@ -94,6 +103,9 @@ public sealed class TransportFeature
             _controller.Rebind( monitor, transport, evictionMessage );
         }
         Throw.DebugAssert( _controller.Feature == this );
+        // A transport is live from here: this is what NextReconnectDelay measures to decide whether
+        // the last connection was a real one or one more turn of a flap.
+        _connectedSince = _transportManager.SystemClock.UtcNow;
         // Sets the ClockOffset.
         _clockOffset = clockOffset;
         // Second, ensures that protocol handlers for the right version are available
@@ -256,6 +268,45 @@ public sealed class TransportFeature
     /// Defaults to <see cref="Util.UtcMinValue"/>.
     /// </summary>
     public DateTime LastReceived => _controller != null ? _controller.CurrentTransport.LastReceived : Util.UtcMinValue;
+
+    /// <summary>
+    /// Gets how many times in a row a connection to this remote was established and then died
+    /// without lasting <see cref="TransportManagerFeature.StableConnectionTime"/>.
+    /// Zero when the last connection was healthy.
+    /// </summary>
+    public int FlapCount => _flapCount;
+
+    /// <summary>
+    /// Computes the delay before the next reconnection attempt and folds the connection that just
+    /// died into the flap count.
+    /// <para>
+    /// A peer that accepts, negotiates and then drops us costs two signatures and two verifications
+    /// per side, every cycle. Retrying that immediately — which is what a zero delay did, because the
+    /// counter lived on a back task that was recreated each time — is a tight loop that burns CPU and
+    /// floods the logs on both ends, and an unfriendly peer can hold us in it for free.
+    /// </para>
+    /// <para>
+    /// Doubling rather than counting up: a flap is diagnosed within a handful of cycles instead of
+    /// thirty, and that is the whole point — the cycles are the expensive part.
+    /// </para>
+    /// </summary>
+    /// <param name="now">The current time.</param>
+    /// <returns>The delay in heartbeats, at least 1.</returns>
+    internal int NextReconnectDelay( DateTime now )
+    {
+        // Called from KillTransportAsync, on the TransportManager loop: no synchronization needed.
+        var settings = _transportManager.Feature;
+        // A connection that lasted is evidence the remote is healthy: forget the history. Anything
+        // shorter is one more turn of the same flap, however successfully it connected.
+        if( _connectedSince != Util.UtcMinValue && now - _connectedSince >= settings.StableConnectionTime )
+        {
+            _flapCount = 0;
+        }
+        _connectedSince = Util.UtcMinValue;
+        // Bounded so that a very long flap cannot overflow the shift below.
+        if( _flapCount < 31 ) ++_flapCount;
+        return Math.Min( 1 << Math.Min( _flapCount - 1, 5 ), settings.MaxFlapReconnectDelay );
+    }
 
     /// <summary>
     /// Maximum number of messages queued for sending to this remote before producers are pushed

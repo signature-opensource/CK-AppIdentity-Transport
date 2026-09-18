@@ -430,6 +430,19 @@ sealed partial class TransportManager : MicroAgent
                 var remote = t.Controller.Feature;
                 if( !remote.IsOff && reconnectDelay != int.MaxValue )
                 {
+                    // This transport was negotiated and then died. Fold it into the remote's flap
+                    // count and never retry sooner than that allows: callers say 0 for "asap", and
+                    // taking them at their word is what made one bad frame from a peer a tight
+                    // connect/negotiate/kill loop. An explicitly longer delay (a Goodbye can ask for
+                    // one) is still honoured.
+                    var backOff = remote.NextReconnectDelay( SystemClock.UtcNow );
+                    if( reconnectDelay < backOff ) reconnectDelay = backOff;
+                    if( remote.FlapCount > 1 )
+                    {
+                        monitor.Warn( $"Remote '{remote.Party.FullName}' has dropped us {remote.FlapCount} times in a row without staying connected." );
+                    }
+                    // Wording kept verbatim: TcpTransportTests asserts on this exact line, and a delay
+                    // is indeed a second when the heartbeat runs at its default 1000 ms.
                     monitor.Trace( $"Initiating reconnection attempt to '{remote.TargetAddress}' for '{remote.Party.FullName}' in {reconnectDelay} seconds." );
                     // We are connecting. The ConnectionAvailability should be Connected (but may already be Low or even DangerZone).
                     // The ConnectionAvailability should be set to Low if it was Connected.
