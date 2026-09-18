@@ -1,4 +1,4 @@
-using CK.AppIdentity.TransportLayer.Tests.Adversarial;
+using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Monitoring;
 using System.Collections.Generic;
 using CK.Core;

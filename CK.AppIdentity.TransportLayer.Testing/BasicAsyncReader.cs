@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
 /// <summary>
 /// Funny helper that transforms a <see cref="IOutgoingMessage"/> into a
@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// after its wire prefix.
 /// </para>
 /// </summary>
-class BasicAsyncReader
+public class BasicAsyncReader
 {
     byte[] _data;
     int _offset;

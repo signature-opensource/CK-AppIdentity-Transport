@@ -152,12 +152,12 @@ sealed partial class TransportManager : MicroAgent
     /// be refused: the listener is then responsible for closing it, and nothing has been queued, so a
     /// flood cannot grow the job queue either.
     /// </summary>
-    internal bool IncomingTransport( Transport t, DateTime incomingTime, string? sourceKey )
+    internal bool IncomingTransport( Transport t, DateTime incomingTime, string? sourceKey, bool slotReserved, DateTime acceptedAtUtc )
     {
-        if( !_negotiationGate.TryReserve( sourceKey ) ) return false;
+        if( !slotReserved && !_negotiationGate.TryReserve( sourceKey ) ) return false;
         // Reserved here, released by IncomingConnectionBackTask.Reset: the BackTaskManager calls it
         // exactly once per Initialize, on every path including the ones that threw.
-        PushTypedJob( new NewIncomingTransport( t, incomingTime, sourceKey ) );
+        PushTypedJob( new NewIncomingTransport( t, incomingTime, sourceKey, acceptedAtUtc ) );
         return true;
     }
 
@@ -374,7 +374,7 @@ sealed partial class TransportManager : MicroAgent
                                          IReadOnlyList<string>? RemoteMissing,
                                          GoodbyeMessage? RemoteOffMessage );
     sealed record class TryConnectToJob( TransportFeature Remote );
-    sealed record class NewIncomingTransport( Transport Incoming, DateTime IncomingTime, string? SourceKey );
+    sealed record class NewIncomingTransport( Transport Incoming, DateTime IncomingTime, string? SourceKey, DateTime AcceptedAtUtc );
     sealed record class NewValidTransportJob( IRemoteParty Remote, Transport Transport, MessageProtocolMap Protocols, TimeSpan ClockOffset, GoodbyeMessage.Evicted? EvictionMessage );
     sealed record class KillTransportJob( Transport Transport, int ReconnectDelay, bool Delayed );
     sealed record class SwitchOffJob( TransportFeature Feature, TaskCompletionSource? Done, GoodbyeMessage Reason );
@@ -405,7 +405,7 @@ sealed partial class TransportManager : MicroAgent
                 Throw.DebugAssert( "This is necessarily an incoming connection created by a listener (not yet validated).",
                                    j.Incoming.Listener != null && j.Incoming.Controller == null );
                 monitor.Trace( $"Received transport '{j.Incoming.RemoteEndPointDescription}' (#{j.Incoming.GetHashCode()}) from '{j.Incoming.Listener}'. Validating it." );
-                _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime, j.SourceKey ) );
+                _backTasks.Initialize<IncomingConnectionBackTask>( monitor, _headIncomingConnection, back => back.OnInitialize( j.Incoming, j.IncomingTime, j.SourceKey, j.AcceptedAtUtc ) );
                 return default;
             case TransportFeature newFeature:
                 return HandleNewRemoteTransportFeatureAsync( monitor, newFeature );

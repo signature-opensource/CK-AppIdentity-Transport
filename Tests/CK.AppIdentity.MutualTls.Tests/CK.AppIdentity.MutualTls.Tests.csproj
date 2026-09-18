@@ -11,7 +11,7 @@
     <PackageReference Include="CK.Testing.Monitoring" Version="15.0.5--ci.3" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.Transport.MutualTls\CK.AppIdentity.Transport.MutualTls.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.TransportLayer.Testing\CK.AppIdentity.TransportLayer.Testing.csproj" />
   </ItemGroup>
   <ItemGroup>

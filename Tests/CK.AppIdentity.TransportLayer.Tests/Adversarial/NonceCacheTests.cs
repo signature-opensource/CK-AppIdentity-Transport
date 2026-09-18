@@ -1,5 +1,5 @@
 using CK.AppIdentity.KeyManagement;
-using CK.AppIdentity.TransportLayer.Tests.Adversarial;
+using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;

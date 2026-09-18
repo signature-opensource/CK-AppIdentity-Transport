@@ -5,7 +5,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// Framing for the adversarial peer: an <em>independent</em> implementation of the wire header
@@ -18,7 +18,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// reader so the two are known to agree.
 /// </para>
 /// </summary>
-static class PeerWire
+public static class PeerWire
 {
     /// <summary>Protocol number of the "0 Protocol" on the wire.</summary>
     public const uint ZeroProtocolNumber = 0;

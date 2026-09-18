@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Text;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// The harness's own view of an <c>InitialMessage</c> as it appears on the wire.
@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// identity/signature block appended by <c>ZeroProtocol.WriteIdentityKeysAndSign</c>.
 /// </para>
 /// </summary>
-sealed class PeerInitialMessage
+public sealed class PeerInitialMessage
 {
     /// <summary>The 8-byte magic that opens every initial message.</summary>
     public static ReadOnlySpan<byte> Prefix => "CK-AppId"u8;
@@ -151,4 +151,4 @@ sealed class PeerInitialMessage
 /// A public identity key as it travels on the wire: a creation time ("TimeName") and the
 /// SubjectPublicKeyInfo raw bytes.
 /// </summary>
-sealed record PeerPublicKey( DateTime TimeName, byte[] SubjectPublicKeyInfo );
+public sealed record PeerPublicKey( DateTime TimeName, byte[] SubjectPublicKeyInfo );

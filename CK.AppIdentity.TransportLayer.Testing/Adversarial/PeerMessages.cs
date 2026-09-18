@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// Builds Zero Protocol reply payloads for the adversarial peer.
@@ -14,7 +14,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// parameter is the knob each C2 test turns.
 /// </para>
 /// </summary>
-static class PeerMessages
+public static class PeerMessages
 {
     /// <summary>Writes a message body. A delegate taking <c>ref</c> because FastByteWriter is a ref struct.</summary>
     public delegate void BodyWriter( ref FastByteWriter w );

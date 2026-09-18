@@ -126,7 +126,7 @@ public class GetBeforeHeadTests
         using var incoming = new IncomingMessageFactory( map );
 
         var payload = RandomNumberGenerator.GetBytes( payloadLength );
-        var frame = Adversarial.PeerWire.Frame( payload, protocolNumber: 1 );
+        var frame = Testing.Adversarial.PeerWire.Frame( payload, protocolNumber: 1 );
         int offset = 0;
         System.Threading.Tasks.ValueTask Reader( Memory<byte> m, System.Threading.CancellationToken t )
         {

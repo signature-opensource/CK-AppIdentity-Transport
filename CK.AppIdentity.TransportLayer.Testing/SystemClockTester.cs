@@ -1,6 +1,6 @@
 using System;
 
-namespace CK.AppIdentity.TransportLayer.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
 /// <summary>
 /// Test clock that can introduce an <see cref="Offset"/> in its time.

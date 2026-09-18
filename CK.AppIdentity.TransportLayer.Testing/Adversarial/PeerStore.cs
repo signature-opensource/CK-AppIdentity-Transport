@@ -2,7 +2,7 @@ using CK.Core;
 using System.IO;
 using System.Linq;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// Store surgery for adversarial tests.
@@ -19,7 +19,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// <see cref="ClearRemoteTrust"/> before starting.
 /// </para>
 /// </summary>
-static class PeerStore
+public static class PeerStore
 {
     /// <summary>
     /// Deletes any persisted trusted identity for a remote, so the test starts from

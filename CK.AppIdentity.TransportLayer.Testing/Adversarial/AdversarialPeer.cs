@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// A hostile peer that speaks the Zero Protocol over a raw TCP socket, acting as a
@@ -21,7 +21,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// configuration), then <c>await</c> <see cref="AcceptAsync"/> and drive the connection.
 /// </para>
 /// </summary>
-sealed class AdversarialPeer : IAsyncDisposable
+public sealed class AdversarialPeer : IAsyncDisposable
 {
     readonly TcpListener _listener;
     readonly List<PeerConnection> _connections;
@@ -90,7 +90,7 @@ sealed class AdversarialPeer : IAsyncDisposable
 /// <summary>
 /// One accepted connection from a real initiator.
 /// </summary>
-sealed class PeerConnection : IAsyncDisposable
+public sealed class PeerConnection : IAsyncDisposable
 {
     readonly TcpClient _client;
     readonly NetworkStream _stream;

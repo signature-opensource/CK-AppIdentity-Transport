@@ -84,14 +84,18 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         _sourceKey = null;
     }
 
-    public void OnInitialize( Transport incoming, DateTime incomingTime, string? sourceKey )
+    public void OnInitialize( Transport incoming, DateTime incomingTime, string? sourceKey, DateTime acceptedAtUtc )
     {
         Throw.DebugAssert( incoming.Listener != null );
         _incoming = incoming;
         _sourceKey = sourceKey;
         // TransportManager.IncomingTransport reserved it before queuing this.
         _holdsNegotiationSlot = true;
-        _initializeTime = DateTime.UtcNow;
+        // The budget starts when the connection was ACCEPTED, not when this task got to run. A
+        // listener that handshakes before handing over (mTLS) has already spent part of it, and
+        // starting a fresh clock here would let an unauthenticated peer hold a slot for twice the
+        // number the concurrency cap is sized against.
+        _initializeTime = acceptedAtUtc;
         _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
         NextCheckDelay = 1;
     }

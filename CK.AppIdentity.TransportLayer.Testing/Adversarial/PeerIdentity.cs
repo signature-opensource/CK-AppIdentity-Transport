@@ -1,7 +1,7 @@
 using System;
 using System.Security.Cryptography;
 
-namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
+namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
 /// <summary>
 /// An identity key the adversarial peer signs with: an ECDSA P-256 key pair plus the "TimeName"
@@ -14,7 +14,7 @@ namespace CK.AppIdentity.TransportLayer.Tests.Adversarial;
 /// signature means anything is the entire subject of finding C2.
 /// </para>
 /// </summary>
-sealed class PeerIdentity : IDisposable
+public sealed class PeerIdentity : IDisposable
 {
     readonly ECDsa _key;
 
@@ -62,7 +62,7 @@ sealed class PeerIdentity : IDisposable
 /// per <c>Transport</c>. Exists so an adversarial test can also present a WRONG or reused
 /// ephemeral, which a real peer never would.
 /// </summary>
-sealed class PeerEphemeral : IDisposable
+public sealed class PeerEphemeral : IDisposable
 {
     readonly ECDiffieHellman _key;
 

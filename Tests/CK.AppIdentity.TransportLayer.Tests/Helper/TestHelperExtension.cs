@@ -1,78 +1,49 @@
-using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using CK.Testing;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 
+/// <summary>
+/// The shared builder plus this assembly's own fault-injecting transport.
+/// <para>
+/// <see cref="BugTransportTypeService"/> stays here rather than in the Testing project: it exists to
+/// make connect, read, write and dispose fail on demand, which is this assembly's subject and nobody
+/// else's.
+/// </para>
+/// </summary>
 static class TestHelperExtension
 {
     /// <summary>
     /// Creates a <see cref="ApplicationIdentityService"/> from a configuration builder.
     /// It must be disposed once done with it to stop its micro agent.
     /// </summary>
-    /// <param name="this">This test helper.</param>
-    /// <param name="configuration">The configuration.</param>
-    /// <param name="token">Optional cancellation token.</param>
-    /// <returns>The started service.</returns>
     public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
                                                                                   Action<MutableConfigurationSection> configuration,
                                                                                   Action<ServiceCollection>? configureServices = null,
                                                                                   CancellationToken token = default )
-    {
-        var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
-        Throw.DebugAssert( c != null );
-        return CreateApplicationServiceAsync( @this, c, configureServices, token );
-    }
+        => AppIdentityTestHelper.CreateServiceAsync( configuration, WithBugTransport( configureServices ), token );
 
     /// <summary>
     /// Creates a <see cref="ApplicationIdentityService"/> from its configuration.
     /// It must be disposed once done with it to stop its micro agent.
     /// </summary>
-    /// <param name="this">This test helper.</param>
-    /// <param name="c">The configuration.</param>
-    /// <param name="token">Optional cancellation token.</param>
-    /// <returns>The started service.</returns>
-    public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
-                                                                                        ApplicationIdentityServiceConfiguration c,
-                                                                                        Action<ServiceCollection>? configureServices = null,
-                                                                                        CancellationToken token = default )
-    {
-        var serviceBuilder = new ServiceCollection();
-        serviceBuilder.AddSingleton( c );
-        serviceBuilder.AddSingleton<ApplicationIdentityService>();
-        serviceBuilder.AddSingleton<MessageProtocolDirectoryService>();
+    public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
+                                                                                  ApplicationIdentityServiceConfiguration c,
+                                                                                  Action<ServiceCollection>? configureServices = null,
+                                                                                  CancellationToken token = default )
+        => AppIdentityTestHelper.CreateServiceAsync( c, WithBugTransport( configureServices ), token );
 
-        // Adds the TransportFeatureDriver before the KeyManagementFeatureDriver to test
-        // the existence of the dependency from TransportFeatureDriver to KeyManagementFeatureDriver.
-        // (Without the - unused - constructor parameter, registering services in this order fails.)
-        serviceBuilder.AddSingleton<TransportFeatureDriver>();
-        serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
-
-        serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
-        serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
-        serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
-
-        serviceBuilder.AddSingleton<TcpSocketTransportTypeService>();
-        serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<TcpSocketTransportTypeService>() );
-
-        serviceBuilder.AddSingleton<BugTransportTypeService>();
-        serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<BugTransportTypeService>() );
-
-        configureServices?.Invoke( serviceBuilder );
-        var services = serviceBuilder.BuildServiceProvider();
-
-        var s = services.GetRequiredService<ApplicationIdentityService>();
-        // This is done by host. We wait for the FeatureBuildersInitialization task.
-        _ = ((IHostedService)s).StartAsync( token );
-
-        await s.InitializationTask.WaitAsync( token ).ConfigureAwait( false );
-        return s;
-    }
+    // Registered before the caller's own configuration, so a test can still replace anything here.
+    static Action<ServiceCollection> WithBugTransport( Action<ServiceCollection>? configureServices )
+        => services =>
+        {
+            services.AddSingleton<BugTransportTypeService>();
+            services.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<BugTransportTypeService>() );
+            configureServices?.Invoke( services );
+        };
 }
