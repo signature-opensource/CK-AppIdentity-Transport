@@ -131,7 +131,9 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 
     static void UnplugRemote( FeatureLifetimeContext context, IRemoteParty r )
     {
-        r.GetFeature<RemoteKeys>()?.TrustedIdentity?.OnTeardown();
+        // IsDestroyed distinguishes "this party is gone" from "the application is shutting down":
+        // the replay record must survive a restart, but not outlive the party it belongs to.
+        r.GetFeature<RemoteKeys>()?.OnTeardown( context.Monitor, r.IsDestroyed );
     }
 
 }

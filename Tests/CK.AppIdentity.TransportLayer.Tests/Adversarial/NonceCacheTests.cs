@@ -144,6 +144,52 @@ public class NonceCacheTests
     }
 
     [Test, CancelAfter( 60000 )]
+    public async Task A_nonce_survives_a_restart_Async( CancellationToken token )
+    {
+        // The cache is persisted so a restart cannot be used to forget a nonce and replay a
+        // captured handshake. This also pins that shutting down is NOT treated as destroying the
+        // party: the record must outlive the process but not the remote.
+        const string local = "NoncePersist";
+        var n = Nonce( _systemClock.UtcNow );
+
+        var (service, a, _) = await TwoRemotesAsync( local, token );
+        a.CheckAndAddNonceValue( TestHelper.Monitor, n ).ShouldBeTrue();
+        await service.DisposeAsync();
+
+        // Same store, fresh process. TwoRemotesAsync clears the store, so rebuild by hand.
+        await using var restarted = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = $"Test/${local}";
+            c["AlwaysListening"] = "True";
+            c["Parties:0:PartyName"] = $"${local}A";
+            c["Parties:1:PartyName"] = $"${local}B";
+        }, ConfigureFastClock, token: token );
+
+        var a2 = restarted.AllRemotes.Single( r => r.PartyName == $"${local}A" ).GetRequiredFeature<IRemoteKeys>();
+        a2.CheckAndAddNonceValue( TestHelper.Monitor, n, LogLevel.None ).ShouldBeFalse(
+            "A nonce spent before the restart must still be known: otherwise restarting is enough " +
+            "to forget it and replay a captured handshake inside the clock window." );
+    }
+
+    [Test, CancelAfter( 30000 )]
+    public async Task Each_local_party_keeps_its_own_record_of_a_remote_Async( CancellationToken token )
+    {
+        // The remote's folder is shared by every local party on this file system, so the cache is
+        // named by the local party inside it. The separation is for WRITERS — several processes
+        // sharing one file would corrupt it — not for secrecy.
+        var (service, a, _) = await TwoRemotesAsync( "NonceScope", token );
+        await using var _svc = service;
+
+        var expected = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath
+                            .Combine( "#Dev/Test/$NonceScopeA/-Locals/Test/$NonceScope/#Dev/Nonce.cache" );
+        a.CheckAndAddNonceValue( TestHelper.Monitor, Nonce( _systemClock.UtcNow ) ).ShouldBeTrue();
+        await service.DisposeAsync();
+
+        System.IO.File.Exists( expected ).ShouldBeTrue(
+            $"The cache must live under the remote's folder, scoped by the local party: '{expected}'." );
+    }
+
+    [Test, CancelAfter( 60000 )]
     public async Task The_memory_guard_degrades_only_the_offending_remote_Async( CancellationToken token )
     {
         // Time-bounding alone would let a peer handshaking absurdly fast grow memory without limit

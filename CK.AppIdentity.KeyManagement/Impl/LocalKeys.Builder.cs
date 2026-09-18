@@ -75,9 +75,7 @@ sealed partial class LocalKeys
             var ids = identities.ToArray();
             monitor.Info( $"Local '{_local.FullName}' has {ids.Length} identity keys. Current expires on {ids[0].NotAfter:yyyy-MM-dd}." );
             HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
-            // We load the nonce cache.
-            var nonceCache = LocalNonceCache.Create( monitor, _store.FolderPath.AppendPart( "Nonce.cache" ) );
-            return new LocalKeys( _local, protector, ids, nonceCache, allowedOfflineDays );
+            return new LocalKeys( _local, protector, ids, allowedOfflineDays );
         }
 
         void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )

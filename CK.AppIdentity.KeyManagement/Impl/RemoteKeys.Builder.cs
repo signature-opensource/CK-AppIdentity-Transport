@@ -26,6 +26,8 @@ sealed partial class RemoteKeys
             AutoTrustKey autoTrust = GetAutoTrustKey( monitor, configuration );
             TimeSpan maxClockOffset = GetMaxClockOffset( monitor, configuration );
             DateTime now = _remote.ApplicationIdentityService.SystemClock.UtcNow;
+            // This local party's record of nonces seen from this remote, kept in the remote's folder.
+            var nonceCache = RemoteNonceCache.Load( monitor, _remote, _localKeys.Party );
             RemoteIdentityKeyData? c = null;
             foreach( var f in FilterFileNames( monitor,
                                                now,
@@ -45,10 +47,10 @@ sealed partial class RemoteKeys
             if( c != null )
             {
                 monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
-                return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, maxClockOffset );
+                return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, maxClockOffset, nonceCache );
             }
             monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-            return new RemoteKeys( _localKeys, _remote, null, autoTrust, maxClockOffset );
+            return new RemoteKeys( _localKeys, _remote, null, autoTrust, maxClockOffset, nonceCache );
 
             static string ExtractTimeName( string s )
             {

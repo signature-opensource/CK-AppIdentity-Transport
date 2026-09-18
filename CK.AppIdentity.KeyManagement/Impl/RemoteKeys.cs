@@ -12,13 +12,49 @@ sealed partial class RemoteKeys : IRemoteKeys
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
 
-    RemoteKeys( LocalKeys localKeys, IRemoteParty remote, RemoteIdentityKey? identity, AutoTrustKey autoTrustKey, TimeSpan maxClockOffset )
+    // The replay cache belongs here, with the remote it protects: one cache, one lock, one file per
+    // remote. It used to be a single shared ring on LocalKeys indexed by remote name, which was a
+    // hand-rolled index onto the association this object already is.
+    readonly RemoteNonceCache _nonceCache;
+
+    RemoteKeys( LocalKeys localKeys,
+                IRemoteParty remote,
+                RemoteIdentityKey? identity,
+                AutoTrustKey autoTrustKey,
+                TimeSpan maxClockOffset,
+                RemoteNonceCache nonceCache )
     {
         _localKeys = localKeys;
         _remote = remote;
         _identity = identity;
         _autoTrustKey = autoTrustKey;
         _maxClockOffset = maxClockOffset;
+        _nonceCache = nonceCache;
+        remote.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
+    }
+
+    void OnHeartbeat( IActivityMonitor monitor, int callCount )
+    {
+        // Prune first: an idle process must not hold nonces that can no longer be replayed.
+        _nonceCache.Prune( _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset );
+        _nonceCache.Save( monitor );
+    }
+
+    /// <summary>
+    /// Called when this remote's keys are unplugged.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="destroyed">
+    /// True when the remote party itself is gone, as opposed to the application shutting down. Its
+    /// replay record then has no meaning any more, and leaving it behind would resurrect on a party
+    /// that later takes the same name.
+    /// </param>
+    internal void OnTeardown( IActivityMonitor monitor, bool destroyed )
+    {
+        _remote.ApplicationIdentityService.Heartbeat.Sync -= OnHeartbeat;
+        _identity?.OnTeardown();
+        if( destroyed ) _nonceCache.Delete( monitor );
+        else _nonceCache.Save( monitor );
     }
 
     public ILocalKeys LocalKeys => _localKeys;
@@ -131,19 +167,18 @@ sealed partial class RemoteKeys : IRemoteKeys
     {
         // Partitioned by remote and checked-and-added in one operation: two concurrent connections
         // replaying the same nonce must not both pass.
-        bool ok = _localKeys.NonceCache.CheckAndAdd( _remote.FullName,
-                                                     nonce.Nonce,
-                                                     nonce.CreationTime,
-                                                     _remote.ApplicationIdentityService.SystemClock.UtcNow,
-                                                     _maxClockOffset,
-                                                     out bool evicted );
+        bool ok = _nonceCache.CheckAndAdd( nonce.Nonce,
+                                           nonce.CreationTime,
+                                           _remote.ApplicationIdentityService.SystemClock.UtcNow,
+                                           _maxClockOffset,
+                                           out bool evicted );
         if( evicted )
         {
             // Only a peer handshaking far faster than any legitimate one reaches this, and the
             // degradation is confined to that peer. Worth saying out loud: its replay window is
             // now shorter than configured.
             logger.Log( LogLevel.Warn, ActivityMonitor.Tags.ToBeInvestigated,
-                        $"Nonce cache for '{_remote}' is full ({LocalNonceCache.MaxEntriesPerRemote} entries within " +
+                        $"Nonce cache for '{_remote}' is full ({IRemoteKeys.MaxNonceCacheEntries} entries within " +
                         $"{_maxClockOffset}): dropping still-valid entries. This remote is handshaking abnormally fast." );
         }
         if( !ok && logLevel != LogLevel.None )

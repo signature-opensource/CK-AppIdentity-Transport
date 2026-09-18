@@ -12,7 +12,6 @@ sealed partial class LocalKeys : ILocalKeys
     const string PasswordExtension = ".pwd";
     readonly ILocalParty _local;
     readonly IDataProtector _protector;
-    readonly LocalNonceCache _nonceCache;
     readonly int _allowedOfflineDays;
     // Key renewal should be implemented while running soon:
     // this is not readonly (Interlocked exchanged).
@@ -23,22 +22,12 @@ sealed partial class LocalKeys : ILocalKeys
     LocalKeys( ILocalParty local,
                IDataProtector protector,
                LocalIdentityKey[] identities,
-               LocalNonceCache nonceCache,
                int allowedOfflineDays )
     {
         _local = local;
         _identities = identities;
-        _nonceCache = nonceCache;
         _allowedOfflineDays = allowedOfflineDays;
         _protector = protector;
-        local.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
-    }
-
-    void OnHeartbeat( IActivityMonitor monitor, int callCount )
-    {
-        // Prune first: an idle process must not hold nonces that can no longer be replayed.
-        _nonceCache.Prune( _local.ApplicationIdentityService.SystemClock.UtcNow, IRemoteKeys.DefaultMaxClockOffset );
-        _nonceCache.Save( monitor );
     }
 
     public ILocalParty Party => _local;
@@ -51,8 +40,6 @@ sealed partial class LocalKeys : ILocalKeys
 
     public IReadOnlyList<LocalIdentityKey> Identities => _identities;
 
-    internal LocalNonceCache NonceCache => _nonceCache;
-
     internal void OnTearDown( IActivityMonitor monitor )
     {
         var identities = _identities;
@@ -60,8 +47,6 @@ sealed partial class LocalKeys : ILocalKeys
         {
             key.OnTeardown();
         }
-        _local.ApplicationIdentityService.Heartbeat.Sync -= OnHeartbeat;
-        _nonceCache.Save( monitor );
     }
 
     // Not used yet.
