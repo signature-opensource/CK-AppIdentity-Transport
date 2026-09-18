@@ -263,6 +263,20 @@ sealed partial class LocalKeys
                                $"Invalid certificate common name (expected '{_local.FullName}', got '{actualName}') for '{filePath}'." );
                 success = false;
             }
+            // The identity issues the credentials other purposes need (LocalIdentityKey.CreateDerivedCertificate),
+            // and CertificateRequest.Create refuses a non-CA signer outright — checked: it throws
+            // ArgumentException rather than silently producing an unusable certificate. Deciding it
+            // here turns that into one logged rotation at startup, with a new .public file that the
+            // usual trust flow carries. Leaving it to the first issuance instead would throw on a
+            // connection path, on every connection, with nothing that ever repairs itself.
+            var constraints = c.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault();
+            if( constraints == null || !constraints.CertificateAuthority )
+            {
+                LogAndCleanup( monitor,
+                               filePath,
+                               $"Certificate '{filePath}' cannot issue: its BasicConstraints does not assert CA." );
+                success = false;
+            }
             if( !c.HasPrivateKey )
             {
                 LogAndCleanup( monitor, filePath, $"Missing private key in '{filePath}'." );
@@ -295,18 +309,23 @@ sealed partial class LocalKeys
                                                       ecdsa,
                                                       HashAlgorithmName.SHA256 );
 
-                // Key usage: signing, and nothing else. This key signs message transcripts, and would
-                // sign the TLS CertificateVerify of a mutual TLS transport: both are DigitalSignature.
-                // KeyCertSign authorises signing OTHER certificates. Nothing does that: the trust
-                // model pins this key directly, so there is no CA anywhere and nothing to issue.
-                request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.DigitalSignature,
+                // This key has two jobs, and the second one is what keeps the first one contained.
+                // DigitalSignature signs message transcripts. KeyCertSign lets it ISSUE the
+                // purpose-specific credentials a transport needs — see
+                // LocalIdentityKey.CreateDerivedCertificate — so a mutual TLS channel gets a
+                // certificate with a key pair of its own instead of a copy of this one. The weaker
+                // arrangement is a single end-entity key used directly for everything: it then has to
+                // leave the package that owns it for every new purpose, and one exposure is total.
+                request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.KeyCertSign
+                                                                                         | X509KeyUsageFlags.DigitalSignature,
                                                                               critical: true ) );
 
-                // This is an end-entity certificate: it is presented as a leaf and never issues
-                // anything. Asserting CA:true on a leaf is what makes a certificate dangerous if it
-                // ever reaches an OS trust store, and is rejected outright by strict validators.
-                request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: false,
-                                                                                      hasPathLengthConstraint: false,
+                // CA:true, and pathLen 0 to say that it may issue leaves and nothing else: no
+                // credential derived from this identity can itself become an issuer. Asserting CA
+                // without the path length constraint would leave an unbounded chain hanging off a key
+                // that lives on every node of a fleet.
+                request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: true,
+                                                                                      hasPathLengthConstraint: true,
                                                                                       pathLengthConstraint: 0,
                                                                                       critical: true ) );
                 // This subject key identifier: let's use the standard SHA1 of the public key here.

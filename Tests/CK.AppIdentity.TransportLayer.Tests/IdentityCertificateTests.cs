@@ -16,14 +16,15 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// Findings M9 and M10: the identity certificate's profile, and the time base it is judged against.
+/// The identity certificate's profile, and the time base it is judged against (finding M10).
 /// <para>
-/// M9 — the identity certificate must be an end-entity certificate. Its key signs messages, and
-/// nothing signs certificates: the trust model pins this key directly, so there is no CA anywhere
-/// and nothing to issue. Minting it with <c>KeyCertSign</c> and <c>BasicConstraints(CA:true)</c>
-/// gives it authority it never exercises — a certificate asserting the right to mint others signs
-/// anything if it ever reaches an OS trust store, and strict validators reject it outright when it
-/// is presented as an end-entity leaf, which is what a mutual TLS transport does with it.
+/// The identity is the party's certificate authority: it signs message transcripts, and it issues
+/// the purpose-specific credentials of <see cref="LocalIdentityKey.CreateDerivedCertificate"/> so
+/// that its own private key never has to leave. That is what <c>KeyCertSign</c> and
+/// <c>BasicConstraints(CA:true)</c> are for, and the path length constraint of 0 is what keeps the
+/// authority to exactly one level: an identity that could issue issuers would let any credential
+/// derived from it mint more, which is the difference between a scoped credential and a second
+/// identity. What is presented in a TLS handshake is the derived leaf, never this certificate.
 /// </para>
 /// <para>
 /// M10 — <see cref="X509Certificate2.NotAfter"/> is local time. Compared raw against
@@ -35,53 +36,26 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 [TestFixture]
 public class IdentityCertificateTests
 {
-    static NormalizedPath GetKeysFolder( string partyName )
-        => ApplicationIdentityServiceConfiguration.DefaultStoreRootPath
-                .Combine( $"#Dev/Test/${partyName}/-Local/Keys" );
+    static NormalizedPath GetKeysFolder( string partyName ) => IdentityStoreHelper.GetKeysFolder( partyName );
 
-    static string[] GetKeyFiles( string partyName )
-    {
-        var p = GetKeysFolder( partyName );
-        return Directory.Exists( p )
-                ? Directory.EnumerateFiles( p, "*.pfx" ).Select( f => Path.GetFileName( f ) ).OrderBy( n => n ).ToArray()
-                : Array.Empty<string>();
-    }
+    static string[] GetKeyFiles( string partyName ) => IdentityStoreHelper.GetKeyFiles( partyName );
 
-    static void ClearKeys( string partyName )
-    {
-        var p = GetKeysFolder( partyName );
-        if( Directory.Exists( p ) ) Directory.Delete( p, recursive: true );
-    }
+    static void ClearKeys( string partyName ) => IdentityStoreHelper.ClearKeys( partyName );
 
-    // The parameter is typed IDataProtectionProvider so that AddSingleton infers THAT service type:
-    // the test helper already registered a FakeProtector for it and the last registration wins.
     static Task<ApplicationIdentityService> CreateAsync( string partyName, IDataProtectionProvider protector, CancellationToken token )
-        => TestHelper.CreateApplicationServiceAsync(
-                c => c["FullName"] = $"Test/${partyName}",
-                services => services.AddSingleton( protector ),
-                token );
+        => IdentityStoreHelper.CreateAsync( partyName, protector, token );
 
-    /// <summary>
-    /// Loads a stored identity. The PFX password lives in the protected <c>.pwd</c> side file, so
-    /// this needs the very protector the service was given.
-    /// </summary>
     static X509Certificate2 LoadStoredCertificate( string partyName, IDataProtector protector, string fileName )
-    {
-        var pfx = GetKeysFolder( partyName ).AppendPart( fileName );
-        var pwd = Encoding.UTF8.GetString( protector.Unprotect( File.ReadAllBytes( pfx + ".pwd" ) ) );
-        return new X509Certificate2( File.ReadAllBytes( pfx ), pwd );
-    }
+        => IdentityStoreHelper.LoadStoredCertificate( partyName, protector, fileName );
 
-    static T GetExtension<T>( X509Certificate2 c ) where T : X509Extension
-        => c.Extensions.OfType<T>().SingleOrDefault()
-           ?? throw new AssertionException( $"No {typeof( T ).Name} on '{c.Subject}'." );
+    static T GetExtension<T>( X509Certificate2 c ) where T : X509Extension => IdentityStoreHelper.GetExtension<T>( c );
 
     [Test, CancelAfter( 30000 )]
-    public async Task The_identity_certificate_is_an_end_entity_certificate_Async( CancellationToken token )
+    public async Task The_identity_certificate_is_an_authority_constrained_to_one_level_Async( CancellationToken token )
     {
         // Read back what is actually written to the store rather than what the builder intends to
-        // write: the profile is what a TLS peer or an OS trust store will see.
-        const string partyName = "M9Profile";
+        // write: the profile is what a peer validating a chain will see.
+        const string partyName = "IdProfile";
         ClearKeys( partyName );
         var protector = new HeaderProtector();
         await using( await CreateAsync( partyName, protector, token ) ) { }
@@ -90,13 +64,19 @@ public class IdentityCertificateTests
         files.Length.ShouldBe( 1 );
         using var c = LoadStoredCertificate( partyName, protector, files[0] );
 
-        GetExtension<X509BasicConstraintsExtension>( c ).CertificateAuthority.ShouldBeFalse(
-            "The identity key signs messages. A key that also asserts it may mint certificates signs " +
-            "anything if it ever reaches an OS trust store." );
+        var constraints = GetExtension<X509BasicConstraintsExtension>( c );
+        constraints.CertificateAuthority.ShouldBeTrue(
+            "The identity issues the credentials other purposes need, which is how its private key " +
+            "stays where it is. CertificateRequest.Create refuses a non-CA signer outright." );
+        constraints.HasPathLengthConstraint.ShouldBeTrue();
+        constraints.PathLengthConstraint.ShouldBe( 0,
+            "It may issue leaves and nothing else. Without this, a derived credential could itself " +
+            "issue, and a scoped certificate would become a second identity." );
 
-        GetExtension<X509KeyUsageExtension>( c ).KeyUsages.ShouldBe( X509KeyUsageFlags.DigitalSignature,
-            "DigitalSignature and nothing else: that is what signs a message transcript, and what " +
-            "would sign a TLS CertificateVerify. KeyCertSign authorises signing other certificates." );
+        GetExtension<X509KeyUsageExtension>( c ).KeyUsages.ShouldBe(
+            X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature,
+            "DigitalSignature signs message transcripts; KeyCertSign issues. Nothing else: this key " +
+            "is never used to agree on a secret or to encrypt." );
 
         GetExtension<X509SubjectKeyIdentifierExtension>( c ).Critical.ShouldBeFalse(
             "RFC 5280 §4.2.1.2: conforming CAs MUST mark the Subject Key Identifier non-critical. " +
@@ -104,12 +84,32 @@ public class IdentityCertificateTests
             "wrong and stay wrong." );
     }
 
+    [Test, CancelAfter( 60000 )]
+    public async Task An_identity_that_cannot_issue_is_rejected_at_load_Async( CancellationToken token )
+    {
+        // A stored certificate without CA:true cannot sign anything, so every derived credential
+        // would fail — at connection time, on every connection, with nothing that repairs itself.
+        // The loader decides it instead: the key is trashed and the party rotates on the spot.
+        const string partyName = "IdNotCA";
+        ClearKeys( partyName );
+        var protector = new HeaderProtector();
+        await using( await CreateAsync( partyName, protector, token ) ) { }
+
+        var crafted = CraftStoredIdentity( partyName, protector, DateTime.UtcNow.AddDays( 30 ), certificateAuthority: false );
+
+        (await CraftedKeySurvivesRestartAsync( partyName, protector, crafted, token )).ShouldBeFalse(
+            "An identity that cannot issue is not an identity this system can use." );
+    }
+
     /// <summary>
     /// Replaces the party's stored identity with one expiring at <paramref name="notAfterUtc"/>,
     /// reusing the real certificate's subject so the loader's subject check is not what is being
     /// measured. Returns the crafted file name.
     /// </summary>
-    static string CraftStoredIdentity( string partyName, IDataProtector protector, DateTime notAfterUtc )
+    static string CraftStoredIdentity( string partyName,
+                                       IDataProtector protector,
+                                       DateTime notAfterUtc,
+                                       bool certificateAuthority = true )
     {
         var folder = GetKeysFolder( partyName );
         var existing = GetKeyFiles( partyName );
@@ -125,8 +125,12 @@ public class IdentityCertificateTests
         using var ecdsa = ECDsa.Create();
         ecdsa.KeySize = 256;
         var request = new CertificateRequest( subject, ecdsa, HashAlgorithmName.SHA256 );
-        request.CertificateExtensions.Add( new X509KeyUsageExtension( X509KeyUsageFlags.DigitalSignature, true ) );
-        request.CertificateExtensions.Add( new X509BasicConstraintsExtension( false, false, 0, true ) );
+        // The real profile, so that only the expiry (or the CA bit, when a caller asks) is what the
+        // loader is being measured on.
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension( X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature, true ) );
+        request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension( certificateAuthority, certificateAuthority, 0, true ) );
         request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, false ) );
 
         var now = DateTime.UtcNow;
