@@ -23,3 +23,10 @@ Contains the core objects:
 ## CK.AppIdentity.Configuration
 This small library implements initialization of the identity configuration. 
 
+
+## CK.AppIdentity.TransportLayer
+Carries messages between parties. Parties authenticate each other with their identity keys and every
+frame that follows is authenticated, but **payloads are not encrypted**: readable packets on the wire
+are a requirement for deployments that audit their own traffic. See
+[the security model](CK.AppIdentity.TransportLayer/README.md#security-model) before putting anything
+confidential in a message.

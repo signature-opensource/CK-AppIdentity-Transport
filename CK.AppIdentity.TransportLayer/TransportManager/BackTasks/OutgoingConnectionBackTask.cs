@@ -136,9 +136,10 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
         // _cts is SHARED with the Transport: TryConnectToAsync calls transport.SetCancellationSource( cancellation )
         // on it, so the connect task's finally (KillTransport -> OnKilled -> _lifeTime.Cancel()) can cancel it
         // concurrently with this loop. A caller that checks !_cts.IsCancellationRequested may therefore find it
-        // false again by the time we get here — asserting it is a race, and it used to take the whole agent down
-        // during teardown (the exception escaped OnDestroy, the MicroAgent died and DisposeAsync never returned).
-        // Cancel() below is idempotent, so the already-cancelled case simply needs tolerating.
+        // false again by the time we get here. Asserting it is therefore a race, and a dangerous one:
+        // the exception would escape OnDestroy during teardown, killing the MicroAgent, and DisposeAsync
+        // would never return. Cancel() below is idempotent, so the already-cancelled case simply needs
+        // tolerating.
         Throw.DebugAssert( IsStarted );
 
         if( offline )
@@ -312,11 +313,11 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             // (IncomingConnectionBackTask.cs:441-453), so it has no local keys to sign with, and every other
                             // issue implies a resolved remote and therefore a signature.
                             //
-                            // This condition used to also require enlistUrl == null for the unsigned case, which made the
-                            // enlistment flow unreachable: the listener sends its EnlistRemoteUrl precisely for Unknwon, so
-                            // configuring one turned every stranger's knock into this protocol error and a 30s retry loop,
-                            // and no RequiresRemoteCreation issue was ever raised. Nothing consumed the URL because nothing
-                            // could ever receive it.
+                            // Note what this must NOT also require: that an unsigned reply carries a null enlistUrl.
+                            // The listener sends its EnlistRemoteUrl precisely for Unknwon, which is an unsigned reply
+                            // by construction, so demanding a null one here makes the whole enlistment flow unreachable
+                            // — every stranger's knock becomes this protocol error and a 30s retry loop, and no
+                            // RequiresRemoteCreation issue is ever raised for an operator to act on.
                             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                            $"Protocol error from '{remote.Party}'. Issue='{pIssue}' (must be Unknwon or DisallowedTransport " +
                                                            $"when the reply is not signed). Retrying in 30 seconds." );

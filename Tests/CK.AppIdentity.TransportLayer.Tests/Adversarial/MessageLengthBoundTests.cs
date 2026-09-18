@@ -14,11 +14,11 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// Finding M5: the run-phase read used to accept a declared length of <see cref="int.MaxValue"/>.
+/// Finding M5: the declared length of an incoming run-phase message must be bounded.
 /// <para>
-/// The declared length is chosen by the peer, in a 5-byte header. Unbounded, it meant a hostile
-/// peer could ask for a 2 GiB buffer for free — and once frames are authenticated, that allocation
-/// happens <em>before</em> the MAC can reject the frame, so the MAC is no defence against it.
+/// That length is chosen by the peer, in a 5-byte header. Accepting <see cref="int.MaxValue"/> lets
+/// a hostile peer ask for a 2 GiB buffer for free — and authenticating frames is no defence, because
+/// the allocation happens <em>before</em> the MAC can reject them.
 /// </para>
 /// </summary>
 [TestFixture]

@@ -87,9 +87,25 @@ with the ConnectionAvailability enumeration. This should be used before sending 
 | Value | Name       | Description  |
 |-------|------------|--------------|
 |0      | None       | No connection at all. This is the initial state but may be restored (along with a new pending `ReadyTask`) when a long disconnection occurs.  |
-|1      | DangerZone | The remote has been disconnected for some time or the message queue reached a high threshold. |
-|2      | Low        | The remote has been disconnected for some time or the message queue reached a moderately high threshold.  |
+|1      | DangerZone | Connected, but no longer answering: a keep-alive probe has gone unanswered. Any traffic from the remote clears it. |
+|2      | Low        | A connection was lost and a reconnection is under way.  |
 |3      | Connected  | The remote is connected.  |
+
+A connection can die without either side saying so — the peer loses power, a NAT table entry
+expires, a cable goes. Nothing notices on its own: reads never complete, and writes keep succeeding
+into the kernel buffer. So a party that has received nothing for `KeepAliveIdleTime` asks the remote
+whether it is still there, and a run of unanswered probes condemns the connection. `DangerZone` is
+the warning in between — still connected, no longer answering — and is what an application should
+watch to stop feeding a link that is about to go.
+
+The probe and its acknowledgment are "0 Protocol" messages, so during the run phase they carry a MAC
+like any other frame: an attacker who can inject bytes cannot forge an acknowledgment to hold a dead
+link open.
+
+Intended but **not yet implemented**: deriving the level from the sender queue's load as well, so
+that a remote which is connected yet unable to keep up degrades before the queue fills. The sketch
+below is that design, not current behaviour — today only the keep-alive and the connection state move
+this value.
 
 ```
    0      15%   25%   35%        50%     65%   75%              100%
@@ -97,3 +113,63 @@ with the ConnectionAvailability enumeration. This should be used before sending 
 >> Connected           Low                      DangerZone
 << Connected     Low                      DangerZone
 ```
+
+## Security model
+
+Two parties that talk over this layer authenticate each other, and everything they then exchange is
+protected against tampering. **Nothing is encrypted.** That is a requirement, not a gap, and the rest
+of this section says exactly what it does and does not buy you.
+
+### What the handshake gives you
+
+Each party owns an ECDSA P-256 identity key. The "0 Protocol" handshake has both sides sign a
+transcript covering their identity, a nonce and a timestamp, and each verifies the other against the
+key it already trusts for that remote — pinned in the remote's `.public` file, acquired by
+configuration or by `AutoTrustKey` on first contact.
+
+A signature that verifies against a key the sender supplied in the same message proves only that the
+sender holds *some* private key. That is a trust-on-first-use decision, not a proof of identity, and
+the code keeps the two apart (`SignatureCheck.SelfAsserted` versus `SignatureCheck.Trusted`). An
+operator confirming such a key should compare its fingerprint out of band —
+`IPublicKeyData.GetFingerprint()` exists for that.
+
+Replays are refused: a nonce is single use per remote, and a message whose timestamp falls outside
+`IRemoteKeys.MaxClockOffset` is rejected before anything else happens.
+
+### What protects the frames afterwards
+
+Authenticating the peer at connection time and stopping there would leave every subsequent frame
+unprotected. The handshake therefore also carries an ephemeral ECDH exchange; both sides derive two
+directional session keys from it and authenticate **every** run-phase frame with a 128-bit MAC
+covering the header and the payload, over a counter that never repeats within a session.
+
+So, after the handshake, an attacker on the path cannot inject a frame, alter one, reorder or replay
+one, or retarget it at another protocol — any of those fail the MAC and the connection is dropped.
+
+This also binds the session to the AppIdentity handshake itself, which matters for relays: a relay
+holding two individually valid connections cannot derive the session key, so every frame it forwards
+fails its MAC.
+
+### What is deliberately NOT protected: confidentiality
+
+Over `tcp:`, **message payloads travel in clear and anyone who can see the traffic can read them.**
+
+This is deliberate. Being able to read every packet crossing the network is an operational
+requirement for deployments that audit their own traffic, and auditing needs only that packets be
+readable. Encrypting payloads by default would remove that, so this layer does not.
+
+What this means when you build on it:
+
+- Do not put a secret in a payload sent over `tcp:` and expect the transport to keep it. Passwords,
+  tokens, personal data, business secrets — if it must not be read by whoever can see the wire, the
+  application has to encrypt it before handing it over, or it must not travel over `tcp:`.
+- Integrity is not confidentiality. "The frame is authentic" says an attacker cannot *change* it. It
+  says nothing about who can *read* it.
+- Traffic analysis is available to an observer regardless: who talks to whom, when, how often, and
+  how large each message is. Frame lengths are in clear even for the handshake.
+- An observer can read the identity keys exchanged in the handshake. They are public keys; this
+  costs nothing beyond telling the observer which parties are talking.
+
+A transport that does encrypt — mutual TLS, selected per remote by address — is the intended answer
+for deployments that need confidentiality, and it coexists with `tcp:` rather than replacing it. The
+two requirements are genuinely opposed, so the choice belongs to whoever configures the remote.

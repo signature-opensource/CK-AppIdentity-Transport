@@ -158,8 +158,8 @@ static class PeerMessages
     }
 
     /// <summary>
-    /// "Your remote is switched off." The message finding C2's first failure scenario abuses: one
-    /// of these, signed by any key at all, used to be enough to take a remote down for good.
+    /// "Your remote is switched off." The message finding C2's first failure scenario abuses: if a
+    /// reader accepts one of these signed by any key at all, it takes a remote down for good.
     /// </summary>
     /// <param name="expectedAvailableTime">
     /// When the peer expects to be back. <see cref="DateTime.MaxValue"/> in UTC means "never" and

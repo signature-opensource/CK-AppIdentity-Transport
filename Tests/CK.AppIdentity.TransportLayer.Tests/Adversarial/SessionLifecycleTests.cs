@@ -133,7 +133,7 @@ public class SessionLifecycleTests
 
         // Hold THE transport instance. Re-reading feature.SessionId would not test anything: the
         // feature swaps its transport on teardown, so that value goes null whether or not the keys
-        // were ever released. (It did, and the first version of this test passed without the fix.)
+        // were released — a test reading it passes against an implementation that releases nothing.
         var transport = senderTransport.CurrentTransport;
         transport.ShouldNotBeNull();
         var session = transport!.SessionId;

@@ -77,8 +77,8 @@ public class ReconnectBackOffTests
         // Count ACCEPTED connections, not completed handshakes: each accept is one reconnection, and
         // that is the cost being bounded. Under a storm the initiator ends up with overlapping
         // transports and starts answering FinalFailure, so requiring every round to reach
-        // FinalSuccess would make the unfixed case fail on the wrong assertion — it did, and the
-        // message told a reviewer nothing about back-off.
+        // FinalSuccess would make an unthrottled implementation fail on the wrong assertion, with a
+        // message telling the reader nothing about back-off.
         int accepted = 0, negotiated = 0;
         var sw = Stopwatch.StartNew();
         while( sw.ElapsedMilliseconds < 3000 )

@@ -11,10 +11,10 @@ namespace CK.AppIdentity.TransportLayer;
 /// Per-connection integrity protection for run-phase frames: the session keys derived from the
 /// handshake's ephemeral ECDH, the per-direction counters, and the MAC itself.
 /// <para>
-/// This is what closes finding C1-b. The Zero Protocol handshake authenticates the peer at
-/// connection time and then, historically, protected nothing: every Blob/CRIS frame afterwards was
-/// unauthenticated, so an on-path attacker could let the signed handshake through untouched and
-/// then inject, alter, drop or replay any frame.
+/// Authenticating the peer at connection time and stopping there is a weak model: it proves who
+/// opened the connection and says nothing about the frames that follow. Without per-frame
+/// protection, an on-path attacker lets the signed handshake through untouched and then injects,
+/// alters, drops or replays any Blob/CRIS frame — the handshake signature never covered them.
 /// </para>
 /// <para>
 /// It also supplies <em>channel binding</em>, which TLS cannot give here: TLS authenticates TLS

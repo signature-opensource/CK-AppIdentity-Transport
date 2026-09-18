@@ -415,8 +415,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 if( validClockOffset )
                 {
                     // foundTrustKey stays the acceptance gate: a SelfAsserted signature only becomes
-                    // trusted here if AutoTrustKey adopts the presented key (L6: the unused
-                    // isalreadyTrusted local was dropped).
+                    // trusted here if AutoTrustKey adopts the presented key.
                     foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, currentKeyData, currentKey );
                 }
             }

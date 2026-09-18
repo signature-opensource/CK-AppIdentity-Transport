@@ -16,8 +16,8 @@ sealed partial class RemoteKeys : IRemoteKeys
     readonly AutoTrustKey _autoTrustKey;
 
     // The replay cache belongs here, with the remote it protects: one cache, one lock, one file per
-    // remote. It used to be a single shared ring on LocalKeys indexed by remote name, which was a
-    // hand-rolled index onto the association this object already is.
+    // remote. Holding it on LocalKeys behind an index keyed by remote name would be a hand-rolled
+    // version of the association this object already is.
     readonly RemoteNonceCache _nonceCache;
 
     RemoteKeys( LocalKeys localKeys,
@@ -145,20 +145,20 @@ sealed partial class RemoteKeys : IRemoteKeys
     /// The single implementation of "a verified message just told us something about this remote's
     /// keys". <c>RemoteKeysExtensions.OnReadIdentityKeys</c> delegates here.
     /// <para>
-    /// It used to exist twice, verbatim, with only the extension being called (L2) — and the decision
-    /// was a read of <see cref="TrustedIdentity"/>, then a second read of the same field inside
-    /// <c>SaveDifferingKey</c>, then a write, all from back tasks running on their own threads. Two
-    /// connections rotating a key at the same time could each see the old key, each write their own
+    /// Deciding and writing happen under one lock, and must. The decision reads
+    /// <see cref="TrustedIdentity"/>, <c>SaveDifferingKey</c> reads it again, and the write follows —
+    /// all from back tasks on their own threads, one per connection. Left unsynchronized, two
+    /// connections rotating a key at the same time each see the old key, each write their own
     /// <c>.public</c> file and each trash the old one, leaving a store with two identity files and no
-    /// agreement about which is trusted — a mess that outlives the process, since that is what the
-    /// next start reads.
+    /// agreement about which is trusted. That outlives the process: the set of <c>.public</c> files
+    /// is what the next start reads.
     /// </para>
     /// <para>
-    /// Deciding and writing under one lock fixes that. What it deliberately does not try to fix is a
-    /// stale message landing after a newer one and moving the trusted key back to an earlier one of
-    /// the remote's own keys: that message was signed by a key we trust, the key it names is in the
-    /// remote's own list, and the remote's next connection presents its current key again and pulls
-    /// us forward. It is staleness, not a downgrade an attacker can force, and it heals itself.
+    /// What the lock deliberately does not address is a stale message landing after a newer one and
+    /// moving the trusted key back to an earlier key <em>of the remote's own</em>. That message was
+    /// signed by a key we trust, the key it names is in the remote's own list, and the remote's next
+    /// connection presents its current key again and pulls us forward. It is staleness, not a
+    /// downgrade an attacker can force, and it heals itself.
     /// </para>
     /// </summary>
     public bool ApplyReadTrustInfo( IActivityLineEmitter logger, in ReadTrustInfo trustInfo )

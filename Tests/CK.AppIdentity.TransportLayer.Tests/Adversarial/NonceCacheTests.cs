@@ -20,11 +20,11 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// replayable; this cache is what stops a replay inside that window.
 /// </para>
 /// <para>
-/// It used to be one 1023-slot ring shared by every remote of a local party, so any remote's
-/// handshakes evicted every other remote's nonces. That is not only an attack: the reconnect
-/// back-off caps at one attempt per second, so a handful of flapping remotes wrap 1023 slots in
-/// about five minutes — the same order as the window the cache is meant to cover. The protection
-/// degraded as remotes were added, silently.
+/// One ring shared by every remote of a local party would be weaker than it looks: any remote's
+/// handshakes then evict every other remote's nonces. That is not only an attack. The reconnect
+/// back-off caps at one attempt per second, so a handful of flapping remotes wrap a thousand slots
+/// in about five minutes — the same order as the window the cache must cover. The protection
+/// would degrade as remotes are added, silently.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -109,7 +109,7 @@ public class NonceCacheTests
         var bNonce = Nonce( now );
         b.CheckAndAddNonceValue( TestHelper.Monitor, bNonce ).ShouldBeTrue();
 
-        // Comfortably more than the old shared capacity, and more than this remote's own guard, so
+        // Comfortably more than any plausible shared capacity, and more than this remote's own guard, so
         // A also sheds its own oldest entries — which must not touch B.
         for( int i = 0; i < IRemoteKeys.MaxNonceCacheEntries + 2000; ++i )
         {

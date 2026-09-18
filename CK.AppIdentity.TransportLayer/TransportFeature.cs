@@ -47,11 +47,12 @@ public sealed class TransportFeature
     TimeSpan? _clockOffset;
     bool _disallowEviction;
 
-    // Reconnection back-off state. It lives HERE, on the remote, and not on OutgoingConnectionBackTask:
-    // that task is created fresh for each reconnection and returned to a pool, and OnInitialize zeroes
-    // its try count. A counter on it therefore only ever backs off consecutive failures to CONNECT
-    // within one attempt series, and restarts from nothing every time a connection is established and
-    // then dies — which is the expensive case, since every cycle costs a full negotiation.
+    // Reconnection back-off state. It belongs HERE, on the remote, and not on
+    // OutgoingConnectionBackTask: that task is created fresh for each reconnection and returned to a
+    // pool, and its OnInitialize zeroes the try count. A counter living there can only ever back off
+    // consecutive failures to CONNECT within one attempt series; it restarts from nothing every time
+    // a connection is established and then dies, which is precisely the expensive case, since each of
+    // those cycles costs a full negotiation.
     int _flapCount;
     // Util.UtcMinValue when no transport is currently live.
     DateTime _connectedSince;
@@ -164,8 +165,9 @@ public sealed class TransportFeature
 
     /// <summary>
     /// Keep-alive verdict on the current connection. Unanswered probes lower the availability to
-    /// <see cref="ConnectionAvailability.DangerZone"/> — a value that was declared and never produced
-    /// before there was anything able to notice a connection going quiet. An answer puts it back.
+    /// <see cref="ConnectionAvailability.DangerZone"/>; an answer puts it back. Nothing else can
+    /// produce that value: it means "still connected, no longer answering", which only something
+    /// watching for silence is in a position to say.
     /// <para>
     /// Only the transition is signalled, so a healthy link that idles for days raises nothing: the
     /// probe is answered, health never changes, and no event is emitted.
@@ -298,9 +300,9 @@ public sealed class TransportFeature
     /// died into the flap count.
     /// <para>
     /// A peer that accepts, negotiates and then drops us costs two signatures and two verifications
-    /// per side, every cycle. Retrying that immediately — which is what a zero delay did, because the
-    /// counter lived on a back task that was recreated each time — is a tight loop that burns CPU and
-    /// floods the logs on both ends, and an unfriendly peer can hold us in it for free.
+    /// per side, every cycle. Retrying that immediately is a tight loop that burns CPU and floods the
+    /// logs on both ends, and an unfriendly peer can hold us in it for free — so the caller's "retry
+    /// asap" is a floor, never the answer.
     /// </para>
     /// <para>
     /// Doubling rather than counting up: a flap is diagnosed within a handful of cycles instead of
@@ -329,10 +331,10 @@ public sealed class TransportFeature
     /// Maximum number of messages queued for sending to this remote before producers are pushed
     /// back.
     /// <para>
-    /// This queue used to be unbounded: while a remote was down nothing drained it, so producers
-    /// grew memory without limit and then flooded everything out on reconnect. Note it bounds the
-    /// queue by message count, not by bytes — a channel carrying large payloads should cap those
-    /// sizes itself.
+    /// The bound is what makes a remote being down survivable: nothing drains this queue while it
+    /// is, so an unbounded one would let producers grow memory without limit and then flood
+    /// everything out at once on reconnect. Note it bounds the queue by message count, not by bytes
+    /// — a channel carrying large payloads should cap those sizes itself.
     /// </para>
     /// </summary>
     public const int SenderQueueCapacity = 4096;

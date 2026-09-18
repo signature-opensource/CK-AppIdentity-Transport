@@ -36,11 +36,11 @@ static class RemoteKeysExtensions
                                            RemoteIdentityKey? currentKey )
     {
         Throw.CheckArgument( currentKey == null || currentKey.Equals( currentKeyData ) );
-        // This body used to be a verbatim copy of IRemoteKeys.ApplyReadTrustInfo, and only this copy
-        // was ever called (L2). Two copies of the most security-sensitive decision in the codebase is
-        // one too many — and the duplication hid that neither of them was safe to run concurrently,
-        // which is what a remote's trust update actually does. The decision now lives with the state
-        // it reads and writes, under that object's lock.
+        // Deliberately a one-line delegation. The decision belongs with the state it reads and writes,
+        // where it can be taken under that object's lock: trust updates run concurrently, from a back
+        // task per connection. Spelling the logic out again here would be a second copy of the most
+        // security-sensitive decision in the codebase, and a copy outside the lock is not merely
+        // duplication — it is a copy that cannot be made correct.
         return @this.ApplyReadTrustInfo( logger, new ReadTrustInfo( foundTrustedKey, currentKeyData, currentKey ) );
     }
 

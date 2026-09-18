@@ -12,10 +12,11 @@ namespace CK.AppIdentity.TransportLayer;
 /// <see cref="ConnectionAvailability.Connected"/> for ever while messages queue behind it.
 /// </para>
 /// <para>
-/// The protocol for this already existed and only the emitter was missing: the responder answers
-/// <see cref="IncomingMessage.Empty"/> with <see cref="IOutgoingMessage.EmptyAck"/>
-/// (<c>TransportController.Receive0Message</c>), the acknowledgment is consumed by the receive loop
-/// purely so that <see cref="Transport.LastReceived"/> moves, and nothing ever sent the request.
+/// This is the emitting half of the protocol: the responder answers <see cref="IncomingMessage.Empty"/>
+/// with <see cref="IOutgoingMessage.EmptyAck"/> (<c>TransportController.Receive0Message</c>), and the
+/// acknowledgment is consumed by the receive loop purely so that <see cref="Transport.LastReceived"/>
+/// moves. Without something sending the request, that machinery answers questions nobody asks and
+/// <see cref="Transport.LastReceived"/> is a value nobody reads.
 /// </para>
 /// <para>
 /// Both messages are Zero Protocol, so in the run phase they are MAC'd like every other frame. That

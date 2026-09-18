@@ -15,10 +15,11 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// Finding M13: nothing ever noticed a connection that stopped answering.
 /// <para>
-/// The keep-alive protocol was fully defined and half implemented: the responder answers
-/// <c>Empty</c> with <c>EmptyAck</c>, the acknowledgment is consumed so that <c>LastReceived</c>
-/// moves, and nothing ever sent the request. <c>LastReceived</c> was read by no one and
-/// <see cref="ConnectionAvailability.DangerZone"/> was declared and never produced.
+/// The protocol has two halves and only the answering half is self-evident: the responder answers
+/// <c>Empty</c> with <c>EmptyAck</c> and the acknowledgment is consumed so that <c>LastReceived</c>
+/// moves. With nothing emitting the request, that machinery answers a question nobody asks,
+/// <c>LastReceived</c> is a value nobody reads, and
+/// <see cref="ConnectionAvailability.DangerZone"/> is a state nothing can reach.
 /// </para>
 /// <para>
 /// So a connection that died without saying so — peer power loss, a NAT entry expiring, a cable —
@@ -145,9 +146,9 @@ public class KeepAliveTests
     [Test, CancelAfter( 60000 )]
     public async Task The_availability_passes_through_DangerZone_Async( CancellationToken token )
     {
-        // DangerZone existed in the enum and was never produced, because nothing could tell that a
-        // connection had gone quiet. An application wants the warning before the connection is
-        // declared dead, not only after.
+        // Only something watching for silence can produce DangerZone: it means "still connected, no
+        // longer answering". An application wants that warning before the connection is declared
+        // dead, not only after.
         PeerStore.ClearRemoteTrust( "Test/$M13DangerPeer" );
         await using var peer = new AdversarialPeer();
         using var peerKey = PeerIdentity.Create();

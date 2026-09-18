@@ -60,9 +60,9 @@ public class NegotiationCapTests
     /// This is THE observable that distinguishes refused from admitted, and the counters are not: a
     /// refused connection is closed at accept time, while an admitted silent one is held for the full
     /// <c>NegotiationTimeout</c> (2 s) waiting for an InitialMessage. Asserting only on
-    /// <c>CurrentNegotiationCount</c>/<c>RefusedNegotiationCount</c> passes even when the gate's
-    /// verdict is computed and then ignored — which is exactly what a first version of these tests
-    /// did, and it took disabling the gate to notice.
+    /// <c>CurrentNegotiationCount</c>/<c>RefusedNegotiationCount</c> would pass even against a gate
+    /// whose verdict is computed and then ignored: those counters are maintained inside the decision
+    /// being tested, so they prove it was taken, not that it was obeyed.
     /// </para>
     /// </summary>
     static async Task<bool> IsDroppedWithinAsync( PeerConnection c, int ms, CancellationToken token )

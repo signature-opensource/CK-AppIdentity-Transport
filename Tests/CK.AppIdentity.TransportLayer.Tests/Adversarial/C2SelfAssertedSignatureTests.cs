@@ -14,10 +14,10 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// Finding C2: "the signature verifies" is not "this is our remote".
 /// <para>
-/// When our trusted key is absent from the keys a message presents, the verifier used to fall back
-/// to the key the sender supplied <em>in that same message</em> — so verification succeeded for
-/// anybody. Several readers acted on the result. These tests drive the audit's failure scenarios
-/// against the real stack.
+/// When our trusted key is absent from the keys a message presents, a verifier that falls back to
+/// the key the sender supplied <em>in that same message</em> succeeds for anybody. A reader acting
+/// on that result is authenticating nobody. These tests drive the audit's failure scenarios against
+/// the real stack.
 /// </para>
 /// <para>
 /// Note that <c>TryReadAcceptedProtocolsMessage</c> already gated on the trusted key before the

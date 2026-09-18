@@ -13,9 +13,10 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// The other two readers the C2 fix changed: <c>ReadEvictionDisallowedMessage</c> and
-/// <c>TryReadMissingProtocolsMessage</c>. Both used to act on a signature that verified against a
-/// key the sender supplied in the same message.
+/// The other two readers that must not act on a self-asserted signature:
+/// <c>ReadEvictionDisallowedMessage</c> and <c>TryReadMissingProtocolsMessage</c>. Acting on a
+/// signature that verifies against a key the sender supplied in the same message authenticates
+/// nobody — anyone can produce one.
 /// <para>
 /// Neither is as damaging as the OffRemote case (they raise a diagnostic and set a retry delay
 /// rather than taking the remote down), but both let an unauthenticated peer write into the

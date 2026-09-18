@@ -14,10 +14,10 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// Covers the identity key store round-trip across restarts.
 /// <para>
-/// This was never exercised: the creation path validates the in-memory certificate, never a reload
-/// from disk, and the only <see cref="IDataProtector"/> used by the tests was the identity
-/// <see cref="FakeProtector"/>, under which a Protect/Unprotect overload mismatch cancels itself out.
-/// With a protector that actually protects (<see cref="HeaderProtector"/>), a mismatch trashes every
+/// Easily left unexercised: the creation path validates the in-memory certificate and never a reload
+/// from disk, and a <see cref="IDataProtector"/> test double that is the identity function
+/// (<see cref="FakeProtector"/>) makes a Protect/Unprotect overload mismatch cancel itself out. Under
+/// a protector that actually protects (<see cref="HeaderProtector"/>), such a mismatch trashes every
 /// stored identity on every start.
 /// </para>
 /// </summary>
@@ -102,7 +102,8 @@ public class IdentityKeyPersistenceTests
         var p = new HeaderProtector();
         var clear = new byte[] { 1, 2, 3, 4, 5 };
         p.Unprotect( p.Protect( clear ) ).ShouldBe( clear );
-        // This is what the broken code did: hand back something this protector never produced.
+        // A mismatched Protect/Unprotect overload pairing hands back something this protector never
+        // produced: that must throw, not silently return garbage.
         Should.Throw<System.Security.Cryptography.CryptographicException>( () => p.Unprotect( clear ) );
     }
 }

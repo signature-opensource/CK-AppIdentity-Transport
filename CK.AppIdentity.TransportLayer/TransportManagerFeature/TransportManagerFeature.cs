@@ -239,12 +239,13 @@ public sealed class TransportManagerFeature
     /// Gets the current number of issues for truly unknown remotes, the ones capped
     /// by <see cref="MaxUnknownRemoteCount"/>.
     /// <para>
-    /// This is derived rather than tracked. A hand-maintained counter was incremented for each
-    /// new unknown remote but not decremented for the entries the very same call trimmed, so it
-    /// drifted upwards on every trim and the cap collapsed to one: each new unknown remote
-    /// flushed every other one. An unauthenticated peer sending random full names could erase
-    /// the operator's diagnostics at will. Counting at most <see cref="MaxUnknownRemoteCount"/>
-    /// plus the known remotes is not worth a counter that can lie.
+    /// Derived rather than tracked, on purpose. A hand-maintained counter here has to be decremented
+    /// in the trim path as well as incremented on each new unknown remote, and getting that wrong
+    /// does not fail loudly: the count drifts upwards, every trim computes a larger excess than it
+    /// should, and the cap silently collapses towards one — at which point each new unknown remote
+    /// flushes every other one and an unauthenticated peer sending random full names can erase the
+    /// operator's diagnostics at will. Counting at most <see cref="MaxUnknownRemoteCount"/> entries
+    /// plus the known remotes is cheaper than a counter that can lie.
     /// </para>
     /// </summary>
     public int UnknownRemoteCount

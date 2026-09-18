@@ -13,11 +13,11 @@ namespace CK.AppIdentity.KeyManagement;
 /// timestamp still in range.
 /// </para>
 /// <para>
-/// <b>One cache per remote.</b> It used to be a single 1023-slot ring shared by every remote of a
-/// local party, so any remote's handshakes evicted every other remote's nonces. Not only an attack:
-/// the reconnect back-off tops out at one attempt per second, so a handful of flapping remotes wrap
-/// 1023 slots in about five minutes — the same order as the window the cache is meant to cover.
-/// Replay protection degraded as remotes were added, silently.
+/// <b>One cache per remote.</b> A single ring shared by every remote of a local party is a weaker
+/// design than it looks: any remote's handshakes then evict every other remote's nonces. That is
+/// not only an attack. The reconnect back-off tops out at one attempt per second, so a handful of
+/// flapping remotes wrap a thousand slots in about five minutes — the same order as the window the
+/// cache exists to cover. Replay protection would degrade as remotes are added, silently.
 /// </para>
 /// <para>
 /// <b>Bounded by time, not by count.</b> Any fixed-size ring can evict a nonce that is still inside

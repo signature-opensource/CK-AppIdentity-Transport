@@ -22,12 +22,11 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// operator's real diagnostics.
 /// </para>
 /// <para>
-/// It did neither. The count was tracked by hand: incremented once per new unknown remote, never
-/// decremented for the entries that the very same call trimmed. So each trim left the counter
-/// higher than reality, the next unknown remote computed a larger excess, and from the ninth one
-/// on every new unknown remote flushed every other one — the cap of 5 had become a cap of 1. The
-/// trim also removed by descending LastUpdated, keeping the stalest entries and discarding the
-/// freshest.
+/// A count tracked by hand does neither, and fails silently. Incremented once per new unknown
+/// remote but not decremented for the entries the very same call trims, it drifts above reality;
+/// each trim then computes a larger excess than it should, and from the ninth unknown remote on,
+/// every new one flushes every other — a cap of 5 behaving as a cap of 1. Trimming by descending
+/// LastUpdated is the matching mistake: it keeps the stalest entries and discards the freshest.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -108,8 +107,8 @@ public class UnknownRemoteIssueTests
     public async Task The_unknown_remote_cap_holds_under_a_flood_Async( CancellationToken token )
     {
         // The counter drift, directly. 12 unknown remotes against a cap of 5: the surviving count
-        // must be 5. With the hand-maintained counter it collapsed to 1 from the ninth knock on,
-        // so a peer sending random full names could erase every other diagnostic at will.
+        // must be 5. A drifting counter collapses it to 1 from the ninth knock on, at which point a
+        // peer sending random full names erases every other diagnostic at will.
         const string known = "$M7CapKnown";
         PeerStore.ClearRemoteTrust( $"Test/{known}" );
         await using var listener = await CreateListenerAsync( "$M7CapListen", known, token );
@@ -119,8 +118,8 @@ public class UnknownRemoteIssueTests
         await FloodAsync( feature, "M7Cap", 12, token );
 
         feature.UnknownRemoteCount.ShouldBe( 5,
-            "The cap is the cap. A drifting counter made every new unknown remote trim more than it " +
-            "should until only one survived." );
+            "The cap is the cap. A drifting counter makes every new unknown remote trim more than it " +
+            "should, until only one survives." );
         UnknownNames( feature ).Length.ShouldBe( 5, "And the dictionary agrees with the count." );
     }
 
@@ -128,7 +127,7 @@ public class UnknownRemoteIssueTests
     public async Task The_cap_keeps_the_most_recent_unknown_remotes_Async( CancellationToken token )
     {
         // The trim ordering. What an operator wants to see is what just happened, so the entries
-        // that go are the stalest ones. OrderByDescending( LastUpdated ) discarded exactly the
+        // that go are the stalest ones. OrderByDescending( LastUpdated ) discards exactly the
         // entries worth keeping.
         const string known = "$M7OrdKnown";
         PeerStore.ClearRemoteTrust( $"Test/{known}" );
@@ -140,7 +139,7 @@ public class UnknownRemoteIssueTests
         var survivors = UnknownNames( feature );
         survivors.Length.ShouldBe( 5 );
         survivors.Order().ShouldBe( names[^5..].Order(),
-            "The five most recent knocks survived and the three oldest were trimmed." );
+            "The five most recent knocks survive and the three oldest are trimmed." );
     }
 
     [Test, CancelAfter( 120000 )]

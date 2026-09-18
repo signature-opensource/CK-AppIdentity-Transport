@@ -92,8 +92,8 @@ public class EnlistUrlTests
             "whole point of answering an unknown party is to tell it where to enlist." );
 
         logs.ExtractCurrentTexts().ShouldNotContain( t => t.Contains( "Protocol error" ),
-            "Configuring an EnlistRemoteUrl used to BE the protocol error: the initiator required an " +
-            "unsigned reply to carry a null URL, which is exactly the reply that carries this one." );
+            "Configuring an EnlistRemoteUrl must not itself BE the protocol error: requiring an " +
+            "unsigned reply to carry a null URL rejects exactly the reply that carries this one." );
     }
 
     [Test, CancelAfter( 90000 )]

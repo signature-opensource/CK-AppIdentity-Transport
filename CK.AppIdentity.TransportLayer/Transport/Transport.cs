@@ -485,9 +485,9 @@ public abstract partial class Transport
         // Close the communication handle FIRST: that is what ends the send and receive loops, so
         // the key material is released once nothing is still using it.
         await DisposeAsync( monitor );
-        // Requirement A of the C1-b design: the session keys and the ephemeral private key die with
-        // the connection they belong to. Without this they outlive it until the GC gets round to
-        // them, and each connection leaks a CNG handle.
+        // The session keys and the ephemeral private key die with the connection they belong to.
+        // Leaving them to the GC means they outlive it, and each connection leaks a CNG handle until
+        // a collection happens to reclaim it.
         //
         // Nulling _protection also makes the release observable (NegotiatedMacAlgorithm and
         // SessionId go null), and means a late frame finds no protection rather than a disposed one.

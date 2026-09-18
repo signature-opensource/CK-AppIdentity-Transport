@@ -84,8 +84,8 @@ sealed partial class TransportController
     {
         if( _highPriorityChannel.Writer.TryWrite( message ) )
         {
-            // The awaker may be dropped now that this channel is bounded, and that is harmless: a
-            // full channel means the send loop has work queued, so it is not parked waiting to be
+            // The sender channel is bounded, so this awaker write can be dropped. That is harmless:
+            // a full channel means the send loop has work queued, so it is not parked waiting to be
             // woken — it will reach the high priority reader on its next pass. The awaker only
             // matters when the loop is idle, and an idle loop implies a channel that is not full.
             _senderChannel.Writer.TryWrite( null );
@@ -331,9 +331,11 @@ sealed partial class TransportController
                                 return false;
                             }
                             // Sent for real, exactly once. Side effects belong here, not in
-                            // OnSendMessage — CRIS used to set the command's sent date there, and a
-                            // retried send called it twice: the second SetResult threw, killing the
-                            // transport, which reconnected and peeked the same message again.
+                            // OnSendMessage. Putting a once-only effect in that hook is a trap: a
+                            // retried send calls it again, and an effect that throws on its second
+                            // call (a TaskCompletionSource being completed twice, say) kills the
+                            // transport, which reconnects and peeks the same message — a live-lock
+                            // on a poisoned queue head that looks like a network problem.
                             try
                             {
                                 currentHandler.OnMessageSent( transportManager.Logger, m );

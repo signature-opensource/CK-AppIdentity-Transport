@@ -445,8 +445,8 @@ sealed partial class TransportManager : MicroAgent
                 if( !remote.IsOff && reconnectDelay != int.MaxValue )
                 {
                     // This transport was negotiated and then died. Fold it into the remote's flap
-                    // count and never retry sooner than that allows: callers say 0 for "asap", and
-                    // taking them at their word is what made one bad frame from a peer a tight
+                    // count and never retry sooner than that allows. Callers say 0 for "asap", and
+                    // obeying them literally turns one bad frame from a peer into a tight
                     // connect/negotiate/kill loop. An explicitly longer delay (a Goodbye can ask for
                     // one) is still honoured.
                     var backOff = remote.NextReconnectDelay( SystemClock.UtcNow );

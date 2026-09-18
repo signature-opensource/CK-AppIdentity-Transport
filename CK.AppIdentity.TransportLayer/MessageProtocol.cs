@@ -36,9 +36,9 @@ public sealed class MessageProtocol
     /// Default cap on an incoming message for a channel protocol.
     /// <para>
     /// A declared length is attacker-chosen, so it must be bounded before anything is allocated for
-    /// it. The run-phase read used to accept <see cref="int.MaxValue"/>, meaning a peer could ask
-    /// for a 2 GiB buffer with a 5-byte header — and once frames are authenticated, that allocation
-    /// happens *before* the MAC can reject it.
+    /// it. Accepting <see cref="int.MaxValue"/> would let a peer ask for a 2 GiB buffer with a
+    /// 5-byte header — and authenticating frames does not help, because the allocation happens
+    /// *before* the MAC can reject them.
     /// </para>
     /// <para>
     /// A channel that legitimately carries more can raise it at registration.

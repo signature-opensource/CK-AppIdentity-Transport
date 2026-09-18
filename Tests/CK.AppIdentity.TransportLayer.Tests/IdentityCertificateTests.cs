@@ -18,17 +18,16 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// Findings M9 and M10: the identity certificate's profile, and the time base it is judged against.
 /// <para>
-/// M9 — the certificate was minted with <c>KeyCertSign</c> and <c>BasicConstraints(CA:true)</c> for a
-/// key whose only job is signing messages. Nothing needs to sign certificates: the trust model pins
-/// this key directly, so there is no CA anywhere and nothing to issue. (The unused
-/// <c>CreateSignedCertificate</c> helper that would have needed it was deleted with this fix.) A
-/// certificate that asserts the authority to mint other certificates signs anything if it ever
-/// reaches an OS trust store, and is rejected outright by strict validators when presented as an
-/// end-entity leaf — which is what a mutual TLS transport would do with it.
+/// M9 — the identity certificate must be an end-entity certificate. Its key signs messages, and
+/// nothing signs certificates: the trust model pins this key directly, so there is no CA anywhere
+/// and nothing to issue. Minting it with <c>KeyCertSign</c> and <c>BasicConstraints(CA:true)</c>
+/// gives it authority it never exercises — a certificate asserting the right to mint others signs
+/// anything if it ever reaches an OS trust store, and strict validators reject it outright when it
+/// is presented as an end-entity leaf, which is what a mutual TLS transport does with it.
 /// </para>
 /// <para>
-/// M10 — <see cref="X509Certificate2.NotAfter"/> is local time and was compared raw against
-/// <c>SystemClock.UtcNow</c>, so the machine's UTC offset leaked into the expiry decision. East of
+/// M10 — <see cref="X509Certificate2.NotAfter"/> is local time. Compared raw against
+/// <c>SystemClock.UtcNow</c>, the machine's UTC offset leaks into the expiry decision. East of
 /// UTC a key looks fresher than it is and rotation happens late; west of UTC it looks expired and
 /// the loader TRASHES it. This runs on every load, not only on creation.
 /// </para>
@@ -80,8 +79,8 @@ public class IdentityCertificateTests
     [Test, CancelAfter( 30000 )]
     public async Task The_identity_certificate_is_an_end_entity_certificate_Async( CancellationToken token )
     {
-        // M9. Read back what was actually written to the store rather than what the builder meant
-        // to write: the profile is what a TLS peer or an OS trust store will see.
+        // Read back what is actually written to the store rather than what the builder intends to
+        // write: the profile is what a TLS peer or an OS trust store will see.
         const string partyName = "M9Profile";
         ClearKeys( partyName );
         var protector = new HeaderProtector();
@@ -101,7 +100,8 @@ public class IdentityCertificateTests
 
         GetExtension<X509SubjectKeyIdentifierExtension>( c ).Critical.ShouldBeFalse(
             "RFC 5280 §4.2.1.2: conforming CAs MUST mark the Subject Key Identifier non-critical. " +
-            "Nothing validated these certificates, so it never showed." );
+            "Only a peer that really parses the certificate notices, which is why it is easy to get " +
+            "wrong and stay wrong." );
     }
 
     /// <summary>

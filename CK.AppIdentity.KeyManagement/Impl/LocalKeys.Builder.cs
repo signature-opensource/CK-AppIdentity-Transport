@@ -51,8 +51,9 @@ sealed partial class LocalKeys
                                                         today.AddDays( ((renewalFrequency + 1) * allowedOfflineDays) / renewalFrequency ),
                                                         now );
                 if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
-                // L22: this reported newOne.NotAfter — the expiry of the key just created — as the
-                // reason for creating it. The reason is the EXISTING key's expiry.
+                // Report the EXISTING key's expiry: that is the reason a new one is being created.
+                // Printing newOne.NotAfter here would state the new key's expiry as the justification
+                // for its own creation, which reads plausibly and tells an operator nothing.
                 else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {identities[0].NotAfter:yyyy-MM-dd}. " +
                                    $"It is not enough to guaranty AllowedOfflineDays = {allowedOfflineDays}." );
 
@@ -219,8 +220,8 @@ sealed partial class LocalKeys
             // X509Certificate2.NotAfter/NotBefore are LOCAL time while now is UtcNow: comparing them
             // raw compares tick values and silently applies the machine's UTC offset to the decision,
             // up to ±14 h. East of UTC a key looks fresher than it is and rotation happens late; west
-            // of UTC it looks expired and LogAndCleanup TRASHES it. LocalIdentityKey.cs:31 already
-            // converts; this path (which runs on every load, not only on creation) did not.
+            // of UTC it looks expired and LogAndCleanup TRASHES it. This runs on every load, not only
+            // on creation, so the conversion has to happen here and not just where the key is exposed.
             var notAfter = c.NotAfter.ToUniversalTime();
             var notBefore = c.NotBefore.ToUniversalTime();
             if( notAfter <= now.AddDays( 1 ) )
