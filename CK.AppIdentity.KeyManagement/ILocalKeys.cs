@@ -31,6 +31,18 @@ public interface ILocalKeys
 
     /// <summary>
     /// The maximum count of simultaneously valid identity keys.
+    /// <para>
+    /// This is a protocol bound before it is a policy: a handshake carries every identity a party
+    /// holds, and a peer refuses a longer list. It is enforced on both sides — a party whose store
+    /// somehow held more would otherwise be refused by every remote at once, with the failure logged
+    /// on the other side as invalid data coming from it.
+    /// </para>
+    /// <para>
+    /// The schedule never approaches it: one key is issued per <see cref="AllowedOfflineDays"/> and
+    /// lives twice that, so exactly two are valid at any time. Reaching this number means a restored
+    /// or merged store, a hand-copied key, or a clock that moved backwards; the builder then keeps
+    /// the most recent ones, trashes the rest and says so.
+    /// </para>
     /// </summary>
     const int MaxIdentityCount = 8;
 
@@ -50,6 +62,14 @@ public interface ILocalKeys
     /// <para>
     /// This drives the expiration delays of identity keys: identity keys are created with
     /// a lifetime that is twice this value (with a one day security).
+    /// </para>
+    /// <para>
+    /// So it is also the rotation period and, with it, how long a retired key keeps being accepted:
+    /// a key is replaced once it has less than this left, and the one it replaces stays valid for
+    /// another span of the same length. Two keys are valid at a time, whatever
+    /// <see cref="MaxIdentityCount"/> allows. Shortening this shortens the window in which a stolen
+    /// key still works, at the cost of how long a party may be unreachable without losing its
+    /// identity — which is the trade this single number is.
     /// </para>
     /// </summary>
     int AllowedOfflineDays { get; }

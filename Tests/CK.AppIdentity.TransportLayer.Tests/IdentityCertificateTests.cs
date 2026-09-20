@@ -1,4 +1,6 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using CK.Monitoring;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -101,6 +103,63 @@ public class IdentityCertificateTests
             "An identity that cannot issue is not an identity this system can use." );
     }
 
+    [Test, CancelAfter( 60000 )]
+    public async Task Surplus_identity_keys_are_trashed_rather_than_sent_Async( CancellationToken token )
+    {
+        // The handshake sends EVERY identity and a peer refuses a list longer than MaxIdentityCount.
+        // A store that accumulated more would therefore be refused by every remote at once, forever,
+        // and the rejection would be logged on the other side as invalid data from us. Bounding what
+        // we accept without bounding what we send is what makes that reachable at all.
+        const string partyName = "IdSurplus";
+        const int surplus = 4;
+        ClearKeys( partyName );
+        var protector = new HeaderProtector();
+        await using( await CreateAsync( partyName, protector, token ) ) { }
+
+        // Far from expiry, so no rotation is triggered and the count is the only thing measured.
+        var crafted = CraftStoredIdentities( partyName, protector,
+                                             ILocalKeys.MaxIdentityCount + surplus,
+                                             DateTime.UtcNow.AddDays( 100 ) );
+        GetKeyFiles( partyName ).Length.ShouldBe( ILocalKeys.MaxIdentityCount + surplus );
+        int trashedBefore = CountTrashedKeys( partyName );
+
+        using var logCollector = GrandOutput.Default!.CreateMemoryCollector( 1000 );
+        await using( await CreateAsync( partyName, protector, token ) ) { }
+        var logs = logCollector.ExtractCurrentTexts();
+
+        // Silently keeping eight would leave an operator with a store that quietly disagrees with
+        // what is running, and no reason to look at it.
+        logs.ShouldContain( t => t.Contains( $"has {ILocalKeys.MaxIdentityCount + surplus} valid identity keys", StringComparison.Ordinal )
+                                 && t.Contains( "a remote would refuse every message we send", StringComparison.Ordinal ),
+            "The condition cannot arise from the schedule, so it says what it found and what it did." );
+
+        var kept = GetKeyFiles( partyName );
+        kept.Length.ShouldBe( ILocalKeys.MaxIdentityCount );
+        kept.ShouldBe( crafted.Skip( surplus ).OrderBy( n => n ).ToArray(),
+            "The most recent are kept: the oldest are past what any remote can still have been " +
+            "offline for, so they are the ones worth nothing." );
+
+        // Trashed, not deleted. Every other key this loader rejects goes the same way, and an
+        // operator who needs one back still has it.
+        CountTrashedKeys( partyName ).ShouldBe( trashedBefore + surplus );
+    }
+
+    /// <summary>
+    /// Counts the keys in the party's trash. Measured as a delta by the caller: the store renames
+    /// what it trashes to a GUID, so the original name is not there to match on, and the bin is not
+    /// emptied between runs.
+    /// </summary>
+    static int CountTrashedKeys( string partyName )
+    {
+        var folder = GetPartyFolder( partyName );
+        if( !Directory.Exists( folder ) ) return 0;
+        return Directory.EnumerateFiles( folder, "*.pfx", SearchOption.AllDirectories )
+                        .Count( f => f.Contains( "$TrashBin", StringComparison.Ordinal ) );
+    }
+
+    static NormalizedPath GetPartyFolder( string partyName )
+        => ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${partyName}" );
+
     /// <summary>
     /// Replaces the party's stored identity with one expiring at <paramref name="notAfterUtc"/>,
     /// reusing the real certificate's subject so the loader's subject check is not what is being
@@ -122,6 +181,45 @@ public class IdentityCertificateTests
         }
         foreach( var f in Directory.EnumerateFiles( folder ).ToArray() ) File.Delete( f );
 
+        return WriteCraftedIdentity( folder, subject, protector, notAfterUtc, certificateAuthority, ageInMinutes: 5 );
+    }
+
+    /// <summary>
+    /// Replaces the party's stored identities with <paramref name="count"/> valid ones, oldest first
+    /// in the returned list. The real schedule issues one per <c>AllowedOfflineDays</c> and gives it
+    /// twice that to live, so it never produces more than two: reaching a bigger number means a
+    /// restored store, a hand-copied key or a clock that moved backwards.
+    /// </summary>
+    static string[] CraftStoredIdentities( string partyName, IDataProtector protector, int count, DateTime notAfterUtc )
+    {
+        var folder = GetKeysFolder( partyName );
+        var existing = GetKeyFiles( partyName );
+        existing.Length.ShouldBe( 1, "One real key was created first, to copy its subject from." );
+
+        X500DistinguishedName subject;
+        using( var real = LoadStoredCertificate( partyName, protector, existing[0] ) )
+        {
+            subject = real.SubjectName;
+        }
+        foreach( var f in Directory.EnumerateFiles( folder ).ToArray() ) File.Delete( f );
+
+        var names = new string[count];
+        for( int i = 0; i < count; ++i )
+        {
+            // Oldest first: a bigger age is further in the past, and the loader sorts on the name.
+            names[i] = WriteCraftedIdentity( folder, subject, protector, notAfterUtc,
+                                             certificateAuthority: true, ageInMinutes: 5 + (count - i) );
+        }
+        return names;
+    }
+
+    static string WriteCraftedIdentity( NormalizedPath folder,
+                                        X500DistinguishedName subject,
+                                        IDataProtector protector,
+                                        DateTime notAfterUtc,
+                                        bool certificateAuthority,
+                                        int ageInMinutes )
+    {
         using var ecdsa = ECDsa.Create();
         ecdsa.KeySize = 256;
         var request = new CertificateRequest( subject, ecdsa, HashAlgorithmName.SHA256 );
@@ -140,7 +238,7 @@ public class IdentityCertificateTests
 
         // The file name must parse as a UTC time name that is already in the past, or FilterFileNames
         // discards it before the expiry check is ever reached.
-        var name = now.AddMinutes( -5 ).ToString( FileUtil.FileNameUniqueTimeUtcFormat );
+        var name = now.AddMinutes( -ageInMinutes ).ToString( FileUtil.FileNameUniqueTimeUtcFormat );
         var fileName = name + ".pfx";
         var pwd = Util.GetRandomBase64UrlString( 20 );
         File.WriteAllBytes( folder.AppendPart( fileName ), crafted.Export( X509ContentType.Pfx, pwd ) );

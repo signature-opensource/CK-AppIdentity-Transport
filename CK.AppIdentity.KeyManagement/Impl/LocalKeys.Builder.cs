@@ -71,6 +71,7 @@ sealed partial class LocalKeys
                     identities.Insert( 0, new LocalIdentityKey( name, now, newOne, privateKey ) );
                 }
             }
+            TrashSurplusIdentities( monitor, identityPath, identities );
             // We now have our identities, we can handle the public key files: any obsolete
             // keys are trashed, the current one is checked or created, only one public key file
             // is exposed.
@@ -79,6 +80,49 @@ sealed partial class LocalKeys
             monitor.Info( $"Local '{_local.FullName}' has {ids.Length} identity keys. Current expires on {ids[0].NotAfter:yyyy-MM-dd}." );
             HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
             return new LocalKeys( _local, protector, ids, allowedOfflineDays );
+        }
+
+        /// <summary>
+        /// Keeps at most <see cref="ILocalKeys.MaxIdentityCount"/> identities, trashing the oldest
+        /// surplus ones.
+        /// <para>
+        /// The handshake sends EVERY identity and a peer refuses a list longer than that constant. So
+        /// a party whose store accumulated more would be rejected by every remote at once, forever,
+        /// with the failure logged on the other side as invalid data from us — the kind of outage
+        /// that is total, silent on the side that causes it, and points at the wrong machine.
+        /// Bounding what we accept without bounding what we send is what makes that possible.
+        /// </para>
+        /// <para>
+        /// The schedule cannot get here: one key is issued per AllowedOfflineDays and lives twice
+        /// that, so exactly two are valid at any time. Reaching this means a restored or merged
+        /// store, a hand-copied key, or a clock that went backwards — none of which the code can
+        /// prevent, and all of which it can survive.
+        /// </para>
+        /// <para>
+        /// The list is ordered most recent first, so the surplus is the tail: the oldest keys, which
+        /// are the least useful to keep since a remote that has been offline long enough to still
+        /// need one is past <see cref="ILocalKeys.AllowedOfflineDays"/> anyway. They go to the
+        /// '$TrashBin' rather than being deleted, like every other key this loader rejects.
+        /// </para>
+        /// </summary>
+        void TrashSurplusIdentities( IActivityMonitor monitor, NormalizedPath identityPath, List<LocalIdentityKey> identities )
+        {
+            int surplus = identities.Count - ILocalKeys.MaxIdentityCount;
+            if( surplus <= 0 ) return;
+            monitor.Warn( $"Local '{_local.FullName}' has {identities.Count} valid identity keys but a handshake can carry " +
+                          $"at most {nameof( ILocalKeys.MaxIdentityCount )} = {ILocalKeys.MaxIdentityCount}: a remote would " +
+                          $"refuse every message we send. Keeping the {ILocalKeys.MaxIdentityCount} most recent." );
+            for( int i = ILocalKeys.MaxIdentityCount; i < identities.Count; ++i )
+            {
+                var extra = identities[i];
+                // Disposed before the file moves: nothing else has seen this key, since LocalKeys is
+                // not built yet.
+                extra.OnTeardown();
+                LogAndCleanup( monitor,
+                               identityPath.AppendPart( extra.Name + ".pfx" ),
+                               $"Surplus identity key '{extra.Name}.pfx'." );
+            }
+            identities.RemoveRange( ILocalKeys.MaxIdentityCount, surplus );
         }
 
         void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )
