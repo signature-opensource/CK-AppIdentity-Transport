@@ -1,4 +1,3 @@
-using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System.Collections.Concurrent;
 using System.Collections.Generic;

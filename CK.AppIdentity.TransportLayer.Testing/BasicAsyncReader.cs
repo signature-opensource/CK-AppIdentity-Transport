@@ -9,7 +9,7 @@ namespace CK.AppIdentity.TransportLayer.Testing;
 /// Funny helper that transforms a <see cref="IOutgoingMessage"/> into a
 /// piece of stream that can be used to read back a <see cref="IncomingMessage"/>.
 /// <para>
-/// There is no optimization here: the outgoing message pay load is copied in a byte array
+/// There is no optimization here: the outgoing message payload is copied in a byte array
 /// after its wire prefix.
 /// </para>
 /// </summary>
@@ -18,10 +18,10 @@ public class BasicAsyncReader
     byte[] _data;
     int _offset;
 
-    public BasicAsyncReader( IOutgoingMessage m, MessageProtocolMap negociatedProtocols )
+    public BasicAsyncReader( IOutgoingMessage m, MessageProtocolMap negotiatedProtocols )
     {
         var bytes = new byte[m.Message.Length + IOutgoingMessage.MaxWirePrefixLength];
-        int lenHeader = IOutgoingMessage.WriteWireHeader( negociatedProtocols, m, bytes );
+        int lenHeader = IOutgoingMessage.WriteWireHeader( negotiatedProtocols, m, bytes );
         m.Message.CopyTo( bytes.AsSpan( lenHeader ) );
         _data = bytes;
     }

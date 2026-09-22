@@ -2,8 +2,11 @@ using CK.Core;
 using System;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
+/// <summary>
+/// A buggy listener created by <see cref="BugTransportTypeService.TryCreateListener(IActivityMonitor, object, object)"/>.
+/// </summary>
 public class BugTransportListener : TransportListener
 {
     readonly BugTransportTypeService.BugType _bugType;

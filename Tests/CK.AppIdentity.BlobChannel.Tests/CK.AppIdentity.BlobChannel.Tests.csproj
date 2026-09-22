@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\CK.AppIdentity.BlobChannel\CK.AppIdentity.BlobChannel.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.TransportLayer.Testing\CK.AppIdentity.TransportLayer.Testing.csproj" />
   </ItemGroup>
 </Project>

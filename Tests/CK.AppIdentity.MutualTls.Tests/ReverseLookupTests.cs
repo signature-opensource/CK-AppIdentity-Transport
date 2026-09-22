@@ -4,7 +4,6 @@ using CK.Core;
 using CK.Monitoring;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using Shouldly;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -46,7 +45,7 @@ public class ReverseLookupTests
     }
 
     Task<ApplicationIdentityService> CreateAsync( Action<MutableConfigurationSection> configuration, CancellationToken token )
-        => AppIdentityTestHelper.CreateServiceAsync( configuration, ConfigureServices, token );
+        => TestHelper.CreateApplicationServiceAsync( configuration, ConfigureServices, token );
 
     Task<ApplicationIdentityService> CreateListenerAsync( CancellationToken token )
         => CreateAsync( c =>

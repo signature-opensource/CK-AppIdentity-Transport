@@ -1,12 +1,16 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
-public class BugTransport : Transport
+/// <summary>
+/// A buggy transport layer created by <see cref="BugTransportTypeService.TryConnectAsync"/>.
+/// </summary>
+public sealed class BugTransport : Transport
 {
     readonly BugTransportTypeService.BugType _bugType;
 

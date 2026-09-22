@@ -1,5 +1,4 @@
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
-using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

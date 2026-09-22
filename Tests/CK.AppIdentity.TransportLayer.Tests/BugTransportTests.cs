@@ -18,6 +18,8 @@ public class BugTransportTests
     void ConfigureFastClock( ServiceCollection services )
     {
         services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+        services.AddSingleton<BugTransportTypeService>();
+        services.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<BugTransportTypeService>() );
     }
 
     [CancelAfter( 5000 )]

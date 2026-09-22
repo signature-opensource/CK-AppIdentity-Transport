@@ -1,4 +1,5 @@
 using CK.AppIdentity.TransportLayer;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -18,24 +19,32 @@ public class ListenerPeeringIssuesTests
     // Uses a 50ms instead of the default 1000ms for tests.
     SystemClockTester _systemClock = new SystemClockTester( 50 );
 
-    void ConfigureClock( ServiceCollection services )
+    void AddFastClock( ServiceCollection services )
     {
         services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
     }
+
+    void AddFastClockAndBlobChannel( ServiceCollection services )
+    {
+        AddFastClock( services );
+        services.AddSingleton<BlobChannelFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
+    }
+
 
     [Test]
     [CancelAfter( 7000 )]
     public async Task UnknownIncoming_to_InitiatorConflict_to_None_to_UntrustedIncoming_to_Accepted_Async( CancellationToken token )
     {
-        TestHelper.GetCleanTestStoreFolder();
+        TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
 
         TestHelper.Monitor.Info( "Creating empty Listener service (AlwaysListening)." );
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
-        {
-            c["FullName"] = "Test/$Listener";
-            c["AllowFeatures"] = "BlobChannel";
-            c["AlwaysListening"] = "true";
-        }, token: token );
+                                    {
+                                        c["FullName"] = "Test/$Listener";
+                                        c["AllowFeatures"] = "BlobChannel";
+                                        c["AlwaysListening"] = "true";
+                                    }, AddFastClockAndBlobChannel, token );
 
         var listenerTransport = listener.GetRequiredFeature<TransportManagerFeature>();
         listenerTransport.GetPeeringIssues().ShouldBeEmpty();
@@ -53,7 +62,7 @@ public class ListenerPeeringIssuesTests
                 TestHelper.Monitor.Info( "Tests: Starts the sender. It is unknown for the listener. One UnknownIncoming issue appears." );
                 // We need this remote to retry quickly, we use a heartbeat of 50 ms instead of 1000 ms.
                 // It will automatically trust the listener identity.
-                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
+                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
 
                 TestHelper.Monitor.Info( "Tests: Wait for the first UnknownIncoming event." );
                 var theIssue = await nextEvent.WaitAsync( token );

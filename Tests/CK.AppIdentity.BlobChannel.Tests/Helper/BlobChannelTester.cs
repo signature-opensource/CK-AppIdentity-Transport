@@ -1,4 +1,5 @@
 using CK.AppIdentity.TransportLayer;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
@@ -96,8 +97,8 @@ public sealed class BlobChannelTester : IAsyncDisposable
     }
 
     /// <summary>
-    /// Uses <see cref="CreateAndStartListenerAsync(string, NormalizedPath, Action{ServiceCollection}?)"/>
-    /// and <see cref="CreateAndStartSenderAsync(string, NormalizedPath, Action{ServiceCollection}?)"/>
+    /// Uses <see cref="CreateAndStartListenerAsync(string, NormalizedPath, Action{ServiceCollection}?, CancellationToken)"/>
+    /// and <see cref="CreateAndStartSenderAsync(string, NormalizedPath, Action{ServiceCollection}?, CancellationToken)"/>
     /// to create a <see cref="BlobChannelTester"/> on the two <see cref="ApplicationIdentityService"/>.
     /// </summary>
     /// <param name="autoTrustKey">The AutoTrustKey configuration to use (same on both side).</param>
@@ -146,7 +147,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
             c["Parties:0:PartyName"] = "$Listener";
             c["Parties:0:Address"] = "tcp:127.0.0.1";
             c["AllowFeatures"] = "BlobChannel";
-        }, configureServices, token );
+        }, Configure( configureServices ), token );
     }
 
     /// <summary>
@@ -171,14 +172,24 @@ public sealed class BlobChannelTester : IAsyncDisposable
             c["FullName"] = "Test/$Listener";
             c["Parties:0:PartyName"] = "$Sender";
             c["AllowFeatures"] = "BlobChannel";
-        }, configureServices, token );
+        }, Configure( configureServices ), token );
+    }
+
+    static Action<ServiceCollection> Configure( Action<ServiceCollection>? configureServices )
+    {
+        return services =>
+        {
+            services.AddSingleton<BlobChannelFeatureDriver>();
+            services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
+            configureServices?.Invoke( services );
+        };
     }
 
     /// <summary>
     /// Starts listening to the <see cref="BlobChannelFeature.Received"/> event on the single
     /// remote of the <paramref name="from"/> side that must have the <see cref="BlobChannelFeature"/>.
     /// </summary>
-    /// <param name="from">The side from wich data must be received.</param>
+    /// <param name="from">The side from which data must be received.</param>
     /// <param name="receivedData">The list to fill.</param>
     /// <returns>The BlobChannel feature.</returns>
     public static BlobChannelFeature SetupChannel( ApplicationIdentityService from, List<byte[]> receivedData )

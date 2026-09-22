@@ -18,6 +18,6 @@
   <Project Path="CK.AppIdentity.Cris/CK.AppIdentity.Cris.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement/CK.AppIdentity.KeyManagement.csproj" />
   <Project Path="CK.AppIdentity.Transport.MutualTls/CK.AppIdentity.Transport.MutualTls.csproj" />
-  <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />
   <Project Path="CK.AppIdentity.TransportLayer.Testing/CK.AppIdentity.TransportLayer.Testing.csproj" />
+  <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />
 </Solution>

@@ -22,14 +22,14 @@ sealed class PeeringIssueCollector
     /// Initializes a new collector. If <paramref name="skipSameKind"/> is true, consecutive
     /// same <see cref="PeeringIssue.Kind"/> are skipped.
     /// </summary>
-    /// <param name="transport">The mamager feature.</param>
+    /// <param name="transport">The manager feature.</param>
     /// <param name="skipSameKind">True to ignore consecutive identical <see cref="PeeringIssue.Kind"/>.</param>
     public PeeringIssueCollector( TransportManagerFeature transport, bool skipSameKind )
     {
         _transport = transport;
         _skipSameKind = skipSameKind;
         _issues = new List<PeeringIssue>();
-        transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;
+        transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;       
     }
 
     void OnPeeringIssueChanged( IActivityMonitor monitor, PeeringIssue e )
@@ -65,7 +65,7 @@ sealed class PeeringIssueCollector
     }
 
     /// <summary>
-    /// Gets the non cloned last reveived issue.
+    /// Gets the non cloned last received issue.
     /// </summary>
     public PeeringIssue? Last => _last;
 

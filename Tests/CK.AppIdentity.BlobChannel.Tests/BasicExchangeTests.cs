@@ -1,4 +1,5 @@
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -14,12 +15,26 @@ namespace CK.AppIdentity.BlobChannel.Tests;
 [TestFixture]
 public class BasicExchangeTests
 {
-    [Test]
-    // The timeout must be enough for back task to be checked and exceptions to be dumped.
-    //[CancelAfter( 4000 )]
-    public async Task demo_BlobChannel_is_an_optin_Feature_Async( CancellationToken token = default )
+    SystemClockTester _systemClock = new SystemClockTester( 50 );
+
+    void AddFastClock( ServiceCollection services )
     {
-        TestHelper.GetCleanTestStoreFolder();
+        services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+    }
+
+    void AddFastClockAndBlobChannel( ServiceCollection services )
+    {
+        AddFastClock( services );
+        services.AddSingleton<BlobChannelFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
+    }
+
+
+    [Test]
+    [CancelAfter( 2000 )]
+    public async Task demo_BlobChannel_is_an_optin_Feature_Async( CancellationToken token )
+    {
+        TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
 
         // BlobChannel is an opt-in feature: it must be explicitly allowed.
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
@@ -27,14 +42,14 @@ public class BasicExchangeTests
             c["FullName"] = "Test/$Listener";
             c["Parties:0:PartyName"] = "Sender";
             c["AllowFeatures"] = "BlobChannel";
-        }, token: token );
+        }, AddFastClockAndBlobChannel, token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "Listener";
             c["Parties:0:Address"] = "tcp:127.0.0.1";
             c["AllowFeatures"] = "BlobChannel";
-        }, token: token );
+        }, AddFastClockAndBlobChannel, token );
         var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
         var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 
@@ -85,16 +100,8 @@ public class BasicExchangeTests
         listenerReceived[1].ShouldBe( [1, 2] );
         listenerReceived[2].ShouldBe( [1, 2, 3] );
 
-        await Task.Delay( 2000, token );
-
         await sender.DisposeAsync();
         await listener.DisposeAsync();
-    }
-
-    SystemClockTester _systemClock = new SystemClockTester( 50 );
-    void ConfigureClock( ServiceCollection services )
-    {
-        services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
     }
 
     [TestCase( "Reverted" )]
@@ -102,7 +109,7 @@ public class BasicExchangeTests
     [CancelAfter( 4000 )]
     public async Task Listener_then_Sender_setup_using_AutoTrustKey_Once_Async( string mode, CancellationToken token )
     {
-        TestHelper.GetCleanTestStoreFolder();
+        TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
 
         bool regular = mode == "Regular";
         ApplicationIdentityService? listener = null;
@@ -111,13 +118,13 @@ public class BasicExchangeTests
         {
             if( regular )
             {
-                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
-                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
+                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
+                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
             }
             else
             {
-                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
-                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: ConfigureClock, token: token );
+                sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
+                listener = await BlobChannelTester.CreateAndStartListenerAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
             }
 
             var listenerReceived = new List<byte[]>();

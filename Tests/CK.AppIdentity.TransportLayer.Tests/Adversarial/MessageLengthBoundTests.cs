@@ -1,6 +1,5 @@
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using System.Buffers;
-using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

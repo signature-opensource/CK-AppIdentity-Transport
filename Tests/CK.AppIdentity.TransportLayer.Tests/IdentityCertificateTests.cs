@@ -2,7 +2,6 @@ using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.Monitoring;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
@@ -13,7 +12,6 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 

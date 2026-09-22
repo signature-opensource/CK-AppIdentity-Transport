@@ -1,4 +1,3 @@
-using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System;
 using System.Buffers;

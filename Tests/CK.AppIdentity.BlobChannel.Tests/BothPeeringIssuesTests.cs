@@ -1,4 +1,5 @@
 using CK.AppIdentity.TransportLayer;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
@@ -19,11 +20,12 @@ public class BothPeeringIssuesTests
     // Uses a 50ms instead of the default 1000ms for tests.
     SystemClockTester _systemClock = new SystemClockTester( 50 );
 
-    void ConfigureFastClock( ServiceCollection services )
+    void Configure( ServiceCollection services )
     {
         services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+        services.AddSingleton<BlobChannelFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
     }
-
 
     [TestCase( true, true )]
     [TestCase( false, true )]
@@ -41,15 +43,11 @@ public class BothPeeringIssuesTests
         } );
 
 
-        TestHelper.GetCleanTestStoreFolder();
+        TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
 
         TestHelper.Monitor.Info( "Tests: Creating Listener & Sender." );
-        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
-        {
-            c["FullName"] = "Test/$Listener";
-
-        }, ConfigureFastClock, token: token );
-        await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", ConfigureFastClock, token: token );
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Listener", Configure, token );
+        await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", Configure, token: token );
 
         var senderTransportManager = sender.GetRequiredFeature<TransportManagerFeature>();
         var senderIssues = new PeeringIssueCollector( senderTransportManager, skipSameKind: false );

@@ -2,7 +2,6 @@ using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection;
 using NUnit.Framework;
-using Shouldly;
 using System;
 using System.IO;
 using System.Linq;

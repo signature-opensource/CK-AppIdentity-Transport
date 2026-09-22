@@ -1,4 +1,3 @@
-using CK.Core;
 using CK.Monitoring;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;

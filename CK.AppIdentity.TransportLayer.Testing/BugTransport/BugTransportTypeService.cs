@@ -4,9 +4,12 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
 
+/// <summary>
+/// Buggy transport configured by <see cref="BugType"/>.
+/// </summary>
 public class BugTransportTypeService : TransportTypeService
 {
     [Flags]
@@ -60,12 +63,17 @@ public class BugTransportTypeService : TransportTypeService
         /// </summary>
         DisposeListener = 1 << 9,
         /// <summary>
-        /// Throws listener.DisposeAsync (direct call error).
+        /// Throws in listener.DisposeAsync (direct call error).
         /// </summary>
         DisposeListenerInline = 1 << 10,
 
-
+        /// <summary>
+        /// Throws in BugTransport.DisposeAsync.
+        /// </summary>
         DisposeTransport = 1 << 11,
+        /// <summary>
+        /// Throws in BugTransport.DisposeAsync (direct call error).
+        /// </summary>
         DisposeTransportInline = 1 << 12,
     }
 

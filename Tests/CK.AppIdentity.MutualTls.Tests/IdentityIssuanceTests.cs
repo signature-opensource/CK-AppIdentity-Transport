@@ -1,12 +1,8 @@
 using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
-using CK.Core;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
-using System;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,7 +24,7 @@ namespace CK.AppIdentity.MutualTls.Tests;
 public class IdentityIssuanceTests
 {
     static async Task<ApplicationIdentityService> CreateAsync( string partyName, CancellationToken token )
-        => await AppIdentityTestHelper.CreateServiceAsync( c => c["FullName"] = $"Test/${partyName}", token: token );
+        => await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = $"Test/${partyName}", token: token );
 
     [Test, CancelAfter( 30000 )]
     public async Task A_derived_certificate_verifies_against_the_identity_that_issued_it_Async( CancellationToken token )

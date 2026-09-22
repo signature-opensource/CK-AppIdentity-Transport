@@ -2,7 +2,6 @@ using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using Shouldly;
 using System;
 using System.Collections.Generic;
 using System.Linq;

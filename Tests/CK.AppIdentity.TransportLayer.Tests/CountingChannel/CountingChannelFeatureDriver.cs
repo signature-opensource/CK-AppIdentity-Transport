@@ -1,5 +1,3 @@
-using CK.AppIdentity.TransportLayer;
-
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>

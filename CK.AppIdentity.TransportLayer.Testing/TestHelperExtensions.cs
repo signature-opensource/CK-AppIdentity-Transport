@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
+using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
 using CK.Testing;
 using Microsoft.AspNetCore.DataProtection;
@@ -8,62 +9,55 @@ using Microsoft.Extensions.Hosting;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using static CK.Testing.MonitorTestHelper;
 
-namespace CK.AppIdentity.BlobChannel.Tests;
+namespace CK.AppIdentity;
 
-
-static class TestHelperExtension
+/// <summary>
+/// Extends the <see cref="IMonitorTestHelper"/>.
+/// </summary>
+public static class TestHelperExtensions
 {
-    public static NormalizedPath TestStoreFolder = TestHelper.TestProjectFolder.AppendPart( "TestStore" );
-
-    public static NormalizedPath GetCleanTestStoreFolder( this IBasicTestHelper helper )
-    {
-        return helper.CleanupFolder( TestStoreFolder );
-    }
-
     /// <summary>
-    /// Creates a <see cref="ApplicationIdentityService"/> from a configuration builder.
-    /// It must be disposed once done with it to stop its micro agent.
+    /// Creates a started service from a configuration builder. Dispose it to stop its micro agent.
     /// <para>
-    /// See <see cref="CreateApplicationServiceAsync(IBasicTestHelper, ApplicationIdentityServiceConfiguration, Action{ServiceCollection}?)"/>.
+    /// Only <c>tcp:</c> is registered here. Any another transport — a real one
+    /// like <c>mtls:</c>, or a fault-injecting one — must be added through <c>configureServices</c>, which runs
+    /// last so it can also replace what this registers: the system clock, in particular, whose fake is
+    /// how most timing tests stay fast.
+    /// </para>
+    /// <para>
+    /// The store root is NOT set here. It is resolved from the consuming project's folder by a
+    /// <c>[SetUpFixture]</c> that each test assembly must carry, because NUnit discovers those only in
+    /// the assembly under test. A shared one would point every test assembly at whichever folder this
+    /// library happened to be built from, and two assemblies would then fight over one store.
     /// </para>
     /// </summary>
-    /// <param name="this">This test helper.</param>
-    /// <param name="configuration">The configuration.</param>
-    /// <param name="configureServices">Optional services configurator.</param>
-    /// <param name="token">Optional cancellation token.</param>
-    /// <returns>The started service.</returns>
-    public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
+    public static Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IMonitorTestHelper helper,
                                                                                   Action<MutableConfigurationSection> configuration,
                                                                                   Action<ServiceCollection>? configureServices = null,
                                                                                   CancellationToken token = default )
     {
-        var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration );
+        var c = ApplicationIdentityServiceConfiguration.Create( helper.Monitor, configuration );
         Throw.DebugAssert( c != null );
-        return CreateApplicationServiceAsync( @this, c, configureServices, token );
+        return CreateApplicationServiceAsync( helper, c, configureServices, token );
     }
 
     /// <summary>
-    /// Creates a <see cref="ApplicationIdentityService"/> from its configuration.
-    /// It must be disposed once done with it to stop its micro agent.
+    /// Creates a started service from its configuration. Dispose it to stop its micro agent.
     /// <para>
-    /// Services are configured by default with the <see cref="ApplicationIdentityServiceConfiguration"/>,
-    /// MessageProtocolDirectoryService, <see cref="FakeProtector"/>, KeyManagementFeatureDriver,
-    /// TransportFeatureDriver, TcpSocketTransportTypeService and the BlobChannelFeatureDriver.
+    /// Only <c>tcp:</c> is registered here. Any another transport — a real one
+    /// like <c>mtls:</c>, or a fault-injecting one — must be added through <c>configureServices</c>, which runs
+    /// last so it can also replace what this registers: the system clock, in particular, whose fake is
+    /// how most timing tests stay fast.
     /// </para>
     /// <para>
-    /// The <see cref="ApplicationIdentityService"/> is started manually (IHostedService) because we don't have
-    /// Automatic DI here, and its <see cref="ApplicationIdentityService.InitializationTask"/> is awaited:
-    /// the ApplicationIdentityService is running.
+    /// The store root is NOT set here. It is resolved from the consuming project's folder by a
+    /// <c>[SetUpFixture]</c> that each test assembly must carry, because NUnit discovers those only in
+    /// the assembly under test. A shared one would point every test assembly at whichever folder this
+    /// library happened to be built from, and two assemblies would then fight over one store.
     /// </para>
     /// </summary>
-    /// <param name="this">This test helper.</param>
-    /// <param name="c">The configuration.</param>
-    /// <param name="configureServices">Optional services configurator.</param>
-    /// <param name="token">Optional cancellation token.</param>
-    /// <returns>The started service.</returns>
-    public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IBasicTestHelper @this,
+    public static async Task<ApplicationIdentityService> CreateApplicationServiceAsync( this IMonitorTestHelper helper,
                                                                                         ApplicationIdentityServiceConfiguration c,
                                                                                         Action<ServiceCollection>? configureServices = null,
                                                                                         CancellationToken token = default )
@@ -73,19 +67,15 @@ static class TestHelperExtension
         serviceBuilder.AddSingleton<ApplicationIdentityService>();
         serviceBuilder.AddSingleton<MessageProtocolDirectoryService>();
 
-        serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
-
         // Adds the TransportFeatureDriver before the KeyManagementFeatureDriver to test
         // the existence of the dependency from TransportFeatureDriver to KeyManagementFeatureDriver.
         // (Without the - unused - constructor parameter, registering services in this order fails.)
         serviceBuilder.AddSingleton<TransportFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
 
+        serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
         serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
-
-        serviceBuilder.AddSingleton<BlobChannelFeatureDriver>();
-        serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
 
         serviceBuilder.AddSingleton<TcpSocketTransportTypeService>();
         serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<TcpSocketTransportTypeService>() );
@@ -100,4 +90,5 @@ static class TestHelperExtension
         await s.InitializationTask.WaitAsync( token ).ConfigureAwait( false );
         return s;
     }
+
 }

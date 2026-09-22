@@ -7,7 +7,6 @@ using Shouldly;
 using System;
 using System.Linq;
 using System.Net.Sockets;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
@@ -40,7 +39,7 @@ public class MutualTlsTransportTests
     }
 
     Task<ApplicationIdentityService> CreateAsync( Action<MutableConfigurationSection> configuration, CancellationToken token )
-        => AppIdentityTestHelper.CreateServiceAsync( configuration, ConfigureServices, token );
+        => TestHelper.CreateApplicationServiceAsync( configuration, ConfigureServices, token );
 
     /// <summary>
     /// A listener and an initiator that know each other, connected over <c>mtls:</c>.

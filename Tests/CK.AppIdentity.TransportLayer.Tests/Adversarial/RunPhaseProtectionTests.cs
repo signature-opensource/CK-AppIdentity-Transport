@@ -2,7 +2,6 @@ using NUnit.Framework;
 using Shouldly;
 using System;
 using System.Buffers;
-using System.Linq;
 using System.Security.Cryptography;
 
 namespace CK.AppIdentity.TransportLayer.Tests;

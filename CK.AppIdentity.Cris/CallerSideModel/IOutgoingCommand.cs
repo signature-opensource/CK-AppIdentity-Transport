@@ -47,7 +47,7 @@ public interface IOutgoingCommand
     /// The task's value can be:
     /// <list type="bullet">
     ///  <item>A <see cref="ICrisResultError"/> on validation or execution error by the callee.</item>
-    ///  <item>A successful null result on success when <see cref="Payload"/> is a <see cref="ICrisEvent"/> or a <see cref="ICommand"/>.</item>
+    ///  <item>A successful null result on success when <see cref="Payload"/> is a <see cref="ICommand"/>.</item>
     ///  <item>A successful result object if Payload is a <see cref="ICommand{TResult}"/>.</item>
     /// </list>
     /// </summary>

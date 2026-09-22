@@ -4,6 +4,15 @@ using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 
+/// <summary>
+/// Points the store at THIS project's folder.
+/// <para>
+/// It is duplicated in every test assembly rather than shared, and must stay that way: NUnit
+/// discovers a SetUpFixture only in the assembly under test, and a shared one would resolve
+/// <c>TestProjectFolder</c> to wherever the shared library was built — two assemblies then clear and
+/// rewrite one store while both are running.
+/// </para>
+/// </summary>
 [SetUpFixture]
 public class TestHelperSetupDefaultStorePath
 {

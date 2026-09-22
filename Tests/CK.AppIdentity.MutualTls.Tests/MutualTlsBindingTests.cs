@@ -4,7 +4,6 @@ using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
-using System;
 using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
@@ -44,7 +43,7 @@ public class MutualTlsBindingTests
     /// A real initiator pointed at the harness, which terminates TLS itself.
     /// </summary>
     Task<ApplicationIdentityService> CreateInitiatorAsync( string localName, string remote, string address, CancellationToken token )
-        => AppIdentityTestHelper.CreateServiceAsync( c =>
+        => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{localName}";
             c["Parties:0:PartyName"] = remote;

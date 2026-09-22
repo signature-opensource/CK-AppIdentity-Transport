@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System;
 
 namespace CK.AppIdentity.TransportLayer.Testing;
