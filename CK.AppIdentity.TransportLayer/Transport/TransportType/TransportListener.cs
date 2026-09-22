@@ -249,7 +249,7 @@ public abstract class TransportListener
     {
         Throw.CheckNotNullArgument( address );
         if( address.Type != _transportType ) return false;
-        return IsListeningAddress( address.TypedAddress );
+        return IsListeningTypedAddress( address.TypedAddress );
     }
 
     /// <summary>
@@ -257,7 +257,7 @@ public abstract class TransportListener
     /// </summary>
     /// <param name="typedAddress">The typed address to test.</param>
     /// <returns>True if this listener listens to this address, false otherwise.</returns>
-    internal protected abstract bool IsListeningAddress( object typedAddress );
+    internal protected abstract bool IsListeningTypedAddress( object typedAddress );
 
     /// <summary>
     /// Disposes this listener: any resources must be released.

@@ -734,16 +734,27 @@ static partial class ZeroProtocol // Negotiation
                                                          remote.RemoteKeys.TrustedIdentity,
                                                          out var currentKeyData,
                                                          out var currentKey );
+        if( check == SignatureCheck.Failed )
+        {
+            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                           $"Received unverifiable AcceptedProtocolsMessage message from '{remote.Party}'." );
+            return default;
+        }
+        // The statement is signed by whoever sent it, so it can now be held against what arrived.
+        // This runs BEFORE IsTrustedAfterRead because that call is not a query: under AutoTrustKey it
+        // adopts the key it has just read and persists it as the .public file in the shared store.
+        // Writing durable trust off a message we are about to reject as invalid is the wrong shape for
+        // a security write, whoever it happens to benefit. The listener already does it in this order
+        // (IncomingConnectionBackTask) and the two sides must agree on when trust may be persisted.
+        CheckCertificateBinding( attestedBinding, transport );
         foundTrustedKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, check, currentKeyData, currentKey );
         if( !foundTrustedKey )
         {
             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                                           $"Received {(check == SignatureCheck.Failed ? "unverifiable" : "untrusted (self-asserted)")} " +
-                                           $"AcceptedProtocolsMessage message from '{remote.Party}'." );
+                                           $"Received untrusted (self-asserted) AcceptedProtocolsMessage message from '{remote.Party}'." );
             return default;
         }
         transportManager.Logger.Info( $"Received verified AcceptedProtocolsMessage message from '{remote.Party}'." );
-        CheckCertificateBinding( attestedBinding, transport );
         var missingProtocols = remote.BestRegisteredProtocols.Where( b => !protocols.Any( p => p.Name == b.Name ) );
         if( missingProtocols.Any() )
         {

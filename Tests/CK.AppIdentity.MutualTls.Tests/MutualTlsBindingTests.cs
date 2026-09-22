@@ -135,6 +135,22 @@ public class MutualTlsBindingTests
                 "The TLS channel and the signed identity must be the same channel. They are not here." );
         }
         feature.ConnectionAvailability.ShouldNotBe( ConnectionAvailability.Connected );
+
+        // Finding M0b. Refusing is not enough: the refusal must leave nothing behind.
+        //
+        // IsTrustedAfterRead is not a query. Under AutoTrustKey.Once - which this initiator is
+        // configured with - it ADOPTS the key it has just read and writes the .public file into the
+        // remote's shared store. The initiator used to call it before CheckCertificateBinding, so it
+        // persisted durable trust off a message it was about to reject one line later. The listener
+        // has always done it the other way round (IncomingConnectionBackTask checks the binding right
+        // after the signature and adopts much later); the two sides now agree.
+        //
+        // Nothing hostile gets pinned by this either way - the binding sits inside the signed region,
+        // so an attacker signing with its own key would simply state the certificate it really
+        // presented and be accepted outright. What is wrong is the shape: a security-relevant write
+        // derived from a message that has not passed its transport check.
+        PeerStore.FindTrustedIdentityFile( $"Test/{remote}" ).ShouldBeNull(
+            "A message rejected for a certificate-binding mismatch must not have persisted a trusted key." );
     }
 
     [Test, CancelAfter( 30000 )]

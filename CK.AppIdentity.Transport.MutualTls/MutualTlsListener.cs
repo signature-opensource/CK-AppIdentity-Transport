@@ -52,7 +52,7 @@ sealed class MutualTlsListener : TransportListener
         }
     }
 
-    protected override bool IsListeningAddress( object address )
+    protected override bool IsListeningTypedAddress( object address )
     {
         var ipEndPoint = (IPEndPoint)address;
         return ipEndPoint.Equals( Address ) || ipEndPoint.Equals( ActualListeningAddress );

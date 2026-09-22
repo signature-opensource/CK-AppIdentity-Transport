@@ -47,7 +47,7 @@ sealed partial class TransportManager
 
         foreach( var exists in _listeners )
         {
-            if( exists.IsListeningAddress( endPoint.TypedAddress ) )
+            if( exists.IsListeningAddress( endPoint ) )
             {
                 exists.AddRef( monitor );
                 return exists;

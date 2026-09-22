@@ -40,7 +40,7 @@ sealed class TcpSocketListener : TransportListener
         }
     }
 
-    internal protected override bool IsListeningAddress( object address )
+    internal protected override bool IsListeningTypedAddress( object address )
     {
         var ipEndPoint = (IPEndPoint)address;
         return ipEndPoint.Equals( Address ) || ipEndPoint.Equals( ActualListeningAddress );

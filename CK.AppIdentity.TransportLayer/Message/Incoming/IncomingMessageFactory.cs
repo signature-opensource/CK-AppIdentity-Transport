@@ -199,6 +199,9 @@ public sealed class IncomingMessageFactory : IDisposable
                     // removed: it still had to be signed to get here.
                     if( verified.Message.IsEmpty && protocolNumber == 0 )
                     {
+                        // Dispose() hands the sequence back to the factory: the finally must not
+                        // return it a second time.
+                        releaseBuffer = false;
                         verified.Dispose();
                         return (firstByte & OutgoingMessage.IsControlFlag) != 0 ? IncomingMessage.EmptyAck : IncomingMessage.Empty;
                     }

@@ -34,7 +34,7 @@ public class BugTransportListener : TransportListener
         return default;
     }
 
-    protected override bool IsListeningAddress( object typedAddress )
+    protected override bool IsListeningTypedAddress( object typedAddress )
     {
         return (BugTransportTypeService.BugType)typedAddress == _bugType;
     }

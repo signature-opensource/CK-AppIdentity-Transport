@@ -138,4 +138,43 @@ public class TrustMutationTests
         keys.TrustedIdentity.ShouldBeNull();
         PublicFiles( keys ).ShouldBeEmpty( "A remote with no trusted key must leave no identity file behind." );
     }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_key_that_differs_only_in_its_bytes_keeps_its_file_on_disk_Async( CancellationToken token )
+    {
+        // Finding M1. The file name is the TimeName alone, but Equals compares the TimeName AND the
+        // key bytes. A key that differs only in its bytes is therefore "differing" for the caller
+        // while mapping to the very same file: SaveDifferingKey wrote it, then trashed the path it
+        // had just written, leaving the remote trusted in memory and with NO .public file at all.
+        // The next start would read no trusted identity for this remote - dead under
+        // AutoTrustKey.Never, and silently re-TOFUing to whoever connects first under Once.
+        //
+        // TimeName arrives from the wire (ZeroProtocol.Negotiation reads it before the signature is
+        // held against anything), so a peer can pick it: this is remote-triggerable, not just a
+        // local accident.
+        var (service, keys) = await CreateRemoteAsync( "M1SameName", token );
+        await using var _svc = service;
+
+        var timeName = DateTime.UtcNow.AddMinutes( -10 );
+        var first = NewKeyData( timeName );
+        var second = NewKeyData( timeName );
+        second.Name.ShouldBe( first.Name, "Same TimeName: the two keys map to the same file name." );
+        second.PublicKeyRawData.Span.SequenceEqual( first.PublicKeyRawData.Span )
+              .ShouldBeFalse( "But they are different keys, so this IS a rotation." );
+
+        keys.SetTrustedIdentity( TestHelper.Monitor.ParallelLogger, first ).ShouldBeTrue( "First set." );
+        PublicFiles( keys ).Length.ShouldBe( 1 );
+
+        keys.SetTrustedIdentity( TestHelper.Monitor.ParallelLogger, second )
+            .ShouldBeTrue( "Different bytes: this is a real change." );
+
+        var files = PublicFiles( keys );
+        files.Length.ShouldBe( 1, "The rotation must leave exactly one identity file - not zero." );
+
+        var onDisk = File.ReadAllBytes( keys.Party.SharedFileStore.FolderPath.AppendPart( files[0] ) );
+        onDisk.AsSpan().SequenceEqual( second.PublicKeyRawData.Span )
+              .ShouldBeTrue( "And the file must hold the key that is now trusted, not the one it replaced." );
+        keys.TrustedIdentity.ShouldNotBeNull();
+        keys.TrustedIdentity!.PublicKeyRawData.Span.SequenceEqual( second.PublicKeyRawData.Span ).ShouldBeTrue();
+    }
 }

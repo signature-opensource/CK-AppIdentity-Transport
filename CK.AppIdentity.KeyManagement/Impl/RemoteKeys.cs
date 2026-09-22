@@ -131,6 +131,17 @@ sealed partial class RemoteKeys : IRemoteKeys
             {
                 logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}'. This remote has no more trusted identity." );
             }
+            else if( current.Name == identity.Name )
+            {
+                // Name is the TimeName alone, but Equals also compares the key bytes: two keys that
+                // share a TimeName and differ in their bytes are "differing" here yet map to the very
+                // same file. That file has just been rewritten above with the new key, so there is
+                // nothing left to trash - and trashing it would rotate the trust in memory while
+                // leaving no .public file at all, so the next start would find no trusted identity
+                // for this remote. TimeName comes from the wire, so this is remote-triggerable.
+                logger.Info( $"Replacing the key of trusted identity '{current.Name}' for remote '{_remote}'." );
+                return true;
+            }
             else
             {
                 logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}', replaced by '{identity.Name}'." );
