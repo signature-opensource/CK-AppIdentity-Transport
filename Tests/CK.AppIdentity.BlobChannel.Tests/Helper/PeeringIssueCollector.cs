@@ -1,5 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
+using CK.PerfectEvent;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,13 +9,22 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.BlobChannel.Tests;
 
 /// <summary>
-/// Simple collector of PeeringIssues events: PeeringsIssues are cloned as they arrive
-/// and stored in a list that can be retrieved when stopping the collector.
+/// Collector of PeeringIssue events: issues are cloned as they arrive and stored in a list that can
+/// be retrieved when stopping the collector.
+/// <para>
+/// A <see cref="PeeringIssue"/> is a single mutable object that is raised again every time it
+/// changes — the tests assert that identity — so a history has to be made of <see cref="PeeringIssue.Clone"/>
+/// snapshots. That is why this keeps its own list rather than letting the
+/// <see cref="PerfectEventBuffer{TEvent}"/> below be the history: the buffer stores the event as-is,
+/// which here would be N references to one object all reporting its final <see cref="PeeringIssue.Kind"/>.
+/// The buffer is used for what it is good at, waiting.
+/// </para>
 /// </summary>
-sealed class PeeringIssueCollector
+sealed class PeeringIssueCollector : IDisposable
 {
     readonly TransportManagerFeature _transport;
     readonly List<PeeringIssue> _issues;
+    readonly PerfectEventBuffer<PeeringIssue> _signal;
     readonly bool _skipSameKind;
     PeeringIssue? _last;
     bool _stopped;
@@ -29,7 +40,12 @@ sealed class PeeringIssueCollector
         _transport = transport;
         _skipSameKind = skipSameKind;
         _issues = new List<PeeringIssue>();
-        transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;       
+        // Order matters: Sync handlers run in subscription order, so ours must update _last BEFORE
+        // the buffer pushes the event and releases a pending WaitForOneAsync. Subscribing the buffer
+        // first would let a woken WaitForAsync re-read a _last that has not been updated yet and go
+        // back to waiting for an event that has already happened.
+        transport.PeeringIssueChanged.Sync += OnPeeringIssueChanged;
+        _signal = new PerfectEventBuffer<PeeringIssue>( transport.PeeringIssueChanged );
     }
 
     void OnPeeringIssueChanged( IActivityMonitor monitor, PeeringIssue e )
@@ -49,25 +65,25 @@ sealed class PeeringIssueCollector
     }
 
     /// <summary>
-    /// Asynchronously waits until a <paramref name="kind"/> appear if <see cref="Last"/>
-    /// is not already satisfying.
+    /// Asynchronously waits until a <paramref name="kind"/> appears, returning at once when the last
+    /// received issue already has that kind.
+    /// <para>
+    /// This is deliberately level-triggered and does not consume: the tests await the same kind on
+    /// the same collector several times in a row, and every one after the first must be a no-op. The
+    /// buffer is only the wake-up signal — every <see cref="PeeringIssue.Kind"/> change raises the
+    /// event, so there is nothing to observe that an event does not announce.
+    /// </para>
     /// </summary>
     /// <param name="kind">The expected kind.</param>
     /// <param name="token">Cancellation token.</param>
     /// <returns>The awaitable.</returns>
     public async Task WaitForAsync( PeeringIssueKind kind, CancellationToken token )
     {
-        for( ; ; )
+        while( _last?.Kind != kind )
         {
-            if( _last?.Kind == kind ) return;
-            await Task.Delay( 50, token );
+            await _signal.WaitForOneAsync( token );
         }
     }
-
-    /// <summary>
-    /// Gets the non cloned last received issue.
-    /// </summary>
-    public PeeringIssue? Last => _last;
 
     /// <summary>
     /// Stops this collector and retrieves the collected PeeringIssues.
@@ -80,6 +96,7 @@ sealed class PeeringIssueCollector
             if( !_stopped )
             {
                 _transport.PeeringIssueChanged.Sync -= OnPeeringIssueChanged;
+                _signal.Dispose();
                 _stopped = true;
             }
             return _issues;
@@ -87,16 +104,7 @@ sealed class PeeringIssueCollector
     }
 
     /// <summary>
-    /// Retrieves the collected PeeringIssues do far and clears the list.
+    /// Stops this collector if <see cref="StopAndGetEvents"/> has not been called.
     /// </summary>
-    /// <returns>The list of PeeringIssues received.</returns>
-    public IReadOnlyList<PeeringIssue> GetEventsAndClear()
-    {
-        lock( _issues )
-        {
-            var a = _issues.ToArray();
-            _issues.Clear();
-            return a;
-        }
-    }
+    public void Dispose() => StopAndGetEvents();
 }

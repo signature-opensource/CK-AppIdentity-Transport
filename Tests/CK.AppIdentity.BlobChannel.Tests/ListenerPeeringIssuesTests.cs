@@ -1,6 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
+using CK.PerfectEvent;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
@@ -54,18 +55,19 @@ public class ListenerPeeringIssuesTests
         IRemoteParty? declaredRemote;
         try
         {
-            using( var waiter = new PeeringIssueWaiter( listenerTransport ) )
+            // PerfectEventBuffer collects from construction, so there is no "arm the wait before you
+            // act" step: an event that fires before the await is kept rather than raced for. It hands
+            // out the raised PeeringIssue itself - not a clone - which is what the identity checks
+            // below rely on.
+            using( var issueEvents = new PerfectEventBuffer<PeeringIssue>( listenerTransport.PeeringIssueChanged ) )
             {
-                // Captures the (unresolved) next event task.
-                var nextEvent = waiter.NextEvent;
-
                 TestHelper.Monitor.Info( "Tests: Starts the sender. It is unknown for the listener. One UnknownIncoming issue appears." );
                 // We need this remote to retry quickly, we use a heartbeat of 50 ms instead of 1000 ms.
                 // It will automatically trust the listener identity.
                 sender = await BlobChannelTester.CreateAndStartSenderAsync( autoTrustKey: "Once", configureServices: AddFastClock, token: token );
 
                 TestHelper.Monitor.Info( "Tests: Wait for the first UnknownIncoming event." );
-                var theIssue = await nextEvent.WaitAsync( token );
+                var theIssue = await issueEvents.WaitForOneAsync( token );
                 Throw.DebugAssert( theIssue != null );
 
                 TestHelper.Monitor.Info( "Tests: Check the exposed PeeringIssues and ClonedPeeringIssues and the first issue." );
@@ -87,9 +89,6 @@ public class ListenerPeeringIssuesTests
                 theIssue.IncomingRequest.AvailableProtocols.ShouldBe( ["Blob.0"] );
                 theIssue.IncomingRequest.IsValidClockOffset.ShouldBeFalse( "Always false when IncomingUnknown or IncomingDisallowedTransport." );
 
-                // Captures the (unresolved) next event task.
-                nextEvent = waiter.NextEvent;
-
                 TestHelper.Monitor.Info( "Tests: Declares the sender on the listener side but with a (bad) 'tcp:1.0.2.3' Address." );
                 declaredRemote = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
                 {
@@ -102,12 +101,12 @@ public class ListenerPeeringIssuesTests
                 // the next incoming request).
                 // (This is the same object since we haven't clone the issue.)
                 var prevMessage = theIssue.IncomingRequest;
-                var theSameIssue = await nextEvent.WaitAsync(token);
+                var theSameIssue = await issueEvents.WaitForOneAsync( token );
                 Throw.DebugAssert( theSameIssue == theIssue );
                 theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
                 TestHelper.Monitor.Info( "Tests: Wait for the remote's incoming connection." );
-                var alwaysTheSameIssue = await waiter.NextEvent.WaitAsync( token );
+                var alwaysTheSameIssue = await issueEvents.WaitForOneAsync( token );
                 Throw.DebugAssert( alwaysTheSameIssue == theIssue );
                 var butNotTheSameMessage = theIssue.IncomingRequest;
                 Throw.DebugAssert( butNotTheSameMessage != prevMessage );
@@ -115,7 +114,7 @@ public class ListenerPeeringIssuesTests
                 TestHelper.Monitor.Info( "Tests: No change: still InitiatorConflict." );
                 theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
-                // Stop using the Waiter from now on.
+                // Stop using the event buffer from now on.
 
             }
 
