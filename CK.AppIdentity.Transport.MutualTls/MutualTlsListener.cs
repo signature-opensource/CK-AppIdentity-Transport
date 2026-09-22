@@ -67,6 +67,10 @@ sealed class MutualTlsListener : TransportListener
     async Task RunAcceptAsync()
     {
         Logger.Info( $"Starting '{ToString()}'." );
+        // Accept-loop resilience: a persistently faulting AcceptAsync must not spin.
+        const int MaxConsecutiveAcceptFailures = 20;
+        const int AcceptFailureBackOffMilliseconds = 250;
+        int consecutiveFailures = 0;
         while( true )
         {
             try
@@ -102,8 +106,22 @@ sealed class MutualTlsListener : TransportListener
             }
             catch( Exception ex )
             {
+                // Same as TcpSocketListener: the widest possible catch with no backoff and no bound
+                // turns a persistently faulting AcceptAsync into an unbounded hot loop.
                 Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unexpected error in mTLS listener on '{_address}'.", ex );
+                if( ++consecutiveFailures >= MaxConsecutiveAcceptFailures )
+                {
+                    Logger.Fatal( $"{consecutiveFailures} consecutive accept failures on '{_address}'. Stopping this listener." );
+                    break;
+                }
+                try
+                {
+                    await Task.Delay( AcceptFailureBackOffMilliseconds, _listenCTS.Token );
+                }
+                catch( OperationCanceledException ) { break; }
+                continue;
             }
+            consecutiveFailures = 0;
         }
         Logger.Info( $"Ending '{ToString()}' (disposing Listening socket)." );
         try

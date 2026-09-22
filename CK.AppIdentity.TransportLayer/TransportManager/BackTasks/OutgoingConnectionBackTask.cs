@@ -261,8 +261,15 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
         bool killTransport = true;
         try
         {
+            // Captured ONCE for this connection. CapabilityRestriction is a mutable process-wide
+            // static: reading it again when the transcript is built could put a different byte in the
+            // KDF than the one actually sent, and the two sides would derive different keys.
+            byte sentMacCapabilities = RunPhaseProtection.LocalCapabilities;
+            // The version we actually sent. The downgrade retry below changes it, and it is what must
+            // go into the transcript rather than the local CurrentVersion constant.
+            int sentVersion = ZeroProtocol.CurrentVersion;
             // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion );
+            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities );
             if( !sentNonce.HasValue )
             {
                 // If we are canceled, let the finally kill the new transport.
@@ -464,7 +471,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         int otherVersion = ZeroProtocol.ReadDowngradeProtocolReplyMessage( firstAnswer );
                         if( !retriedDowngrade )
                         {
-                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion );
+                            sentVersion = otherVersion;
+                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities );
                             if( !sentNonce.HasValue )
                             {
                                 if( !cancellation.IsCancellationRequested )
@@ -493,7 +501,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                                                         out var foundTrustKey,
                                                                                         out var finalClockOffset,
                                                                                         out var listenerEphemeral,
-                                                                                        out var macAlgorithm );
+                                                                                        out var macAlgorithm,
+                                                                                        out var listenerMacCapabilities );
                         if( !protocolMap.IsValid )
                         {
                             await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
@@ -513,8 +522,11 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         }
                         // The listener echoed the algorithm it selected: it must be one we offered,
                         // otherwise it is trying to move us onto something we did not advertise.
+                        // It must also be the best of what BOTH sides can run: the listener now states
+                        // its own capabilities, so "it could have done better" is finally checkable
+                        // rather than something we have to take on trust.
                         if( listenerEphemeral == null
-                            || (RunPhaseProtection.LocalCapabilities & (1 << (int)macAlgorithm)) == 0 )
+                            || (sentMacCapabilities & (1 << (int)macAlgorithm)) == 0 )
                         {
                             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                            $"Remote '{remote.Party}' selected MAC algorithm '{macAlgorithm}' which we did not offer. " +
@@ -522,12 +534,23 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
                             return 30;
                         }
-                        // Derive with the SAME transcript the listener used: our advertised
-                        // capabilities, its selection, the version and both names. If any of it was
+                        var expected = RunPhaseProtection.Select( listenerMacCapabilities, sentMacCapabilities );
+                        if( expected != macAlgorithm )
+                        {
+                            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                           $"Remote '{remote.Party}' selected MAC algorithm '{macAlgorithm}' but with capabilities " +
+                                                           $"0x{listenerMacCapabilities:X2} against ours 0x{sentMacCapabilities:X2} it must have selected " +
+                                                           $"'{expected}'. Retrying in 30 seconds." );
+                            await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
+                            return 30;
+                        }
+                        // Derive with the SAME transcript the listener used: both advertised
+                        // capability sets, its selection, the version and both names. If any of it was
                         // altered in flight the two sides get different keys and the first frame fails.
-                        var transcript = RunPhaseProtection.BuildTranscript( RunPhaseProtection.LocalCapabilities,
+                        var transcript = RunPhaseProtection.BuildTranscript( sentMacCapabilities,
+                                                                             listenerMacCapabilities,
                                                                              macAlgorithm,
-                                                                             ZeroProtocol.CurrentVersion,
+                                                                             sentVersion,
                                                                              remote.Party.Owner.FullName,
                                                                              remote.Party.FullName );
                         if( !transport.DeriveProtection( transportManager.Logger,

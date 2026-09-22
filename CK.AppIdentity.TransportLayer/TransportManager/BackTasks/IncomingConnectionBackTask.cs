@@ -183,7 +183,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
         // Key agreement. The algorithm is the strongest BOTH sides can execute: a hardware floor,
         // not a preference, so there is no ranking for an attacker to influence.
-        var macAlgorithm = RunPhaseProtection.Select( initialMessage.RemoteMacCapabilities );
+        // Captured once: CapabilityRestriction is a mutable process-wide static, and the byte we
+        // select with must be the byte we send and the byte we bind into the transcript.
+        byte ourMacCapabilities = RunPhaseProtection.LocalCapabilities;
+        var macAlgorithm = RunPhaseProtection.Select( initialMessage.RemoteMacCapabilities, ourMacCapabilities );
         if( macAlgorithm == MacAlgorithm.Invalid )
         {
             transportManager.Logger.Error( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' " +
@@ -195,8 +198,13 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // was tampered with, the two sides derive different keys and the first run-phase frame
         // fails. It fails closed, with no explicit "was this modified?" check to forget.
         var transcript = RunPhaseProtection.BuildTranscript( initialMessage.RemoteMacCapabilities,
+                                                             ourMacCapabilities,
                                                              macAlgorithm,
-                                                             ZeroProtocol.CurrentVersion,
+                                                             // The version actually negotiated, not our local constant. Identical today
+                                                             // (CurrentVersion is 0, so the downgrade branch is unreachable), but feeding
+                                                             // the constant is what would leave the unauthenticated downgrade message a
+                                                             // real lever the day a version 1 exists.
+                                                             initialMessage.ZeroProtocolVersion,
                                                              initialMessage.FullName,
                                                              remote.Party.Owner.FullName );
         if( !incoming.DeriveProtection( transportManager.Logger,
@@ -217,7 +225,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                   initialMessage.Nonce,
                                                                   initialMessage.ClockOffset,
                                                                   ourEphemeral,
-                                                                  macAlgorithm ).ConfigureAwait( false ) )
+                                                                  macAlgorithm,
+                                                                  ourMacCapabilities ).ConfigureAwait( false ) )
         {
             // Wait for the final message, either:
             //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.

@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Linq;
+using System.Text;
 
 namespace CK.AppIdentity.TransportLayer;
 
@@ -18,13 +19,31 @@ sealed partial class TransportManager
     /// </summary>
     /// <param name="party">The remote party if we already know it.</param>
     /// <param name="domainName">The domain name of the remote.</param>
-    /// <returns></returns>
+    /// <returns>The enlistment url or null.</returns>
+    /// <remarks>
+    /// This is reached for <c>PeeringIssueKind.IncomingUnknown</c>, i.e. for a peer we have never
+    /// heard of, and it selects the tenant by a domain name taken from that peer's own self-asserted
+    /// message. So any stranger can probe which domain names exist here and read each one's
+    /// "EnlistRemoteUrl". The name is charset-validated, so there is no injection vector - this is
+    /// disclosure, and for enlistment it is very likely the intent. Do not put anything in
+    /// "EnlistRemoteUrl" that is not meant to be handed to an unauthenticated caller.
+    /// </remarks>
     internal string? GetEnlistRemoteUrl( IRemoteParty? party, string domainName )
     {
         IParty? closest = party;
         closest ??= _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName );
         var u = closest?.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
         if( u != null ) u = u.Replace( "{DomainName}", domainName );
+        // The value is raw configuration and travels inside messages whose maximum length is budgeted
+        // term by term (ZeroProtocol.FirstAnswerMaxLength). Without a bound here a long or non-ASCII
+        // URL simply makes the reply exceed its budget and be dropped as Invalid - the operator gets
+        // no enlistment link and no explanation. Refusing it at the source says why.
+        if( u != null && Encoding.UTF8.GetByteCount( u ) > ZeroProtocol.MaxEnlistRemoteUrlLength )
+        {
+            Logger.Error( $"'EnlistRemoteUrl' resolves to {Encoding.UTF8.GetByteCount( u )} bytes, " +
+                          $"more than the {ZeroProtocol.MaxEnlistRemoteUrlLength} bytes that fit in a negotiation message. Ignored." );
+            return null;
+        }
         return u;
     }
 
@@ -57,7 +76,17 @@ sealed partial class TransportManager
         if( l != null )
         {
             _listeners.Add( l );
-            monitor.Trace( $"Created listener '{l}'." );
+            // A party with no ListeningAddress anywhere binds 0.0.0.0. Combined with AutoTrustKey
+            // that is the widest default exposure in the stack, and Trace is not where an operator
+            // looks for it.
+            if( endPoint.TypedAddress is System.Net.IPEndPoint ip && ip.Address.Equals( System.Net.IPAddress.Any ) )
+            {
+                monitor.Warn( $"Created listener '{l}': bound on ALL interfaces." );
+            }
+            else
+            {
+                monitor.Trace( $"Created listener '{l}'." );
+            }
         }
         return l;
     }

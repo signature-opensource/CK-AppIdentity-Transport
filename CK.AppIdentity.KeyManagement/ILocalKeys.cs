@@ -67,9 +67,16 @@ public interface ILocalKeys
     /// So it is also the rotation period and, with it, how long a retired key keeps being accepted:
     /// a key is replaced once it has less than this left, and the one it replaces stays valid for
     /// another span of the same length. Two keys are valid at a time, whatever
-    /// <see cref="MaxIdentityCount"/> allows. Shortening this shortens the window in which a stolen
-    /// key still works, at the cost of how long a party may be unreachable without losing its
-    /// identity — which is the trade this single number is.
+    /// <see cref="MaxIdentityCount"/> allows. The trade this single number makes is how long a party
+    /// may be unreachable without losing its identity, against how often it rotates.
+    /// </para>
+    /// <para>
+    /// <b>It does not bound a stolen key.</b> This governs what this party SIGNS with. A verifier
+    /// holds a <see cref="RemoteIdentityKey"/>, which carries no validity window at all and is never
+    /// checked against one (see <see cref="RemoteIdentityKey"/>, where that choice is stated): a key
+    /// stolen years ago stays a usable trust anchor for anyone still pinning it, and can rotate trust
+    /// onto the thief's key through the normal renewal path. Shortening this shortens nothing for
+    /// them. Revocation is an operator action - clear the remote's <c>TrustedIdentity</c>.
     /// </para>
     /// </summary>
     int AllowedOfflineDays { get; }

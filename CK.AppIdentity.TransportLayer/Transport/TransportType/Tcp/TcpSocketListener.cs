@@ -55,6 +55,10 @@ sealed class TcpSocketListener : TransportListener
     async Task RunAcceptAsync()
     {
         Logger.Info( $"Starting '{ToString()}'." );
+        // Accept-loop resilience: a persistently faulting AcceptAsync must not spin.
+        const int MaxConsecutiveAcceptFailures = 20;
+        const int AcceptFailureBackOffMilliseconds = 250;
+        int consecutiveFailures = 0;
         while( true )
         {
             try
@@ -89,8 +93,23 @@ sealed class TcpSocketListener : TransportListener
             }
             catch( Exception ex )
             {
+                // catch( Exception ) is the widest possible net, and continuing on it with no delay
+                // turns a persistently faulting AcceptAsync into an unbounded hot loop with one log
+                // line per iteration. Back off, and give up rather than spin forever.
                 Logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Unexpected error in TCP listener on '{_address}'.", ex );
+                if( ++consecutiveFailures >= MaxConsecutiveAcceptFailures )
+                {
+                    Logger.Fatal( $"{consecutiveFailures} consecutive accept failures on '{_address}'. Stopping this listener." );
+                    break;
+                }
+                try
+                {
+                    await Task.Delay( AcceptFailureBackOffMilliseconds, _listenCTS.Token );
+                }
+                catch( OperationCanceledException ) { break; }
+                continue;
             }
+            consecutiveFailures = 0;
         }
         Logger.Info( $"Ending '{ToString()}' (disposing Listening socket)." );
         try

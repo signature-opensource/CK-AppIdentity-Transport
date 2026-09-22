@@ -9,8 +9,10 @@ namespace CK.AppIdentity.KeyManagement;
 public static class PublicKeyFingerprint
 {
     /// <summary>
-    /// Number of bytes of the SHA-256 that are kept: 20 bytes is 160 bits, which is far more
-    /// than enough against a second-preimage search and gives 32 Base32 characters.
+    /// Number of bytes of the SHA-256 that are kept: 20 bytes is 160 bits, which gives 32 Base32
+    /// characters. The property that matters for a value an operator compares out of band is
+    /// collision resistance, not second-preimage resistance, and truncation puts that at 2^80 rather
+    /// than 2^160 - comfortable today, and the number to revisit rather than the 160.
     /// </summary>
     public const int ByteLength = 20;
 

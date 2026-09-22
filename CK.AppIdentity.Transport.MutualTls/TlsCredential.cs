@@ -84,7 +84,24 @@ sealed class TlsCredential
     /// </summary>
     static X509Certificate2 MakeUsableBySslStream( X509Certificate2 issued )
     {
-        return new X509Certificate2( issued.Export( X509ContentType.Pkcs12 ) );
+        // A random password on the export/import pair, and the blob zeroed afterwards. Passwordless
+        // PKCS#12 of a private key sitting in an unzeroed managed byte[] until the GC happens to
+        // reuse the page is avoidable at no cost, even though the scope here is the derived TLS
+        // credential and never the identity key.
+        Span<byte> pwdBytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill( pwdBytes );
+        var pwd = Convert.ToBase64String( pwdBytes );
+        CryptographicOperations.ZeroMemory( pwdBytes );
+        byte[]? blob = null;
+        try
+        {
+            blob = issued.Export( X509ContentType.Pkcs12, pwd );
+            return new X509Certificate2( blob, pwd );
+        }
+        finally
+        {
+            if( blob != null ) CryptographicOperations.ZeroMemory( blob );
+        }
     }
 
     /// <summary>

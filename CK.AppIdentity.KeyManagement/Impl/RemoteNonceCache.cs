@@ -20,11 +20,12 @@ namespace CK.AppIdentity.KeyManagement;
 /// cache exists to cover. Replay protection would degrade as remotes are added, silently.
 /// </para>
 /// <para>
-/// <b>Bounded by time, not by count.</b> Any fixed-size ring can evict a nonce that is still inside
-/// the replay window, which is exactly the failure. Entries are dropped once they age out instead,
-/// so early eviction is impossible by construction. The buffer's capacity
-/// (<see cref="IRemoteKeys.MaxNonceCacheEntries"/>) is only a memory guard against a peer
-/// handshaking absurdly fast, and it degrades that peer alone.
+/// <b>Bounded by time, then by count.</b> Any fixed-size ring can evict a nonce that is still inside
+/// the replay window, which is exactly the failure. Entries are normally dropped once they age out,
+/// so in steady state eviction is driven by time alone. The capacity
+/// (<see cref="IRemoteKeys.MaxNonceCacheEntries"/>) is a memory guard against a peer handshaking
+/// absurdly fast, and it degrades that peer alone - but it IS a real bound: <c>CheckAndAdd</c>
+/// reports <c>evicted</c> when it bites, so "impossible by construction" would overstate it.
 /// </para>
 /// <para>
 /// Nonces from a peer whose signature is merely self-asserted are recorded too, on purpose:
@@ -164,7 +165,12 @@ sealed class RemoteNonceCache
                 bytes = stream.ToArray();
             }
             Directory.CreateDirectory( _filePath.RemoveLastPart() );
-            File.WriteAllBytes( _filePath, bytes );
+            // Temp-plus-rename. A crash during a plain write leaves a truncated file that Load
+            // discards, losing the entire replay record for this remote; the rename is atomic, so the
+            // file on disk is always a whole one - either the previous version or the new one.
+            var tmp = _filePath + ".new";
+            File.WriteAllBytes( tmp, bytes );
+            File.Move( tmp, _filePath, overwrite: true );
             return true;
         }
         catch( Exception ex )

@@ -126,6 +126,10 @@ public partial class TransportFeatureDriver
                         monitor.Error( $"Invalid '{configuration.Path}': more than one address for '{parsed.Type.TypeName}' transport type." );
                         return false;
                     }
+                    // Record it, otherwise Contains above can never be true and the error is dead
+                    // code: two tcp: addresses on one level silently last-wins instead of failing,
+                    // which is not what TransportLayer/README.md promises.
+                    locally.Add( parsed.Type );
                     result ??= new Dictionary<ITransportTypeService, TransportTypeAddress>();
                     result[parsed.Type] = parsed;
                 }
@@ -138,6 +142,11 @@ public partial class TransportFeatureDriver
     {
         ITransportTypeService? transport = null;
         ReadOnlySpan<char> typed = s.AsSpan();
+        // The prefix is matched against the registered type names rather than by cutting at the first
+        // ':'. That colon is just as likely to be the PORT separator: cutting there made
+        // "127.0.0.1:37120" fail with "Transport type '127.0.0.1' not found", and an IPv6 literal
+        // "[::1]:37121" fail with type "[". Both are documented as valid in TransportLayer/README.md,
+        // and an unprefixed address means tcp:.
         int idx = s.IndexOf( ':' );
         if( idx > 0 )
         {
@@ -151,15 +160,12 @@ public partial class TransportFeatureDriver
                     break;
                 }
             }
-            if( transport == null )
-            {
-                monitor.Error( $"Transport type '{p}' not found for '{section.Path}', address: '{s}'." );
-                return null;
-            }
         }
-        else
+        if( transport == null )
         {
+            // No known prefix: the whole string is a tcp: address, port separator and all.
             transport = _tcp;
+            typed = s.AsSpan();
         }
         return transport.ParseAddress( monitor, typed, section );
     }

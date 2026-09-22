@@ -105,7 +105,9 @@ sealed class InitialMessage : IIncomingRequest
     public InitialMessage( TransportFeature f )
     {
         Throw.DebugAssert( !f.IsListening );
-        Throw.DebugAssert( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
+        // A real check: compiled out, an over-count would be written on the wire and refused by the
+        // peer, which is a configuration mistake discovered at the far end of a handshake.
+        Throw.CheckState( f.RegisteredProtocols.Count <= MaxProtocolFullNameCount );
         var local = f.Party.Owner;
         _domainName = local.DomainName;
         _partyName = local.PartyName;
@@ -232,7 +234,12 @@ sealed class InitialMessage : IIncomingRequest
         }
         // If the other's version is greater than ours we must reply with a
         // downgrade version message.
-        otherVersion = checked((int)r.ReadSmallUInt32());
+        // An over-range varint here used to raise OverflowException, which ConnectionFault does not
+        // classify as a peer fault: a few garbage bytes per connection produced a full-stack Error
+        // with ToBeInvestigated. It is malformed input from an unauthenticated peer, nothing more.
+        uint declaredVersion = r.ReadSmallUInt32();
+        Throw.CheckData( declaredVersion <= int.MaxValue );
+        otherVersion = (int)declaredVersion;
         if( otherVersion > ZeroProtocol.CurrentVersion )
         {
             return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust, out supposedIdentity );
@@ -240,7 +247,10 @@ sealed class InitialMessage : IIncomingRequest
         // If a new protocol version appears, the previous versions should be handled here.
         // For now, we have only one version.
         instanceId = r.ReadString( InstanceIdMaxLength );
-        Throw.CheckData( instanceId.Length > 3 );
+        // Charset validated HERE, at parse time. GoodbyeMessage.Evicted requires Base64Url characters
+        // and its constructor runs after a completed handshake, so a non-conforming id used to throw
+        // at the very last step - after the full ECDSA cost had been paid.
+        Throw.CheckData( instanceId.Length > 3 && Base64UrlHelper.IsBase64UrlCharacters( instanceId ) );
 
         fullName = r.ReadString( CoreApplicationIdentity.FullNameMaxLength );
         Throw.CheckData( CoreApplicationIdentity.TryParseFullName( fullName, out domainName, out partyName, out environmentName )
@@ -264,7 +274,19 @@ sealed class InitialMessage : IIncomingRequest
             {
                 keyData = r.ReadBytes( lenKey );
             }
-            var publicKey = PublicKey.CreateFromSubjectPublicKeyInfo( keyData, out int bytesRead );
+            // CreateFromSubjectPublicKeyInfo raises CryptographicException on malformed DER, and the
+            // bytes are length-checked only - an unauthenticated peer chooses them. Restated as
+            // InvalidDataException so ConnectionFault.IsPeerFault sees it for what it is.
+            PublicKey publicKey;
+            int bytesRead;
+            try
+            {
+                publicKey = PublicKey.CreateFromSubjectPublicKeyInfo( keyData, out bytesRead );
+            }
+            catch( System.Security.Cryptography.CryptographicException ex )
+            {
+                throw new System.IO.InvalidDataException( "Invalid SupposedIdentity public key.", ex );
+            }
             Throw.CheckData( bytesRead == keyData.Length );
             supposedIdentity = new RemoteIdentityKeyData( timeName, publicKey );
         }

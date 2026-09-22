@@ -243,7 +243,11 @@ public abstract partial class Transport
     /// </summary>
     internal byte[] CreateEphemeralPublicKey()
     {
-        Throw.DebugAssert( "One ephemeral per connection, created once.", _ephemeral == null );
+        // Normally once per transport, but the protocol-version downgrade retry calls
+        // SendInitialMessageAsync a second time on the same transport. The guard used to be a
+        // DebugAssert, compiled out in Release, where the previous key was simply overwritten and its
+        // native handles abandoned to the finalizer. Dispose the old one instead.
+        _ephemeral?.Dispose();
         _ephemeral = RunPhaseProtection.CreateEphemeral();
         return _ephemeral.PublicKey.ExportSubjectPublicKeyInfo();
     }
@@ -521,8 +525,16 @@ public abstract partial class Transport
         //
         // Nulling _protection also makes the release observable (NegotiatedMacAlgorithm and
         // SessionId go null), and means a late frame finds no protection rather than a disposed one.
-        var protection = Interlocked.Exchange( ref _protection, null );
-        protection?.Dispose();
+        // Under _sendProtectionLock: SignNext runs holding it, so disposing outside could zero the
+        // key material while a send is midway through computing a tag. With the lock, an in-flight
+        // send finishes first, and a send that captured the reference before the exchange finds
+        // _disposed set and reports "not sent" - which is the guarantee the comment on SendAsync
+        // claims and, until now, did not have.
+        lock( _sendProtectionLock )
+        {
+            var protection = Interlocked.Exchange( ref _protection, null );
+            protection?.Dispose();
+        }
         var ephemeral = Interlocked.Exchange( ref _ephemeral, null );
         ephemeral?.Dispose();
     }

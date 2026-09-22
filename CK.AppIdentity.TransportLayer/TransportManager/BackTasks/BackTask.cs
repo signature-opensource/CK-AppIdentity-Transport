@@ -119,6 +119,12 @@ abstract class BackTask<THost>
                                    $"Unhandled error while checking {t.GetType().Name} #{t.GetHashCode()}. Resetting it.", ex );
                     t._nextCheckDelay = 0;
                 }
+                // Dequeue the peeked task BEFORE re-enqueuing it. The other order worked only because
+                // NextCheckDelay >= 1 makes the new priority strictly greater than the root's, so the
+                // heap's sift-up cannot displace the root - a property of the PriorityQueue
+                // implementation, not of its documented contract. Were that to change, a sibling task
+                // at the same tick would be dropped without Check and without Reset.
+                _queue.Dequeue();
                 if( t._nextCheckDelay > 0 )
                 {
                     _queue.Enqueue( t,  _tick + t._nextCheckDelay );
@@ -128,7 +134,6 @@ abstract class BackTask<THost>
                     ++reset;
                     Reset( monitor, t );
                 }
-                _queue.Dequeue();
             }
             return (handled, reset);
         }

@@ -63,8 +63,18 @@ public interface IRemoteKeys
     /// <para>
     /// When not null, any incoming connection must present at least this identity.
     /// </para>
-    /// This is automatically updated during the lifetime of a remote at each
-    /// connection when the trusted remote renews its identity key.
+    /// <para>
+    /// This is automatically updated during the lifetime of a remote at each connection when the
+    /// trusted remote renews its identity key.
+    /// </para>
+    /// <para>
+    /// <b>Read that with <see cref="AutoTrustKey"/> in hand.</b> "Renews its identity key" describes
+    /// the honest case, not the guarantee. Under <see cref="AutoTrustKey.Always"/> the update is not
+    /// a rotation by the trusted remote but a <b>takeover</b>: any peer claiming this remote's
+    /// FullName and signing with a key of its own replaces what is pinned here, permanently, and the
+    /// legitimate remote is locked out. <see cref="AutoTrustKey.Once"/> is bounded - it applies only
+    /// when there is no current key - and <see cref="AutoTrustKey.Never"/> requires an operator.
+    /// </para>
     /// </summary>
     RemoteIdentityKey? TrustedIdentity { get; }
 

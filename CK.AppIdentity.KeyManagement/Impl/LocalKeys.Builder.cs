@@ -178,8 +178,8 @@ sealed partial class LocalKeys
             // a real IDataProtector cannot unprotect, which trashes every stored identity at startup.
             var pwd = Util.GetRandomBase64UrlString( 20 );
             var fullName = identityPath.AppendPart( fileName );
-            File.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
-            File.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
+            SecretFile.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
+            SecretFile.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
             return (name, fullName);
         }
 

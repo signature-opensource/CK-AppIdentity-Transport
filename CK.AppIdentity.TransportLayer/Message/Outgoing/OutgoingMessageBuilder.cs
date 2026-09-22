@@ -131,14 +131,7 @@ public sealed partial class OutgoingMessageBuilder: IDisposable
     public IOutgoingMessage CreateMessage( MutableSequence<byte> sequence )
     {
         Throw.CheckArgument( "ObtainSequence must have been called to obtain the sequence.", sequence == _buffer && _sequence == null );
-        if( sequence.Length == 0 )
-        {
-            Throw.InvalidOperationException( "No data has been written to the outgoing message." );
-        }
-        if( sequence.Length > int.MaxValue )
-        {
-            Throw.InvalidOperationException( $"Buffered {sequence.Length} bytes exceeds {int.MaxValue} maximum message size." );
-        }
+        _messageFactory.CheckMessageLength( sequence.Length );
         // We have a unique access to the buffer. We can easily detect that Dispose has
         // been called (and the buffer should not be used).
         if( Interlocked.Exchange( ref _state, 1 ) != 0 )

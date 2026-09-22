@@ -23,7 +23,19 @@ public enum AutoTrustKey
 
     /// <summary>
     /// The <see cref="IRemoteKeys.TrustedIdentity"/> can be automatically accepted from
-    /// the remote reply. 
+    /// the remote reply, every time, including when one is already pinned.
+    /// <para>
+    /// <b>This is not authentication in any form.</b> It is not "the remote renews its key": any peer
+    /// that claims this remote's FullName and signs with a key of its own has that key adopted and
+    /// persisted, replacing the pinned one permanently and locking the legitimate remote out. Nothing
+    /// distinguishes the two cases, because there is nothing left to distinguish them WITH once the
+    /// pinned key stops being required.
+    /// </para>
+    /// <para>
+    /// It exists for bootstrapping and for environments where the transport is trusted by other
+    /// means. Everywhere else, <see cref="Once"/> reduces the window to the first connection and
+    /// <see cref="Never"/> closes it.
+    /// </para>
     /// </summary>
     Always
 }

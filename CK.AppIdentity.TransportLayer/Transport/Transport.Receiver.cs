@@ -140,7 +140,17 @@ public abstract partial class Transport
         }
         catch( Exception ex )
         {
-            receiveMonitor.Error( $"While receiving on '{transport}'.", ex );
+            // Same rule as the negotiation side: a peer sending bad bytes or going away is not
+            // something to investigate here, and logging it at Error with a full stack is the log
+            // flood ConnectionFault exists to prevent.
+            if( ConnectionFault.IsPeerFault( ex ) )
+            {
+                receiveMonitor.Warn( $"While receiving on '{transport}': {ConnectionFault.ShortName( ex )}." );
+            }
+            else
+            {
+                receiveMonitor.Error( $"While receiving on '{transport}'.", ex );
+            }
             // Retrying asap if we are an outgoing connection.
             transportManager.KillTransport( transport, 0 );
         }

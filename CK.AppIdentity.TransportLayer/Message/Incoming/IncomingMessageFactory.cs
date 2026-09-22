@@ -172,6 +172,17 @@ public sealed class IncomingMessageFactory : IDisposable
             // allocation would happen before the MAC could reject it.
             Throw.DebugAssert( protocol != null );
             int maxLength = Math.Min( maxMessageLength, protocol.MaxIncomingMessageLength );
+            // In the run phase the declared length covers payload + tag (see Transport.SendAsync), so
+            // comparing it against maxLength unchanged would put the effective PAYLOAD ceiling 16
+            // bytes below the one that applies during the handshake - and it would move silently at
+            // the phase boundary. A channel legitimately sending exactly MaxIncomingMessageLength
+            // would have the frame refused as Invalid, which kills the transport; the message has
+            // already been consumed, so it is lost and the link bounces. No hostile peer needed.
+            // The cap belongs to the payload; the tag is protocol overhead and is accounted here.
+            if( _protection != null && maxLength <= int.MaxValue - RunPhaseProtection.TagLength )
+            {
+                maxLength += RunPhaseProtection.TagLength;
+            }
             int messageLength;
             int lenSize = firstByte >> 6;
             if( lenSize == 0 )

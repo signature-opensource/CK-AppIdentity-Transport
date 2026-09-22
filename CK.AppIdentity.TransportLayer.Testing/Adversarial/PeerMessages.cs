@@ -109,7 +109,8 @@ public static class PeerMessages
                                             byte[] ephemeralPublicKey,
                                             MacAlgorithm macAlgorithm,
                                             IReadOnlyList<PeerIdentity> signWith,
-                                            byte[]? certificateBinding = null )
+                                            byte[]? certificateBinding = null,
+                                            byte? macCapabilities = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -123,6 +124,10 @@ public static class PeerMessages
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( (byte)macAlgorithm );
+            // The listener's own capability byte, inside the signed region. Defaults to "exactly the
+            // selected algorithm", which is the honest answer for a harness that offers only what it
+            // just chose - a test that wants to claim more (or lie) passes its own value.
+            w.WriteByte( macCapabilities ?? (byte)(1 << (int)macAlgorithm) );
             // What this side states about the certificate it is presenting, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
         }, signWith );
@@ -158,7 +163,8 @@ public static class PeerMessages
                                             DateTime now,
                                             IReadOnlyList<PeerIdentity> signWith,
                                             PeerEphemeral? ephemeral = null,
-                                            byte[]? certificateBinding = null )
+                                            byte[]? certificateBinding = null,
+                                            byte? macCapabilities = null )
     {
         bool owned = ephemeral == null;
         ephemeral ??= new PeerEphemeral();
@@ -171,7 +177,8 @@ public static class PeerMessages
                                       ephemeral.PublicKey,
                                       RunPhaseProtection.Select( initial.MacCapabilities ),
                                       signWith,
-                                      certificateBinding );
+                                      certificateBinding,
+                                      macCapabilities ?? RunPhaseProtection.LocalCapabilities );
         }
         finally
         {

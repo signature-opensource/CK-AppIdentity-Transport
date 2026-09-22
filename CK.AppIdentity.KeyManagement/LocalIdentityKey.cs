@@ -32,6 +32,7 @@ public sealed class LocalIdentityKey : IPublicKeyData
     readonly DateTime _timeName;
     readonly DateTime _notAfter;
     readonly DateTime _notBefore;
+    X500DistinguishedName? _derivedSubjectName;
 
     internal LocalIdentityKey( string name, DateTime timeName, X509Certificate2 certificate, ECDsa privateKey )
     {
@@ -74,6 +75,32 @@ public sealed class LocalIdentityKey : IPublicKeyData
     /// it by default, so that a derived credential speaks for the same party.
     /// </summary>
     public X500DistinguishedName SubjectName => _certificate.SubjectName;
+
+    /// <summary>
+    /// The subject <see cref="CreateDerivedCertificate"/> gives a credential when the caller names
+    /// none: this identity's simple name with a marker, so that a derived credential never presents
+    /// itself under the identity's own name.
+    /// </summary>
+    public X500DistinguishedName DerivedSubjectName
+        => _derivedSubjectName ??= new X500DistinguishedName(
+                $"CN={EscapeRdn( _certificate.GetNameInfo( X509NameType.SimpleName, forIssuer: false ) )} (derived)" );
+
+    const string RdnSpecialCharacters = ",+\"\\<>;#=";
+
+    static string EscapeRdn( string? value )
+    {
+        // X500DistinguishedName parses its string form, so the value has to survive it. The identity
+        // name contains '#' (the domain is its last segment) which is the RFC 2253 hex-DER marker in
+        // leading position, and the others are separators.
+        if( string.IsNullOrEmpty( value ) ) return "Derived";
+        var b = new System.Text.StringBuilder( value.Length + 8 );
+        foreach( var c in value )
+        {
+            if( RdnSpecialCharacters.IndexOf( c ) >= 0 ) b.Append( '\\' );
+            b.Append( c );
+        }
+        return b.ToString();
+    }
 
     /// <summary>
     /// Gets the size in bytes of the signature.
@@ -150,7 +177,11 @@ public sealed class LocalIdentityKey : IPublicKeyData
         {
             Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );
             ecdsa.KeySize = 256;
-            var request = new CertificateRequest( subject ?? _certificate.SubjectName, ecdsa, HashAlgorithmName.SHA256 );
+            // A DISTINGUISHING subject by default. Reusing the identity's own subject made the
+            // derived credential indistinguishable from its issuer by name: nothing here
+            // chain-validates it, but a future consumer that did would get an impersonation
+            // primitive out of a credential the design treats as disposable.
+            var request = new CertificateRequest( subject ?? DerivedSubjectName, ecdsa, HashAlgorithmName.SHA256 );
             configure?.Invoke( request );
 
             // Refuse rather than overwrite or append: a certificate carrying two BasicConstraints is
@@ -170,6 +201,21 @@ public sealed class LocalIdentityKey : IPublicKeyData
             {
                 request.CertificateExtensions.Add( new X509KeyUsageExtension( X509KeyUsageFlags.DigitalSignature,
                                                                               critical: true ) );
+            }
+            else
+            {
+                // A caller may choose what the credential is FOR, but not claim the right to sign
+                // certificates or CRLs. Unusable anyway given CA:false and the issuer's pathLen 0 -
+                // which is precisely why it should be refused here rather than left to a validator
+                // somewhere else to be the only thing standing between the two.
+                foreach( var e in request.CertificateExtensions )
+                {
+                    if( e is X509KeyUsageExtension ku )
+                    {
+                        Throw.CheckArgument( "configure must not request KeyCertSign or CrlSign on a derived credential.",
+                                             (ku.KeyUsages & (X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign)) == 0 );
+                    }
+                }
             }
             // RFC 5280 4.2.1.2: conforming CAs MUST mark the Subject Key Identifier non-critical.
             request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, critical: false ) );
@@ -205,7 +251,10 @@ public sealed class LocalIdentityKey : IPublicKeyData
     /// <inheritdoc />
     public void WritePublicKeyFile( NormalizedPath fullPath )
     {
-        File.WriteAllBytes( fullPath, _publicRaw );
+        // Owner-only: this file IS a trust anchor. Anything that can rewrite it repoints a pinned
+        // identity, because RemoteKeys.Builder.TryLoad accepts any well-formed SubjectPublicKeyInfo
+        // it finds in the store.
+        SecretFile.WriteAllBytes( fullPath, _publicRaw );
     }
 
     /// <summary>

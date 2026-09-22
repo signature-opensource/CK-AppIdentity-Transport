@@ -12,7 +12,16 @@ namespace CK.AppIdentity.TransportLayer;
 
 static partial class ZeroProtocol // Negotiation
 {
+    /// <summary>
+    /// Maximum UTF-8 byte length of a resolved "EnlistRemoteUrl". It is a raw configuration value
+    /// that travels inside negotiation messages, so it needs a bound and a budget term of its own -
+    /// without them a long or non-ASCII URL pushes the reply past <see cref="FirstAnswerMaxLength"/>
+    /// and the message is dropped as Invalid.
+    /// </summary>
+    public const int MaxEnlistRemoteUrlLength = 1024;
+
     public const int FirstAnswerMaxLength = 1 // One byte discriminator.
+                                            + (5 + MaxEnlistRemoteUrlLength) // An authenticated RejectRemote carries the enlist URL.
                                             + 8 + 8 + 8 // Nonce, the offset it computed and its current time.
                                             + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
                                             + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength)
@@ -157,6 +166,10 @@ static partial class ZeroProtocol // Negotiation
             foreach( var i in localIdentities )
             {
                 Throw.CheckData( i.TrySignHash( messageHash, signature, out int byteWritten ) );
+                // The length travels on ONE byte: a 256-byte signature would write 0 and corrupt the
+                // message silently. P-256 r||s is 64, so this is a guard on the curve changing, not a
+                // reachable case today.
+                Throw.CheckData( "Signature length must fit on one byte.", byteWritten <= 255 );
                 w.WriteByte( (byte)byteWritten );
                 w.WriteBytes( signature.Slice( 0, byteWritten ) );
             }
@@ -252,7 +265,11 @@ static partial class ZeroProtocol // Negotiation
             // End of the message: it's time to compute its hash.
             // We use the reusableBuffer: 64 first bytes for the hash, 256 next bytes
             // for the idxSignatureToVerify signature buffer.
-            Throw.DebugAssert( reusableBuffer.Length >= 64 );
+            // 64 for the hash plus 256 for the signature: the slices below need 320, not 64. The
+            // rent above asks for ILocalKeys.MaxPublicKeySize (2048), so this holds today and would
+            // break every handshake the day that constant is lowered - which a DebugAssert on 64
+            // would not have caught in Release.
+            Throw.CheckState( reusableBuffer.Length >= 64 + 256 );
             var hashData = reusableBuffer.AsSpan( 0, 64 );
             var signatureBuffer = reusableBuffer.AsSpan( 64, 256 );
             ComputeHash( r.GetBeforeHead(), hashData );
@@ -305,6 +322,8 @@ static partial class ZeroProtocol // Negotiation
         Span<byte> signature = stackalloc byte[256];
         ComputeHash( w.GetBeforeHead(), messageHash );
         Throw.CheckData( identityKey.TrySignHash( messageHash, signature, out int byteWritten ) );
+        // See above: the length is written on one byte and 256 would encode as 0.
+        Throw.CheckData( "Signature length must fit on one byte.", byteWritten <= 255 );
         w.WriteByte( (byte)byteWritten );
         w.WriteBytes( signature.Slice( 0, byteWritten ) );
         w.Commit();
@@ -346,14 +365,18 @@ static partial class ZeroProtocol // Negotiation
     /// <param name="initialMessage">The <see cref="TransportFeature.OutgoingInitialMessage"/>.</param>
     /// <param name="version">The serialization version.</param>
     /// <returns>A nonce or null if <see cref="Transport.IsCondemned"/> has been signaled or if the <paramref name="version"/> is not locally supported.</returns>
-    public static async ValueTask<ulong?> SendInitialMessageAsync( ISystemClock systemClock, Transport transport, InitialMessage initialMessage, int version )
+    public static async ValueTask<ulong?> SendInitialMessageAsync( ISystemClock systemClock,
+                                                                   Transport transport,
+                                                                   InitialMessage initialMessage,
+                                                                   int version,
+                                                                   byte macCapabilities )
     {
         // The ephemeral key belongs to THIS connection: it is created on the Transport, never on
         // the TransportFeature, whose OutgoingInitialMessage is cached and reused across attempts.
         // Writing it here rather than inside InitialMessage keeps that cached content untouched.
         var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
         using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey,
-                                            transport.LocalCertificateBinding, out var nonce );
+                                            macCapabilities, transport.LocalCertificateBinding, out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
@@ -361,6 +384,7 @@ static partial class ZeroProtocol // Negotiation
                                                       InitialMessage initialMessage,
                                                       int version,
                                                       byte[] ephemeralPublicKey,
+                                                      byte macCapabilities,
                                                       ReadOnlyMemory<byte> certificateBinding,
                                                       out ulong nonce )
         {
@@ -377,7 +401,11 @@ static partial class ZeroProtocol // Negotiation
             // Per-connection key agreement material, inside the signed region.
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
-            w.WriteByte( RunPhaseProtection.LocalCapabilities );
+            // The byte comes from the caller, captured ONCE per connection. CapabilityRestriction is a
+            // mutable process-wide static, so reading it again at derivation time could put a
+            // different value in the transcript than the one actually sent, and the two sides would
+            // derive different keys.
+            w.WriteByte( macCapabilities );
 
             // What this side is presenting on the channel underneath, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
@@ -637,11 +665,13 @@ static partial class ZeroProtocol // Negotiation
                                                                            ulong nonce,
                                                                            TimeSpan initialClockOffset,
                                                                            byte[] ephemeralPublicKey,
-                                                                           MacAlgorithm macAlgorithm )
+                                                                           MacAlgorithm macAlgorithm,
+                                                                           byte macCapabilities )
     {
         Throw.DebugAssert( transport.RemoteKeys != null );
         using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset,
-                                            ephemeralPublicKey, macAlgorithm, transport.LocalCertificateBinding,
+                                            ephemeralPublicKey, macAlgorithm, macCapabilities,
+                                            transport.LocalCertificateBinding,
                                             transport.RemoteKeys.LocalKeys.Identities );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -651,6 +681,7 @@ static partial class ZeroProtocol // Negotiation
                                                       TimeSpan initialClockOffset,
                                                       byte[] ephemeralPublicKey,
                                                       MacAlgorithm macAlgorithm,
+                                                      byte macCapabilities,
                                                       ReadOnlyMemory<byte> certificateBinding,
                                                       IReadOnlyList<LocalIdentityKey> localIdentities )
         {
@@ -671,6 +702,10 @@ static partial class ZeroProtocol // Negotiation
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( (byte)macAlgorithm );
+            // The listener's own capabilities, inside the signed region and bound into the transcript.
+            // Without this the initiator can check that the selection is one it offered, but not that
+            // the listener could not have done better.
+            w.WriteByte( macCapabilities );
             // What this side is presenting on the channel underneath, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
             WriteIdentityKeysAndSign( ref w, sequence, localIdentities );
@@ -686,7 +721,8 @@ static partial class ZeroProtocol // Negotiation
                                                                       out bool foundTrustedKey,
                                                                       out TimeSpan currentClockOffset,
                                                                       out byte[]? ephemeralPublicKey,
-                                                                      out MacAlgorithm macAlgorithm )
+                                                                      out MacAlgorithm macAlgorithm,
+                                                                      out byte macCapabilities )
     {
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
@@ -694,6 +730,7 @@ static partial class ZeroProtocol // Negotiation
         foundTrustedKey = false;
         ephemeralPublicKey = null;
         macAlgorithm = MacAlgorithm.Invalid;
+        macCapabilities = 0;
         if( !CheckExpectedNonce( transportManager.Logger, ref r, remote, expectedNonce ) )
         {
             currentClockOffset = TimeSpan.Zero;
@@ -721,12 +758,25 @@ static partial class ZeroProtocol // Negotiation
             }
             protocols[i] = p;
         }
+        // The names come from the peer, so duplicates and wrong ordering are malformed input.
+        // InternalGet states them with Throw.CheckArgument (ArgumentException), which ConnectionFault
+        // does not classify as a peer fault - and this runs BEFORE the signature check below, so an
+        // unauthenticated peer could raise a full-stack Error with ToBeInvestigated per connection.
+        Throw.CheckData( "Protocol names must be unique and sorted.",
+                         protocols.Select( p => p.Name ).IsSortedStrict() );
         var map = MessageProtocolMap.InternalGet( protocols );
         // The listener's half of the key agreement and the algorithm it selected.
         uint lenEphemeral = r.ReadSmallUInt32();
         Throw.CheckData( lenEphemeral > 0 && lenEphemeral <= RunPhaseProtection.MaxEphemeralPublicKeyLength );
         ephemeralPublicKey = r.ReadBytes( lenEphemeral );
         macAlgorithm = (MacAlgorithm)r.ReadByte();
+        // Validate the enum here rather than trusting the byte. Downstream the value is used as
+        // "1 << (int)macAlgorithm": C# masks a shift count to 5 bits, so 33 would alias onto the
+        // AesGmac bit, pass the "did we offer it?" test, survive Derive's "not Invalid" guard and
+        // fall through to the HMAC path - an undefined value becoming a live KDF parameter.
+        Throw.CheckData( "Unknown MAC algorithm.",
+                         macAlgorithm is MacAlgorithm.AesGmac or MacAlgorithm.HmacSha256 );
+        macCapabilities = r.ReadByte();
         // Read now because it sits inside the signed region; checked below, once the signature says
         // whose statement this is.
         var attestedBinding = ReadCertificateBinding( ref r );
@@ -850,14 +900,18 @@ static partial class ZeroProtocol // Negotiation
 
             static void WriteMissing( ref FastByteWriter w, List<string>? missing )
             {
-                uint ourCount = missing != null ? (uint)missing.Count : 0;
+                // Truncate to what the reader accepts. ReadProtocols refuses more than
+                // MessageProtocolMap.MaxCount, so writing more does not merely lose the extra names -
+                // the whole message is dropped and BOTH operators lose the diagnostic. A partial list
+                // is worth strictly more than none.
+                uint ourCount = missing != null ? (uint)Math.Min( missing.Count, MessageProtocolMap.MaxCount ) : 0;
                 w.WriteSmallUInt32( ourCount );
                 if( ourCount != 0 )
                 {
                     Throw.DebugAssert( missing != null );
-                    foreach( var p in missing )
+                    for( int i = 0; i < ourCount; ++i )
                     {
-                        w.WriteString( p );
+                        w.WriteString( missing[i] );
                     }
                 }
             }

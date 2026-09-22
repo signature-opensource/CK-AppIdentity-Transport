@@ -1,6 +1,7 @@
 using CK.AppIdentity.KeyManagement;
 using System;
 using System.Formats.Asn1;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -44,11 +45,24 @@ public static class IdentityIssuance
     /// connection falls through to the path it would have taken with no certificate at all.
     /// </para>
     /// </summary>
+    // Memoized per key instance. TryResolveRemote calls GetKeyIdentifier once per party per incoming
+    // connection, and the computation is an SPKI encode plus a SHA-1 plus a hex-string build - which
+    // is exactly the per-party cost this filter exists to remove. Avoiding the ECDSA verification but
+    // keeping this made the "lookup, not amplifier" claim in the doc below only half true.
+    // ConditionalWeakTable holds no strong reference, so a rotated-out key is collected with its entry.
+    static readonly ConditionalWeakTable<IPublicKeyData, string> _keyIdentifiers = new();
+
+    /// <summary>
+    /// Gets the key identifier of an identity. Computed once per key instance and cached.
+    /// </summary>
+    /// <param name="identity">The identity key.</param>
+    /// <returns>The key identifier.</returns>
     public static string GetKeyIdentifier( IPublicKeyData identity )
     {
         // Built with the same type that minted it, so the two cannot drift apart over the choice of
         // hash or over what exactly is hashed.
-        return new X509SubjectKeyIdentifierExtension( identity.PublicKey, critical: false ).SubjectKeyIdentifier!;
+        return _keyIdentifiers.GetValue( identity,
+                                         static k => new X509SubjectKeyIdentifierExtension( k.PublicKey, critical: false ).SubjectKeyIdentifier! );
     }
 
     /// <summary>

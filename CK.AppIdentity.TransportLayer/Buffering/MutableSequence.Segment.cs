@@ -97,6 +97,11 @@ public sealed partial class MutableSequence<T> where T : struct
             else
             {
                 Throw.DebugAssert( _array != null );
+                // No clearArray: frames are deliberately cleartext and session keys live in plain
+                // byte[] that RunPhaseProtection zeroes at Dispose, so nothing secret reaches the
+                // shared pool by this path. That is an invariant, not an accident: routing key
+                // material through a MutableSequence would leak it into the pool for the next renter,
+                // and this Return would have to become Return( _array, clearArray: true ).
                 ArrayPool<T>.Shared.Return( _array );
                 _array = null;
             }

@@ -68,7 +68,7 @@ public sealed class RunPhaseProtection : IDisposable
     // fails its MAC automatically and costs no bytes on the wire.
     ulong _sendCounter;
     ulong _receiveCounter;
-    bool _disposed;
+    volatile bool _disposed;
 
     // Always c2l then l2c, regardless of which side we are: this makes SessionId identical on both
     // peers, which is the whole point of showing it in a log.
@@ -183,9 +183,23 @@ public sealed class RunPhaseProtection : IDisposable
     /// </summary>
     /// <param name="remoteCapabilities">The capability bits advertised by the peer.</param>
     /// <returns>The selected algorithm, <see cref="MacAlgorithm.Invalid"/> if there is no overlap.</returns>
-    public static MacAlgorithm Select( byte remoteCapabilities )
+    public static MacAlgorithm Select( byte remoteCapabilities ) => Select( remoteCapabilities, LocalCapabilities );
+
+    /// <summary>
+    /// Selects the algorithm both sides can run, preferring <see cref="MacAlgorithm.AesGmac"/>.
+    /// <para>
+    /// Both capability sets are explicit here. <see cref="CapabilityRestriction"/> is a mutable
+    /// process-wide static, so a selection made against a freshly read <see cref="LocalCapabilities"/>
+    /// and checked later against another read of it could disagree with itself; the caller captures
+    /// the byte once per connection and passes it to both.
+    /// </para>
+    /// </summary>
+    /// <param name="remoteCapabilities">The capability bits advertised by the peer.</param>
+    /// <param name="localCapabilities">The capability bits advertised by this side.</param>
+    /// <returns>The selected algorithm, <see cref="MacAlgorithm.Invalid"/> if there is no overlap.</returns>
+    public static MacAlgorithm Select( byte remoteCapabilities, byte localCapabilities )
     {
-        int common = LocalCapabilities & remoteCapabilities;
+        int common = localCapabilities & remoteCapabilities;
         if( (common & (1 << (int)MacAlgorithm.AesGmac)) != 0 ) return MacAlgorithm.AesGmac;
         if( (common & (1 << (int)MacAlgorithm.HmacSha256)) != 0 ) return MacAlgorithm.HmacSha256;
         return MacAlgorithm.Invalid;
@@ -263,7 +277,14 @@ public sealed class RunPhaseProtection : IDisposable
     /// <summary>
     /// Builds the transcript bound into the key derivation.
     /// </summary>
+    /// <param name="initiatorCapabilities">The capability byte the initiator advertised.</param>
+    /// <param name="listenerCapabilities">The capability byte the listener advertised.</param>
+    /// <param name="selected">The selected primitive.</param>
+    /// <param name="version">The protocol version.</param>
+    /// <param name="initiatorFullName">The initiator's full name.</param>
+    /// <param name="listenerFullName">The listener's full name.</param>
     public static byte[] BuildTranscript( byte initiatorCapabilities,
+                                          byte listenerCapabilities,
                                           MacAlgorithm selected,
                                           int version,
                                           string initiatorFullName,
@@ -274,12 +295,17 @@ public sealed class RunPhaseProtection : IDisposable
         // handshake — not per message — so this is tidiness rather than a hot path.)
         int lenInitiator = Encoding.UTF8.GetByteCount( initiatorFullName );
         int lenListener = Encoding.UTF8.GetByteCount( listenerFullName );
-        var result = new byte[3 + 4 + lenInitiator + 4 + lenListener];
+        var result = new byte[4 + 4 + lenInitiator + 4 + lenListener];
         var s = result.AsSpan();
         s[0] = initiatorCapabilities;
-        s[1] = (byte)selected;
-        s[2] = checked((byte)version);
-        int o = 3;
+        // The listener's capabilities are bound too. Only the initiator's used to be, so the
+        // initiator could check that the selection was one IT offered but had no way to know the
+        // listener could have done better. Nothing is exploitable while both primitives are strong
+        // and everything is signed, but it is the lever a third, weaker primitive would need.
+        s[1] = listenerCapabilities;
+        s[2] = (byte)selected;
+        s[3] = checked((byte)version);
+        int o = 4;
         // Length-prefixed, not delimiter-separated. A delimiter would make the encoding ambiguous:
         // ("A", "B/C") and ("A/B", "C") would produce the same transcript and therefore the same
         // keys, which is exactly the kind of gap a transcript exists to close.

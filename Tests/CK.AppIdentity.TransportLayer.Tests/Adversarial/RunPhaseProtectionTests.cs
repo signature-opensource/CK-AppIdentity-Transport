@@ -20,7 +20,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 public class RunPhaseProtectionTests
 {
     static readonly byte[] _transcript = RunPhaseProtection.BuildTranscript(
-        RunPhaseProtection.LocalCapabilities, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
+        RunPhaseProtection.LocalCapabilities, RunPhaseProtection.LocalCapabilities, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
 
     /// <summary>
     /// Performs the two-sided derivation exactly as the handshake will.
@@ -256,9 +256,9 @@ public class RunPhaseProtectionTests
         var aPub = a.PublicKey.ExportSubjectPublicKeyInfo();
         var bPub = b.PublicKey.ExportSubjectPublicKeyInfo();
 
-        var honest = RunPhaseProtection.BuildTranscript( 0b110, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
+        var honest = RunPhaseProtection.BuildTranscript( 0b110, 0b110, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
         // An attacker strips the GMAC capability bit, trying to force the weaker primitive.
-        var tampered = RunPhaseProtection.BuildTranscript( 0b100, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
+        var tampered = RunPhaseProtection.BuildTranscript( 0b100, 0b110, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
 
         using var i = RunPhaseProtection.Derive( a, bPub, MacAlgorithm.AesGmac, 42, honest, true );
         using var l = RunPhaseProtection.Derive( b, aPub, MacAlgorithm.AesGmac, 42, tampered, false );
@@ -271,6 +271,35 @@ public class RunPhaseProtectionTests
         i.SignNext( header, Seq( payload ), tag );
         l.VerifyNext( header, Seq( payload ), tag ).ShouldBeFalse(
             "A modified transcript must break the very first frame." );
+    }
+
+    [Test]
+    public void The_listener_capability_byte_is_bound_into_the_transcript_Async()
+    {
+        // The half that used to be missing. Only the initiator's capabilities entered the transcript,
+        // so the initiator could verify that the selection was one IT offered but had no way to know
+        // the listener could have done better - a downgrade lever the day a third, weaker primitive
+        // is added. Now a difference in the LISTENER byte alone changes the derived keys.
+        using var a = RunPhaseProtection.CreateEphemeral();
+        using var b = RunPhaseProtection.CreateEphemeral();
+        var aPub = a.PublicKey.ExportSubjectPublicKeyInfo();
+        var bPub = b.PublicKey.ExportSubjectPublicKeyInfo();
+
+        var honest = RunPhaseProtection.BuildTranscript( 0b110, 0b110, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
+        // Same initiator byte, same selection, same names: ONLY the listener's advertisement differs.
+        var tampered = RunPhaseProtection.BuildTranscript( 0b110, 0b100, MacAlgorithm.AesGmac, 0, "Test/$A/#Dev", "Test/$B/#Dev" );
+        honest.ShouldNotBe( tampered );
+
+        using var i = RunPhaseProtection.Derive( a, bPub, MacAlgorithm.AesGmac, 42, honest, true );
+        using var l = RunPhaseProtection.Derive( b, aPub, MacAlgorithm.AesGmac, 42, tampered, false );
+        i.SessionId.ShouldNotBe( l.SessionId );
+
+        var header = new byte[] { 0x01, 0x10 };
+        var payload = RandomNumberGenerator.GetBytes( 20 );
+        var tag = new byte[RunPhaseProtection.TagLength];
+        i.SignNext( header, Seq( payload ), tag );
+        l.VerifyNext( header, Seq( payload ), tag ).ShouldBeFalse(
+            "Changing only the listener's advertised capabilities must break the first frame." );
     }
 
     [Test]

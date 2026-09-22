@@ -74,7 +74,7 @@ public class SessionLifecycleTests
 
             using var ephemeral = new PeerEphemeral();
             var alg = RunPhaseProtection.Select( initial.MacCapabilities );
-            var transcript = RunPhaseProtection.BuildTranscript( initial.MacCapabilities, alg, 0,
+            var transcript = RunPhaseProtection.BuildTranscript( initial.MacCapabilities, RunPhaseProtection.LocalCapabilities, alg, 0,
                                                                  initial.FullName, "Test/$Lifecycle/#Dev" );
             using var derived = RunPhaseProtection.Derive( ephemeral.Key, initial.EphemeralPublicKey,
                                                            alg, initial.Nonce, transcript, isInitiator: false );
@@ -232,7 +232,7 @@ public class SessionLifecycleTests
     {
         using var a = RunPhaseProtection.CreateEphemeral();
         using var b = RunPhaseProtection.CreateEphemeral();
-        var transcript = RunPhaseProtection.BuildTranscript( RunPhaseProtection.LocalCapabilities, alg, 0,
+        var transcript = RunPhaseProtection.BuildTranscript( RunPhaseProtection.LocalCapabilities, RunPhaseProtection.LocalCapabilities, alg, 0,
                                                              "Test/$A/#Dev", "Test/$B/#Dev" );
         return (RunPhaseProtection.Derive( a, b.PublicKey.ExportSubjectPublicKeyInfo(), alg, 7, transcript, true ),
                 RunPhaseProtection.Derive( b, a.PublicKey.ExportSubjectPublicKeyInfo(), alg, 7, transcript, false ));

@@ -1,3 +1,4 @@
+using System.IO;
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -122,6 +123,14 @@ public class AdversarialHandshakeTests
                 "An AcceptedProtocols signed by an untrusted key must never be answered with FinalSuccess: " +
                 "'the signature verifies' is not 'this is our remote' (finding C2)." );
         }
+
+        // Refusing the connection is not enough: the PERSISTED trust must be untouched too. "Once" is
+        // restricted to the no-current-key case, so the pinned key must still be the one adopted on
+        // the first connection - otherwise the next start would come up trusting the impostor.
+        var pinned = PeerStore.FindTrustedIdentityFile( $"Test/{remote}" );
+        pinned.ShouldNotBeNull( "The first connection pinned a key and nothing may remove it." );
+        File.ReadAllBytes( pinned! ).ShouldBe( peerKey.SubjectPublicKeyInfo,
+            "Still the key adopted on the first connection: AutoTrustKey.Once must not replace it." );
     }
 
     /// <summary>

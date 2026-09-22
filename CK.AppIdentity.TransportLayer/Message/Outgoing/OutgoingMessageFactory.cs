@@ -37,6 +37,33 @@ public sealed class OutgoingMessageFactory : IDisposable
     public MessageProtocol Protocol => _protocol;
 
     /// <summary>
+    /// The single length gate for every outgoing message of this protocol.
+    /// <para>
+    /// The cap is the same number the receiver applies (<see cref="MessageProtocol.MaxIncomingMessageLength"/>).
+    /// A frame above it is one a conforming peer MUST refuse, and refusing it kills the transport,
+    /// because by then the message has been consumed off the wire and cannot be skipped. Failing here
+    /// turns a dropped link into a local exception at the call site that built the oversized message,
+    /// which is where the mistake actually is.
+    /// </para>
+    /// <para>
+    /// <see cref="MessageProtocol.MaxIncomingMessageLength"/> is an <see cref="int"/>, so this also
+    /// subsumes the "larger than int.MaxValue" check.
+    /// </para>
+    /// </summary>
+    /// <param name="length">The buffered length.</param>
+    internal void CheckMessageLength( long length )
+    {
+        if( length == 0 )
+        {
+            Throw.InvalidOperationException( "No data has been written to the outgoing message." );
+        }
+        if( length > _protocol.MaxIncomingMessageLength )
+        {
+            Throw.InvalidOperationException( $"Buffered {length} bytes exceeds the {_protocol.MaxIncomingMessageLength} bytes maximum message length of protocol '{_protocol.FullName}'." );
+        }
+    }
+
+    /// <summary>
     /// Creates a new <see cref="OutgoingMessageBuilder"/>.
     /// Either <see cref="OutgoingMessageBuilder.Dispose"/> or <see cref="OutgoingMessageBuilder.CreateMessage"/> must be called on the builder.
     /// </summary>
@@ -67,6 +94,7 @@ public sealed class OutgoingMessageFactory : IDisposable
         try
         {
             writer( buffer );
+            CheckMessageLength( buffer.Length );
             return new OutgoingMessage( this, buffer, source, isControl );
         }
         catch
@@ -93,7 +121,7 @@ public sealed class OutgoingMessageFactory : IDisposable
         try
         {
             writer( buffer );
-            if( buffer.Length > int.MaxValue ) Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum message size." );
+            CheckMessageLength( buffer.Length );
             return new StaticMessage( _protocol, isControl, buffer.GetReadOnlySequence().ToArray() );
         }
         finally

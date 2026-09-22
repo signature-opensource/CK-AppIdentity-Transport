@@ -86,7 +86,9 @@ no pinned key there is nothing to check a signature against, so first contact ta
 - **A listener is shared by address**, so it may serve parties belonging to several local parties. The
   certificate it presents is derived from the application's own identity. Under this design that
   certificate identifies nothing, so sharing is harmless — but it is a decision, not an accident.
-- **`DefaultListeningAddress` is set**, so registering this service gives an mTLS listening address to
-  any party that already has two or more configured listening addresses, on a port that may be
-  firewalled or taken. A party with exactly one configured address is unaffected. Use
-  `ListeningTypes` to be explicit.
+- **`DefaultListeningAddress` is set**, so this service can contribute an mTLS listening address by
+  default. The injection only runs for a party that resolves **two or more** listening addresses, and
+  it only adds types that are *not already configured*. With `tcp:` and `mtls:` as the only registered
+  types, two resolved addresses already means both were configured explicitly — so nothing is ever
+  injected today, and this becomes reachable the day a third transport type is registered. A party
+  with exactly one configured address is unaffected either way. Use `ListeningTypes` to be explicit.

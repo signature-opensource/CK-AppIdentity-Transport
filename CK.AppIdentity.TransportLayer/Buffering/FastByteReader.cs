@@ -349,7 +349,11 @@ public ref partial struct FastByteReader
     /// The smaller the absolute value of the value, the best it is.
     /// </summary>
     /// <returns>The read value.</returns>
-    public long ReadSmallInt64() => ZigZagDecode( ReadUInt64() );
+    /// <remarks>
+    /// This reads a varint, pairing with <c>FastByteWriter.WriteSmallInt64</c>. It used to read a
+    /// fixed <c>ReadUInt64</c>, which desynchronises the stream on the first use.
+    /// </remarks>
+    public long ReadSmallInt64() => ZigZagDecode( ReadSmallUInt64() );
 
     const short Int16Msb = unchecked((short)0x8000);
     const int Int32Msb = unchecked((int)0x80000000);
@@ -396,6 +400,9 @@ public ref partial struct FastByteReader
         ulong result = Unsafe.ReadUnaligned<ulong>( ref readHead );
 
         var bytesNeeded = BitOperations.TrailingZeroCount( result ) + 1;
+        // Same bound as the 32-bit siblings. Ten zero bytes give TrailingZeroCount == 64, so
+        // bytesNeeded == 65: the shift below is masked to 1 and _bufferPos jumps far past the buffer.
+        if( bytesNeeded > 10 ) Throw.InvalidDataException();
         result >>= bytesNeeded;
         _bufferPos += bytesNeeded;
 

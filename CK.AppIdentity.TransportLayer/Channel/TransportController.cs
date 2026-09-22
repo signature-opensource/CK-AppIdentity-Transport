@@ -180,8 +180,9 @@ sealed partial class TransportController
         // Drain queued outgoing messages: they must be released.
         ClearPendingOutgoingMessages( monitor );
         // Kill the transport and don't trigger any retry if this is an outgoing transport.
-        // If the sendTask is completed, it's the opportunity to not wait for 1 second.
-        if( _sendTask.IsCompleted ) _transportManager.KillTransport( CurrentTransport, int.MaxValue );
+        // Unconditional: the await above has already completed _sendTask, so the guard that used to
+        // be here was always true and only read as though this were conditional.
+        _transportManager.KillTransport( CurrentTransport, int.MaxValue );
     }
 
     internal void OnKilledTransport()

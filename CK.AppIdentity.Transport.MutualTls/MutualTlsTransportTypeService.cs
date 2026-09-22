@@ -44,6 +44,12 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
     /// </summary>
     public const int DefaultPort = 37121;
 
+    /// <summary>
+    /// The constant SNI name used on every mtls: connection. See the TargetHost assignment: the value
+    /// is never validated, and a real name here would disclose the party to a passive observer.
+    /// </summary>
+    public const string SniHostName = "appidentity";
+
     readonly IPEndPoint _defaultEndPoint;
     readonly TlsCredential _credential;
 
@@ -99,9 +105,13 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
             ssl = new SslStream( new NetworkStream( socket, ownsSocket: false ), leaveInnerStreamOpen: false );
             var options = new SslClientAuthenticationOptions
             {
-                // The peer is identified by the Zero Protocol, not by this name; it is sent because
-                // TLS wants one and it makes a packet capture readable.
-                TargetHost = remoteKeys.Party.FullName,
+                // A constant, not the party name. The peer is identified by the Zero Protocol and
+                // this value is never used for validation (the callback below accepts any non-null
+                // certificate, deliberately), but SNI is sent in clear in the ClientHello: neither
+                // TLS 1.2 nor TLS 1.3 without ECH encrypts it, so putting the party name here let a
+                // PASSIVE observer learn who talks to whom. Readability of a packet capture is not
+                // worth that.
+                TargetHost = SniHostName,
                 ClientCertificates = new X509Certificate2Collection( certificate ),
                 EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                 CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
