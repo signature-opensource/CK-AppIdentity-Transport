@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.BlobChannel.Tests;
+namespace CK.AppIdentity.TransportLayer.Testing;
 
 /// <summary>
 /// Collector of PeeringIssue events: issues are cloned as they arrive and stored in a list that can
@@ -20,7 +20,7 @@ namespace CK.AppIdentity.BlobChannel.Tests;
 /// The buffer is used for what it is good at, waiting.
 /// </para>
 /// </summary>
-sealed class PeeringIssueCollector : IDisposable
+public sealed class PeeringIssueCollector : IDisposable
 {
     readonly TransportManagerFeature _transport;
     readonly List<PeeringIssue> _issues;

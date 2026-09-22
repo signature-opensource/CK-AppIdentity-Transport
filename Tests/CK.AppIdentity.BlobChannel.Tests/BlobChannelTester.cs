@@ -79,7 +79,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
     /// <summary>
     /// Initializes a new tester bound to 2 sides that must be correctly configured with a
     /// single remote bound to each other with the BlobChannel feature allowed.
-    /// <see cref="CheckSendReceiveAsync(bool)"/> can be used to challenge an opened connection between them.
+    /// <see cref="CheckSendReceiveAsync(bool, CancellationToken)"/> can be used to challenge an opened connection between them.
     /// Note that disposing the tester will dispose both sides.
     /// </summary>
     /// <param name="sender">The "sender" side (can be any of the two).</param>
