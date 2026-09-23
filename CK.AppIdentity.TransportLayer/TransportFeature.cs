@@ -656,25 +656,41 @@ public sealed class TransportFeature
                            (done != null) == (!offReason.IsFromRemote && offReason.Kind is GoodbyeKind.PartyDestroyed or GoodbyeKind.ApplicationIdentityShutdown) );
 
         monitor.Trace( $"Switching remote '{Party.FullName}' OFF: {offReason}" );
-        var c = _controller;
-        _controller = null;
-        if( c != null )
+        try
         {
-            // Setup a new ready task only if necessary.
-            if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
-            await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
+            var c = _controller;
+            _controller = null;
+            if( c != null )
+            {
+                // Setup a new ready task only if necessary.
+                if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
+                await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
+            }
+            await UpdateExtremeConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
+            // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed
+            // and/or this is destroyed.
+            await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );
         }
-        await UpdateExtremeConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
-        // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed
-        // and/or this is destroyed.
-        await _transportManager.Feature._transportFeatureChangedEvent.SafeRaiseAsync( monitor, this ).ConfigureAwait( false );
-        // When tearing down, dispose the connection availability event bridge.
-        if( done != null )
+        finally
         {
-            // Update the possible PeeringIssue if any.
-            await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this ).ConfigureAwait( false );
-            _connectionEventBridge.Dispose();
-            done.SetResult();
+            // When tearing down, dispose the connection availability event bridge.
+            if( done != null )
+            {
+                // The tear down MUST complete whatever happened above: TransportFeatureDriver.TeardownAsync
+                // awaits it from the ApplicationIdentity agent's stop, and the MicroAgent only logs an
+                // exception escaping a job. A TCS left pending here hangs ApplicationIdentityService.DisposeAsync
+                // forever.
+                try
+                {
+                    // Update the possible PeeringIssue if any.
+                    await _transportManager.Feature.OnRemoteTornDownAsync( monitor, this ).ConfigureAwait( false );
+                    _connectionEventBridge.Dispose();
+                }
+                finally
+                {
+                    done.TrySetResult();
+                }
+            }
         }
     }
 

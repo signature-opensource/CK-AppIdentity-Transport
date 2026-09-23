@@ -24,11 +24,16 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
     DateTime _startTime;
     // Transition to true when cancelling because remote.IsOff.
     bool _offlineDecision;
+    // Set by CancelOperation: true when WE have requested the cancellation of the current attempt.
+    // This cannot be read from _cts.IsCancellationRequested: _cts is shared with the Transport
+    // (see CancelOperation) and the connect task's own finally cancels it when it kills a useless
+    // transport, slightly BEFORE the task completes.
+    bool _cancelRequested;
 
     public override void OnDestroy( IActivityMonitor monitor )
     {
         Throw.DebugAssert( _remote != null );
-        if( IsStarted && !_cts.IsCancellationRequested )
+        if( IsStarted && !_cancelRequested )
         {
             CancelOperation( monitor, offline: true );
         }
@@ -109,7 +114,10 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                 return;
             }
             // If CancelOperation signaled our CTS and the task is still alive, this is weird.
-            if( _cts.IsCancellationRequested )
+            // Testing _cts.IsCancellationRequested here would be wrong: a failed attempt kills its transport
+            // (that cancels the shared _cts) right before completing. Seeing that window, this would forget
+            // a task that is about to complete normally, losing its error and delaying the retry by 30 ticks.
+            if( _cancelRequested )
             {
                 monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
                               $"OutgoingConnectionBackTask #{GetHashCode()}: Failure to complete cancellation of for Remote '{_remote.Party}'." +
@@ -163,6 +171,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             monitor.Info( $"OutgoingConnectionBackTask #{GetHashCode()}: Remote '{_remote.Party}' is off line. Reseting in 1 second." );
         }
         // We signal the cancelation but wait one tick to handle it.
+        _cancelRequested = true;
         _cts.Cancel();
         // This avoids any UnobservedTaskException on the result if cancellation fails to be honored in 1 tick.
         _ = _result.ContinueWith( t => t.Exception?.Handle( static _ => true ),
@@ -197,6 +206,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             _cts = new CancellationTokenSource();
         }
         _startTime = DateTime.UtcNow;
+        _cancelRequested = false;
         _result = TryConnectToAsync( TaskManager.Host, _remote, _cts, _tryConnectCount++ );
 #pragma warning disable VSTHRD002 // Avoid problematic synchronous waits
         NextCheckDelay = _result.IsCompletedSuccessfully
@@ -218,6 +228,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
         //    remote instead of connecting.
         // _tryConnectCount and _startTime are re-initialized by OnInitialize/StartTryConnect.
         _offlineDecision = false;
+        _cancelRequested = false;
         _result = null;
     }
 
