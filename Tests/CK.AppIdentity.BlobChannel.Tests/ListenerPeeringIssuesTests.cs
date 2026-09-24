@@ -135,8 +135,9 @@ public class ListenerPeeringIssuesTests
 
             using( TestHelper.Monitor.OpenInfo( "Tests: Let (at least) one incoming try reach us to be UntrustedIncoming." ) )
             {
-                PeeringIssue[] issues;
-                while( (issues = listenerTransport.GetPeeringIssues()).Length == 0 || issues[0].Kind != PeeringIssueKind.RequiresLocalApproval );
+                await BlobChannelTester.WaitUntilAsync( () => listenerTransport.GetPeeringIssues() is { Length: > 0 } issues
+                                                              && issues[0].Kind == PeeringIssueKind.RequiresLocalApproval,
+                                                        token );
             }
             // Accept the incoming remote.
             using( TestHelper.Monitor.OpenInfo( "Tests: Accept the incoming remote and wait for the Kind to become None: the connection is established" +
@@ -148,9 +149,11 @@ public class ListenerPeeringIssuesTests
                 issues[0].CanAcceptRemoteIdentity.ShouldBeTrue();
 
                 issues[0].AcceptRemoteIdentity( TestHelper.Monitor );
-                while( issues[0].Kind != PeeringIssueKind.None ) ;
+                // The Kind and the issues are updated by the TransportManager loop: this waits cooperatively (a
+                // synchronous spin can neither be canceled nor, in Release, see the update).
+                await BlobChannelTester.WaitUntilAsync( () => issues[0].Kind == PeeringIssueKind.None, token );
                 // Also wait for the issues to be cleared (OnTransportAvailable).
-                while( listenerTransport.GetPeeringIssues().Length > 0 ) ;
+                await BlobChannelTester.WaitUntilAsync( () => listenerTransport.GetPeeringIssues().Length == 0, token );
 
                 // Check that the connection is up and running.
                 // We don't dispose the tester as it would dispose our sender and listener.

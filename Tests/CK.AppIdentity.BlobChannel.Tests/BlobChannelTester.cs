@@ -52,6 +52,9 @@ public sealed class BlobChannelTester : IAsyncDisposable
     {
         await _listenerChannel.Transport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
         await _senderChannel.Transport.ReadyTask.WaitAsync( token ).ConfigureAwait( false );
+        // The lists may already contain the messages of a previous check: this one checks its own.
+        int senderFrom = GetCount( _senderReceived );
+        int listenerFrom = GetCount( _listenerReceived );
         if( asyncSend )
         {
             await SendTestDataAsync( _listenerChannel, token );
@@ -59,11 +62,11 @@ public sealed class BlobChannelTester : IAsyncDisposable
         }
         else
         {
-
+            SendTestData( _listenerChannel );
+            SendTestData( _senderChannel );
         }
-
-        CheckTestDataReceived( _senderReceived );
-        CheckTestDataReceived( _listenerReceived );
+        await CheckTestDataReceivedAsync( _senderReceived, token, senderFrom );
+        await CheckTestDataReceivedAsync( _listenerReceived, token, listenerFrom );
     }
 
     /// <summary>
@@ -198,7 +201,8 @@ public sealed class BlobChannelTester : IAsyncDisposable
         channel.Received.Sync += ( monitor, sender, bytes ) =>
         {
             monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
-            receivedData.Add( bytes );
+            // This runs on the receive loop: the list is read by the test (see CheckTestDataReceivedAsync).
+            lock( receivedData ) receivedData.Add( bytes );
         };
         return channel;
     }
@@ -231,16 +235,46 @@ public sealed class BlobChannelTester : IAsyncDisposable
     }
 
     /// <summary>
-    /// Waits for the list to contain at least 3 messages (by a rather stupid polling)
-    /// and then check their content: they must be the same as the <see cref="SendTestDataAsync(BlobChannelFeature)"/> sent.
+    /// Waits for the list to contain the 3 messages that <see cref="SendTestDataAsync(BlobChannelFeature, CancellationToken)"/>
+    /// or <see cref="SendTestData(BlobChannelFeature)"/> sent after the <paramref name="from"/> first ones, and checks them.
+    /// <para>
+    /// The list is filled by the receive loop of the channel: it must be locked (see <see cref="SetupChannel"/>).
+    /// This never spins: a synchronous "while( received.Count &lt; 3 ) ;" cannot be canceled (a [CancelAfter] is
+    /// cooperative) and, in Release, the Count read may be hoisted out of the loop so that it never ends.
+    /// </para>
     /// </summary>
-    /// <param name="received"></param>
-    public static void CheckTestDataReceived( List<byte[]> received )
+    /// <param name="received">The received messages.</param>
+    /// <param name="token">The cancellation token.</param>
+    /// <param name="from">The number of messages received before the 3 ones to check.</param>
+    /// <returns>The awaitable.</returns>
+    public static async Task CheckTestDataReceivedAsync( List<byte[]> received, CancellationToken token, int from = 0 )
     {
-        while( received.Count < 3 ) ;
-        received[0].ShouldBe( [1] );
-        received[1].ShouldBe( [1, 2] );
-        received[2].ShouldBe( [1, 2, 3] );
+        await WaitUntilAsync( () => GetCount( received ) >= from + 3, token );
+        byte[][] messages;
+        lock( received ) messages = received.GetRange( from, 3 ).ToArray();
+        messages[0].ShouldBe( [1] );
+        messages[1].ShouldBe( [1, 2] );
+        messages[2].ShouldBe( [1, 2, 3] );
+    }
+
+    /// <summary>
+    /// Waits for a condition that another thread makes true, polling it every 10 ms until the
+    /// <paramref name="token"/> is canceled (a [CancelAfter] then fails the test instead of hanging it).
+    /// </summary>
+    /// <param name="condition">The condition to wait for.</param>
+    /// <param name="token">The cancellation token.</param>
+    /// <returns>The awaitable.</returns>
+    public static async Task WaitUntilAsync( Func<bool> condition, CancellationToken token )
+    {
+        while( !condition() )
+        {
+            await Task.Delay( 10, token );
+        }
+    }
+
+    static int GetCount( List<byte[]> received )
+    {
+        lock( received ) return received.Count;
     }
 
 }

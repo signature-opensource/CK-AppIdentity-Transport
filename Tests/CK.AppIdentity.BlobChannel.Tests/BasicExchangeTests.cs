@@ -66,7 +66,7 @@ public class BasicExchangeTests
         {
             monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
             sender.ShouldBeSameAs( listenerChannel );
-            listenerReceived.Add( bytes );
+            lock( listenerReceived ) listenerReceived.Add( bytes );
         };
         // Setup Sender reception.
         var senderReceived = new List<byte[]>();
@@ -74,7 +74,7 @@ public class BasicExchangeTests
         {
             monitor.Info( $"{sender.Transport.Party.ApplicationIdentityService}: RECEIVED {bytes.Length} bytes." );
             sender.ShouldBeSameAs( senderChannel );
-            senderReceived.Add( bytes );
+            lock( senderReceived ) senderReceived.Add( bytes );
         };
         // Listener => Sender.
         // Before sending, ReadyTask can be awaited.
@@ -89,16 +89,9 @@ public class BasicExchangeTests
         senderChannel.TrySend( [1, 2] ).ShouldBeTrue();
         senderChannel.TrySend( [1, 2, 3] ).ShouldBeTrue();
 
-        // Check data reception.
-        while( senderReceived.Count < 3 ) ;
-        senderReceived[0].ShouldBe( [1] );
-        senderReceived[1].ShouldBe( [1, 2] );
-        senderReceived[2].ShouldBe( [1, 2, 3] );
-
-        while( listenerReceived.Count < 3 ) ;
-        listenerReceived[0].ShouldBe( [1] );
-        listenerReceived[1].ShouldBe( [1, 2] );
-        listenerReceived[2].ShouldBe( [1, 2, 3] );
+        // Check data reception (this waits for the messages, cooperatively: the [CancelAfter] applies).
+        await BlobChannelTester.CheckTestDataReceivedAsync( senderReceived, token );
+        await BlobChannelTester.CheckTestDataReceivedAsync( listenerReceived, token );
 
         await sender.DisposeAsync();
         await listener.DisposeAsync();
@@ -142,10 +135,11 @@ public class BasicExchangeTests
                 BlobChannelTester.SendTestData( listenerChannel );
                 BlobChannelTester.SendTestData( senderChannel );
 
-                BlobChannelTester.CheckTestDataReceived( senderReceived );
-                BlobChannelTester.CheckTestDataReceived( listenerReceived );
-                BlobChannelTester.CheckTestDataReceived( senderReceived );
-                BlobChannelTester.CheckTestDataReceived( listenerReceived );
+                // 2 rounds of 3 messages have been sent on each side.
+                await BlobChannelTester.CheckTestDataReceivedAsync( senderReceived, token );
+                await BlobChannelTester.CheckTestDataReceivedAsync( listenerReceived, token );
+                await BlobChannelTester.CheckTestDataReceivedAsync( senderReceived, token, from: 3 );
+                await BlobChannelTester.CheckTestDataReceivedAsync( listenerReceived, token, from: 3 );
             }
             else
             {
@@ -157,10 +151,11 @@ public class BasicExchangeTests
                 BlobChannelTester.SendTestData( senderChannel );
                 BlobChannelTester.SendTestData( listenerChannel );
 
-                BlobChannelTester.CheckTestDataReceived( listenerReceived );
-                BlobChannelTester.CheckTestDataReceived( senderReceived );
-                BlobChannelTester.CheckTestDataReceived( listenerReceived );
-                BlobChannelTester.CheckTestDataReceived( senderReceived );
+                // 2 rounds of 3 messages have been sent on each side.
+                await BlobChannelTester.CheckTestDataReceivedAsync( listenerReceived, token );
+                await BlobChannelTester.CheckTestDataReceivedAsync( senderReceived, token );
+                await BlobChannelTester.CheckTestDataReceivedAsync( listenerReceived, token, from: 3 );
+                await BlobChannelTester.CheckTestDataReceivedAsync( senderReceived, token, from: 3 );
             }
         }
         finally
