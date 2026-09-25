@@ -31,7 +31,9 @@ public class BasicExchangeTests
 
 
     [Test]
-    [CancelAfter( 2000 )]
+    // A hang guard, not a performance check: this may be the first test of the process that pays the cold start
+    // (JIT, DataProtection, X509) and ckli builds run tests of other repositories in parallel.
+    [CancelAfter( 30000 )]
     public async Task demo_BlobChannel_is_an_optin_Feature_Async( CancellationToken token )
     {
         TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
@@ -99,7 +101,7 @@ public class BasicExchangeTests
 
     [TestCase( "Reverted" )]
     [TestCase( "Regular" )]
-    [CancelAfter( 4000 )]
+    [CancelAfter( 30000 )]
     public async Task Listener_then_Sender_setup_using_AutoTrustKey_Once_Async( string mode, CancellationToken token )
     {
         TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
