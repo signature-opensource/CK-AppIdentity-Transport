@@ -41,6 +41,12 @@ public class BugTransportTests
                                                                                            string error,
                                                                                            CancellationToken token )
     {
+        // The collector MUST be created before the service: the first connection attempt starts immediately
+        // on the TransportManager agent and an "Inline" bug logs its first error synchronously, possibly before
+        // CreateApplicationServiceAsync returns.
+        TestHelper.Monitor.Info( $"Tests: Starting with '{bugType}'." );
+        using var logCollector = GrandOutput.Default!.CreateMemoryCollector( 1000 );
+
         await using var s = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Sender";
@@ -48,9 +54,6 @@ public class BugTransportTests
             c["Parties:0:Address"] = "bug:" + bugType;
         }, ConfigureFastClock, token: token );
         var senderTransport = s.Remotes.Single().GetRequiredFeature<TransportFeature>();
-
-        Throw.DebugAssert( "CreateApplicationServiceAsync has used the TestHelper.Monitor.", GrandOutput.Default != null );
-        using var logCollector = GrandOutput.Default.CreateMemoryCollector( 1000 );
 
         await Task.Delay( 1300, token );
         TestHelper.Monitor.Info( "Tests: Switching off the sender." );
