@@ -4,7 +4,7 @@
       <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="2.0.0-juliet.0.ci.4" />
+    <PackageReference Include="CK.AppIdentity" Version="2.0.0-juliet.0.ci.5" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.12" />
   </ItemGroup>
 </Project>
