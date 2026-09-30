@@ -1,0 +1,19 @@
+-- SetupConfig: { "TransformerRequires": [ "CK.vPartyActor" ] }
+create transformer on CK.vGroupMember
+as
+begin
+
+    replace single {else '?' end}
+        with "when pa.PartyActorId is not null then 'PartyActor' else '?' end";
+
+    replace single {u.UserName,}
+        with "u.UserName, pa.DisplayName,";
+
+    replace single {u.CreationDate,}
+        with "u.CreationDate, pa.CreationDate,";
+
+    inject "
+            left outer join CK.vPartyActor pa on pa.PartyActorId = p.ActorId
+        "
+        after single {left outer join CK.vUser u on u.UserId = p.ActorId};
+end

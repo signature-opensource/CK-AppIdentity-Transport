@@ -13,6 +13,7 @@
     <Project Path="Tests/CK.AppIdentity.BlobChannel.Tests/CK.AppIdentity.BlobChannel.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.MutualTls.Tests/CK.AppIdentity.MutualTls.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.TransportLayer.Tests/CK.AppIdentity.TransportLayer.Tests.csproj" />
+    <Project Path="Tests/CK.DB.AppIdentity.Tests/CK.DB.AppIdentity.Tests.csproj" />
   </Folder>
   <Project Path="CK.AppIdentity.BlobChannel/CK.AppIdentity.BlobChannel.csproj" />
   <Project Path="CK.AppIdentity.Cris/CK.AppIdentity.Cris.csproj" />
@@ -20,4 +21,5 @@
   <Project Path="CK.AppIdentity.Transport.MutualTls/CK.AppIdentity.Transport.MutualTls.csproj" />
   <Project Path="CK.AppIdentity.TransportLayer.Testing/CK.AppIdentity.TransportLayer.Testing.csproj" />
   <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />
+  <Project Path="CK.DB.AppIdentity/CK.DB.AppIdentity.csproj" />
 </Solution>
