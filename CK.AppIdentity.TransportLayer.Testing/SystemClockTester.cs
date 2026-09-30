@@ -11,9 +11,9 @@ public sealed class SystemClockTester : ApplicationIdentityService.ISystemClock
     readonly int _heatBeatPeriod;
     TimeSpan _offset;
 
-    public SystemClockTester( int heatBeatPeriod )
+    public SystemClockTester( int heartBeatPeriod )
     {
-        _heatBeatPeriod = heatBeatPeriod;
+        _heatBeatPeriod = heartBeatPeriod;
     }
 
     public int HeatBeatPeriod => _heatBeatPeriod;

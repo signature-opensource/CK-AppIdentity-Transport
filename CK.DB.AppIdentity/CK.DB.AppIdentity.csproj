@@ -5,8 +5,8 @@
         <IsPackable>false</IsPackable>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="CK.DB.Actor" Version="30.0.0-juliet.0.ci.16" />
-        <PackageReference Include="CK.SqlServer.Setup.Model" Version="35.0.0-juliet.0.ci.5" />
+        <PackageReference Include="CK.DB.Actor" Version="30.0.0-juliet.0.ci.17" />
+        <PackageReference Include="CK.SqlServer.Setup.Model" Version="35.0.0-juliet.0.ci.6" />
     </ItemGroup>
     <ItemGroup>
         <EmbeddedResource Include="**\*.sql;**\*.tql;**\*.y4" />
