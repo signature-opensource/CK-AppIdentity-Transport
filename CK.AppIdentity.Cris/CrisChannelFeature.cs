@@ -21,6 +21,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                                PocoDirectory pocoDirectory,
                                IDIContainer<AppIdentityEndpointDefinition.Data> endpoint,
                                CrisExecutionHost executionHost,
+                               ICrisAuthCenter? crisAuthCenter,
                                IAuthenticationInfoTokenService tokenService )
         : base( transportFeature )
     {

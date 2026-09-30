@@ -9,7 +9,6 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using CK.AppIdentity.TransportLayer;
-using FluentAssertions.Common;
 
 namespace CK.AppIdentity.Cris.Tests
 {

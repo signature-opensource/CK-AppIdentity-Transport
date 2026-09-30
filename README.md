@@ -7,7 +7,7 @@ The identity model itself — the application, its remotes, tenant domains, feat
 configuration — lives in CK-AppIdentity. This repository adds the wire.
 
 ## CK.AppIdentity.KeyManagement
-The identity keys. Each local party owns ECDSA P-256 keys, stored and rotated on the file system, and
+Handles the Party identity keys. Each local party owns ECDSA P-256 keys, stored and rotated on the file system, and
 pins one public key per remote it trusts. This is what "who is this?" resolves to, and every
 authentication decision in the transport layer ends up here.
 
