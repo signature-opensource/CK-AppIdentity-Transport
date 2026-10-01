@@ -2,6 +2,7 @@ using CK.AppIdentity.TransportLayer;
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Core;
 using CK.Monitoring;
+using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using System;

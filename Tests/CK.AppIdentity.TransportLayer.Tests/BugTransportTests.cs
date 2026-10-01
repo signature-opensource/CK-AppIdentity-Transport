@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Monitoring;
+using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using System.Linq;
@@ -12,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 [TestFixture]
 public class BugTransportTests
 {
-    // Uses a 50ms instead of the default 1000ms for tests.
+    // Uses a 20ms instead of the default 1000ms for tests.
     readonly SystemClockTester _systemClock = new SystemClockTester( 20 );
 
     void ConfigureFastClock( ServiceCollection services )

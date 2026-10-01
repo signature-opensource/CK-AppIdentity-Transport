@@ -51,7 +51,7 @@ public sealed class PeerCertificate : IDisposable
         using var selfSigned = request.CreateSelfSigned( now.AddDays( -1 ), now.AddDays( 30 ) );
         // The same round-trip the production credential needs: a key attached in memory by
         // CreateSelfSigned has no container, and Schannel cannot sign with it.
-        return new PeerCertificate( new X509Certificate2( selfSigned.Export( X509ContentType.Pkcs12 ) ) );
+        return new PeerCertificate( X509CertificateLoader.LoadPkcs12( selfSigned.Export( X509ContentType.Pkcs12 ), null ) );
     }
 
     /// <summary>The certificate, with a private key a TLS stack can actually use.</summary>

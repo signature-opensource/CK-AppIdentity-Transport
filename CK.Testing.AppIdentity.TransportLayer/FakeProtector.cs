@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.DataProtection;
 
-namespace CK.AppIdentity.TransportLayer.Testing;
+namespace CK.Testing.AppIdentity.TransportLayer;
 
 /// <summary>
 /// Fake <see cref="IDataProtector"/> (that is a <see cref="IDataProtectionProvider"/>)

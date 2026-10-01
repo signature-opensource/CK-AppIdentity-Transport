@@ -1,6 +1,7 @@
 using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
+using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

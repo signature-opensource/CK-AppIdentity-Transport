@@ -12,7 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\CK.AppIdentity.Transport.MutualTls\CK.AppIdentity.Transport.MutualTls.csproj" />
-    <ProjectReference Include="..\..\CK.AppIdentity.TransportLayer.Testing\CK.AppIdentity.TransportLayer.Testing.csproj" />
+    <ProjectReference Include="..\..\CK.Testing.AppIdentity.TransportLayer\CK.Testing.AppIdentity.TransportLayer.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="CK.AppIdentity.TransportLayer.Testing" />

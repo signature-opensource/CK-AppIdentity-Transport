@@ -1,4 +1,5 @@
 using CK.AppIdentity.KeyManagement;
+using CK.Testing.AppIdentity.TransportLayer;
 using NUnit.Framework;
 using Shouldly;
 using System;

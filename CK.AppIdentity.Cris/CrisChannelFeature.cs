@@ -12,22 +12,18 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 {
     readonly PocoDirectory _pocoDirectory;
     readonly IncomingCommandExecutor _executor;
-    readonly IAuthenticationInfoTokenService _tokenService;
     readonly OutgoingCommandCache _outgoingRequestCache;
     readonly PerfectEventSender<IOutgoingCommand, IEvent> _onEvent;
     readonly ConcurrentQueue<OutgoingCommand> _pendingRequest;
 
     public CrisChannelFeature( TransportFeature transportFeature,
                                PocoDirectory pocoDirectory,
-                               IDIContainer<AppIdentityEndpointDefinition.Data> endpoint,
-                               CrisExecutionHost executionHost,
-                               ICrisAuthCenter? crisAuthCenter,
-                               IAuthenticationInfoTokenService tokenService )
+                               IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
+                               CrisExecutionHost executionHost )
         : base( transportFeature )
     {
         _pocoDirectory = pocoDirectory;
         _executor = new IncomingCommandExecutor( executionHost, endpoint );
-        _tokenService = tokenService;
         _onEvent = new PerfectEventSender<IOutgoingCommand, IEvent>();
         _outgoingRequestCache = new OutgoingCommandCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
         _pendingRequest = new ConcurrentQueue<OutgoingCommand>();

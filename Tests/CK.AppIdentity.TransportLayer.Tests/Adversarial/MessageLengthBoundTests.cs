@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
+using CK.Testing.AppIdentity.TransportLayer;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 

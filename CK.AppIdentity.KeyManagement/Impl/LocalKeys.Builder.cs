@@ -222,7 +222,7 @@ sealed partial class LocalKeys
                     X509Certificate2 c;
                     try
                     {
-                        c = new X509Certificate2( File.ReadAllBytes( pfxPath ), pwd );
+                        c = X509CertificateLoader.LoadPkcs12FromFile( pfxPath, pwd );
                         var privateKey = ValidateIdentityAndGetPrivateKey( monitor, now, pfxPath, c );
                         if( privateKey == null )
                         {

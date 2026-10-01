@@ -1,6 +1,6 @@
 using CK.AppIdentity.TransportLayer;
-using CK.AppIdentity.TransportLayer.Testing;
 using CK.Core;
+using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using System;

@@ -1,9 +1,10 @@
+using CK.AppIdentity.TransportLayer;
 using System;
 using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Testing;
+namespace CK.Testing.AppIdentity.TransportLayer;
 
 /// <summary>
 /// Funny helper that transforms a <see cref="IOutgoingMessage"/> into a

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.TransportLayer.Testing;
+namespace CK.Testing.AppIdentity.TransportLayer;
 
 /// <summary>
 /// Collector of PeeringIssue events: issues are cloned as they arrive and stored in a list that can

@@ -39,7 +39,8 @@ static class SecretFile
         {
             Mode = FileMode.Create,
             Access = FileAccess.Write,
-            Share = FileShare.None
+            Share = FileShare.None,
+            Options = FileOptions.SequentialScan
         };
         if( !OperatingSystem.IsWindows() ) options.UnixCreateMode = OwnerOnly;
         using var f = new FileStream( path, options );

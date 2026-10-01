@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using System;
 using System.Security.Cryptography;
 
-namespace CK.AppIdentity.TransportLayer.Testing;
+namespace CK.Testing.AppIdentity.TransportLayer;
 
 /// <summary>
 /// A <see cref="IDataProtector"/> that behaves like a real one rather than like

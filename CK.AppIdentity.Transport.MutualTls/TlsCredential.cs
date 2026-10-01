@@ -96,7 +96,7 @@ sealed class TlsCredential
         try
         {
             blob = issued.Export( X509ContentType.Pkcs12, pwd );
-            return new X509Certificate2( blob, pwd );
+            return X509CertificateLoader.LoadPkcs12( blob, pwd );
         }
         finally
         {

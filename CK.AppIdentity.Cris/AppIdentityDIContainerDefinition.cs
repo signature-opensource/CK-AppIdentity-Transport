@@ -8,7 +8,7 @@ namespace CK.AppIdentity.Cris;
 
 
 [DIContainerDefinition( DIContainerKind.Endpoint )]
-public abstract class AppIdentityEndpointDefinition : DIContainerDefinition<AppIdentityEndpointDefinition.Data>
+public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<AppIdentityDIContainerDefinition.Data>
 {
     public sealed class Data : IScopedData
     {

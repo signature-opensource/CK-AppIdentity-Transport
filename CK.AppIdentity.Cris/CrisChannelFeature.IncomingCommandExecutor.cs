@@ -6,16 +6,16 @@ namespace CK.AppIdentity.Cris;
 
 public sealed partial class CrisChannelFeature
 {
-    sealed class IncomingCommandExecutor : ContainerCommandExecutor<AppIdentityEndpointDefinition.Data>
+    sealed class IncomingCommandExecutor : ContainerCommandExecutor<AppIdentityDIContainerDefinition.Data>
     {
-        public IncomingCommandExecutor( CrisExecutionHost executionHost, IDIContainer<AppIdentityEndpointDefinition.Data> endpoint )
+        public IncomingCommandExecutor( CrisExecutionHost executionHost, IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint )
             : base( executionHost, endpoint )
         {
         }
 
         public void Execute( IAbstractCommand command, ActivityMonitor.Token issuerToken, string? authenticationToken )
         {
-            var scopedData = new AppIdentityEndpointDefinition.Data( authenticationToken );
+            var scopedData = new AppIdentityDIContainerDefinition.Data( authenticationToken );
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,

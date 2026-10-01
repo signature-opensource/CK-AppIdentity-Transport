@@ -1,6 +1,7 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.Monitoring;
+using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.AspNetCore.DataProtection;
 using NUnit.Framework;
 using Shouldly;

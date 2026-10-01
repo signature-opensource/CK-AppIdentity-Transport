@@ -4,7 +4,7 @@
         <TargetFramework>net10.0</TargetFramework>
         <IsPackable>false</IsPackable>
     </PropertyGroup>
-
+    
     <ItemGroup>
         <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.0-juliet.0.ci.8" />
         <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="35.0.0-juliet.0.ci.3" />
@@ -12,14 +12,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="CK.Testing.NUnit" Version="16.0.0" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-        <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris\CK.Testing.AppIdentity.Cris.csproj" />
-        <ProjectReference Include="..\..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
+        <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
+        <ProjectReference Include="..\CK.Testing.AppIdentity.TransportLayer\CK.Testing.AppIdentity.TransportLayer.csproj" />
     </ItemGroup>
 
 </Project>

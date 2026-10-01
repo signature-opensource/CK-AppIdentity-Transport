@@ -46,7 +46,7 @@ sealed partial class TransportManager : MicroAgent
     readonly BackTask<TransportManager>.Head _headKeepAlive;
 
     internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
-        : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeatBeatPeriod )
+        : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeartBeatPeriod )
     {
         _agent = agent;
         _protocolDirectory = protocolDirectory;

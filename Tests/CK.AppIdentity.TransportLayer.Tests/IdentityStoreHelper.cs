@@ -58,7 +58,7 @@ static class IdentityStoreHelper
     {
         var pfx = GetKeysFolder( partyName ).AppendPart( fileName );
         var pwd = Encoding.UTF8.GetString( protector.Unprotect( File.ReadAllBytes( pfx + ".pwd" ) ) );
-        return new X509Certificate2( File.ReadAllBytes( pfx ), pwd );
+        return X509CertificateLoader.LoadPkcs12FromFile( pfx, pwd );
     }
 
     /// <summary>

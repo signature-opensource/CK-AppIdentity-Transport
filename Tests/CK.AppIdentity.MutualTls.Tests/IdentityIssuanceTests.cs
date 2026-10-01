@@ -77,7 +77,7 @@ public class IdentityIssuanceTests
         // Byte 30 is well inside the tbsCertificate: past the outer SEQUENCE header, the version and
         // the serial number, and nowhere near the trailing signature.
         der[30] ^= 0xFF;
-        using var tampered = new X509Certificate2( der );
+        using var tampered = X509CertificateLoader.LoadCertificate( der );
         IdentityIssuance.WasIssuedBy( tampered, pinned ).ShouldBeFalse();
     }
 
