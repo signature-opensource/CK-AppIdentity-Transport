@@ -119,7 +119,8 @@ sealed partial class RemoteKeys : IRemoteKeys
         if( identity != null )
         {
             var cPath = _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{identity.Name}.public" );
-            identity.WritePublicKeyFile( cPath );
+            // Atomic: a crash can't leave a truncated trust anchor that the next start would reject.
+            _remote.SharedFileStore.WriteAllBytes( cPath, identity.PublicKeyRawData );
             if( current == null )
             {
                 logger.Info( $"Saving new trusted identity '{identity.Name}' for remote '{_remote}'." );

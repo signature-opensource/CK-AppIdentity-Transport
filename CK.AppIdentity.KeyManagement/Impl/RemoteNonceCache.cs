@@ -63,12 +63,14 @@ sealed class RemoteNonceCache
 
     readonly FIFOBuffer<(ulong Nonce, DateTime CreationTime)> _entries;
     readonly object _lock;
+    readonly IFileStore _store;
     readonly NormalizedPath _filePath;
     uint _version;
     uint _savedVersion;
 
-    RemoteNonceCache( NormalizedPath filePath, FIFOBuffer<(ulong, DateTime)> entries )
+    RemoteNonceCache( IFileStore store, NormalizedPath filePath, FIFOBuffer<(ulong, DateTime)> entries )
     {
+        _store = store;
         _filePath = filePath;
         _entries = entries;
         _lock = new object();
@@ -164,13 +166,10 @@ sealed class RemoteNonceCache
                 }
                 bytes = stream.ToArray();
             }
-            Directory.CreateDirectory( _filePath.RemoveLastPart() );
-            // Temp-plus-rename. A crash during a plain write leaves a truncated file that Load
-            // discards, losing the entire replay record for this remote; the rename is atomic, so the
-            // file on disk is always a whole one - either the previous version or the new one.
-            var tmp = _filePath + ".new";
-            File.WriteAllBytes( tmp, bytes );
-            File.Move( tmp, _filePath, overwrite: true );
+            // Atomic write. A crash during a plain write leaves a truncated file that Load discards,
+            // losing the entire replay record for this remote: the file on disk is always a whole
+            // one - either the previous version or the new one. Missing folders are created.
+            _store.WriteAllBytes( _filePath, bytes );
             return true;
         }
         catch( Exception ex )
@@ -186,14 +185,8 @@ sealed class RemoteNonceCache
     /// </summary>
     public void Delete( IActivityMonitor monitor )
     {
-        try
-        {
-            if( File.Exists( _filePath ) ) File.Delete( _filePath );
-        }
-        catch( Exception ex )
-        {
-            monitor.Warn( $"While deleting '{_filePath}'.", ex );
-        }
+        // Never throws (errors are logged) and succeeds when the file doesn't exist.
+        _store.TryTrash( monitor, _filePath, immediateDelete: true );
     }
 
     /// <summary>
@@ -202,6 +195,7 @@ sealed class RemoteNonceCache
     /// </summary>
     public static RemoteNonceCache Load( IActivityMonitor monitor, IRemoteParty remote, ILocalParty local )
     {
+        var store = remote.SharedFileStore;
         var filePath = GetFilePath( remote, local );
         // No remote can be configured above MaxAllowedClockOffset, so an older nonce would be
         // refused on its timestamp before this cache was ever consulted: loading it back would only
@@ -212,7 +206,7 @@ sealed class RemoteNonceCache
         {
             if( File.Exists( filePath ) )
             {
-                var bytes = File.ReadAllBytes( filePath );
+                var bytes = store.ReadAllBytes( filePath );
                 if( bytes.Length >= FileMagic.Length && bytes.AsSpan( 0, FileMagic.Length ).SequenceEqual( FileMagic ) )
                 {
                     using var r = new BinaryReader( new MemoryStream( bytes, FileMagic.Length, bytes.Length - FileMagic.Length ) );
@@ -238,7 +232,7 @@ sealed class RemoteNonceCache
             monitor.Warn( $"Unable to read '{filePath}'. Starting with an empty nonce cache.", ex );
             entries.Clear();
         }
-        return new RemoteNonceCache( filePath, entries );
+        return new RemoteNonceCache( store, filePath, entries );
     }
 
     /// <summary>

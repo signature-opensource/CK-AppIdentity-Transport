@@ -15,7 +15,16 @@ public interface IPublicKeyData
     PublicKey PublicKey { get; }
 
     /// <summary>
-    /// Gets the <see cref="PublicKey"/> raw data (cache of <see cref="PublicKey.ExportSubjectPublicKeyInfo()"/>).
+    /// Gets the <see cref="PublicKey"/> raw data (cache of <see cref="PublicKey.ExportSubjectPublicKeyInfo()"/>):
+    /// this is the DER encoded X.509 <c>SubjectPublicKeyInfo</c> (RFC 5280), that holds the key algorithm
+    /// and parameters (the curve) and the key itself.
+    /// <para>
+    /// This is the content of the "Identity.*.public" files of the key store and what is exchanged on the wire.
+    /// It can be read back by <see cref="PublicKey.CreateFromSubjectPublicKeyInfo(ReadOnlySpan{byte}, out int)"/>
+    /// (or <c>ECDsa.ImportSubjectPublicKeyInfo</c>). Its PEM form is
+    /// <c>PemEncoding.WriteString( "PUBLIC KEY", PublicKeyRawData.Span )</c>, the "-----BEGIN PUBLIC KEY-----"
+    /// block that OpenSSL reads and writes.
+    /// </para>
     /// </summary>
     ReadOnlyMemory<byte> PublicKeyRawData { get; }
 
@@ -38,12 +47,6 @@ public interface IPublicKeyData
     /// </para>
     /// </summary>
     string Name { get; }
-
-    /// <summary>
-    /// Creates or overwrites a file with this public key.
-    /// </summary>
-    /// <param name="fullPath">The target file path.</param>
-    void WritePublicKeyFile( NormalizedPath fullPath );
 }
 
 /// <summary>

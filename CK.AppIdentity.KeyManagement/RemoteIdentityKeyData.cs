@@ -87,13 +87,4 @@ public sealed class RemoteIdentityKeyData : IPublicKeyData, IEquatable<IPublicKe
         return _timeName == timeName && publicRawData.SequenceEqual( _publicRaw );
     }
 
-    /// <inheritdoc />
-    public void WritePublicKeyFile( NormalizedPath fullPath )
-    {
-        // Owner-only: this file IS a trust anchor. Anything that can rewrite it repoints a pinned
-        // identity, because RemoteKeys.Builder.TryLoad accepts any well-formed SubjectPublicKeyInfo
-        // it finds in the store.
-        SecretFile.WriteAllBytes( fullPath, _publicRaw );
-    }
-
 }

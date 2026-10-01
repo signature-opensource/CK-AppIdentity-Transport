@@ -104,7 +104,7 @@ sealed partial class RemoteKeys
         {
             try
             {
-                var content = File.ReadAllBytes( path );
+                var content = _store.ReadAllBytes( path );
                 var key = PublicKey.CreateFromSubjectPublicKeyInfo( content, out int bytesRead );
                 // A file holding a valid key followed by anything else is not this key's file: accepting
                 // it silently means a trusted identity whose bytes on disk are not the bytes we trust.

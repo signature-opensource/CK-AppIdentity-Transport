@@ -145,15 +145,15 @@ sealed partial class LocalKeys
                 }
                 if( foundCurrent != null )
                 {
-                    if( !File.ReadAllBytes( foundCurrent ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
+                    if( !_store.ReadAllBytes( foundCurrent ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
                     {
                         monitor.Warn( $"Invalid file content '{foundCurrent}' (does not contain the public key). Rewriting it." );
-                        current.WritePublicKeyFile( currentPath );
+                        _store.WriteAllBytes( currentPath, current.PublicKeyRawData );
                     }
                 }
                 else
                 {
-                    current.WritePublicKeyFile( currentPath );
+                    _store.WriteAllBytes( currentPath, current.PublicKeyRawData );
                 }
             }
             catch( Exception ex )
@@ -162,11 +162,11 @@ sealed partial class LocalKeys
             }
         }
 
-        static (string Name, string FilePath) SaveIdentityFileAndPassword( IActivityMonitor monitor,
-                                                                           IDataProtector protector,
-                                                                           DateTime now,
-                                                                           NormalizedPath identityPath,
-                                                                           X509Certificate2 currentIdentity )
+        (string Name, string FilePath) SaveIdentityFileAndPassword( IActivityMonitor monitor,
+                                                                    IDataProtector protector,
+                                                                    DateTime now,
+                                                                    NormalizedPath identityPath,
+                                                                    X509Certificate2 currentIdentity )
         {
             var name = now.ToString( FileUtil.FileNameUniqueTimeUtcFormat );
             var fileName = name + ".pfx";
@@ -178,8 +178,8 @@ sealed partial class LocalKeys
             // a real IDataProtector cannot unprotect, which trashes every stored identity at startup.
             var pwd = Util.GetRandomBase64UrlString( 20 );
             var fullName = identityPath.AppendPart( fileName );
-            SecretFile.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
-            SecretFile.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
+            _store.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
+            _store.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
             return (name, fullName);
         }
 
@@ -213,7 +213,7 @@ sealed partial class LocalKeys
         List<LocalIdentityKey> LoadIdentityKeys( IActivityMonitor monitor, IDataProtector protector, DateTime now, NormalizedPath folderPath )
         {
             var result = new List<LocalIdentityKey>();
-            Directory.CreateDirectory( folderPath );
+            _store.CreateDirectory( folderPath );
             foreach( var (name,timeName,pfxPath) in FilterFileNames( monitor, now, Directory.EnumerateFiles( folderPath, "*.pfx" ), null ) )
             {
                 var pwd = TryLoadPassword( monitor, protector, pfxPath );
@@ -253,7 +253,7 @@ sealed partial class LocalKeys
             }
             try
             {
-                return Encoding.UTF8.GetString( protector.Unprotect( File.ReadAllBytes( pwdPath ) ) );
+                return Encoding.UTF8.GetString( protector.Unprotect( _store.ReadAllBytes( pwdPath ) ) );
             }
             catch( Exception ex )
             {

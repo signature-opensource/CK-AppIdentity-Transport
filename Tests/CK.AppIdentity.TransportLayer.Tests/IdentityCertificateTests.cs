@@ -144,16 +144,17 @@ public class IdentityCertificateTests
     }
 
     /// <summary>
-    /// Counts the keys in the party's trash. Measured as a delta by the caller: the store renames
-    /// what it trashes to a GUID, so the original name is not there to match on, and the bin is not
-    /// emptied between runs.
+    /// Counts the keys in the party's trash. Measured as a delta by the caller: the bin is not emptied
+    /// between runs. A trashed file has no extension (it is named by its trash time): its original path
+    /// is in the ".binInfo" file beside it.
     /// </summary>
     static int CountTrashedKeys( string partyName )
     {
         var folder = GetPartyFolder( partyName );
         if( !Directory.Exists( folder ) ) return 0;
-        return Directory.EnumerateFiles( folder, "*.pfx", SearchOption.AllDirectories )
-                        .Count( f => f.Contains( "$TrashBin", StringComparison.Ordinal ) );
+        return Directory.EnumerateFiles( folder, "*.binInfo", SearchOption.AllDirectories )
+                        .Where( f => f.Contains( "$TrashBin", StringComparison.Ordinal ) )
+                        .Count( f => File.ReadAllText( f ).Trim().EndsWith( ".pfx", StringComparison.OrdinalIgnoreCase ) );
     }
 
     static NormalizedPath GetPartyFolder( string partyName )

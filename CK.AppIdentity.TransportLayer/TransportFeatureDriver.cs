@@ -225,7 +225,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // We add the feature here to the remote so that channels can use it.
         // And we wait a successful initialization to "publish" the new TransportFeature to the
         // public TransportManagerFeature during the second round of OnSuccess so that the TransportFeature
-        // "appears" after the ApplicationIdentity.RemotesChanged event.
+        // "appears" after the ILocalParty.AnyRemoteChanged event.
         r.AddFeature( t );
         if( listeners != null )
         {
