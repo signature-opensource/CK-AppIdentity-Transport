@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="NUnit" Version="4.6.1" />
-    <PackageReference Include="CK.Testing.Monitoring" Version="16.0.1-mike.0.ci.15" />
+    <PackageReference Include="CK.Testing" Version="16.0.1-mike.0.ci.15" />
   </ItemGroup>
 
   <ItemGroup>
