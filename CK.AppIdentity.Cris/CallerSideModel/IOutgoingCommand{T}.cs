@@ -8,7 +8,7 @@ namespace CK.AppIdentity.Cris;
 /// Strongly typed outgoing <typeparamref name="T"/> command.
 /// </summary>
 /// <typeparam name="T">Type of the command.</typeparam>
-public interface IOutgoingCommand<T> : IOutgoingCommand where T : class, IAbstractCommand
+public interface IOutgoingCommand<T> : IOutgoingCrisPoco where T : class, IAbstractCommand
 {
     /// <summary>
     /// Offers strongly types for the both the command and its result.
@@ -20,7 +20,7 @@ public interface IOutgoingCommand<T> : IOutgoingCommand where T : class, IAbstra
     {
         /// <summary>
         /// Gets a task that is completed with a successful result or with an exception
-        /// if <see cref="IOutgoingCommand.RequestCompletion"/> is a <see cref="ICrisResultError"/>.
+        /// if <see cref="IOutgoingCrisPoco.RequestCompletion"/> is a <see cref="ICrisResultError"/>.
         /// </summary>
         Task<TResult> Result { get; }
     }

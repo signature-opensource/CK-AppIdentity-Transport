@@ -30,6 +30,11 @@ public abstract class ChannelFeature
     }
 
     /// <summary>
+    /// Gets the remote party to which this feature is associated.
+    /// </summary>
+    public IRemoteParty Party => _transportFeature.Party;
+
+    /// <summary>
     /// Gets the <see cref="MessageProtocol.Name"/> that is handled by this channel.
     /// </summary>
     public string BaseProtocolName => _baseProtocolName;

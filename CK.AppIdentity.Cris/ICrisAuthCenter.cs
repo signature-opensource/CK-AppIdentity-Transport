@@ -5,13 +5,12 @@ namespace CK.AppIdentity.Cris;
 
 /// <summary>
 /// The "AuthCenter" feature is carried by a <see cref="ILocalParty"/> and identifies one
-/// of its <see cref="ILocalParty.Remotes"/> as the "Authentication Center" for local
-/// (the application or a tenant domain).
+/// of its <see cref="ILocalParty.Remotes"/> as the "Authentication Center".
 /// </summary>
 public interface ICrisAuthCenter
 {
     /// <summary>
-    /// Gets the party identifier of this application for this Authentication Center.
+    /// Gets the remote that is the Authentication Center.
     /// </summary>
-    int PartyActorId { get; }
+    IRemoteParty AuthCenter { get; }
 }

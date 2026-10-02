@@ -29,10 +29,16 @@ public sealed class RunningApplication : IAsyncDisposable
     public const int Port = 37140;
 
     readonly AutomaticServices _s;
+    readonly PocoDirectory _pocoDirectory;
     readonly ApplicationIdentityService _appIdentityService;
     readonly TransportManagerFeature _transport;
     readonly CrisChannelFeature _channel;
     readonly bool _isSender;
+
+    /// <summary>
+    /// Gets the Poco directory.
+    /// </summary>
+    public PocoDirectory PocoDirectory => _pocoDirectory;
 
     /// <summary>
     /// Gets the root application identity service. It is started and its <see cref="ApplicationIdentityService.InitializationTask"/>
@@ -87,6 +93,7 @@ public sealed class RunningApplication : IAsyncDisposable
         _isSender = isSender;
         _appIdentityService = s.Services.GetRequiredService<ApplicationIdentityService>();
         _transport = _appIdentityService.GetRequiredFeature<TransportManagerFeature>();
+        _pocoDirectory = s.Services.GetRequiredService<PocoDirectory>();
         _channel = _appIdentityService.Remotes.First( r => r.PartyName == (isSender ? "$Listener" : "$Sender") ).GetRequiredFeature<CrisChannelFeature>();
     }
 

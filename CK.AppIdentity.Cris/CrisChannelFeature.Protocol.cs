@@ -2,8 +2,10 @@ using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.Cris;
 using CK.Poco.Exc.Json;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -24,6 +26,7 @@ public sealed partial class CrisChannelFeature
         readonly CrisChannelFeature _feature;
 
         static PocoJsonExportOptions _exportOptions = new( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
+        static PocoJsonImportOptions _importOptions = new( PocoJsonImportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
 
         public Protocol( CrisChannelFeature feature, ref CreateParameters createParameters )
             : base( ref createParameters )
@@ -31,18 +34,18 @@ public sealed partial class CrisChannelFeature
             _feature = feature;
         }
 
-        internal bool TrySendRequest( OutgoingCommand request, bool highPriority )
+        internal bool TrySend( OutgoingCrisPoco o )
         {
             var message = MessageFactory.Create( bytes =>
             {
                 FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte( DSendRequest );
-                w.WriteString( request.IssuerToken.ToString() );
-                w.WriteNullableString( (string?)request.ExtraData );
+                w.WriteByte(  );
+                w.WriteString( o.IssuerToken.ToString() );
+                w.WriteNullableString( (string?)o.ExtraData );
                 w.Commit();
-                Write( request.Payload, bytes );
-            }, source: request );
-            if( highPriority ? TryEnqueueHighPriority( message ) : TryEnqueue( message ) )
+                Write( o.Payload, bytes );
+            }, source: o );
+            if( o.Payload is IEvent ? TryEnqueueHighPriority( message ) : TryEnqueue( message ) )
             {
                 return true;
             }
@@ -52,11 +55,10 @@ public sealed partial class CrisChannelFeature
 
         protected override void OnMessageSent( IParallelLogger logger, IOutgoingMessageData message )
         {
-            // Deliberately here rather than in OnSendMessage: SetSentDate is once-only by contract
-            // ("there is no TrySetSentDate"), and OnSendMessage runs again on every retry of a
-            // failed send. The second call threw, which killed the transport, which reconnected and
-            // peeked the same message — an endless loop on a poisoned queue head.
-            if( message.Source is OutgoingCommand r ) r.SetSentDate( logger, DateTime.UtcNow );
+            if( message.Source is OutgoingCrisPoco r )
+            {
+                r.SetSentDate( DateTime.UtcNow );
+            }
         }
 
         internal bool TrySendValidationMessage( ActivityMonitor.LogKey id, CrisValidationResult validationResult )
@@ -173,9 +175,23 @@ public sealed partial class CrisChannelFeature
         //    }
         //}
 
-        protected override ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
+        protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
         {
-            throw new NotImplementedException();
+            var r = new FastByteReader( message.Message );
+            var discriminator = r.ReadByte();
+            switch( discriminator )
+            {
+                case DSendRequest:
+                {
+                    monitor.Debug( $"Handling incoming Cris request." );
+                    var token = ActivityMonitor.Token.Parse( r.ReadString() );
+                    var authToken = r.ReadNullableString();
+                    var rPoco = new Utf8JsonReader( r.GetAfterHead() );
+                    var command = (IAbstractCommand)_feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions )!;
+                    break;
+                }
+            }
+            message.Dispose();
         }
     }
 }

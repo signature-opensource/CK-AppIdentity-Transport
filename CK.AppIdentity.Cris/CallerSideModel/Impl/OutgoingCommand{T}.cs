@@ -7,13 +7,13 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris;
 
-sealed class OutgoingCommand<T> : OutgoingCommand, IOutgoingCommand<T> where T : class, IAbstractCommand
+sealed class OutgoingCommand<T> : OutgoingCrisPoco, IOutgoingCommand<T> where T : class, IAbstractCommand
 {
-    public OutgoingCommand( OutgoingCommandCache cache,
+    public OutgoingCommand( OutgoingCache cache,
                             T command,
                             ActivityMonitor.Token issuerToken,
                             object? extraData,
-                            PerfectEventSender<IOutgoingCommand, IEvent>? onEventRelay )
+                            PerfectEventSender<IOutgoingCrisPoco, IEvent>? onEventRelay )
         : base( cache, command, issuerToken, extraData, onEventRelay )
     {
     }
@@ -91,9 +91,9 @@ sealed class OutgoingCommand<T> : OutgoingCommand, IOutgoingCommand<T> where T :
 
         public Task<CrisValidationResult> ValidationResult => _command.ValidationResult;
 
-        public ICollector<IOutgoingCommand, IEvent> Events => _command.Events;
+        public ICollector<IOutgoingCrisPoco, IEvent> Events => _command.Events;
 
-        public IAbstractCommand Payload => _command.Payload;
+        public ICrisPoco Payload => _command.Payload;
 
         public ActivityMonitor.Token IssuerToken => _command.IssuerToken;
 

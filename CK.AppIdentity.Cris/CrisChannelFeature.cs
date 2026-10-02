@@ -12,21 +12,21 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 {
     readonly PocoDirectory _pocoDirectory;
     readonly IncomingCommandExecutor _executor;
-    readonly OutgoingCommandCache _outgoingRequestCache;
-    readonly PerfectEventSender<IOutgoingCommand, IEvent> _onEvent;
-    readonly ConcurrentQueue<OutgoingCommand> _pendingRequest;
+    readonly OutgoingCache _outgoingRequestCache;
+    readonly PerfectEventSender<IOutgoingCrisPoco, IEvent> _onEvent;
+    readonly ConcurrentQueue<OutgoingCrisPoco> _pendingRequest;
 
     public CrisChannelFeature( TransportFeature transportFeature,
                                PocoDirectory pocoDirectory,
-                               IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
-                               CrisExecutionHost executionHost )
+                               CrisExecutionHost executionHost,
+                               IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint )
         : base( transportFeature )
     {
         _pocoDirectory = pocoDirectory;
-        _executor = new IncomingCommandExecutor( executionHost, endpoint );
-        _onEvent = new PerfectEventSender<IOutgoingCommand, IEvent>();
-        _outgoingRequestCache = new OutgoingCommandCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
-        _pendingRequest = new ConcurrentQueue<OutgoingCommand>();
+        _onEvent = new PerfectEventSender<IOutgoingCrisPoco, IEvent>();
+        _outgoingRequestCache = new OutgoingCache( pocoDirectory.Find<ICrisResultError>()!, _onEvent );
+        _pendingRequest = new ConcurrentQueue<OutgoingCrisPoco>();
+        _executor = new IncomingCommandExecutor( this, executionHost, endpoint );
     }
 
     new Protocol? CurrentHandler => Unsafe.As<Protocol?>( base.CurrentHandler );
@@ -44,27 +44,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         }
     }
 
-    void SubmitPendingRequests( IActivityMonitor monitor )
-    {
-        int count = 0;
-        while( _pendingRequest.TryPeek( out var r ) )
-        {
-            var h = CurrentHandler;
-            if( h != null && h.TrySendRequest( r, highPriority: r.Payload is IEvent ) )
-            {
-                _pendingRequest.TryDequeue( out _ );
-            }
-            else break;
-        }
-        if( count != 0 ) monitor.Info( $"Submitted {count} pending requests." );
-    }
-
     public IOutgoingCommand<T> SendCommand<T>( IActivityMonitor monitor, T command, string? authToken = null ) where T : class, IAbstractCommand
     {
         var request = _outgoingRequestCache.CreateCommand( monitor, command, authToken );
-        var r = (OutgoingCommand)request;
+        var r = (OutgoingCrisPoco)request;
         var h = CurrentHandler;
-        if( h == null || !h.TrySendRequest( (OutgoingCommand)request, true ) )
+        if( h == null || !h.TrySend( (OutgoingCrisPoco)request, true ) )
         {
             monitor.Warn( $"No connection to '{Transport.Party.FullName}'. Command '{command.CrisPocoModel.PocoName}' cannot be sent immediately." );
             _pendingRequest.Enqueue( r );
@@ -74,6 +59,21 @@ public sealed partial class CrisChannelFeature : ChannelFeature
             SubmitPendingRequests( monitor );
         }
         return request;
+    }
+
+    void SubmitPendingRequests( IActivityMonitor monitor )
+    {
+        int count = 0;
+        while( _pendingRequest.TryPeek( out OutgoingCrisPoco? r ) )
+        {
+            var h = CurrentHandler;
+            if( h != null && h.TrySend( r ) )
+            {
+                _pendingRequest.TryDequeue( out _ );
+            }
+            else break;
+        }
+        if( count != 0 ) monitor.Info( $"Submitted {count} pending requests." );
     }
 
 }

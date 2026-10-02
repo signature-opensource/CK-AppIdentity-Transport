@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using CK.IO.AppIdentity;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -10,15 +11,18 @@ namespace CK.AppIdentity.Cris;
 [DIContainerDefinition( DIContainerKind.Endpoint )]
 public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<AppIdentityDIContainerDefinition.Data>
 {
+    /// <summary>
+    /// In this context, we ALWAYS have a IRemoteParty to inject as a scoped service.
+    /// </summary>
     public sealed class Data : IScopedData
     {
         [AllowNull]
         internal CrisJob _job;
-        internal readonly string? _authenticationToken;
+        internal readonly IRemoteParty _remoteParty;
 
-        public Data( string? authenticationToken )
+        public Data( IRemoteParty remoteParty )
         {
-            _authenticationToken = authenticationToken;
+            _remoteParty = remoteParty;
         }
     }
 
@@ -29,6 +33,10 @@ public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<A
         services.AddScoped( sp => scopeData( sp )._job.RunnerMonitor! );
         services.AddScoped( sp => scopeData( sp )._job.RunnerMonitor!.ParallelLogger );
         services.AddScoped( sp => scopeData( sp )._job.ExecutionContext! );
+        // Adds the IRemoteParty as a resolvable scoped service.
+        services.AddScoped( sp => scopeData( sp )._remoteParty );
+        // The ILocalParty ambient service is not the default one but the owner of the remote here.
+        services.AddScoped( sp => scopeData( sp )._remoteParty.Owner );
         services.AddScoped<ICrisEventContext>( sp => scopeData( sp )._job.ExecutionContext! );
     }
 

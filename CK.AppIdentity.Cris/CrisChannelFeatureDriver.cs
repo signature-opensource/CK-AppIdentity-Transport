@@ -23,7 +23,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _endpoint, _executionHost );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _executionHost, _endpoint );
         return true;
     }
 }

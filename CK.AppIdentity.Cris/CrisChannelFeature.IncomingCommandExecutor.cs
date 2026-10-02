@@ -8,14 +8,19 @@ public sealed partial class CrisChannelFeature
 {
     sealed class IncomingCommandExecutor : ContainerCommandExecutor<AppIdentityDIContainerDefinition.Data>
     {
-        public IncomingCommandExecutor( CrisExecutionHost executionHost, IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint )
+        readonly CrisChannelFeature _feature;
+
+        public IncomingCommandExecutor( CrisChannelFeature crisChannelFeature,
+                                        CrisExecutionHost executionHost,
+                                        IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint )
             : base( executionHost, endpoint )
         {
+            _feature = crisChannelFeature;
         }
 
         public void Execute( IAbstractCommand command, ActivityMonitor.Token issuerToken, string? authenticationToken )
         {
-            var scopedData = new AppIdentityDIContainerDefinition.Data( authenticationToken );
+            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party );
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,
@@ -27,6 +32,7 @@ public sealed partial class CrisChannelFeature
             scopedData._job = job;
             ExecutionHost.StartJob( job );
         }
+
     }
 
 }
