@@ -98,14 +98,6 @@ public abstract class PeerProtocolHandler
     public ValueTask<bool> TryEnqueueAsync( IOutgoingMessage message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );
 
     /// <summary>
-    /// Called for each message received.
-    /// </summary>
-    /// <param name="monitor">The receiving monitor.</param>
-    /// <param name="message">The message that must be disposed once done with it.</param>
-    /// <returns>The awaitable.</returns>
-    internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message );
-
-    /// <summary>
     /// Called right before a message is sent to the remote. Does nothing by default (always returns true).
     /// <para>
     /// The <paramref name="replacement"/> can be used to implement version conversion if the message's protocol differ
@@ -115,6 +107,10 @@ public abstract class PeerProtocolHandler
     /// <b>This must be side effect free.</b> A send that fails leaves the message in the queue so that
     /// it can be retried, and this is called again on each attempt — possibly many times for one
     /// message. Anything that must happen exactly once belongs in <see cref="OnMessageSent"/>.
+    /// </para>
+    /// <para>
+    /// An exception thrown here is logged and the message is dropped (as if false was returned): it is
+    /// not retried and <see cref="OnMessageSent"/> is not called.
     /// </para>
     /// </summary>
     /// <param name="logger">The logger to use.</param>
@@ -148,4 +144,21 @@ public abstract class PeerProtocolHandler
     internal protected virtual void OnMessageSent( IParallelLogger logger, IOutgoingMessageData message )
     {
     }
+
+    /// <summary>
+    /// Called for each message received.
+    /// This MUST eventually dispose the message (that calls <see cref="IncomingMessage.Release()"/> but
+    /// because <see cref="IncomingMessage"/> are <see cref="IRefCounted"/> objects, the message can be
+    /// retained as long as needed.
+    /// <para>
+    /// An exception thrown here is logged and the message is skipped: the transport is not affected.
+    /// The message still belongs to this handler (it is not released on its behalf), so it should be
+    /// disposed before throwing.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The receiving monitor.</param>
+    /// <param name="message">The message that must be disposed once done with it.</param>
+    /// <returns>The awaitable.</returns>
+    internal protected abstract ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message );
+
 }

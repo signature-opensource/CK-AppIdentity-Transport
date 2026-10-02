@@ -19,10 +19,13 @@ public sealed partial class CountingChannelFeature : ChannelFeature
     readonly ConcurrentDictionary<int, int> _attempts;
     readonly ConcurrentDictionary<int, int> _sent;
     readonly ConcurrentQueue<int> _received;
+    readonly CountingChannelFeatureDriver _driver;
+    int _handlerChangedCount;
 
-    internal CountingChannelFeature( TransportFeature transport )
+    internal CountingChannelFeature( CountingChannelFeatureDriver driver, TransportFeature transport )
         : base( transport )
     {
+        _driver = driver;
         _attempts = new ConcurrentDictionary<int, int>();
         _sent = new ConcurrentDictionary<int, int>();
         _received = new ConcurrentQueue<int>();
@@ -75,6 +78,28 @@ public sealed partial class CountingChannelFeature : ChannelFeature
     public int SkippedId { get; set; } = -1;
 
     /// <summary>
+    /// When set, <see cref="PeerProtocolHandler.OnSendMessage"/> throws for this identity: the message
+    /// must be dropped without killing the transport.
+    /// </summary>
+    public int ThrowOnSendId { get; set; } = -1;
+
+    /// <summary>
+    /// When set, <see cref="PeerProtocolHandler.ReceiveAsync"/> throws for this identity (after having
+    /// disposed the message): the message must be skipped without killing the transport.
+    /// </summary>
+    public int ThrowOnReceiveId { get; set; } = -1;
+
+    /// <summary>
+    /// Gets how many times <see cref="OnCurrentHandlerChanged"/> ran.
+    /// </summary>
+    public int HandlerChangedCount => _handlerChangedCount;
+
+    /// <summary>
+    /// Gets whether <see cref="Teardown"/> ran.
+    /// </summary>
+    public bool TornDown { get; private set; }
+
+    /// <summary>
     /// Enqueues a message identified by <paramref name="id"/>.
     /// </summary>
     /// <param name="id">The message identity. Must be positive.</param>
@@ -92,6 +117,29 @@ public sealed partial class CountingChannelFeature : ChannelFeature
 
     protected override PeerProtocolHandler CreateHandler( IActivityMonitor monitor, ref PeerProtocolHandler.CreateParameters c )
     {
+        if( _driver.CreateHandlerFailures > 0 )
+        {
+            --_driver.CreateHandlerFailures;
+            throw new CKException( "CreateHandler failure." );
+        }
         return new Protocol( this, ref c );
+    }
+
+    protected override void OnCurrentHandlerChanged( IActivityMonitor monitor, PeerProtocolHandler? previous, PeerProtocolHandler? current )
+    {
+        Interlocked.Increment( ref _handlerChangedCount );
+        if( _driver.ThrowOnHandlerChanged )
+        {
+            throw new CKException( "OnCurrentHandlerChanged failure." );
+        }
+    }
+
+    protected override void Teardown( FeatureLifetimeContext context )
+    {
+        TornDown = true;
+        if( _driver.ThrowOnTeardown )
+        {
+            throw new CKException( "Teardown failure." );
+        }
     }
 }

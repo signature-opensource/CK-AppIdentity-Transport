@@ -201,4 +201,27 @@ public class SendHookTests
         p.SenderChannel.AttemptCount( 1 ).ShouldBe( 1, "The throw did not cause a resend." );
         p.SenderChannel.SentCount( 1 ).ShouldBe( 1 );
     }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_throwing_OnSendMessage_drops_the_message_without_killing_the_transport_Async( CancellationToken token )
+    {
+        // Escaping the send loop kills the transport, which reconnects and peeks the same message:
+        // it throws again, forever. The message must be dropped instead.
+        await using var p = await CreatePeersAsync( "M6ThrowSend", token );
+        var transport = p.SenderTransport.CurrentTransport;
+        transport.ShouldNotBeNull();
+        p.SenderChannel.ThrowOnSendId = 2;
+
+        p.SenderChannel.TrySend( 1 ).ShouldBeTrue();
+        p.SenderChannel.TrySend( 2 ).ShouldBeTrue();
+        p.SenderChannel.TrySend( 3 ).ShouldBeTrue();
+
+        await WaitForAsync( () => p.ListenerChannel.Received.Count == 2, "the 2 other messages to arrive", token );
+        p.ListenerChannel.Received.ShouldBe( [1, 3] );
+
+        p.SenderChannel.AttemptCount( 2 ).ShouldBe( 1, "Dropped, not retried." );
+        p.SenderChannel.SentCount( 2 ).ShouldBe( 0 );
+        transport.Lifetime.IsCancellationRequested.ShouldBeFalse( "The transport survived." );
+        p.SenderTransport.CurrentTransport.ShouldBeSameAs( transport );
+    }
 }

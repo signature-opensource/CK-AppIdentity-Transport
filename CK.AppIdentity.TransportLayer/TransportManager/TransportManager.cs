@@ -510,7 +510,24 @@ sealed partial class TransportManager : MicroAgent
             if( feature != null && offMessage == null )
             {
                 await forPeeringIssue.OnTransportAvailableAsync( monitor, feature );
-                await feature.OnTransportAppearAsync( monitor, t, job.Protocols, job.ClockOffset, job.EvictionMessage );
+                try
+                {
+                    await feature.OnTransportAppearAsync( monitor, t, job.Protocols, job.ClockOffset, job.EvictionMessage );
+                }
+                catch( Exception ex )
+                {
+                    // The activation runs channel code (CreateHandler). If it throws, the controller is
+                    // already bound to this transport but its receive and send loops may never have
+                    // started: the MicroAgent would only log this, leaving a zombie transport that is
+                    // never killed, so never reconnected. Kill it: the reconnection back-off paces the
+                    // retries if the failure is deterministic.
+                    monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                   $"Unhandled error while activating transport '{t}' for '{remote.FullName}'. Killing it.", ex );
+                    // KillTransport, not KillTransportAsync: it condemns the transport right now (the
+                    // next Rebind requires it) and the kill job runs after this one.
+                    KillTransport( t, 0 );
+                    return;
+                }
                 // The transport has a controller from here, so it can send. One watcher per live
                 // transport: it ends itself when the transport is condemned and goes back to the pool.
                 _backTasks.Initialize<KeepAliveBackTask>( monitor, _headKeepAlive, back => back.OnInitialize( t ) );

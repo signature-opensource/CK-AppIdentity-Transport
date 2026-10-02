@@ -10,8 +10,8 @@ namespace CK.AppIdentity.TransportLayer;
 /// that compose the <see cref="WireMessage"/>: the ReadOnlySequence must no more be accessed
 /// once this message is disposed.
 /// <para>
-/// The <see cref="ToString"/> method can be used for logging: it displays the special singletons,
-/// the <see cref="Protocol"/> and whether the message has been released or its wire message length.
+/// The <see cref="ToString"/> method can be used for logging: it displays the special singletons (<see cref="Invalid"/>, <see cref="Canceled"/>,
+/// <see cref="Empty"/>, <see cref="EmptyAck"/>) or the <see cref="Protocol"/> and whether the message has been released and its wire message length.
 /// </para>
 /// <para>
 /// The maximal message length is <see cref="int.MaxValue"/> (2 GiB).
@@ -152,7 +152,7 @@ public sealed class IncomingMessage : IRefCounted, IDisposable
     /// Retains this message, preventing a <see cref="Release()"/> to release the resources.
     /// Release must be called as many times as AddRef has been called for the resources to be released.
     /// Calling this on the special messages <see cref="Invalid"/>, <see cref="Canceled"/>, <see cref="Empty"/> and <see cref="EmptyAck"/>
-    /// has no effect and returns false.
+    /// has no effect.
     /// </summary>
     public void AddRef()
     {

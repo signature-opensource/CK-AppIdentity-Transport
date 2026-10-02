@@ -40,6 +40,10 @@ public sealed partial class CountingChannelFeature
                 _feature.GateEntered.Set();
                 _feature.SendGate.Wait( 20_000 );
             }
+            if( id == _feature.ThrowOnSendId )
+            {
+                throw new CKException( $"OnSendMessage for {id}." );
+            }
             return id != _feature.SkippedId;
         }
 
@@ -58,7 +62,12 @@ public sealed partial class CountingChannelFeature
             Span<byte> b = stackalloc byte[4];
             message.Message.Slice( 0, 4 ).CopyTo( b );
             message.Dispose();
-            _feature._received.Enqueue( BinaryPrimitives.ReadInt32LittleEndian( b ) );
+            int id = BinaryPrimitives.ReadInt32LittleEndian( b );
+            if( id == _feature.ThrowOnReceiveId )
+            {
+                throw new CKException( $"ReceiveAsync for {id}." );
+            }
+            _feature._received.Enqueue( id );
             return default;
         }
     }

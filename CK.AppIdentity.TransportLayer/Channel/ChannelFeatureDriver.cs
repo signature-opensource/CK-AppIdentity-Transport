@@ -1,4 +1,5 @@
 using CK.Core;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -82,22 +83,33 @@ public abstract class ChannelFeatureDriver<T> : ApplicationIdentityFeatureDriver
 
     protected override Task TeardownAsync( FeatureLifetimeContext context )
     {
-        foreach( var r in context.GetAllRemotes() )
-        {
-            var t = r.GetFeature<T>();
-            t?.Teardown( context );
-        }
+        TeardownChannels( context );
         return Task.CompletedTask;
     }
 
     protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty remote )
     {
+        TeardownChannels( context );
+        return Task.CompletedTask;
+    }
+
+    void TeardownChannels( FeatureLifetimeContext context )
+    {
         foreach( var r in context.GetAllRemotes() )
         {
             var t = r.GetFeature<T>();
-            t?.Teardown( context );
+            if( t == null ) continue;
+            try
+            {
+                t.Teardown( context );
+            }
+            catch( Exception ex )
+            {
+                // One failing channel must not prevent the others from being torn down.
+                context.Monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                       $"Unhandled error in {t.GetType():C}.Teardown for '{r.FullName}'. Continuing teardown.", ex );
+            }
         }
-        return Task.CompletedTask;
     }
 
     /// <summary>

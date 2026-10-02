@@ -100,7 +100,18 @@ public abstract class ChannelFeature
         if( prev != h )
         {
             _currentHandler = h;
-            OnCurrentHandlerChanged( monitor, prev, h );
+            try
+            {
+                OnCurrentHandlerChanged( monitor, prev, h );
+            }
+            catch( Exception ex )
+            {
+                // A notification: the change has happened. Letting this escape would abort the
+                // transport activation or, on disconnection, skip the notification of the other
+                // channels and leave the connection availability stale.
+                monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                               $"Unhandled error in {GetType():C}.OnCurrentHandlerChanged.", ex );
+            }
         }
     }
 
@@ -124,6 +135,9 @@ public abstract class ChannelFeature
     /// <summary>
     /// Called whenever the <see cref="CurrentHandler"/> changed.
     /// Does nothing by default.
+    /// <para>
+    /// An exception thrown here is logged and swallowed: the handler has changed regardless.
+    /// </para>
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="previous">The previous handler.</param>

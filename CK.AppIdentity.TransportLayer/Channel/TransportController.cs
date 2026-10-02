@@ -314,7 +314,23 @@ sealed partial class TransportController
                 else
                 {
                     PeerProtocolHandler currentHandler = handlers[protocolNumber];
-                    if( currentHandler.OnSendMessage( transportManager.Logger, m, out var replacement ) )
+                    bool send;
+                    IOutgoingMessage? replacement;
+                    try
+                    {
+                        send = currentHandler.OnSendMessage( transportManager.Logger, m, out replacement );
+                    }
+                    catch( Exception ex )
+                    {
+                        // Letting this escape kills the transport, which reconnects and peeks the same
+                        // message: the throw would happen again, a live-lock on a poisoned queue head.
+                        // The message is dropped instead.
+                        transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                       $"Unhandled error in {currentHandler.GetType():C}.OnSendMessage for '{m.Protocol}'. Message is dropped.", ex );
+                        send = false;
+                        replacement = null;
+                    }
+                    if( send )
                     {
                         var toSend = replacement ?? m;
                         if( toSend.Protocol != currentHandler.Protocol )

@@ -134,7 +134,22 @@ public abstract partial class Transport
                 {
                     int n = m.GetProtocolNumber();
                     Throw.DebugAssert( n > 0 && n <= handlers.Length );
-                    await handlers[n - 1].ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
+                    var h = handlers[n - 1];
+                    try
+                    {
+                        await h.ReceiveAsync( receiveMonitor, m ).ConfigureAwait( false );
+                    }
+                    catch( Exception ex )
+                    {
+                        // The message has been consumed off the wire: a handler bug is not a transport
+                        // fault. Killing the transport here drops every other protocol on it, and a peer
+                        // that resends the same message after reconnecting kills it again, forever.
+                        // The message is NOT released here: the handler owns it, it may have released it
+                        // already or retained it, and releasing it once more could free a buffer that is
+                        // still in use. At worst this leaks one pooled buffer to the GC.
+                        receiveMonitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                              $"Unhandled error in {h.GetType():C}.ReceiveAsync for '{m.Protocol}'. Message is skipped.", ex );
+                    }
                 }
             }
         }
