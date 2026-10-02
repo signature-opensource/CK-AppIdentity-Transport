@@ -4,8 +4,8 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.DB.Tests.NUnit" Version="35.0.0-juliet.0.ci.8" />
-    <PackageReference Include="CK.SqlServer.Dapper" Version="17.0.0-juliet.0.ci.4" />
+    <PackageReference Include="CK.DB.Tests.NUnit" Version="35.0.0-juliet.0.ci.10" />
+    <PackageReference Include="CK.SqlServer.Dapper" Version="17.0.0-juliet.0.ci.6" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.0" />
     <ProjectReference Include="..\..\CK.DB.AppIdentity\CK.DB.AppIdentity.csproj" />

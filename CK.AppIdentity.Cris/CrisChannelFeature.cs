@@ -49,7 +49,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         var request = _outgoingRequestCache.CreateCommand( monitor, command, authToken );
         var r = (OutgoingCrisPoco)request;
         var h = CurrentHandler;
-        if( h == null || !h.TrySend( (OutgoingCrisPoco)request, true ) )
+        if( h == null || !h.TrySend( (OutgoingCrisPoco)request ) )
         {
             monitor.Warn( $"No connection to '{Transport.Party.FullName}'. Command '{command.CrisPocoModel.PocoName}' cannot be sent immediately." );
             _pendingRequest.Enqueue( r );

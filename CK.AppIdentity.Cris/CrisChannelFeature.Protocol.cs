@@ -39,7 +39,7 @@ public sealed partial class CrisChannelFeature
             var message = MessageFactory.Create( bytes =>
             {
                 FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte(  );
+                w.WriteByte( DSendRequest );
                 w.WriteString( o.IssuerToken.ToString() );
                 w.WriteNullableString( (string?)o.ExtraData );
                 w.Commit();

@@ -1,6 +1,5 @@
 using CK.Core;
 using CK.Cris;
-using CK.IO.AppIdentity;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -35,8 +34,8 @@ public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<A
         services.AddScoped( sp => scopeData( sp )._job.ExecutionContext! );
         // Adds the IRemoteParty as a resolvable scoped service.
         services.AddScoped( sp => scopeData( sp )._remoteParty );
-        // The ILocalParty ambient service is not the default one but the owner of the remote here.
-        services.AddScoped( sp => scopeData( sp )._remoteParty.Owner );
+        // The CurrentLocalParty ambient service is not the default one but the owner of the remote here.
+        services.AddScoped( sp => new CurrentLocalParty( scopeData( sp )._remoteParty.Owner ) );
         services.AddScoped<ICrisEventContext>( sp => scopeData( sp )._job.ExecutionContext! );
     }
 
