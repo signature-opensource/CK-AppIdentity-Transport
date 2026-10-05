@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Shouldly;
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -27,6 +28,8 @@ public sealed class RunningApplication : IAsyncDisposable
     /// The TCP port the "Test/$Listener" listens on and the "Test/$Sender" connects to.
     /// </summary>
     public const int Port = 37140;
+
+    static int _creationCount;
 
     readonly AutomaticServices _s;
     readonly PocoDirectory _pocoDirectory;
@@ -123,7 +126,9 @@ public sealed class RunningApplication : IAsyncDisposable
                                                               params Type[] types )
     {
         var engineConfiguration = TestHelper.CreateDefaultEngineConfiguration();
-        var outputPath = TestHelper.TestProjectFolder.Combine( "$StObjGen/" + (isSender ? "Sender" : "Listener") );
+        // Each application has its own folder: the generated assembly of a previous application of this
+        // process is loaded and cannot be cleaned up. This also gives each application a fresh key store.
+        var outputPath = TestHelper.TestProjectFolder.Combine( $"$StObjGen/{(isSender ? "Sender" : "Listener")}/{Interlocked.Increment( ref _creationCount )}" );
         TestHelper.CleanupFolder( outputPath );
         engineConfiguration.FirstBinPath.OutputPath = outputPath;
         engineConfiguration.FirstBinPath.GenerateSourceFiles = false;
@@ -131,8 +136,9 @@ public sealed class RunningApplication : IAsyncDisposable
         engineConfiguration.FirstBinPath.Types.Add( isSender ? typeof( SenderHandler ) : typeof( ListenerHandler ),
                                                     typeof( ISenderCommand ),
                                                     typeof( IListenerCommand ),
-                                                    typeof( CrisBackgroundExecutorService ),
-                                                    typeof( CrisBackgroundExecutor ),
+                                                    typeof( IListenerImmediateEvent ),
+                                                    typeof( IWhoAmICommand ),
+                                                    typeof( CrisExecutionHost ),
                                                     typeof( ApplicationIdentityService ),
                                                     typeof( MessageProtocolDirectoryService ),
                                                     typeof( TransportFeatureDriver ),
@@ -151,6 +157,8 @@ public sealed class RunningApplication : IAsyncDisposable
                 c["RootStorePath"] = outputPath.AppendPart( "AppStore" );
                 c["FullName"] = (isSender ? "Test/$Sender" : "Test/$Listener");
                 c["Parties:0:PartyName"] = isSender ? "$Listener" : "$Sender";
+                // Both applications have a fresh key store: they trust each other on first contact.
+                c["Parties:0:AutoTrustKey"] = "Once";
                 // A dedicated port: the default 37120 one is used by other test assemblies that
                 // can run concurrently.
                 if( isSender )

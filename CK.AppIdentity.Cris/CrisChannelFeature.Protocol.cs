@@ -2,31 +2,35 @@ using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.Cris;
 using CK.Poco.Exc.Json;
-using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Buffers;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
+using System.Collections.Immutable;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris;
 
 public sealed partial class CrisChannelFeature
 {
-    const byte DSendRequest = 1;
-    const byte DValidationResult = 2;
-    const byte DRequestResult = 3;
-    const byte DEvent = 4;
+    // Caller to callee: the issuer token and the typed command.
+    const byte DCommand = 1;
+    // Callee to caller: the issuer token key and a typed immediate event.
+    const byte DImmediateEvent = 2;
+    // Callee to caller: the issuer token key and the untyped ICrisCallResult.
+    const byte DExecuted = 3;
 
     /// <summary>
-    /// Implements the byte[] protocol.
+    /// Implements the Cris protocol. A message starts with one of the D* discriminators.
+    /// <para>
+    /// The answers (immediate events and final result) are sent on the high priority queue: they are
+    /// small, never block the runner that executes the command and keep their relative order.
+    /// </para>
     /// </summary>
-    sealed class Protocol : PeerProtocolHandler
+    internal sealed class Protocol : PeerProtocolHandler
     {
         readonly CrisChannelFeature _feature;
 
-        static PocoJsonExportOptions _exportOptions = new( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
-        static PocoJsonImportOptions _importOptions = new( PocoJsonImportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
+        static readonly PocoJsonExportOptions _exportOptions = new( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
+        static readonly PocoJsonImportOptions _importOptions = new( PocoJsonImportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
 
         public Protocol( CrisChannelFeature feature, ref CreateParameters createParameters )
             : base( ref createParameters )
@@ -34,164 +38,188 @@ public sealed partial class CrisChannelFeature
             _feature = feature;
         }
 
-        internal bool TrySend( OutgoingCrisPoco o )
+        internal IOutgoingMessage CreateCommandMessage( ExecutingCommand c )
         {
-            var message = MessageFactory.Create( bytes =>
+            return MessageFactory.Create( bytes =>
             {
-                FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte( DSendRequest );
-                w.WriteString( o.IssuerToken.ToString() );
-                w.WriteNullableString( (string?)o.ExtraData );
+                var w = new FastByteWriter( bytes );
+                w.WriteByte( DCommand );
+                w.WriteString( c.IssuerToken.ToString() );
                 w.Commit();
-                Write( o.Payload, bytes );
-            }, source: o );
-            if( o.Payload is IEvent ? TryEnqueueHighPriority( message ) : TryEnqueue( message ) )
-            {
-                return true;
-            }
-            message.Dispose();
-            return false;
+                _feature._pocoDirectory.WriteJson( bytes, c.Command, withType: true, _exportOptions );
+            }, source: c );
         }
 
-        protected override void OnMessageSent( IParallelLogger logger, IOutgoingMessageData message )
+        internal void SendImmediateEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
         {
-            if( message.Source is OutgoingCrisPoco r )
+            IOutgoingMessage message;
+            try
             {
-                r.SetSentDate( DateTime.UtcNow );
-            }
-        }
-
-        internal bool TrySendValidationMessage( ActivityMonitor.LogKey id, CrisValidationResult validationResult )
-        {
-            var message = MessageFactory.Create( bytes =>
-            {
-                FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte( DValidationResult );
-                w.WriteReadLogKey( id );
-                w.WriteCrisValidationResult( validationResult );
-                w.Commit();
-            } );
-            if( TryEnqueueHighPriority( message ) )
-            {
-                return true;
-            }
-            message.Dispose();
-            return false;
-        }
-
-        //internal bool TrySendResult( ActivityMonitor.LogKey id, CrisExecutionHost.ICrisJobResult? result )
-        //{
-        //    var message = MessageFactory.Create( bytes =>
-        //    {
-        //        FastByteWriter w = new FastByteWriter( bytes );
-        //        w.WriteByte( DRequestResult );
-        //        w.WriteReadLogKey( id );
-        //        w.Commit();
-        //        Write( result, bytes );
-        //    } );
-        //    if( TryEnqueueHighPriority( message ) )
-        //    {
-        //        return true;
-        //    }
-        //    message.Dispose();
-        //    return false;
-        //}
-
-        internal bool TrySendCommandEvent( ActivityMonitor.LogKey id, IEvent e )
-        {
-            var message = MessageFactory.Create( bytes =>
-            {
-                FastByteWriter w = new FastByteWriter( bytes );
-                w.WriteByte( DEvent );
-                w.WriteReadLogKey( id );
-                w.Commit();
-                Write( e, bytes );
-            } );
-            if( TryEnqueueHighPriority( message ) )
-            {
-                return true;
-            }
-            message.Dispose();
-            return false;
-        }
-
-        void Write( IPoco poco, IBufferWriter<byte> bytes )
-        {
-            using( var w = new Utf8JsonWriter( bytes, _exportOptions.WriterOptions ) )
-            {
-                poco.WriteJson( w, new PocoJsonWriteContext( _feature._pocoDirectory, _exportOptions ) );
-            }
-        }
-
-        //protected override ValueTask ReceiveAsync( IActivityMonitor monitor, ITransportMessage message )
-        //{
-        //    HandleMessage( monitor, _feature, message.Message );
-        //    message.Dispose();
-        //    return default;
-
-        //    static void HandleMessage( IActivityMonitor monitor,
-        //                               CrisChannelFeature feature,
-        //                               ReadOnlySequence<byte> message )
-        //    {
-        //        var r = new FastByteReader( message  );
-        //        var discriminator = r.ReadByte();
-        //        switch( discriminator )
-        //        {
-        //            case DSendRequest:
-        //                {
-        //                    monitor.Debug( $"Handling incoming Cris request." );
-        //                    var token = ActivityMonitor.Token.Parse( r.ReadString() );
-        //                    var authToken = r.ReadNullableString();
-        //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
-        //                    var payload = (IAbstractCommand)feature._pocoDirectory.Read( ref rPoco )!;
-        //                    feature._executor.BackgroundExecute( feature._executorEndpoint, new CrisChannelExecutorRequest( payload, token, authToken ) );
-        //                    break;
-        //                }
-        //            case DValidationResult:
-        //                {
-        //                    monitor.Debug( $"Handling Cris validation message." );
-        //                    feature._outgoingRequestCache.SetValidationResult( monitor.ParallelLogger, r.ReadLogKey(), r.ReadCrisValidationResult() );
-        //                    break;
-        //                }
-        //            case DEvent:
-        //                {
-        //                    monitor.Debug( $"Handling Cris event message." );
-        //                    var id = r.ReadLogKey();
-        //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
-        //                    var e = (IEvent)feature._pocoDirectory.Read( ref rPoco )!;
-        //                    feature._outgoingRequestCache.CollectCommandEvent( monitor, id, e );
-        //                    break;
-        //                }
-        //            case DRequestResult:
-        //                {
-        //                    monitor.Debug( $"Handling Cris request result." );
-        //                    var id = r.ReadLogKey();
-        //                    var rPoco = new Utf8JsonReader( r.GetRemainder() );
-        //                    var result = (CrisExecutor.ICrisExecutorPayload)feature._pocoDirectory.Read( ref rPoco )!;
-        //                    feature._outgoingRequestCache.SetResult( monitor.ParallelLogger, id, result.Result );
-        //                    break;
-        //                }
-        //        }
-        //    }
-        //}
-
-        protected override async ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
-        {
-            var r = new FastByteReader( message.Message );
-            var discriminator = r.ReadByte();
-            switch( discriminator )
-            {
-                case DSendRequest:
+                message = MessageFactory.Create( bytes =>
                 {
-                    monitor.Debug( $"Handling incoming Cris request." );
-                    var token = ActivityMonitor.Token.Parse( r.ReadString() );
-                    var authToken = r.ReadNullableString();
-                    var rPoco = new Utf8JsonReader( r.GetAfterHead() );
-                    var command = (IAbstractCommand)_feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions )!;
-                    break;
+                    var w = new FastByteWriter( bytes );
+                    w.WriteByte( DImmediateEvent );
+                    w.WriteLogKey( key );
+                    w.Commit();
+                    _feature._pocoDirectory.WriteJson( bytes, e, withType: true, _exportOptions );
+                } );
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to serialize immediate event '{e.CrisPocoModel.PocoName}' for '{_feature.Party.FullName}'. It is not sent.", ex );
+                return;
+            }
+            Enqueue( monitor, message );
+        }
+
+        internal void SendExecuted( IActivityMonitor monitor, ActivityMonitor.LogKey key, object? result, ImmutableArray<UserMessage> validationMessages )
+        {
+            var callResult = _feature._callResultFactory.Create( r =>
+            {
+                r.Result = result;
+                if( !validationMessages.IsDefaultOrEmpty ) r.ValidationMessages = [.. validationMessages];
+            } );
+            IOutgoingMessage message;
+            try
+            {
+                message = CreateExecutedMessage( key, callResult );
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to serialize the result for '{_feature.Party.FullName}'. Sending an error instead.", ex );
+                message = CreateExecutedMessage( key, CreateError( "Unable to serialize the command result." ) );
+            }
+            Enqueue( monitor, message );
+        }
+
+        void SendError( IActivityMonitor monitor, ActivityMonitor.LogKey key, string error )
+        {
+            Enqueue( monitor, CreateExecutedMessage( key, CreateError( error ) ) );
+        }
+
+        ICrisCallResult CreateError( string message )
+        {
+            return _feature._callResultFactory.Create( r => r.Result = _feature._errorFactory.Create( e => e.Errors.Add(
+                new UserMessage( UserMessageLevel.Error, MCString.CreateNonTranslatable( NormalizedCultureInfo.CodeDefault, message ) ) ) ) );
+        }
+
+        IOutgoingMessage CreateExecutedMessage( ActivityMonitor.LogKey key, ICrisCallResult callResult )
+        {
+            return MessageFactory.Create( bytes =>
+            {
+                var w = new FastByteWriter( bytes );
+                w.WriteByte( DExecuted );
+                w.WriteLogKey( key );
+                w.Commit();
+                _feature._pocoDirectory.WriteJson( bytes, callResult, withType: false, _exportOptions );
+            } );
+        }
+
+        void Enqueue( IActivityMonitor monitor, IOutgoingMessage message )
+        {
+            if( !TryEnqueueHighPriority( message ) )
+            {
+                message.Dispose();
+                monitor.Warn( $"Remote '{_feature.Party.FullName}' is no more available. Answer is lost." );
+            }
+        }
+
+        protected override ValueTask ReceiveAsync( IActivityMonitor monitor, IncomingMessage message )
+        {
+            // Everything is read before the message is released: only the
+            // dispatch of an immediate event may complete asynchronously.
+            try
+            {
+                return Handle( monitor, message.Message );
+            }
+            finally
+            {
+                message.Dispose();
+            }
+        }
+
+        ValueTask Handle( IActivityMonitor monitor, ReadOnlySequence<byte> message )
+        {
+            var r = new FastByteReader( message );
+            switch( r.ReadByte() )
+            {
+                case DCommand:
+                    HandleCommand( monitor, ref r );
+                    return default;
+                case DImmediateEvent:
+                    return HandleImmediateEvent( monitor, ref r );
+                case DExecuted:
+                    HandleExecuted( monitor, ref r );
+                    return default;
+                default:
+                    monitor.Error( $"Invalid Cris message received from '{_feature.Party.FullName}'. Ignored." );
+                    return default;
+            }
+        }
+
+        void HandleCommand( IActivityMonitor monitor, ref FastByteReader r )
+        {
+            if( !ActivityMonitor.Token.TryParse( r.ReadString(), out var token ) )
+            {
+                // Without the token, there is no key to answer to.
+                monitor.Error( $"Invalid issuer token in a command received from '{_feature.Party.FullName}'. Ignored." );
+                return;
+            }
+            IAbstractCommand? command = null;
+            try
+            {
+                command = _feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions ) as IAbstractCommand;
+                if( command == null )
+                {
+                    monitor.Error( $"Received a Poco that is not a command from '{_feature.Party.FullName}'." );
                 }
             }
-            message.Dispose();
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to read a command received from '{_feature.Party.FullName}'.", ex );
+            }
+            if( command == null )
+            {
+                SendError( monitor, token.Key, "Unable to read the command." );
+                return;
+            }
+            _feature._executor.Execute( this, command, token );
+        }
+
+        ValueTask HandleImmediateEvent( IActivityMonitor monitor, ref FastByteReader r )
+        {
+            var key = r.ReadLogKey();
+            IEvent? e = null;
+            try
+            {
+                e = _feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions ) as IEvent;
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to read an immediate event received from '{_feature.Party.FullName}'. Ignored.", ex );
+                return default;
+            }
+            if( e == null )
+            {
+                monitor.Error( $"Received a Poco that is not an event from '{_feature.Party.FullName}'. Ignored." );
+                return default;
+            }
+            return new ValueTask( _feature.OnImmediateEventAsync( monitor, key, e ) );
+        }
+
+        void HandleExecuted( IActivityMonitor monitor, ref FastByteReader r )
+        {
+            var key = r.ReadLogKey();
+            ICrisCallResult? result = null;
+            try
+            {
+                result = _feature._callResultFactory.ReadJson( r.GetAfterHead(), _importOptions );
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to read the result of command '{key}' received from '{_feature.Party.FullName}'.", ex );
+            }
+            _feature.OnExecuted( monitor, key, result );
         }
     }
 }
