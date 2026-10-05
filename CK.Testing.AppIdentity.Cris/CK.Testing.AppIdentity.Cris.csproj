@@ -6,9 +6,9 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.0-juliet.0.ci.11" />
-        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="35.0.0-juliet.0.ci.6" />
-        <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.0-juliet.0.ci.6" />
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.0-juliet.0.ci.13" />
+        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="35.0.0-juliet.0.ci.8" />
+        <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.0-juliet.0.ci.8" />
     </ItemGroup>
 
     <ItemGroup>
