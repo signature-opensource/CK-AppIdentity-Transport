@@ -2,185 +2,261 @@ using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 
 namespace CK.AppIdentity.KeyManagement;
 
 
-sealed partial class LocalKeys 
+sealed partial class LocalKeys
 {
-    internal sealed class Builder : KeyLoader
+    internal sealed class Builder
     {
         readonly ILocalParty _local;
         readonly IDataProtectionProvider _protectionProvider;
+        readonly ICoreKeyStore _keyStore;
+        readonly IFileStore _store;
 
-        public Builder( ILocalParty local, IDataProtectionProvider protectionProvider )
-            : base( local.LocalFileStore )
+        public Builder( ILocalParty local, IDataProtectionProvider protectionProvider, ICoreKeyStore keyStore )
         {
             _local = local;
             _protectionProvider = protectionProvider;
+            _keyStore = keyStore;
+            _store = local.LocalFileStore;
         }
 
+        /// <summary>
+        /// Loads the identity, completing whatever a crash interrupted, and rotates if the current
+        /// key is near its expiry.
+        /// <para>
+        /// The log is the truth. Its head <c>h</c> is the current key: <c>{h}</c> must open, keys
+        /// below <c>h</c> are leftovers of a rotation that crashed before deleting them, keys beyond
+        /// <c>h+1</c> are leftovers of one that crashed before its commit point (nothing commits to
+        /// them), and <c>Current.cer</c> is public data re-minted whenever it does not match.
+        /// </para>
+        /// </summary>
         public LocalKeys Build( IActivityMonitor monitor )
         {
             var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
             int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
-            // KeyRenewalFrequency may be introduced to generate more certificates
-            // but with shorter validity.
-            int renewalFrequency = 1;
+            var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
+            var keysPath = _store.FolderPath.AppendPart( "Keys" );
+            var kelPath = keysPath.AppendPart( KelFolderName );
+            _store.CreateDirectory( kelPath );
+            TrashLegacyFiles( monitor, keysPath );
 
-            var systemClock = _local.ApplicationIdentityService.SystemClock;
-            var now = systemClock.UtcNow;
-            var today = now.Date;
-            var identityPath = _store.FolderPath.AppendPart( "Keys" );
-            // File name matters:
-            //   - The file name is in FileUtil.FileNameUniqueTimeUtcFormat format.
-            //   - The date time parsed from the name is greater than now: This is our certificate name.
-            //   - The certificates are sorted in reverse order of their certificate name.
-            //   => The first one is the one to use, the current one, because it is the most recent one.
-            List<LocalIdentityKey> identities = LoadIdentityKeys( monitor, protector, now, identityPath );
-            // The certificate to consider is the last one of the list.
-            // If it cannot guarantee the "AllowedOfflineDays", we must issue a new identity valid from now up to twice the AllowedOfflineDays: we (or a remote) can safely be offline for this time span.
-            if( identities.Count == 0 || identities[0].NotAfter < today.AddDays( (allowedOfflineDays / renewalFrequency) + 1 ) )
+            var log = LoadLog( monitor, kelPath );
+            LocalIdentityKey current;
+            if( log.Count == 0 )
             {
-                var newOne = CreateIdentityCertificate( _local.FullName,
-                                                        today.AddDays( ((renewalFrequency + 1) * allowedOfflineDays) / renewalFrequency ),
-                                                        now );
-                if( identities.Count == 0 ) monitor.Warn( $"No identity keys found in '{identityPath}'." );
-                // Report the EXISTING key's expiry: that is the reason a new one is being created.
-                // Printing newOne.NotAfter here would state the new key's expiry as the justification
-                // for its own creation, which reads plausibly and tells an operator nothing.
-                else monitor.Info( $"Most recent identity key ({identities[0].Name}.pfx) expires on {identities[0].NotAfter:yyyy-MM-dd}. " +
-                                   $"It is not enough to guarantee AllowedOfflineDays = {allowedOfflineDays}." );
+                (current, var inception) = Incept( monitor, keysPath, kelPath, allowedOfflineDays, now );
+                log.Add( inception );
+            }
+            else
+            {
+                current = LoadCurrent( monitor, keysPath, log[^1], allowedOfflineDays, now );
+            }
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays );
 
-                var (name, filePath) = SaveIdentityFileAndPassword( monitor, protector, now, identityPath, newOne );
-
-                // It's not a bad idea to reuse the validation here to obtain the private key.
-                var privateKey = ValidateIdentityAndGetPrivateKey( monitor, now, filePath, newOne );
-                if( privateKey == null )
+            // Scheduled rotation: a current key that cannot guarantee AllowedOfflineDays any more is
+            // replaced by the committed next one.
+            if( current.NotAfter < now.AddDays( allowedOfflineDays + 1 ) )
+            {
+                monitor.Info( $"Identity key #{log[^1].Seq} of '{_local.FullName}' expires on {current.NotAfter:yyyy-MM-dd}. " +
+                              $"It is not enough to guarantee AllowedOfflineDays = {allowedOfflineDays}: rotating." );
+                if( !keys.Rotate( monitor ) )
                 {
-                    newOne.Dispose();
-                    Throw.CKException( "A newly created key is not valid." );
+                    // Keep working rather than stop: same key, fresh certificate. The failure has
+                    // been logged as an error by Rotate.
+                    keys.RenewCertificate( monitor, now );
+                }
+            }
+            var c = keys.CurrentIdentity;
+            HandleIdentityPublicKeyFiles( monitor, _store, keysPath, c );
+            monitor.Info( $"Local '{_local.FullName}' identity key is #{keys.Seq}, expiring on {c.NotAfter:yyyy-MM-dd}." );
+            return keys;
+        }
+
+        (LocalIdentityKey, KeyEvent) Incept( IActivityMonitor monitor, NormalizedPath keysPath, NormalizedPath kelPath, int allowedOfflineDays, DateTime now )
+        {
+            // Keys without a log commit to nothing and are owned by no identity: a fresh start means
+            // a fresh store.
+            foreach( var n in _keyStore.GetKeyNames( monitor, _local ) )
+            {
+                monitor.Warn( $"Deleting key '{n}' of '{_local.FullName}': there is no key event log for it." );
+                _keyStore.DeleteKey( monitor, _local, n );
+            }
+            monitor.Warn( $"No identity found for '{_local.FullName}': creating a new one. Every remote will have to approve it." );
+            _keyStore.CreateKey( monitor, _local, KeyName( 0 ) );
+            var nextSpki = _keyStore.CreateKey( monitor, _local, KeyName( 1 ) );
+            var key = _keyStore.OpenKey( monitor, _local, KeyName( 0 ) );
+            Throw.CheckState( "A key just created cannot be opened.", key != null );
+            try
+            {
+                var e = KeyEvent.Create( _local.FullName, 0, now, key, KeyEvent.ComputeCommit( nextSpki.Span ), null );
+                _store.WriteAllBytes( kelPath.AppendPart( KeyName( 0 ) + EventExtension ), e.Encoded );
+                var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * allowedOfflineDays ), now );
+                _store.WriteAllBytes( keysPath.AppendPart( CurrentCertificateFileName ), cert.Export( X509ContentType.Cert ) );
+                return (NewIdentity( e, cert, key ), e);
+            }
+            catch
+            {
+                key.Dispose();
+                throw;
+            }
+        }
+
+        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, KeyEvent head, int allowedOfflineDays, DateTime now )
+        {
+            if( head.IsAbandonment )
+            {
+                Throw.CKException( $"Local '{_local.FullName}' has been decommissioned (event #{head.Seq}): its identity has ended. " +
+                                   $"Reset its 'Keys' folder and its key store to start a new identity, that every remote will have to approve." );
+            }
+            int h = head.Seq;
+            var key = _keyStore.OpenKey( monitor, _local, KeyName( h ) );
+            if( key == null )
+            {
+                // Never papered over by a new inception: a key store that cannot be read today (a
+                // missing key ring) would otherwise silently become a new identity.
+                Throw.CKException( $"The current identity key of '{_local.FullName}' (#{h}) cannot be opened. Fix the key store, or reset " +
+                                   $"the party's 'Keys' folder and key store to start a new identity, that every remote will have to approve." );
+            }
+            try
+            {
+                Throw.CheckState( $"The key stored as #{h} for '{_local.FullName}' is not the one its event reveals.",
+                                  key.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual( head.Spki.Span ) );
+                DeleteLeftoverKeys( monitor, h );
+                // Says so loudly when the next key is missing; the party still works.
+                using( OpenCommittedNextKey( monitor, _local, _keyStore, head ) ) { }
+
+                var certPath = keysPath.AppendPart( CurrentCertificateFileName );
+                var cert = TryLoadCertificate( monitor, certPath, head, now );
+                if( cert == null )
+                {
+                    cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * allowedOfflineDays ), now );
+                    _store.WriteAllBytes( certPath, cert.Export( X509ContentType.Cert ) );
                 }
                 else
                 {
-                    identities.Insert( 0, new LocalIdentityKey( name, now, newOne, privateKey ) );
+                    var withKey = cert.CopyWithPrivateKey( key );
+                    cert.Dispose();
+                    cert = withKey;
+                }
+                return NewIdentity( head, cert, key );
+            }
+            catch
+            {
+                key.Dispose();
+                throw;
+            }
+        }
+
+        void DeleteLeftoverKeys( IActivityMonitor monitor, int h )
+        {
+            foreach( var n in _keyStore.GetKeyNames( monitor, _local ) )
+            {
+                if( !int.TryParse( n, NumberStyles.None, CultureInfo.InvariantCulture, out var seq ) || seq < h || seq > h + 1 )
+                {
+                    monitor.Info( $"Deleting leftover key '{n}' of '{_local.FullName}': the current key is #{h}." );
+                    _keyStore.DeleteKey( monitor, _local, n );
                 }
             }
-            TrashSurplusIdentities( monitor, identityPath, identities );
-            // We now have our identities, we can handle the public key files: any obsolete
-            // keys are trashed, the current one is checked or created, only one public key file
-            // is exposed.
-            // Public key files are currently direct binary content of the public key (not a standard format).
-            var ids = identities.ToArray();
-            monitor.Info( $"Local '{_local.FullName}' has {ids.Length} identity keys. Current expires on {ids[0].NotAfter:yyyy-MM-dd}." );
-            HandleIdentityPublicKeyFiles( monitor, identityPath, ids[0] );
-            return new LocalKeys( _local, protector, ids, allowedOfflineDays );
         }
 
         /// <summary>
-        /// Keeps at most <see cref="ILocalKeys.MaxIdentityCount"/> identities, trashing the oldest
-        /// surplus ones.
-        /// <para>
-        /// The handshake sends EVERY identity and a peer refuses a list longer than that constant. So
-        /// a party whose store accumulated more would be rejected by every remote at once, forever,
-        /// with the failure logged on the other side as invalid data from us — the kind of outage
-        /// that is total, silent on the side that causes it, and points at the wrong machine.
-        /// Bounding what we accept without bounding what we send is what makes that possible.
-        /// </para>
-        /// <para>
-        /// The schedule cannot get here: one key is issued per AllowedOfflineDays and lives twice
-        /// that, so exactly two are valid at any time. Reaching this means a restored or merged
-        /// store, a hand-copied key, or a clock that went backwards — none of which the code can
-        /// prevent, and all of which it can survive.
-        /// </para>
-        /// <para>
-        /// The list is ordered most recent first, so the surplus is the tail: the oldest keys, which
-        /// are the least useful to keep since a remote that has been offline long enough to still
-        /// need one is past <see cref="ILocalKeys.AllowedOfflineDays"/> anyway. They go to the
-        /// '$TrashBin' rather than being deleted, like every other key this loader rejects.
-        /// </para>
+        /// Loads <c>Current.cer</c> and checks it is the identity certificate of the head's key: same
+        /// public key, the party's name, the identity profile, currently valid. Null when it is not:
+        /// the caller re-mints it, since the certificate is public data and the key is what matters.
         /// </summary>
-        void TrashSurplusIdentities( IActivityMonitor monitor, NormalizedPath identityPath, List<LocalIdentityKey> identities )
+        X509Certificate2? TryLoadCertificate( IActivityMonitor monitor, NormalizedPath certPath, KeyEvent head, DateTime now )
         {
-            int surplus = identities.Count - ILocalKeys.MaxIdentityCount;
-            if( surplus <= 0 ) return;
-            monitor.Warn( $"Local '{_local.FullName}' has {identities.Count} valid identity keys but a handshake can carry " +
-                          $"at most {nameof( ILocalKeys.MaxIdentityCount )} = {ILocalKeys.MaxIdentityCount}: a remote would " +
-                          $"refuse every message we send. Keeping the {ILocalKeys.MaxIdentityCount} most recent." );
-            for( int i = ILocalKeys.MaxIdentityCount; i < identities.Count; ++i )
+            if( !File.Exists( certPath ) )
             {
-                var extra = identities[i];
-                // Disposed before the file moves: nothing else has seen this key, since LocalKeys is
-                // not built yet.
-                extra.OnTeardown();
-                LogAndCleanup( monitor,
-                               identityPath.AppendPart( extra.Name + ".pfx" ),
-                               $"Surplus identity key '{extra.Name}.pfx'." );
+                monitor.Info( $"Missing '{certPath}': minting it." );
+                return null;
             }
-            identities.RemoveRange( ILocalKeys.MaxIdentityCount, surplus );
-        }
-
-        void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, NormalizedPath identityPath, LocalIdentityKey current )
-        {
+            X509Certificate2? c = null;
             try
             {
-                var currentPath = $"{identityPath}/Identity.{current.Name}.public";
-                string? foundCurrent = null;
-                foreach( var f in Directory.EnumerateFiles( identityPath, RemoteKeys.PublicIdentityFilePattern ) )
+                c = X509CertificateLoader.LoadCertificate( _store.ReadAllBytes( certPath ) );
+                string? problem = null;
+                // X509Certificate2.NotAfter/NotBefore are LOCAL time while now is UtcNow: comparing them
+                // raw silently applies the machine's UTC offset to the decision, up to ±14 h.
+                var notAfter = c.NotAfter.ToUniversalTime();
+                var notBefore = c.NotBefore.ToUniversalTime();
+                if( !c.PublicKey.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual( head.Spki.Span ) ) problem = "it is not the certificate of the current key";
+                // Compare the DECODED common name, never the rendered Subject string: the DN formatter
+                // quotes depending on the characters in the name and on the platform.
+                else if( !string.Equals( c.GetNameInfo( X509NameType.SimpleName, forIssuer: false ), _local.FullName, StringComparison.Ordinal ) ) problem = "its common name is not the party's full name";
+                else if( c.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: true, HasPathLengthConstraint: true, PathLengthConstraint: 0 } )
                 {
-                    NormalizedPath fNormalized = f;
-                    if( StringComparer.OrdinalIgnoreCase.Equals( fNormalized, currentPath ) )
-                    {
-                        foundCurrent = fNormalized;
-                    }
-                    else
-                    {
-                        LogAndCleanup( monitor, fNormalized, $"Obsolete Identity public key '{fNormalized}'." );
-                    }
+                    // CertificateRequest.Create refuses a non-CA issuer outright: deciding it here
+                    // keeps it off the connection path.
+                    problem = "it cannot issue (BasicConstraints must assert CA with a path length of 0)";
                 }
-                if( foundCurrent != null )
-                {
-                    if( !_store.ReadAllBytes( foundCurrent ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
-                    {
-                        monitor.Warn( $"Invalid file content '{foundCurrent}' (does not contain the public key). Rewriting it." );
-                        _store.WriteAllBytes( currentPath, current.PublicKeyRawData );
-                    }
-                }
-                else
-                {
-                    _store.WriteAllBytes( currentPath, current.PublicKeyRawData );
-                }
+                else if( notBefore >= now ) problem = $"it is not yet valid (NotBefore: {notBefore:u})";
+                else if( notAfter <= now ) problem = $"it has expired (NotAfter: {notAfter:u})";
+                if( problem == null ) return c;
+                monitor.Warn( $"Re-minting '{certPath}' for the same key: {problem}." );
             }
             catch( Exception ex )
             {
-                monitor.Error( $"While handling '{RemoteKeys.PublicIdentityFilePattern}' in '{identityPath}'.", ex );
+                monitor.Warn( $"Unable to read '{certPath}': re-minting it for the same key.", ex );
             }
+            c?.Dispose();
+            return null;
         }
 
-        (string Name, string FilePath) SaveIdentityFileAndPassword( IActivityMonitor monitor,
-                                                                    IDataProtector protector,
-                                                                    DateTime now,
-                                                                    NormalizedPath identityPath,
-                                                                    X509Certificate2 currentIdentity )
+        List<KeyEvent> LoadLog( IActivityMonitor monitor, NormalizedPath kelPath )
         {
-            var name = now.ToString( FileUtil.FileNameUniqueTimeUtcFormat );
-            var fileName = name + ".pfx";
-            monitor.Info( $"Creating a new identity key: '{fileName}' that will expire on {currentIdentity.NotAfter:yyyy-MM-dd}." );
-            // Let any exception flow here. This is not recoverable.
-            // The PFX password is the CLEAR random string; only the .pwd side file is protected.
-            // Note the overload pairing: Protect(byte[]) here must be read back by Unprotect(byte[])
-            // in TryLoadPassword. Using the string overload on one side only produces a payload that
-            // a real IDataProtector cannot unprotect, which trashes every stored identity at startup.
-            var pwd = Util.GetRandomBase64UrlString( 20 );
-            var fullName = identityPath.AppendPart( fileName );
-            _store.WriteAllBytes( fullName, currentIdentity.Export( X509ContentType.Pfx, pwd ) );
-            _store.WriteAllBytes( fullName + PasswordExtension, protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
-            return (name, fullName);
+            var events = new SortedList<int, KeyEvent>();
+            foreach( var f in Directory.EnumerateFiles( kelPath, "*" + EventExtension ) )
+            {
+                var name = Path.GetFileNameWithoutExtension( f );
+                if( !int.TryParse( name, NumberStyles.None, CultureInfo.InvariantCulture, out var seq ) )
+                {
+                    monitor.Warn( $"Ignoring '{f}': not a key event file name." );
+                    continue;
+                }
+                KeyEvent e;
+                try
+                {
+                    e = KeyEvent.Read( _store.ReadAllBytes( f ) );
+                }
+                catch( Exception ex )
+                {
+                    Throw.CKException( $"Unreadable key event '{f}' in the log of '{_local.FullName}'.", ex );
+                    throw;
+                }
+                Throw.CheckState( $"Key event '{f}' holds event #{e.Seq}.", e.Seq == seq );
+                events.Add( seq, e );
+            }
+            var log = events.Values.ToList();
+            // An own log that does not verify is not repaired: it was written atomically by this very
+            // code, so a broken one means tampering or a damaged disk, and starting a new identity
+            // silently would hide either.
+            if( log.Count > 0 && !KeyEventChain.IsValidLog( _local.FullName, log ) )
+            {
+                Throw.CKException( $"The key event log of '{_local.FullName}' in '{kelPath}' does not verify." );
+            }
+            return log;
+        }
+
+        /// <summary>
+        /// No migration (DESIGN-key-pre-rotation Q1): the identity files of the previous layout are
+        /// sent to the '$TrashBin'.
+        /// </summary>
+        void TrashLegacyFiles( IActivityMonitor monitor, NormalizedPath keysPath )
+        {
+            foreach( var f in Directory.EnumerateFiles( keysPath, "*.pfx" ).Concat( Directory.EnumerateFiles( keysPath, "*" + PasswordExtension ) ).ToArray() )
+            {
+                monitor.Info( $"Trashing '{f}': identity keys are now held by the {nameof( ICoreKeyStore )}." );
+                _store.TryTrash( monitor, f );
+            }
         }
 
         int ReadAllowedOfflineDays( IActivityMonitor monitor )
@@ -208,178 +284,6 @@ sealed partial class LocalKeys
                 }
             }
             return ILocalKeys.DefaultAllowedOfflineDays;
-        }
-
-        List<LocalIdentityKey> LoadIdentityKeys( IActivityMonitor monitor, IDataProtector protector, DateTime now, NormalizedPath folderPath )
-        {
-            var result = new List<LocalIdentityKey>();
-            _store.CreateDirectory( folderPath );
-            foreach( var (name,timeName,pfxPath) in FilterFileNames( monitor, now, Directory.EnumerateFiles( folderPath, "*.pfx" ), null ) )
-            {
-                var pwd = TryLoadPassword( monitor, protector, pfxPath );
-                if( pwd != null )
-                {
-                    X509Certificate2 c;
-                    try
-                    {
-                        c = X509CertificateLoader.LoadPkcs12FromFile( pfxPath, pwd );
-                        var privateKey = ValidateIdentityAndGetPrivateKey( monitor, now, pfxPath, c );
-                        if( privateKey == null )
-                        {
-                            c.Dispose();
-                        }
-                        else
-                        {
-                            result.Add( new LocalIdentityKey( name, timeName, c, privateKey ) );
-                        }
-                    }
-                    catch( Exception ex )
-                    {
-                        LogAndCleanup( monitor, pfxPath, $"Error while loading key '{pfxPath}'.", LogLevel.Error, ex );
-                    }
-                }
-            }
-            result.Sort( ( e1, e2 ) => StringComparer.Ordinal.Compare( e2.Name, e1.Name ) );
-            return result;
-        }
-
-        string? TryLoadPassword( IActivityMonitor monitor, IDataProtector protector, in NormalizedPath pfxPath )
-        {
-            var pwdPath = pfxPath + PasswordExtension;
-            if( !File.Exists( pwdPath ) )
-            {
-                LogAndCleanup( monitor, pfxPath, $"Missing password key file for '{pfxPath}'." );
-                return null;
-            }
-            try
-            {
-                return Encoding.UTF8.GetString( protector.Unprotect( _store.ReadAllBytes( pwdPath ) ) );
-            }
-            catch( Exception ex )
-            {
-                LogAndCleanup( monitor, pfxPath, $"Unable to read password key file for '{pfxPath}'.", LogLevel.Error, ex );
-                return null;
-            }
-        }
-
-        ECDsa? ValidateIdentityAndGetPrivateKey( IActivityMonitor monitor, DateTime now, in NormalizedPath filePath, X509Certificate2 c )
-        {
-            ECDsa? privateKey = null;
-            bool success = true;
-            // X509Certificate2.NotAfter/NotBefore are LOCAL time while now is UtcNow: comparing them
-            // raw compares tick values and silently applies the machine's UTC offset to the decision,
-            // up to ±14 h. East of UTC a key looks fresher than it is and rotation happens late; west
-            // of UTC it looks expired and LogAndCleanup TRASHES it. This runs on every load, not only
-            // on creation, so the conversion has to happen here and not just where the key is exposed.
-            var notAfter = c.NotAfter.ToUniversalTime();
-            var notBefore = c.NotBefore.ToUniversalTime();
-            if( notAfter <= now.AddDays( 1 ) )
-            {
-                LogAndCleanup( monitor, filePath, $"Expired certificate '{filePath}' (NotAfter: {notAfter:u})." );
-                success = false;
-            }
-            if( notBefore >= now )
-            {
-                LogAndCleanup( monitor,
-                               filePath,
-                               $"Certificate '{filePath}' is not yet valid (NotBefore: {notBefore:u}). This is not supported.",
-                               tags: ActivityMonitor.Tags.ToBeInvestigated );
-                success = false;
-            }
-            // Compare the DECODED common name, never the rendered Subject string.
-            //
-            // X500DistinguishedName.Name runs the value through a DN formatter, and whether that
-            // formatter quotes depends on the characters in the name and on the platform: on Windows
-            // CertNameToStr quotes for , + = " \n < > ; # and edge whitespace. A full name like
-            // Test/$Party/#Dev contains a '#', so it renders quoted here and would render unquoted on
-            // a name without one — an equality test against a hand-built "CN=\"…\"" literal therefore
-            // passes or fails on the punctuation of the party name and on the host OS. A key that
-            // fails it is not merely rejected, it is TRASHED, so getting this wrong destroys the
-            // identity every remote has pinned.
-            //
-            // GetNameInfo decodes the attribute and hands back the value itself, with no formatter in
-            // the way.
-            var actualName = c.GetNameInfo( X509NameType.SimpleName, forIssuer: false );
-            if( !string.Equals( actualName, _local.FullName, StringComparison.Ordinal ) )
-            {
-                LogAndCleanup( monitor,
-                               filePath,
-                               $"Invalid certificate common name (expected '{_local.FullName}', got '{actualName}') for '{filePath}'." );
-                success = false;
-            }
-            // The identity issues the credentials other purposes need (LocalIdentityKey.CreateDerivedCertificate),
-            // and CertificateRequest.Create refuses a non-CA signer outright — checked: it throws
-            // ArgumentException rather than silently producing an unusable certificate. Deciding it
-            // here turns that into one logged rotation at startup, with a new .public file that the
-            // usual trust flow carries. Leaving it to the first issuance instead would throw on a
-            // connection path, on every connection, with nothing that ever repairs itself.
-            var constraints = c.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault();
-            if( constraints == null || !constraints.CertificateAuthority )
-            {
-                LogAndCleanup( monitor,
-                               filePath,
-                               $"Certificate '{filePath}' cannot issue: its BasicConstraints does not assert CA." );
-                success = false;
-            }
-            if( !c.HasPrivateKey )
-            {
-                LogAndCleanup( monitor, filePath, $"Missing private key in '{filePath}'." );
-            }
-            else if( success )
-            {
-                privateKey = c.GetECDsaPrivateKey();
-                if( privateKey == null )
-                {
-                    LogAndCleanup( monitor, filePath, $"Private key in '{filePath}' is not a ECDsa algorithm or its KeyUsages is invalid." );
-                }
-            }
-            return privateKey;
-        }
-
-        protected override void DoTrash( IActivityMonitor monitor, in NormalizedPath path )
-        {
-            base.DoTrash( monitor, path );
-            _store.TryTrash( monitor, path + PasswordExtension );
-        }
-
-        static X509Certificate2 CreateIdentityCertificate( string commonName, DateTime notAfter, DateTime now )
-        {
-            Throw.DebugAssert( notAfter > now );
-            using( var ecdsa = ECDsa.Create() )
-            {
-                Throw.CheckState( "Unable to create ECDsa.", ecdsa != null );
-                ecdsa.KeySize = 256;
-                var request = new CertificateRequest( $"CN={commonName}",
-                                                      ecdsa,
-                                                      HashAlgorithmName.SHA256 );
-
-                // This key has two jobs, and the second one is what keeps the first one contained.
-                // DigitalSignature signs message transcripts. KeyCertSign lets it ISSUE the
-                // purpose-specific credentials a transport needs — see
-                // LocalIdentityKey.CreateDerivedCertificate — so a mutual TLS channel gets a
-                // certificate with a key pair of its own instead of a copy of this one. The weaker
-                // arrangement is a single end-entity key used directly for everything: it then has to
-                // leave the package that owns it for every new purpose, and one exposure is total.
-                request.CertificateExtensions.Add( new X509KeyUsageExtension( keyUsages: X509KeyUsageFlags.KeyCertSign
-                                                                                         | X509KeyUsageFlags.DigitalSignature,
-                                                                              critical: true ) );
-
-                // CA:true, and pathLen 0 to say that it may issue leaves and nothing else: no
-                // credential derived from this identity can itself become an issuer. Asserting CA
-                // without the path length constraint would leave an unbounded chain hanging off a key
-                // that lives on every node of a fleet.
-                request.CertificateExtensions.Add( new X509BasicConstraintsExtension( certificateAuthority: true,
-                                                                                      hasPathLengthConstraint: true,
-                                                                                      pathLengthConstraint: 0,
-                                                                                      critical: true ) );
-                // This subject key identifier: let's use the standard SHA1 of the public key here.
-                // RFC 5280 §4.2.1.2: "Conforming CAs MUST mark this extension as non-critical."
-                request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, critical: false ) );
-
-                // certificate expiry: Valid from yesterday to notAfter.
-                var notBefore = now.AddDays( -1 );
-                return request.CreateSelfSigned( notBefore, notAfter );
-            }
         }
     }
 }

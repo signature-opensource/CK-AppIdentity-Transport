@@ -153,6 +153,25 @@ public static class KeyEventChain
     }
 
     /// <summary>
+    /// Checks a whole log, from its inception: what a party verifies of its own log when it loads it.
+    /// Unlike <see cref="Verify"/>, the length is not bounded.
+    /// </summary>
+    /// <param name="fullName">The full name of the party whose log this is.</param>
+    /// <param name="log">The events, from the inception.</param>
+    /// <returns>True if the log starts at an inception, is signed and linked throughout, and ends no later than its first abandonment.</returns>
+    public static bool IsValidLog( string fullName, IReadOnlyList<KeyEvent> log )
+    {
+        Throw.CheckNotNullOrEmptyArgument( fullName );
+        Throw.CheckNotNullArgument( log );
+        if( log.Count == 0 || !log[0].IsInception || !log[0].VerifySignature( fullName ) ) return false;
+        for( int i = 1; i < log.Count; ++i )
+        {
+            if( !Links( fullName, log[i - 1], log[i] ) ) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// <paramref name="next"/> follows <paramref name="previous"/>: it reveals the key previous
     /// committed to, names previous as its predecessor, and is signed by the key it reveals.
     /// </summary>

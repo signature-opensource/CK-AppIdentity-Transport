@@ -42,7 +42,7 @@ public class DerivedCertificateTests
         await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
         {
             var key = s.GetRequiredFeature<ILocalKeys>().CurrentIdentity;
-            using var root = IdentityStoreHelper.LoadTheStoredCertificate( partyName, protector );
+            using var root = IdentityStoreHelper.LoadCurrentCertificate( partyName );
             test( key, root );
         }
     }

@@ -74,6 +74,10 @@ public static class TestHelperExtensions
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
 
         serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
+        // Resolved lazily: a test that registers its own IDataProtectionProvider (the last registration
+        // wins) protects the identity keys with it too.
+        serviceBuilder.AddSingleton<DefaultCoreKeyStore>();
+        serviceBuilder.AddSingleton<ICoreKeyStore>( sp => sp.GetRequiredService<DefaultCoreKeyStore>() );
         serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
 

@@ -146,6 +146,7 @@ public sealed class RunningApplication : IAsyncDisposable
                                                     typeof( AppIdentityDIContainerDefinition ),
                                                     typeof( CK.Auth.StdAuthenticationTypeSystem ),
                                                     typeof( KeyManagementFeatureDriver ),
+                                                    typeof( DefaultCoreKeyStore ),
                                                     typeof( TcpSocketTransportTypeService ) );
         engineConfiguration.FirstBinPath.Types.Add( types );
 

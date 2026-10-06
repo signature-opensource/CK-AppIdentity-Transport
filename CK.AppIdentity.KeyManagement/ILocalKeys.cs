@@ -1,3 +1,4 @@
+using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
 using System.Collections.Generic;
 
@@ -38,10 +39,8 @@ public interface ILocalKeys
     /// on the other side as invalid data coming from it.
     /// </para>
     /// <para>
-    /// The schedule never approaches it: one key is issued per <see cref="AllowedOfflineDays"/> and
-    /// lives twice that, so exactly two are valid at any time. Reaching this number means a restored
-    /// or merged store, a hand-copied key, or a clock that moved backwards; the builder then keeps
-    /// the most recent ones, trashes the rest and says so.
+    /// A party now holds a single identity key (see <see cref="Identities"/>): this bound remains only
+    /// for the current wire format, which a peer checks, and goes with it.
     /// </para>
     /// </summary>
     const int MaxIdentityCount = 8;
@@ -64,33 +63,65 @@ public interface ILocalKeys
     /// a lifetime that is twice this value (with a one day security).
     /// </para>
     /// <para>
-    /// So it is also the rotation period and, with it, how long a retired key keeps being accepted:
-    /// a key is replaced once it has less than this left, and the one it replaces stays valid for
-    /// another span of the same length. Two keys are valid at a time, whatever
-    /// <see cref="MaxIdentityCount"/> allows. The trade this single number makes is how long a party
-    /// may be unreachable without losing its identity, against how often it rotates.
+    /// So it is also the rotation period: the current key is replaced by the committed next one
+    /// (<see cref="Rotate"/>) once its certificate has less than this left.
     /// </para>
     /// <para>
-    /// <b>It does not bound a stolen key.</b> This governs what this party SIGNS with. A verifier
-    /// holds a <see cref="RemoteIdentityKey"/>, which carries no validity window at all and is never
-    /// checked against one (see <see cref="RemoteIdentityKey"/>, where that choice is stated): a key
-    /// stolen years ago stays a usable trust anchor for anyone still pinning it, and can rotate trust
-    /// onto the thief's key through the normal renewal path. Shortening this shortens nothing for
-    /// them. Revocation is an operator action - clear the remote's <c>TrustedIdentity</c>.
+    /// <b>It does not bound a stolen key by itself.</b> A verifier holds a <see cref="RemoteIdentityKey"/>,
+    /// which carries no validity window. What bounds a stolen current key is the next rotation: a
+    /// verifier that has seen it refuses the superseded key. Revoking is rotating early.
     /// </para>
     /// </summary>
     int AllowedOfflineDays { get; }
 
     /// <summary>
-    /// Gets the current identity key (the first one of <see cref="Identities"/>).
+    /// Gets the current identity key.
     /// </summary>
     LocalIdentityKey CurrentIdentity { get; }
 
     /// <summary>
-    /// Gets the identity keys. The first one is the current one,
-    /// the other ones are still valid but obsolete.
+    /// Gets the identity keys: only <see cref="CurrentIdentity"/>. A rotation no longer needs the
+    /// previous key to vouch for the new one (the key event log carries that), so there is no
+    /// overlap any more. This remains for the current wire format, and a rotation replaces the list
+    /// instance, which is how a change is detected.
     /// </summary>
     IReadOnlyList<LocalIdentityKey> Identities { get; }
+
+    /// <summary>
+    /// Gets the sequence number of the current identity key in the key event log.
+    /// </summary>
+    int Seq { get; }
+
+    /// <summary>
+    /// Gets the last events of the key event log (at most <see cref="KeyEventChain.MaxEventTail"/>),
+    /// oldest first: what this party presents to prove which key is current.
+    /// </summary>
+    IReadOnlyList<KeyEvent> EventTail { get; }
+
+    /// <summary>
+    /// Gets whether this party has been <see cref="Decommission">decommissioned</see>.
+    /// </summary>
+    bool IsDecommissioned { get; }
+
+    /// <summary>
+    /// Replaces the current identity key by the one the log committed to, and commits to a new next
+    /// one. <b>This is how a key is revoked</b>: by rotating early.
+    /// <para>
+    /// Only the committed next key can do this, so a thief holding the current key cannot.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <returns>True on success, false (with an error logged) when the next key is unavailable.</returns>
+    bool Rotate( IActivityMonitor monitor );
+
+    /// <summary>
+    /// Ends this identity for good: writes an abandonment event (signed by the committed next key)
+    /// and destroys the keys. The party then refuses to start until its key store is reset, which
+    /// starts a new identity that every remote has to approve.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <returns>True on success, false (with an error logged) when the next key is unavailable or this is already decommissioned.</returns>
+    bool Decommission( IActivityMonitor monitor );
 
     /// <summary>
     /// Gets a data protector for this party.

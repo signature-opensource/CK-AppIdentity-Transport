@@ -10,11 +10,13 @@ namespace CK.AppIdentity.KeyManagement;
 public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;
+    readonly ICoreKeyStore _keyStore;
 
-    public KeyManagementFeatureDriver( ApplicationIdentityService s, IDataProtectionProvider protectorProvider )
+    public KeyManagementFeatureDriver( ApplicationIdentityService s, IDataProtectionProvider protectorProvider, ICoreKeyStore keyStore )
         : base( s, true )
     {
         _protectorProvider = protectorProvider;
+        _keyStore = keyStore;
     }
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
@@ -83,7 +85,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
         bool success = true;
         try
         {
-            var localKeys = new LocalKeys.Builder( local, _protectorProvider ).Build( context.Monitor );
+            var localKeys = new LocalKeys.Builder( local, _protectorProvider, _keyStore ).Build( context.Monitor );
             local.AddFeature( localKeys );
             foreach( var r in local.Remotes )
             {

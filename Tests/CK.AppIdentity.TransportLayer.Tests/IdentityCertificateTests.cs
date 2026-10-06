@@ -1,16 +1,10 @@
 using CK.AppIdentity.KeyManagement;
-using CK.Core;
-using CK.Monitoring;
 using CK.Testing.AppIdentity.TransportLayer;
-using Microsoft.AspNetCore.DataProtection;
 using NUnit.Framework;
 using Shouldly;
 using System;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,49 +17,34 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// the purpose-specific credentials of <see cref="LocalIdentityKey.CreateDerivedCertificate"/> so
 /// that its own private key never has to leave. That is what <c>KeyCertSign</c> and
 /// <c>BasicConstraints(CA:true)</c> are for, and the path length constraint of 0 is what keeps the
-/// authority to exactly one level: an identity that could issue issuers would let any credential
-/// derived from it mint more, which is the difference between a scoped credential and a second
-/// identity. What is presented in a TLS handshake is the derived leaf, never this certificate.
+/// authority to exactly one level.
+/// </para>
+/// <para>
+/// The certificate is public data (<c>Keys/Current.cer</c>): the private key is in the
+/// <see cref="ICoreKeyStore"/> and the key event log says which key is current. So a certificate that
+/// is wrong is re-minted for the same key, and a certificate near its expiry triggers a rotation to the
+/// committed next key. Nothing is trashed on the strength of a certificate.
 /// </para>
 /// <para>
 /// M10 — <see cref="X509Certificate2.NotAfter"/> is local time. Compared raw against
-/// <c>SystemClock.UtcNow</c>, the machine's UTC offset leaks into the expiry decision. East of
-/// UTC a key looks fresher than it is and rotation happens late; west of UTC it looks expired and
-/// the loader TRASHES it. This runs on every load, not only on creation.
+/// <c>SystemClock.UtcNow</c>, the machine's UTC offset leaks into the rotation decision.
 /// </para>
 /// </summary>
 [TestFixture]
 public class IdentityCertificateTests
 {
-    static NormalizedPath GetKeysFolder( string partyName ) => IdentityStoreHelper.GetKeysFolder( partyName );
-
-    static string[] GetKeyFiles( string partyName ) => IdentityStoreHelper.GetKeyFiles( partyName );
-
-    static void ClearKeys( string partyName ) => IdentityStoreHelper.ClearKeys( partyName );
-
-    static Task<ApplicationIdentityService> CreateAsync( string partyName, IDataProtectionProvider protector, CancellationToken token )
-        => IdentityStoreHelper.CreateAsync( partyName, protector, token );
-
-    static X509Certificate2 LoadStoredCertificate( string partyName, IDataProtector protector, string fileName )
-        => IdentityStoreHelper.LoadStoredCertificate( partyName, protector, fileName );
-
-    static T GetExtension<T>( X509Certificate2 c ) where T : X509Extension => IdentityStoreHelper.GetExtension<T>( c );
-
     [Test, CancelAfter( 30000 )]
     public async Task The_identity_certificate_is_an_authority_constrained_to_one_level_Async( CancellationToken token )
     {
         // Read back what is actually written to the store rather than what the builder intends to
         // write: the profile is what a peer validating a chain will see.
         const string partyName = "IdProfile";
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
-        await using( await CreateAsync( partyName, protector, token ) ) { }
+        IdentityStoreHelper.ClearKeys( partyName );
+        await using( await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token ) ) { }
 
-        var files = GetKeyFiles( partyName );
-        files.Length.ShouldBe( 1 );
-        using var c = LoadStoredCertificate( partyName, protector, files[0] );
+        using var c = IdentityStoreHelper.LoadCurrentCertificate( partyName );
 
-        var constraints = GetExtension<X509BasicConstraintsExtension>( c );
+        var constraints = IdentityStoreHelper.GetExtension<X509BasicConstraintsExtension>( c );
         constraints.CertificateAuthority.ShouldBeTrue(
             "The identity issues the credentials other purposes need, which is how its private key " +
             "stays where it is. CertificateRequest.Create refuses a non-CA signer outright." );
@@ -74,238 +53,124 @@ public class IdentityCertificateTests
             "It may issue leaves and nothing else. Without this, a derived credential could itself " +
             "issue, and a scoped certificate would become a second identity." );
 
-        GetExtension<X509KeyUsageExtension>( c ).KeyUsages.ShouldBe(
+        IdentityStoreHelper.GetExtension<X509KeyUsageExtension>( c ).KeyUsages.ShouldBe(
             X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature,
             "DigitalSignature signs message transcripts; KeyCertSign issues. Nothing else: this key " +
             "is never used to agree on a secret or to encrypt." );
 
-        GetExtension<X509SubjectKeyIdentifierExtension>( c ).Critical.ShouldBeFalse(
-            "RFC 5280 §4.2.1.2: conforming CAs MUST mark the Subject Key Identifier non-critical. " +
-            "Only a peer that really parses the certificate notices, which is why it is easy to get " +
-            "wrong and stay wrong." );
+        IdentityStoreHelper.GetExtension<X509SubjectKeyIdentifierExtension>( c ).Critical.ShouldBeFalse(
+            "RFC 5280 §4.2.1.2: conforming CAs MUST mark the Subject Key Identifier non-critical." );
     }
 
     [Test, CancelAfter( 60000 )]
-    public async Task An_identity_that_cannot_issue_is_rejected_at_load_Async( CancellationToken token )
+    public async Task A_stored_certificate_that_cannot_issue_is_reminted_for_the_same_key_Async( CancellationToken token )
     {
-        // A stored certificate without CA:true cannot sign anything, so every derived credential
-        // would fail — at connection time, on every connection, with nothing that repairs itself.
-        // The loader decides it instead: the key is trashed and the party rotates on the spot.
+        // A certificate without CA:true cannot sign anything, so every derived credential would fail at
+        // connection time. The loader decides it instead - and since the certificate is only public
+        // data, it re-mints it: the key, which every remote pinned, does not change.
         const string partyName = "IdNotCA";
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-
-        var crafted = CraftStoredIdentity( partyName, protector, DateTime.UtcNow.AddDays( 30 ), certificateAuthority: false );
-
-        (await CraftedKeySurvivesRestartAsync( partyName, protector, crafted, token )).ShouldBeFalse(
-            "An identity that cannot issue is not an identity this system can use." );
+        await CheckRemintedAsync( partyName, token, ( key ) =>
+            IdentityStoreHelper.WriteCurrentCertificate( partyName, key, DateTime.UtcNow.AddDays( 100 ), certificateAuthority: false ) );
     }
 
     [Test, CancelAfter( 60000 )]
-    public async Task Surplus_identity_keys_are_trashed_rather_than_sent_Async( CancellationToken token )
+    public async Task A_stored_certificate_of_another_name_is_reminted_for_the_same_key_Async( CancellationToken token )
     {
-        // The handshake sends EVERY identity and a peer refuses a list longer than MaxIdentityCount.
-        // A store that accumulated more would therefore be refused by every remote at once, forever,
-        // and the rejection would be logged on the other side as invalid data from us. Bounding what
-        // we accept without bounding what we send is what makes that reachable at all.
-        const string partyName = "IdSurplus";
-        const int surplus = 4;
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-
-        // Far from expiry, so no rotation is triggered and the count is the only thing measured.
-        var crafted = CraftStoredIdentities( partyName, protector,
-                                             ILocalKeys.MaxIdentityCount + surplus,
-                                             DateTime.UtcNow.AddDays( 100 ) );
-        GetKeyFiles( partyName ).Length.ShouldBe( ILocalKeys.MaxIdentityCount + surplus );
-        int trashedBefore = CountTrashedKeys( partyName );
-
-        using var logCollector = GrandOutput.Default!.CreateMemoryCollector( 1000 );
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-        var logs = logCollector.ExtractCurrentTexts();
-
-        // Silently keeping eight would leave an operator with a store that quietly disagrees with
-        // what is running, and no reason to look at it.
-        logs.ShouldContain( t => t.Contains( $"has {ILocalKeys.MaxIdentityCount + surplus} valid identity keys", StringComparison.Ordinal )
-                                 && t.Contains( "a remote would refuse every message we send", StringComparison.Ordinal ),
-            "The condition cannot arise from the schedule, so it says what it found and what it did." );
-
-        var kept = GetKeyFiles( partyName );
-        kept.Length.ShouldBe( ILocalKeys.MaxIdentityCount );
-        kept.ShouldBe( crafted.Skip( surplus ).OrderBy( n => n ).ToArray(),
-            "The most recent are kept: the oldest are past what any remote can still have been " +
-            "offline for, so they are the ones worth nothing." );
-
-        // Trashed, not deleted. Every other key this loader rejects goes the same way, and an
-        // operator who needs one back still has it.
-        CountTrashedKeys( partyName ).ShouldBe( trashedBefore + surplus );
-    }
-
-    /// <summary>
-    /// Counts the keys in the party's trash. Measured as a delta by the caller: the bin is not emptied
-    /// between runs. A trashed file has no extension (it is named by its trash time): its original path
-    /// is in the ".binInfo" file beside it.
-    /// </summary>
-    static int CountTrashedKeys( string partyName )
-    {
-        var folder = GetPartyFolder( partyName );
-        if( !Directory.Exists( folder ) ) return 0;
-        return Directory.EnumerateFiles( folder, "*.binInfo", SearchOption.AllDirectories )
-                        .Where( f => f.Contains( "$TrashBin", StringComparison.Ordinal ) )
-                        .Count( f => File.ReadAllText( f ).Trim().EndsWith( ".pfx", StringComparison.OrdinalIgnoreCase ) );
-    }
-
-    static NormalizedPath GetPartyFolder( string partyName )
-        => ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${partyName}" );
-
-    /// <summary>
-    /// Replaces the party's stored identity with one expiring at <paramref name="notAfterUtc"/>,
-    /// reusing the real certificate's subject so the loader's subject check is not what is being
-    /// measured. Returns the crafted file name.
-    /// </summary>
-    static string CraftStoredIdentity( string partyName,
-                                       IDataProtector protector,
-                                       DateTime notAfterUtc,
-                                       bool certificateAuthority = true )
-    {
-        var folder = GetKeysFolder( partyName );
-        var existing = GetKeyFiles( partyName );
-        existing.Length.ShouldBe( 1, "One real key was created first, to copy its subject from." );
-
-        X500DistinguishedName subject;
-        using( var real = LoadStoredCertificate( partyName, protector, existing[0] ) )
-        {
-            subject = real.SubjectName;
-        }
-        foreach( var f in Directory.EnumerateFiles( folder ).ToArray() ) File.Delete( f );
-
-        return WriteCraftedIdentity( folder, subject, protector, notAfterUtc, certificateAuthority, ageInMinutes: 5 );
-    }
-
-    /// <summary>
-    /// Replaces the party's stored identities with <paramref name="count"/> valid ones, oldest first
-    /// in the returned list. The real schedule issues one per <c>AllowedOfflineDays</c> and gives it
-    /// twice that to live, so it never produces more than two: reaching a bigger number means a
-    /// restored store, a hand-copied key or a clock that moved backwards.
-    /// </summary>
-    static string[] CraftStoredIdentities( string partyName, IDataProtector protector, int count, DateTime notAfterUtc )
-    {
-        var folder = GetKeysFolder( partyName );
-        var existing = GetKeyFiles( partyName );
-        existing.Length.ShouldBe( 1, "One real key was created first, to copy its subject from." );
-
-        X500DistinguishedName subject;
-        using( var real = LoadStoredCertificate( partyName, protector, existing[0] ) )
-        {
-            subject = real.SubjectName;
-        }
-        foreach( var f in Directory.EnumerateFiles( folder ).ToArray() ) File.Delete( f );
-
-        var names = new string[count];
-        for( int i = 0; i < count; ++i )
-        {
-            // Oldest first: a bigger age is further in the past, and the loader sorts on the name.
-            names[i] = WriteCraftedIdentity( folder, subject, protector, notAfterUtc,
-                                             certificateAuthority: true, ageInMinutes: 5 + (count - i) );
-        }
-        return names;
-    }
-
-    static string WriteCraftedIdentity( NormalizedPath folder,
-                                        X500DistinguishedName subject,
-                                        IDataProtector protector,
-                                        DateTime notAfterUtc,
-                                        bool certificateAuthority,
-                                        int ageInMinutes )
-    {
-        using var ecdsa = ECDsa.Create();
-        ecdsa.KeySize = 256;
-        var request = new CertificateRequest( subject, ecdsa, HashAlgorithmName.SHA256 );
-        // The real profile, so that only the expiry (or the CA bit, when a caller asks) is what the
-        // loader is being measured on.
-        request.CertificateExtensions.Add(
-            new X509KeyUsageExtension( X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.DigitalSignature, true ) );
-        request.CertificateExtensions.Add(
-            new X509BasicConstraintsExtension( certificateAuthority, certificateAuthority, 0, true ) );
-        request.CertificateExtensions.Add( new X509SubjectKeyIdentifierExtension( request.PublicKey, false ) );
-
-        var now = DateTime.UtcNow;
-        // NotBefore is back-dated a day exactly as CreateIdentityCertificate does.
-        using var crafted = request.CreateSelfSigned( new DateTimeOffset( now.AddDays( -1 ) ),
-                                                      new DateTimeOffset( notAfterUtc ) );
-
-        // The file name must parse as a UTC time name that is already in the past, or FilterFileNames
-        // discards it before the expiry check is ever reached.
-        var name = now.AddMinutes( -ageInMinutes ).ToString( FileUtil.FileNameUniqueTimeUtcFormat );
-        var fileName = name + ".pfx";
-        var pwd = Util.GetRandomBase64UrlString( 20 );
-        File.WriteAllBytes( folder.AppendPart( fileName ), crafted.Export( X509ContentType.Pfx, pwd ) );
-        File.WriteAllBytes( folder.AppendPart( fileName + ".pwd" ), protector.Protect( Encoding.UTF8.GetBytes( pwd ) ) );
-        return fileName;
-    }
-
-    /// <summary>
-    /// Restarts over the crafted store and reports whether the crafted key survived. A rejected key
-    /// is trashed out of the Keys folder and replaced, so its presence is the verdict.
-    /// </summary>
-    static async Task<bool> CraftedKeySurvivesRestartAsync( string partyName,
-                                                            IDataProtectionProvider protector,
-                                                            string craftedFileName,
-                                                            CancellationToken token )
-    {
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-        return GetKeyFiles( partyName ).Contains( craftedFileName );
+        const string partyName = "IdOtherName";
+        await CheckRemintedAsync( partyName, token, ( key ) =>
+            IdentityStoreHelper.WriteCurrentCertificate( partyName, key, DateTime.UtcNow.AddDays( 100 ), commonName: "Test/$SomeoneElse" ) );
     }
 
     [Test, CancelAfter( 60000 )]
-    public async Task An_expiring_certificate_is_rejected_on_its_UTC_expiry_Async( CancellationToken token )
+    public async Task A_missing_certificate_is_reminted_for_the_same_key_Async( CancellationToken token )
     {
-        // M10, east of UTC. The loader rejects a key whose NotAfter is within one day. A key expiring
-        // in 23h30m must therefore go. Reading NotAfter as if it were UTC adds the machine's offset,
-        // which east of UTC pushes it past the threshold and keeps a key that should have rotated.
+        const string partyName = "IdNoCert";
+        await CheckRemintedAsync( partyName, token, _ => File.Delete( IdentityStoreHelper.GetCurrentCertificatePath( partyName ) ) );
+    }
+
+    static async Task CheckRemintedAsync( string partyName, CancellationToken token, Action<System.Security.Cryptography.ECDsa> damage )
+    {
+        IdentityStoreHelper.ClearKeys( partyName );
+        var protector = new HeaderProtector();
+        byte[] spki;
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
+        {
+            spki = s.GetRequiredFeature<ILocalKeys>().CurrentIdentity.PublicKeyRawData.ToArray();
+            using var key = IdentityStoreHelper.OpenKey( s, protector, 0 );
+            damage( key );
+        }
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
+        {
+            var keys = s.GetRequiredFeature<ILocalKeys>();
+            keys.Seq.ShouldBe( 0, "A certificate problem is no reason to rotate." );
+            keys.CurrentIdentity.PublicKeyRawData.ToArray().ShouldBe( spki, "Same key." );
+        }
+        using var c = IdentityStoreHelper.LoadCurrentCertificate( partyName );
+        IdentityStoreHelper.GetExtension<X509BasicConstraintsExtension>( c ).CertificateAuthority.ShouldBeTrue();
+        c.GetNameInfo( X509NameType.SimpleName, false ).ShouldBe( IdentityStoreHelper.FullName( partyName ) );
+        c.PublicKey.ExportSubjectPublicKeyInfo().ShouldBe( spki );
+    }
+
+    /// <summary>
+    /// Writes a certificate of the current key expiring at <paramref name="notAfterUtc"/>, restarts,
+    /// and reports whether the party rotated.
+    /// </summary>
+    static async Task<bool> RotatesOnRestartAsync( string partyName, DateTime notAfterUtc, CancellationToken token )
+    {
+        IdentityStoreHelper.ClearKeys( partyName );
+        var protector = new HeaderProtector();
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
+        {
+            using var key = IdentityStoreHelper.OpenKey( s, protector, 0 );
+            IdentityStoreHelper.WriteCurrentCertificate( partyName, key, notAfterUtc );
+        }
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
+        {
+            return s.GetRequiredFeature<ILocalKeys>().Seq == 1;
+        }
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_certificate_near_its_expiry_rotates_to_the_next_key_Async( CancellationToken token )
+    {
+        // Any machine: well inside the threshold (AllowedOfflineDays + 1 day), this must rotate.
+        (await RotatesOnRestartAsync( "IdNearExpiry", DateTime.UtcNow.AddDays( 10 ), token )).ShouldBeTrue();
+        // And well outside, it must not.
+        (await RotatesOnRestartAsync( "IdFarExpiry", DateTime.UtcNow.AddDays( 200 ), token )).ShouldBeFalse();
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task An_expiring_certificate_rotates_on_its_UTC_expiry_Async( CancellationToken token )
+    {
+        // M10, east of UTC. A certificate expiring 30 minutes inside the rotation threshold must rotate.
+        // Reading NotAfter as if it were UTC adds the machine's offset, which east of UTC pushes it past
+        // the threshold and keeps a key that should have rotated.
         var offset = TimeZoneInfo.Local.GetUtcOffset( DateTime.UtcNow );
         if( offset <= TimeSpan.Zero )
         {
             Assert.Ignore( $"Local offset is {offset}: this case only discriminates east of UTC. " +
                             "The bug is invisible in UTC by construction — the two time bases coincide." );
         }
-        const string partyName = "M10East";
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-
-        var crafted = CraftStoredIdentity( partyName, protector, DateTime.UtcNow.AddDays( 1 ).AddMinutes( -30 ) );
-
-        (await CraftedKeySurvivesRestartAsync( partyName, protector, crafted, token )).ShouldBeFalse(
-            "A key 30 minutes inside the one-day expiry threshold must be rejected. Comparing the " +
-            $"certificate's local NotAfter against UtcNow added {offset} to it and kept the key." );
+        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultAllowedOfflineDays + 1 );
+        (await RotatesOnRestartAsync( "M10East", threshold.AddMinutes( -30 ), token )).ShouldBeTrue(
+            "30 minutes inside the threshold must rotate. Comparing the certificate's local NotAfter " +
+            $"against UtcNow added {offset} to it." );
     }
 
     [Test, CancelAfter( 60000 )]
-    public async Task A_valid_certificate_is_not_trashed_over_a_time_zone_offset_Async( CancellationToken token )
+    public async Task A_valid_certificate_does_not_rotate_over_a_time_zone_offset_Async( CancellationToken token )
     {
-        // M10, west of UTC — the destructive direction. A key expiring in 24h30m is outside the
-        // threshold and must be kept. Reading NotAfter as if it were UTC subtracts the offset west of
-        // UTC, which drags it inside the threshold: the key is trashed and every remote that pinned
-        // it needs a new approval.
+        // M10, west of UTC. A certificate expiring 30 minutes outside the threshold must not rotate.
         var offset = TimeZoneInfo.Local.GetUtcOffset( DateTime.UtcNow );
         if( offset >= TimeSpan.Zero )
         {
             Assert.Ignore( $"Local offset is {offset}: this case only discriminates west of UTC. " +
                             "The bug is invisible in UTC by construction — the two time bases coincide." );
         }
-        const string partyName = "M10West";
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
-        await using( await CreateAsync( partyName, protector, token ) ) { }
-
-        var crafted = CraftStoredIdentity( partyName, protector, DateTime.UtcNow.AddDays( 1 ).AddMinutes( 30 ) );
-
-        (await CraftedKeySurvivesRestartAsync( partyName, protector, crafted, token )).ShouldBeTrue(
-            "A key 30 minutes outside the one-day expiry threshold must be kept. Comparing the " +
-            $"certificate's local NotAfter against UtcNow shifted it by {offset} and trashed it." );
+        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultAllowedOfflineDays + 1 );
+        (await RotatesOnRestartAsync( "M10West", threshold.AddMinutes( 30 ), token )).ShouldBeFalse(
+            "30 minutes outside the threshold must not rotate. Comparing the certificate's local NotAfter " +
+            $"against UtcNow shifted it by {offset}." );
     }
 
     [Test, CancelAfter( 30000 )]
@@ -314,17 +179,14 @@ public class IdentityCertificateTests
         // The public boundary, testable on any machine including UTC: LocalIdentityKey.NotAfter must
         // be the certificate's expiry as a UTC instant, not its local rendering.
         const string partyName = "M10Kind";
-        ClearKeys( partyName );
-        var protector = new HeaderProtector();
+        IdentityStoreHelper.ClearKeys( partyName );
         DateTime exposed;
-        await using( var s = await CreateAsync( partyName, protector, token ) )
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token ) )
         {
-            exposed = s.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>().CurrentIdentity.NotAfter;
+            exposed = s.GetRequiredFeature<ILocalKeys>().CurrentIdentity.NotAfter;
         }
         exposed.Kind.ShouldBe( DateTimeKind.Utc );
-
-        var files = GetKeyFiles( partyName );
-        using var c = LoadStoredCertificate( partyName, protector, files[0] );
+        using var c = IdentityStoreHelper.LoadCurrentCertificate( partyName );
         exposed.ShouldBe( c.NotAfter.ToUniversalTime() );
     }
 }

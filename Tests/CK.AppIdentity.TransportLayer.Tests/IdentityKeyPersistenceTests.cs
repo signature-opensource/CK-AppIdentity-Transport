@@ -1,101 +1,65 @@
-using CK.Core;
 using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
+using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using static CK.Testing.MonitorTestHelper;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// Covers the identity key store round-trip across restarts.
+/// Covers the identity round-trip across restarts.
 /// <para>
-/// Easily left unexercised: the creation path validates the in-memory certificate and never a reload
-/// from disk, and a <see cref="IDataProtector"/> test double that is the identity function
-/// (<see cref="FakeProtector"/>) makes a Protect/Unprotect overload mismatch cancel itself out. Under
-/// a protector that actually protects (<see cref="HeaderProtector"/>), such a mismatch trashes every
-/// stored identity on every start.
+/// Easily left unexercised: the creation path never reads back from disk, and a
+/// <see cref="IDataProtector"/> test double that is the identity function (<see cref="FakeProtector"/>)
+/// makes a Protect/Unprotect mismatch cancel itself out. Under a protector that actually protects
+/// (<see cref="HeaderProtector"/>), such a mismatch makes the current key unreadable on every start.
 /// </para>
 /// </summary>
 [TestFixture]
 public class IdentityKeyPersistenceTests
 {
-    static NormalizedPath GetKeysFolder( string partyName )
-        => ApplicationIdentityServiceConfiguration.DefaultStoreRootPath
-                .Combine( $"#Dev/Test/${partyName}/-Local/Keys" );
+    sealed record Snapshot( string[] KeyNames, string[] Events, byte[] Certificate );
 
-    static string[] GetKeyFiles( string partyName )
+    static Snapshot Take( string partyName )
+        => new( IdentityStoreHelper.GetKeyNames( partyName ),
+                IdentityStoreHelper.GetEventFiles( partyName ),
+                File.ReadAllBytes( IdentityStoreHelper.GetCurrentCertificatePath( partyName ) ) );
+
+    static async Task CheckSurvivesRestartsAsync( string partyName, IDataProtectionProvider protector, CancellationToken token )
     {
-        var p = GetKeysFolder( partyName );
-        return Directory.Exists( p )
-                ? Directory.EnumerateFiles( p, "*.pfx" ).Select( f => Path.GetFileName( f ) ).OrderBy( n => n ).ToArray()
-                : System.Array.Empty<string>();
-    }
+        IdentityStoreHelper.ClearKeys( partyName );
 
-    static Task<ApplicationIdentityService> CreateAsync( string partyName, IDataProtectionProvider protector, CancellationToken token )
-        => TestHelper.CreateApplicationServiceAsync(
-                c => c["FullName"] = $"Test/${partyName}",
-                services => services.AddSingleton( protector ),
-                token );
+        // First start: no identity exists, one is created: the current key, the next one, the inception.
+        await using( await IdentityStoreHelper.CreateAsync( partyName, protector, token ) ) { }
+        var first = Take( partyName );
+        first.KeyNames.ShouldBe( new[] { "0", "1" }, "The first start creates the current key and the committed next one." );
+        first.Events.ShouldBe( new[] { "0.event" } );
 
-    [CancelAfter( 20000 )]
-    [Test]
-    public async Task Identity_keys_survive_a_restart_with_a_real_protector_Async( CancellationToken token )
-    {
-        const string partyName = "KeyPersistReal";
-        var keysFolder = GetKeysFolder( partyName );
-        if( Directory.Exists( keysFolder ) ) Directory.Delete( keysFolder, recursive: true );
-
-        var protector = new HeaderProtector();
-
-        // First start: no key exists, one is created.
-        await using( await CreateAsync( partyName, protector, token ) )
-        {
-        }
-        var afterFirstStart = GetKeyFiles( partyName );
-        afterFirstStart.Length.ShouldBe( 1, "The first start creates exactly one identity key." );
-
-        // Second start over the same store: the key must be READ BACK, not trashed and recreated.
-        await using( await CreateAsync( partyName, protector, token ) )
-        {
-        }
-        var afterSecondStart = GetKeyFiles( partyName );
-        afterSecondStart.ShouldBe( afterFirstStart,
-                                   "The stored identity key must be reloaded across restarts: if the .pwd side file " +
-                                   "cannot be unprotected, the key is trashed and a new one is created, and every " +
-                                   "remote that pinned the previous key needs a new approval after every restart." );
+        // Second start over the same store: everything must be READ BACK, nothing recreated.
+        await using( await IdentityStoreHelper.CreateAsync( partyName, protector, token ) ) { }
+        var second = Take( partyName );
+        second.KeyNames.ShouldBe( first.KeyNames );
+        second.Events.ShouldBe( first.Events );
+        second.Certificate.ShouldBe( first.Certificate,
+            "The certificate is re-minted only when it does not match the current key: a restart must not touch it." );
 
         // And a third one, to be sure nothing accumulates either.
-        await using( await CreateAsync( partyName, protector, token ) )
-        {
-        }
-        GetKeyFiles( partyName ).ShouldBe( afterFirstStart );
+        await using( await IdentityStoreHelper.CreateAsync( partyName, protector, token ) ) { }
+        Take( partyName ).ShouldBeEquivalentTo( second );
     }
 
     [CancelAfter( 20000 )]
     [Test]
-    public async Task Identity_keys_survive_a_restart_with_the_FakeProtector_Async( CancellationToken token )
-    {
-        const string partyName = "KeyPersistFake";
-        var keysFolder = GetKeysFolder( partyName );
-        if( Directory.Exists( keysFolder ) ) Directory.Delete( keysFolder, recursive: true );
+    public Task Identity_keys_survive_a_restart_with_a_real_protector_Async( CancellationToken token )
+        => CheckSurvivesRestartsAsync( "KeyPersistReal", new HeaderProtector(), token );
 
-        await using( await CreateAsync( partyName, FakeProtector.Fake, token ) )
-        {
-        }
-        var afterFirstStart = GetKeyFiles( partyName );
-        afterFirstStart.Length.ShouldBe( 1 );
-
-        await using( await CreateAsync( partyName, FakeProtector.Fake, token ) )
-        {
-        }
-        GetKeyFiles( partyName ).ShouldBe( afterFirstStart );
-    }
+    [CancelAfter( 20000 )]
+    [Test]
+    public Task Identity_keys_survive_a_restart_with_the_FakeProtector_Async( CancellationToken token )
+        => CheckSurvivesRestartsAsync( "KeyPersistFake", FakeProtector.Fake, token );
 
     [Test]
     public void HeaderProtector_round_trips_and_rejects_foreign_payloads()
@@ -106,5 +70,24 @@ public class IdentityKeyPersistenceTests
         // A mismatched Protect/Unprotect overload pairing hands back something this protector never
         // produced: that must throw, not silently return garbage.
         Should.Throw<System.Security.Cryptography.CryptographicException>( () => p.Unprotect( clear ) );
+    }
+
+    [CancelAfter( 20000 )]
+    [Test]
+    public async Task The_stored_key_is_protected_Async( CancellationToken token )
+    {
+        // The default store must actually go through the protector: the file is not the clear PKCS#8.
+        const string partyName = "KeyProtected";
+        IdentityStoreHelper.ClearKeys( partyName );
+        var protector = new HeaderProtector();
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
+        {
+            using var key = IdentityStoreHelper.OpenKey( s, protector, 0 );
+            var privateScalar = key.ExportParameters( includePrivateParameters: true ).D!;
+            var stored = File.ReadAllBytes( IdentityStoreHelper.GetCoreKeysFolder( partyName ).AppendPart( "0.key" ) );
+            stored.AsSpan().IndexOf( privateScalar ).ShouldBe( -1, "The private key must not be stored in clear." );
+            protector.Unprotect( stored ).AsSpan().IndexOf( privateScalar ).ShouldBeGreaterThanOrEqualTo( 0,
+                "What is stored is the key, through the protector." );
+        }
     }
 }
