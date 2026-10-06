@@ -83,8 +83,8 @@ public class KeyEventChainTests
 
         // A public key length beyond the bound a peer may make us allocate.
         var oversized = (byte[])bytes.Clone();
-        oversized[12] = 0xFF;
         oversized[13] = 0xFF;
+        oversized[14] = 0xFF;
         Should.Throw<InvalidDataException>( () => KeyEvent.Read( oversized ) );
     }
 
@@ -94,7 +94,7 @@ public class KeyEventChainTests
         using var log = new Log( 2 );
         // Zero the PrevDigest of event 1: it would claim to have no predecessor.
         var bytes = log.Events[1].Encoded.ToArray();
-        int prevOffset = 4 + 8 + 2 + log.Events[1].Spki.Length + KeyEvent.HashSize;
+        int prevOffset = 4 + 8 + 1 + 2 + log.Events[1].Spki.Length + KeyEvent.HashSize + KeyEvent.HashSize;
         Array.Clear( bytes, prevOffset, KeyEvent.HashSize );
         Should.Throw<InvalidDataException>( () => KeyEvent.Read( bytes ) );
     }
@@ -336,9 +336,11 @@ public class KeyEventChainTests
             w.Write( name );
             w.Write( (uint)seq );
             w.Write( t.Ticks );
+            w.Write( (byte)0 ); // Flags: an ordinary event.
             w.Write( (ushort)spki.Length );
             w.Write( spki );
             w.Write( nextCommit );
+            w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
         }
         var hash = SHA512.HashData( payload.ToArray() );
@@ -349,9 +351,11 @@ public class KeyEventChainTests
         {
             w.Write( (uint)seq );
             w.Write( t.Ticks );
+            w.Write( (byte)0 ); // Flags: an ordinary event.
             w.Write( (ushort)spki.Length );
             w.Write( spki );
             w.Write( nextCommit );
+            w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
             w.Write( (byte)sig.Length );
             w.Write( sig );

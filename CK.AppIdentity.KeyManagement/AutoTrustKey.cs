@@ -17,25 +17,12 @@ public enum AutoTrustKey
 
     /// <summary>
     /// The <see cref="IRemoteKeys.TrustedIdentity"/> can be automatically initialized from
-    /// the remote reply but only if no trusted key was set. 
-    /// </summary>
-    Once,
-
-    /// <summary>
-    /// The <see cref="IRemoteKeys.TrustedIdentity"/> can be automatically accepted from
-    /// the remote reply, every time, including when one is already pinned.
+    /// the remote reply but only if nothing is pinned: trust on first use.
     /// <para>
-    /// <b>This is not authentication in any form.</b> It is not "the remote renews its key": any peer
-    /// that claims this remote's FullName and signs with a key of its own has that key adopted and
-    /// persisted, replacing the pinned one permanently and locking the legitimate remote out. Nothing
-    /// distinguishes the two cases, because there is nothing left to distinguish them WITH once the
-    /// pinned key stops being required.
-    /// </para>
-    /// <para>
-    /// It exists for bootstrapping and for environments where the transport is trusted by other
-    /// means. Everywhere else, <see cref="Once"/> reduces the window to the first connection and
-    /// <see cref="Never"/> closes it.
+    /// There is deliberately no "always" option. Once a pin exists, it moves only through rotations the
+    /// remote committed to beforehand, or by an operator: accepting an unrelated identity over a pin is
+    /// not a renewal but a takeover, and no configuration should be able to make it automatic.
     /// </para>
     /// </summary>
-    Always
+    Once
 }

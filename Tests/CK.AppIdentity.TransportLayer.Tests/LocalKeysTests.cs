@@ -46,7 +46,7 @@ public class LocalKeysTests
             keys.EventTail.Count.ShouldBe( 2 );
             KeyEventChain.Verify( IdentityStoreHelper.FullName( partyName ), keys.EventTail, inception ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
         }
-        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "1", "2" }, "The previous key is destroyed, a new next one exists." );
+        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "1", "2", "recovery-0" }, "The previous key is destroyed, a new next one exists." );
         IdentityStoreHelper.GetEventFiles( partyName ).ShouldBe( new[] { "0.event", "1.event" } );
         using( var c = IdentityStoreHelper.LoadCurrentCertificate( partyName ) )
         {
@@ -72,13 +72,13 @@ public class LocalKeysTests
         {
             new DefaultCoreKeyStore( protector ).CreateKey( TestHelper.Monitor, s, "2" );
         }
-        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1", "2" } );
+        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1", "2", "recovery-0" } );
 
         await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token ) )
         {
             s.GetRequiredFeature<ILocalKeys>().Seq.ShouldBe( 0 );
         }
-        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1" }, "Nothing commits to key 2: it is deleted." );
+        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1", "recovery-0" }, "Nothing commits to key 2: it is deleted." );
     }
 
     [Test, CancelAfter( 30000 )]
@@ -107,7 +107,7 @@ public class LocalKeysTests
             keys.Seq.ShouldBe( 1, "The log is the truth: the rotation happened." );
             keys.CurrentIdentity.PublicKeyRawData.ToArray().ShouldBe( nextSpki );
         }
-        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "1", "2" }, "The previous key is deleted." );
+        IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "1", "2", "recovery-0" }, "The previous key is deleted." );
         using var c = IdentityStoreHelper.LoadCurrentCertificate( partyName );
         c.PublicKey.ExportSubjectPublicKeyInfo().ShouldBe( nextSpki, "The certificate is re-minted for the current key." );
     }
@@ -156,7 +156,7 @@ public class LocalKeysTests
             // KeyEvent.Create would refuse the key too, but later and less clearly: the store's content
             // is checked against the commitment before anything is created.
             logs.ExtractCurrentTexts().ShouldContain( t => t.Contains( "is not the one event #0 committed to", StringComparison.Ordinal ) );
-            IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1" }, "Nothing was created on the way to the refusal." );
+            IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1", "recovery-0" }, "Nothing was created on the way to the refusal." );
         }
     }
 

@@ -30,6 +30,8 @@ public sealed class PeerIdentity : IDisposable
     readonly bool _ownsKeys;
     // Issued lazily for the current key, and dropped when the head changes.
     PeerCredential? _credential;
+    // The key the head's recovery commitment designates (null for an adopted log).
+    ECDsa? _recovery;
 
     PeerIdentity( string fullName, bool ownsKeys = true )
     {
@@ -58,7 +60,7 @@ public sealed class PeerIdentity : IDisposable
     }
 
     /// <summary>
-    /// Creates a fresh identity: an inception that commits to a next key.
+    /// Creates a fresh identity: an inception that commits to a next key and to a recovery key.
     /// </summary>
     /// <param name="fullName">The name the other side knows this peer by, e.g. "Test/$AdvPeer/#Dev".</param>
     /// <param name="timeName">The inception's time. Defaults to "a moment ago".</param>
@@ -69,7 +71,8 @@ public sealed class PeerIdentity : IDisposable
         id._keys.Add( NewKey() );
         var t = timeName ?? DateTime.UtcNow.AddMinutes( -1 );
         if( t.Kind != DateTimeKind.Utc ) throw new ArgumentException( "TimeName must be UTC.", nameof( timeName ) );
-        id._events.Add( KeyEvent.Create( fullName, 0, t, id._keys[0]!, Commit( id._keys[1]! ), null ) );
+        id._recovery = NewKey();
+        id._events.Add( KeyEvent.Create( fullName, 0, t, id._keys[0]!, Commit( id._keys[1]! ), null, Commit( id._recovery ) ) );
         return id;
     }
 
@@ -119,6 +122,34 @@ public sealed class PeerIdentity : IDisposable
         _events.Add( KeyEvent.Create( FullName, Head.Seq + 1, timeName ?? DateTime.UtcNow, next, Commit( _keys[^1]! ), Head ) );
     }
 
+    /// <summary>The recovery key the log commits to.</summary>
+    public ECDsa RecoveryKey => _recovery ?? throw new InvalidOperationException( "The recovery key is unknown." );
+
+    /// <summary>
+    /// Takes the identity back: a recovery event (revealing and signed by the recovery key, committing
+    /// to a fresh next key and a fresh recovery key) followed by the ordinary rotation to that next key.
+    /// </summary>
+    public void Recover( DateTime? timeName = null )
+    {
+        _credential?.Dispose();
+        _credential = null;
+        var t = timeName ?? DateTime.UtcNow;
+        var recovery = RecoveryKey;
+        var next = NewKey();
+        var afterNext = NewKey();
+        var nextRecovery = NewKey();
+        var r = KeyEvent.CreateRecovery( FullName, t, recovery, Commit( next ), Commit( nextRecovery ), Head );
+        // Key i is revealed by event i: the recovery event reveals the recovery key. The next key it
+        // replaces (possibly the one that leaked) is never used.
+        if( _ownsKeys ) _keys[r.Seq]?.Dispose();
+        _keys[r.Seq] = recovery;
+        _events.Add( r );
+        _keys.Add( next );
+        _keys.Add( afterNext );
+        _events.Add( KeyEvent.Create( FullName, r.Seq + 1, t, next, Commit( afterNext ), r ) );
+        _recovery = nextRecovery;
+    }
+
     /// <summary>
     /// Ends this identity: reveals the committed next key with no further commitment.
     /// </summary>
@@ -138,6 +169,7 @@ public sealed class PeerIdentity : IDisposable
     {
         _credential?.Dispose();
         if( _ownsKeys ) foreach( var k in _keys ) k?.Dispose();
+        if( _ownsKeys ) _recovery?.Dispose();
     }
 
     static ECDsa NewKey() => ECDsa.Create( ECCurve.NamedCurves.nistP256 );

@@ -578,8 +578,7 @@ public sealed class TransportFeature
         {
             var m = _outgoingInitialMessage;
             if( m == null
-                || m.RemoteTrustInfo.CanAutoTrust != (_remoteKeys.AutoTrustKey == AutoTrustKey.Always
-                                                      || (_remoteKeys.AutoTrustKey == AutoTrustKey.Once && _remoteKeys.TrustedEvent == null)) )
+                || m.RemoteTrustInfo.CanAutoTrust != (_remoteKeys.AutoTrustKey == AutoTrustKey.Once && _remoteKeys.TrustedEvent == null) )
             {
                 m = _outgoingInitialMessage = new InitialMessage( this );
             }

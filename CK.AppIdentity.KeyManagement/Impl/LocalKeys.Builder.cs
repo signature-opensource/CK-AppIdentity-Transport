@@ -62,7 +62,10 @@ sealed partial class LocalKeys
             }
             else
             {
-                current = LoadCurrent( monitor, keysPath, log[^1], allowedOfflineDays, now, alerts );
+                // A recovery that crashed between its two events: its head reveals the recovery key, which
+                // is not a key of the store. The online key it committed to is, and finishes it.
+                if( log[^1].IsRecovery ) CompleteRecovery( monitor, kelPath, log, now );
+                current = LoadCurrent( monitor, keysPath, log, allowedOfflineDays, now, alerts );
             }
             var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, alerts, _driverAlertRaised );
 
@@ -98,11 +101,12 @@ sealed partial class LocalKeys
             monitor.Warn( $"No identity found for '{_local.FullName}': creating a new one. Every remote will have to approve it." );
             _keyStore.CreateKey( monitor, _local, KeyName( 0 ) );
             var nextSpki = _keyStore.CreateKey( monitor, _local, KeyName( 1 ) );
+            var recoveryCommit = InceptRecovery( monitor );
             var key = _keyStore.OpenKey( monitor, _local, KeyName( 0 ) );
             Throw.CheckState( "A key just created cannot be opened.", key != null );
             try
             {
-                var e = KeyEvent.Create( _local.FullName, 0, now, key, KeyEvent.ComputeCommit( nextSpki.Span ), null );
+                var e = KeyEvent.Create( _local.FullName, 0, now, key, KeyEvent.ComputeCommit( nextSpki.Span ), null, recoveryCommit );
                 _store.WriteAllBytes( kelPath.AppendPart( KeyName( 0 ) + EventExtension ), e.Encoded );
                 var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * allowedOfflineDays ), now );
                 _store.WriteAllBytes( keysPath.AppendPart( CurrentCertificateFileName ), cert.Export( X509ContentType.Cert ) );
@@ -115,8 +119,9 @@ sealed partial class LocalKeys
             }
         }
 
-        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, KeyEvent head, int allowedOfflineDays, DateTime now, IdentityAlertBook alerts )
+        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, List<KeyEvent> log, int allowedOfflineDays, DateTime now, IdentityAlertBook alerts )
         {
+            var head = log[^1];
             if( head.IsAbandonment )
             {
                 Throw.CKException( $"Local '{_local.FullName}' has been decommissioned (event #{head.Seq}): its identity has ended. " +
@@ -135,7 +140,7 @@ sealed partial class LocalKeys
             {
                 Throw.CheckState( $"The key stored as #{h} for '{_local.FullName}' is not the one its event reveals.",
                                   key.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual( head.Spki.Span ) );
-                DeleteLeftoverKeys( monitor, h );
+                DeleteLeftoverKeys( monitor, h, RecoveryKeyName( log ) );
                 // Says so loudly when the next key is missing; the party still works.
                 using( OpenCommittedNextKey( monitor, _local, _keyStore, head, alerts ) ) { }
 
@@ -161,10 +166,11 @@ sealed partial class LocalKeys
             }
         }
 
-        void DeleteLeftoverKeys( IActivityMonitor monitor, int h )
+        void DeleteLeftoverKeys( IActivityMonitor monitor, int h, string? currentRecoveryKey )
         {
             foreach( var n in _keyStore.GetKeyNames( monitor, _local ) )
             {
+                if( n == currentRecoveryKey ) continue;
                 if( !int.TryParse( n, NumberStyles.None, CultureInfo.InvariantCulture, out var seq ) || seq < h || seq > h + 1 )
                 {
                     monitor.Info( $"Deleting leftover key '{n}' of '{_local.FullName}': the current key is #{h}." );
@@ -263,6 +269,62 @@ sealed partial class LocalKeys
                 monitor.Info( $"Trashing '{f}': identity keys are now held by the {nameof( ICoreKeyStore )}." );
                 _store.TryTrash( monitor, f );
             }
+        }
+
+        /// <summary>
+        /// The commitment of a new identity to its recovery key.
+        /// <para>
+        /// With "RecoveryPublicKey" configured (the base64 SubjectPublicKeyInfo of a P-256 key generated
+        /// and kept offline), the identity commits to it and nothing is stored here: this is what makes a
+        /// recovery possible after the host itself was compromised. Without it, a recovery key is
+        /// created in the key store, which only helps when the next key leaked on its own - and that is
+        /// said, once, as a warning.
+        /// </para>
+        /// </summary>
+        byte[] InceptRecovery( IActivityMonitor monitor )
+        {
+            var configured = _local.Configuration.Configuration["RecoveryPublicKey"];
+            if( configured != null )
+            {
+                byte[] spki;
+                try
+                {
+                    spki = Convert.FromBase64String( configured );
+                    using var check = ECDsa.Create();
+                    check.ImportSubjectPublicKeyInfo( spki, out int read );
+                    Throw.CheckData( read == spki.Length && check.KeySize == 256 );
+                }
+                catch( Exception ex )
+                {
+                    Throw.CKException( $"Configuration '{_local.Configuration.Configuration.Path}:RecoveryPublicKey' must be the base64 SubjectPublicKeyInfo of a P-256 key.", ex );
+                    throw;
+                }
+                monitor.Info( $"The identity of '{_local.FullName}' commits to the configured offline recovery key." );
+                return KeyEvent.ComputeCommit( spki );
+            }
+            monitor.Warn( $"No 'RecoveryPublicKey' configured for '{_local.FullName}': its recovery key is kept in the key store. " +
+                          $"It can take the identity back after a leak of the next key alone, not after a compromise of this host." );
+            return KeyEvent.ComputeCommit( _keyStore.CreateKey( monitor, _local, RecoveryKeyName( 0 ) ).Span );
+        }
+
+        /// <summary>
+        /// Writes the ordinary event that follows a recovery event, which a crash interrupted: it reveals
+        /// the online key the recovery committed to.
+        /// </summary>
+        void CompleteRecovery( IActivityMonitor monitor, NormalizedPath kelPath, List<KeyEvent> log, DateTime now )
+        {
+            var r = log[^1];
+            using var next = _keyStore.OpenKey( monitor, _local, KeyName( r.Seq + 1 ) );
+            if( next == null || !r.CommitsTo( next.ExportSubjectPublicKeyInfo() ) )
+            {
+                Throw.CKException( $"The recovery #{r.Seq} of '{_local.FullName}' was interrupted and the key it committed to is missing: run the recovery again." );
+            }
+            _keyStore.DeleteKey( monitor, _local, KeyName( r.Seq + 2 ) );
+            var after = _keyStore.CreateKey( monitor, _local, KeyName( r.Seq + 2 ) );
+            var e = KeyEvent.Create( _local.FullName, r.Seq + 1, now, next, KeyEvent.ComputeCommit( after.Span ), r );
+            _store.WriteAllBytes( kelPath.AppendPart( KeyName( e.Seq ) + EventExtension ), e.Encoded );
+            log.Add( e );
+            monitor.Warn( $"Completed the interrupted recovery of '{_local.FullName}': identity key is now #{e.Seq}." );
         }
 
         int ReadOperationalKeyDays( IActivityMonitor monitor )

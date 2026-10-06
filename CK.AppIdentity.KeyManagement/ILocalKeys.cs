@@ -153,6 +153,30 @@ public interface ILocalKeys
     bool Decommission( IActivityMonitor monitor );
 
     /// <summary>
+    /// Takes the identity back with the recovery key: what to do after an
+    /// <see cref="IdentityAlertKind.IdentityTakenOver"/> or <see cref="IdentityAlertKind.IdentityForked"/>
+    /// alert, or when the next key is lost.
+    /// <para>
+    /// Writes a recovery event (revealing and signed by the recovery key the log committed to), then at
+    /// once an ordinary rotation to a fresh online key, so the recovery key is needed for nothing else.
+    /// Every remote that receives the tail drops whatever it had pinned since, including a chain moved
+    /// with a stolen next key: ordinary events cannot change the recovery commitment, so the thief left
+    /// it in place.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="recoveryKey">
+    /// The recovery key, brought back from offline. Null when no "RecoveryPublicKey" was configured: the
+    /// key is then in the key store.
+    /// </param>
+    /// <param name="nextRecoveryPublicKey">
+    /// The SubjectPublicKeyInfo of the next recovery key, generated offline. Required when
+    /// <paramref name="recoveryKey"/> is given; when it is not, a new one is created in the key store.
+    /// </param>
+    /// <returns>True on success, false (with an error logged) otherwise.</returns>
+    bool Recover( IActivityMonitor monitor, System.Security.Cryptography.ECDsa? recoveryKey = null, ReadOnlyMemory<byte> nextRecoveryPublicKey = default );
+
+    /// <summary>
     /// Gets the alerts not yet <see cref="Acknowledge">acknowledged</see>, oldest first. They survive
     /// restarts and are logged again at each start.
     /// </summary>

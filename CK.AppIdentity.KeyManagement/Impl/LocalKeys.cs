@@ -233,6 +233,123 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     /// <summary>
+    /// Name, in the key store, of a recovery key created by this party (when none is configured):
+    /// <c>recovery-{seq}</c>, where <c>seq</c> is the event that committed to it.
+    /// </summary>
+    static string RecoveryKeyName( int seq ) => "recovery-" + KeyName( seq );
+
+    /// <summary>
+    /// Name of the recovery key the head of <paramref name="log"/> commits to: the last inception or
+    /// recovery event is the one that set the commitment.
+    /// </summary>
+    static string RecoveryKeyName( IReadOnlyList<KeyEvent> log )
+    {
+        for( int i = log.Count - 1; i >= 0; --i )
+        {
+            if( log[i].IsInception || log[i].IsRecovery ) return RecoveryKeyName( log[i].Seq );
+        }
+        return RecoveryKeyName( 0 );
+    }
+
+    public bool Recover( IActivityMonitor monitor, ECDsa? recoveryKey = null, ReadOnlyMemory<byte> nextRecoveryPublicKey = default )
+    {
+        lock( _rotationLock )
+        {
+            var state = _state;
+            var head = state.Head;
+            if( !head.HasRecovery )
+            {
+                monitor.Error( $"The identity of '{_local.FullName}' has no recovery key." );
+                return false;
+            }
+            int h = head.Seq;
+            if( File.Exists( KelPath.AppendPart( KeyName( h + 1 ) + EventExtension ) ) )
+            {
+                monitor.Error( $"Event #{h + 1} of '{_local.FullName}' is already written: restart to complete it before recovering." );
+                return false;
+            }
+            var storedRecoveryName = RecoveryKeyName( state.Log );
+            ECDsa? stored = null;
+            try
+            {
+                var key = recoveryKey ?? (stored = _keyStore.OpenKey( monitor, _local, storedRecoveryName ));
+                if( key == null )
+                {
+                    monitor.Error( $"No recovery key given for '{_local.FullName}', and none is in the key store: it is kept offline." );
+                    return false;
+                }
+                if( !head.CommitsToRecovery( key.ExportSubjectPublicKeyInfo() ) )
+                {
+                    monitor.Error( $"This is not the recovery key the identity of '{_local.FullName}' committed to." );
+                    return false;
+                }
+                // The next recovery key: the one given (generated offline), or a new one in the store
+                // when the recovery key itself came from the store.
+                byte[] nextRecoveryCommit;
+                if( !nextRecoveryPublicKey.IsEmpty )
+                {
+                    nextRecoveryCommit = KeyEvent.ComputeCommit( nextRecoveryPublicKey.Span );
+                }
+                else if( recoveryKey == null )
+                {
+                    _keyStore.DeleteKey( monitor, _local, RecoveryKeyName( h + 1 ) );
+                    nextRecoveryCommit = KeyEvent.ComputeCommit( _keyStore.CreateKey( monitor, _local, RecoveryKeyName( h + 1 ) ).Span );
+                }
+                else
+                {
+                    monitor.Error( $"A recovery with an offline key must name the next offline recovery key (its public key)." );
+                    return false;
+                }
+
+                var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
+                // The online key that follows: whatever was the next key (it may be the one that leaked)
+                // is skipped. Names follow the sequence of the event that reveals the key.
+                _keyStore.DeleteKey( monitor, _local, KeyName( h + 2 ) );
+                _keyStore.DeleteKey( monitor, _local, KeyName( h + 3 ) );
+                var nextSpki = _keyStore.CreateKey( monitor, _local, KeyName( h + 2 ) );
+                var afterNextSpki = _keyStore.CreateKey( monitor, _local, KeyName( h + 3 ) );
+                var r = KeyEvent.CreateRecovery( _local.FullName, now, key, KeyEvent.ComputeCommit( nextSpki.Span ), nextRecoveryCommit, head );
+
+                var next = _keyStore.OpenKey( monitor, _local, KeyName( h + 2 ) );
+                Throw.CheckState( "A key just created cannot be opened.", next != null );
+                bool nextOwned = true;
+                try
+                {
+                    var e = KeyEvent.Create( _local.FullName, h + 2, now, next, KeyEvent.ComputeCommit( afterNextSpki.Span ), r );
+                    // The commit point is the recovery event. The ordinary event that follows it puts the
+                    // recovery key back out of use at once; if a crash comes in between, the next start
+                    // writes it (Builder.CompleteRecovery).
+                    WriteEvent( r );
+                    WriteEvent( e );
+                    var identity = CreateIdentity( monitor, next, e, now );
+                    nextOwned = false;
+                    _state = new LocalIdentityState( identity, [.. state.Log, r, e], OperationalCredential.Issue( identity, now, _operationalKeyDays ) );
+                    _keyStore.DeleteKey( monitor, _local, KeyName( h ) );
+                    _keyStore.DeleteKey( monitor, _local, KeyName( h + 1 ) );
+                    if( recoveryKey == null ) _keyStore.DeleteKey( monitor, _local, storedRecoveryName );
+                    ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
+                    monitor.Warn( $"Local '{_local.FullName}' recovered its identity: recovery event #{r.Seq}, identity key is now #{e.Seq}. " +
+                                  $"Every remote that receives it drops whatever it had pinned since #{h}." );
+                    return true;
+                }
+                finally
+                {
+                    if( nextOwned ) next.Dispose();
+                }
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"While recovering the identity of '{_local.FullName}'.", ex );
+                return false;
+            }
+            finally
+            {
+                stored?.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
     /// Renews the operational credential once it has lived half its life. The previous one stays valid
     /// until its own expiry, so a handshake in flight that already presented it is unaffected and no
     /// overlap logic is needed.

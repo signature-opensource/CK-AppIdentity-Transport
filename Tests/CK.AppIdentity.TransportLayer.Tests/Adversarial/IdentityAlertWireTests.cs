@@ -140,6 +140,48 @@ public class IdentityAlertWireTests
     }
 
     [Test, CancelAfter( 60000 )]
+    public async Task A_taken_over_identity_is_taken_back_with_the_recovery_key_Async( CancellationToken token )
+    {
+        // The whole story: the next key leaks, a thief moves the listener's pin, the victim learns it
+        // from the refusal, recovers, and the listener follows the recovery - the thief's chain is
+        // superseded because it could not change the recovery commitment.
+        ClearAll();
+        var protector = new HeaderProtector();
+        await using var listener = await CreateListenerAsync( token );
+
+        KeyEvent e0;
+        ECDsa stolenNext;
+        await using( var victim = await CreateVictimAsync( protector, DefaultAddress, "Once", token ) )
+        {
+            await victim.AllRemotes.Single().GetRequiredFeature<TransportFeature>().ReadyTask.WaitAsync( token );
+            e0 = victim.GetRequiredFeature<ILocalKeys>().State.Head;
+            stolenNext = IdentityStoreHelper.OpenKey( victim, protector, 1 );
+        }
+        using var _stolen = stolenNext;
+        using var thiefNext = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        var e1 = KeyEvent.Create( VictimFullName, 1, DateTime.UtcNow, stolenNext, KeyEvent.ComputeCommit( thiefNext.ExportSubjectPublicKeyInfo() ), e0 );
+        using( var thief = PeerIdentity.Adopt( VictimFullName, new[] { e0, e1 }, stolenNext, thiefNext ) )
+        {
+            await KnockAsAsync( thief, token );
+        }
+        await WaitForAsync( () => PeerStore.ReadTrustedIdentity( $"Test/{Victim}" )?.Seq == 1, "the thief's rotation", token );
+
+        await using var back = await CreateVictimAsync( protector, DefaultAddress, "Once", token );
+        var keys = back.GetRequiredFeature<ILocalKeys>();
+        await WaitForAsync( () => keys.Alerts.Any( a => a.Kind == IdentityAlertKind.IdentityTakenOver ), "the takeover alert", token );
+
+        // The operator recovers. The recovery key is in the key store here: the thief only took the next key.
+        keys.Recover( TestHelper.Monitor ).ShouldBeTrue();
+        var recoveredHead = keys.State.Head;
+
+        var side = back.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
+        await WaitForAsync( () => side.ConnectionAvailability == ConnectionAvailability.Connected, "the reconnection", token );
+        var pinned = PeerStore.ReadTrustedIdentity( $"Test/{Victim}" )!;
+        pinned.GetDigest( VictimFullName ).ToArray().ShouldBe( recoveredHead.GetDigest( VictimFullName ).ToArray(),
+            "The listener dropped the thief's chain and pins the recovered identity." );
+    }
+
+    [Test, CancelAfter( 60000 )]
     public async Task A_fork_raises_duplicity_on_the_remote_and_a_fork_alert_on_the_victim_Async( CancellationToken token )
     {
         ClearAll();

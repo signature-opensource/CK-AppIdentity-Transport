@@ -72,9 +72,8 @@ public interface IRemoteKeys
     /// Gets the pinned event of the remote's key event log, or null when nothing is trusted yet.
     /// <para>
     /// It moves forward only through rotations the remote committed to beforehand
-    /// (<see cref="ApplyTail"/>): holding the remote's current key is not enough to move it. Under
-    /// <see cref="AutoTrustKey.Always"/> it can also be replaced by an unrelated identity, which is a
-    /// takeover by configuration.
+    /// (<see cref="ApplyTail"/>), or by an operator (<see cref="SetTrustedIdentity"/>):
+    /// holding the remote's current key is not enough to move it.
     /// </para>
     /// </summary>
     KeyEvent? TrustedEvent { get; }
@@ -113,8 +112,7 @@ public interface IRemoteKeys
 
     /// <summary>
     /// Adopts a self-asserted head (one that does not link to a pin) when <see cref="AutoTrustKey"/>
-    /// allows it: <see cref="AutoTrustKey.Once"/> when nothing is pinned,
-    /// <see cref="AutoTrustKey.Always"/> in any case but a terminated identity.
+    /// allows it: <see cref="AutoTrustKey.Once"/>, and only when nothing is pinned.
     /// <para>
     /// The caller must have verified that the head's key signed the message: this is a
     /// trust-on-first-use decision, not a proof.

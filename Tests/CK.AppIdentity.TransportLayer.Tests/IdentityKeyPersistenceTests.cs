@@ -35,7 +35,7 @@ public class IdentityKeyPersistenceTests
         // First start: no identity exists, one is created: the current key, the next one, the inception.
         await using( await IdentityStoreHelper.CreateAsync( partyName, protector, token ) ) { }
         var first = Take( partyName );
-        first.KeyNames.ShouldBe( new[] { "0", "1" }, "The first start creates the current key and the committed next one." );
+        first.KeyNames.ShouldBe( new[] { "0", "1", "recovery-0" }, "The first start creates the current key and the committed next one." );
         first.Events.ShouldBe( new[] { "0.event" } );
 
         // Second start over the same store: everything must be READ BACK, nothing recreated.

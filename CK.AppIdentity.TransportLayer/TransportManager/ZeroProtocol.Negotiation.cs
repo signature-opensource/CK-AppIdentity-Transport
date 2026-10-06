@@ -256,7 +256,7 @@ static partial class ZeroProtocol // Negotiation
         SignatureCheck check = SignatureCheck.Failed;
         ECDsa? operationalKey = null;
         DateTime credentialNotAfter = default;
-        if( chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Unpinned or KeyChainVerdict.TooFarBehind )
+        if( chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Unpinned or KeyChainVerdict.TooFarBehind )
         {
             operationalKey = OperationalCredential.TryVerify( credential,
                                                               head.Spki.Span,
@@ -272,7 +272,7 @@ static partial class ZeroProtocol // Negotiation
             {
                 // Verified against a chain that links to our pin: authenticated. Otherwise, against a
                 // head the sender supplied itself: it proves only that the sender holds some key.
-                check = chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced
+                check = chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered
                             ? SignatureCheck.Trusted
                             : SignatureCheck.SelfAsserted;
             }

@@ -129,7 +129,7 @@ sealed partial class RemoteKeys
             if( a != null && !(Enum.TryParse( a, true, out autoTrust ) && Enum.IsDefined( autoTrust )) )
             {
                 monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AutoTrustKey )}' value, " +
-                              $"expected '{AutoTrustKey.Never}', '{AutoTrustKey.Once}' or '{AutoTrustKey.Always}' but got '{a}'. " +
+                              $"expected '{AutoTrustKey.Never}' or '{AutoTrustKey.Once}' but got '{a}'. " +
                               $"Using default '{AutoTrustKey.Never}'." );
             }
             if( autoTrust != AutoTrustKey.Never )

@@ -32,6 +32,13 @@ public enum KeyChainVerdict
     Advanced,
 
     /// <summary>
+    /// The tail holds a recovery event revealing the recovery key the pinned event commits to: it
+    /// supersedes the pin, whatever ordinary events led to it, and the pin moves to <see cref="KeyChainCheck.Head"/>.
+    /// <see cref="KeyChainCheck.Held"/> is the superseded pin.
+    /// </summary>
+    Recovered,
+
+    /// <summary>
     /// The verified head is an abandonment: the identity has ended, and the pin becomes terminal.
     /// </summary>
     Abandoned,
@@ -117,6 +124,26 @@ public static class KeyEventChain
             return new KeyChainCheck( head.IsAbandonment ? KeyChainVerdict.Abandoned : KeyChainVerdict.Unpinned, head );
         }
 
+        // A recovery event that reveals the recovery key the pin commits to supersedes the pin, whatever
+        // it is: a chain someone moved with a stolen next key, the event a fork was built on, even an
+        // abandonment. Ordinary events carry the recovery commitment unchanged, so whoever moved the pin
+        // without the recovery key left it in place - and only its holder can produce this event. It is
+        // checked before anything else, sequence order included: superseding is the point.
+        if( pinned.HasRecovery )
+        {
+            for( int j = tail.Count - 1; j >= 0; --j )
+            {
+                var r = tail[j];
+                if( !r.IsRecovery || !pinned.CommitsToRecovery( r.Spki.Span ) ) continue;
+                if( !r.VerifySignature( fullName ) ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+                for( int i = j + 1; i < tail.Count; ++i )
+                {
+                    if( !Links( fullName, tail[i - 1], tail[i] ) ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+                }
+                return new KeyChainCheck( head.IsAbandonment ? KeyChainVerdict.Abandoned : KeyChainVerdict.Recovered, head, Held: pinned );
+            }
+        }
+
         if( pinned.IsAbandonment ) return new KeyChainCheck( KeyChainVerdict.Terminated );
         int s = pinned.Seq;
         if( m < s ) return new KeyChainCheck( KeyChainVerdict.Rollback );
@@ -172,13 +199,17 @@ public static class KeyEventChain
     }
 
     /// <summary>
-    /// <paramref name="next"/> follows <paramref name="previous"/>: it reveals the key previous
-    /// committed to, names previous as its predecessor, and is signed by the key it reveals.
+    /// <paramref name="next"/> follows <paramref name="previous"/>: it names previous as its predecessor,
+    /// is signed by the key it reveals, and that key is either the next key previous committed to (an
+    /// ordinary event, which must then carry the recovery commitment unchanged) or the recovery key
+    /// previous committed to (a recovery event, which may commit to a new one).
     /// </summary>
     static bool Links( string fullName, KeyEvent previous, KeyEvent next )
     {
         return next.Seq == previous.Seq + 1
-               && previous.CommitsTo( next.Spki.Span )
+               && (next.IsRecovery
+                    ? previous.CommitsToRecovery( next.Spki.Span )
+                    : previous.CommitsTo( next.Spki.Span ) && SameDigest( next.RecoveryCommit.Span, previous.RecoveryCommit.Span ))
                && SameDigest( next.PrevDigest.Span, previous.GetDigest( fullName ).Span )
                && next.VerifySignature( fullName );
     }

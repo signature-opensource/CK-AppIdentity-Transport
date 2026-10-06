@@ -123,6 +123,10 @@ sealed partial class RemoteKeys : IRemoteKeys
                     logger.Info( $"Remote '{_remote}' rotated its identity key: #{_pinned!.Seq} -> #{check.Head!.Seq}." );
                     DoPin( logger, check.Head );
                     break;
+                case KeyChainVerdict.Recovered:
+                    logger.Warn( $"Remote '{_remote}' recovered its identity with its recovery key, superseding pinned #{_pinned!.Seq}: now #{check.Head!.Seq}." );
+                    DoPin( logger, check.Head );
+                    break;
                 case KeyChainVerdict.Abandoned:
                     // Unknown parties are not pinned, not even to record their end.
                     if( _pinned != null )
@@ -156,11 +160,6 @@ sealed partial class RemoteKeys : IRemoteKeys
             {
                 if( _autoTrustKey == AutoTrustKey.Never ) return false;
                 logger.Warn( $"Pinning the identity presented by remote '{_remote}' because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}." );
-                return DoPin( logger, head );
-            }
-            if( _autoTrustKey == AutoTrustKey.Always && !_pinned.IsAbandonment )
-            {
-                logger.Warn( $"Replacing the pinned identity of remote '{_remote}' by an unrelated one because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}: this is a takeover by configuration." );
                 return DoPin( logger, head );
             }
             return false;

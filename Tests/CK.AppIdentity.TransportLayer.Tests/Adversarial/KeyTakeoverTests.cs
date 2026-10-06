@@ -186,9 +186,11 @@ public class KeyTakeoverTests
             w.Write( name );
             w.Write( (uint)seq );
             w.Write( t.Ticks );
+            w.Write( (byte)0 ); // Flags: an ordinary event.
             w.Write( (ushort)spki.Length );
             w.Write( spki );
             w.Write( nextCommit );
+            w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
         }
         var sig = signer.SignHash( SHA512.HashData( payload.ToArray() ), DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
@@ -197,9 +199,11 @@ public class KeyTakeoverTests
         {
             w.Write( (uint)seq );
             w.Write( t.Ticks );
+            w.Write( (byte)0 ); // Flags: an ordinary event.
             w.Write( (ushort)spki.Length );
             w.Write( spki );
             w.Write( nextCommit );
+            w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
             w.Write( (byte)sig.Length );
             w.Write( sig );

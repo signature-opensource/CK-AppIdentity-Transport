@@ -81,9 +81,14 @@ static class IdentityStoreHelper
     public static Task<ApplicationIdentityService> CreateAsync( string partyName,
                                                                 IDataProtectionProvider protector,
                                                                 CancellationToken token,
-                                                                ApplicationIdentityService.ISystemClock? clock = null )
+                                                                ApplicationIdentityService.ISystemClock? clock = null,
+                                                                Action<MutableConfigurationSection>? configure = null )
         => TestHelper.CreateApplicationServiceAsync(
-                c => c["FullName"] = $"Test/${partyName}",
+                c =>
+                {
+                    c["FullName"] = $"Test/${partyName}";
+                    configure?.Invoke( c );
+                },
                 services =>
                 {
                     services.AddSingleton( protector );
