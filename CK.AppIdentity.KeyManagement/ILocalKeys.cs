@@ -1,4 +1,6 @@
 using CK.Core;
+using CK.PerfectEvent;
+using System;
 using Microsoft.AspNetCore.DataProtection;
 using System.Collections.Generic;
 
@@ -122,6 +124,44 @@ public interface ILocalKeys
     /// <param name="monitor">The monitor to use.</param>
     /// <returns>True on success, false (with an error logged) when the next key is unavailable or this is already decommissioned.</returns>
     bool Decommission( IActivityMonitor monitor );
+
+    /// <summary>
+    /// Gets the alerts not yet <see cref="Acknowledge">acknowledged</see>, oldest first. They survive
+    /// restarts and are logged again at each start.
+    /// </summary>
+    IReadOnlyList<IdentityAlert> Alerts { get; }
+
+    /// <summary>
+    /// Raised for a new alert, and again when a new remote confirms one. Raised from the heartbeat that
+    /// follows the detection. See also <see cref="KeyManagementFeatureDriver.AlertRaised"/>, which
+    /// covers every local party.
+    /// </summary>
+    PerfectEvent<IdentityAlert> AlertRaised { get; }
+
+    /// <summary>
+    /// Acknowledges an alert: it is removed and stops being logged at start. This does not fix what
+    /// it reported: a condition that is still there raises it again.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="alert">The alert.</param>
+    /// <returns>True if the alert was pending.</returns>
+    bool Acknowledge( IActivityMonitor monitor, IdentityAlert alert );
+
+    /// <summary>
+    /// Judges what an authenticated remote states it pins for this party: an event digest at a
+    /// sequence. A sequence beyond this party's log raises <see cref="IdentityAlertKind.IdentityTakenOver"/>;
+    /// a digest that is not this party's event at that sequence raises <see cref="IdentityAlertKind.IdentityForked"/>.
+    /// <para>
+    /// The caller must only report statements of a remote it has authenticated: otherwise anyone could
+    /// raise alerts about this party.
+    /// </para>
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="reporter">The full name of the authenticated remote.</param>
+    /// <param name="seq">The sequence the remote pins.</param>
+    /// <param name="eventDigest">The digest of the event the remote pins.</param>
+    /// <returns>True if an alert was raised.</returns>
+    bool ReportPinStatement( IActivityLineEmitter logger, string reporter, int seq, ReadOnlySpan<byte> eventDigest );
 
     /// <summary>
     /// Gets a data protector for this party.

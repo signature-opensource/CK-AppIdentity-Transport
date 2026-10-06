@@ -80,10 +80,15 @@ static class IdentityStoreHelper
     // the test helper already registered a FakeProtector for it and the last registration wins.
     public static Task<ApplicationIdentityService> CreateAsync( string partyName,
                                                                 IDataProtectionProvider protector,
-                                                                CancellationToken token )
+                                                                CancellationToken token,
+                                                                ApplicationIdentityService.ISystemClock? clock = null )
         => TestHelper.CreateApplicationServiceAsync(
                 c => c["FullName"] = $"Test/${partyName}",
-                services => services.AddSingleton( protector ),
+                services =>
+                {
+                    services.AddSingleton( protector );
+                    if( clock != null ) services.AddSingleton( clock );
+                },
                 token );
 
     /// <summary>

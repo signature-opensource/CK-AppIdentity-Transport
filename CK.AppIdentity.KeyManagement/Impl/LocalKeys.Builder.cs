@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using CK.PerfectEvent;
 
 namespace CK.AppIdentity.KeyManagement;
 
@@ -19,12 +20,14 @@ sealed partial class LocalKeys
         readonly IDataProtectionProvider _protectionProvider;
         readonly ICoreKeyStore _keyStore;
         readonly IFileStore _store;
+        readonly PerfectEventSender<IdentityAlert>? _driverAlertRaised;
 
-        public Builder( ILocalParty local, IDataProtectionProvider protectionProvider, ICoreKeyStore keyStore )
+        public Builder( ILocalParty local, IDataProtectionProvider protectionProvider, ICoreKeyStore keyStore, PerfectEventSender<IdentityAlert>? driverAlertRaised = null )
         {
             _local = local;
             _protectionProvider = protectionProvider;
             _keyStore = keyStore;
+            _driverAlertRaised = driverAlertRaised;
             _store = local.LocalFileStore;
         }
 
@@ -48,6 +51,7 @@ sealed partial class LocalKeys
             _store.CreateDirectory( kelPath );
             TrashLegacyFiles( monitor, keysPath );
 
+            var alerts = IdentityAlertBook.Load( monitor, _local, keysPath.AppendPart( "Alerts" ) );
             var log = LoadLog( monitor, kelPath );
             LocalIdentityKey current;
             if( log.Count == 0 )
@@ -57,9 +61,9 @@ sealed partial class LocalKeys
             }
             else
             {
-                current = LoadCurrent( monitor, keysPath, log[^1], allowedOfflineDays, now );
+                current = LoadCurrent( monitor, keysPath, log[^1], allowedOfflineDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, alerts, _driverAlertRaised );
 
             // Scheduled rotation: a current key that cannot guarantee AllowedOfflineDays any more is
             // replaced by the committed next one.
@@ -71,6 +75,7 @@ sealed partial class LocalKeys
                 {
                     // Keep working rather than stop: same key, fresh certificate. The failure has
                     // been logged as an error by Rotate.
+                    alerts.Raise( monitor, IdentityAlertKind.RotationFailing, _local.FullName, true, null, log[^1].Seq, default, default );
                     keys.RenewCertificate( monitor, now );
                 }
             }
@@ -109,7 +114,7 @@ sealed partial class LocalKeys
             }
         }
 
-        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, KeyEvent head, int allowedOfflineDays, DateTime now )
+        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, KeyEvent head, int allowedOfflineDays, DateTime now, IdentityAlertBook alerts )
         {
             if( head.IsAbandonment )
             {
@@ -131,7 +136,7 @@ sealed partial class LocalKeys
                                   key.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual( head.Spki.Span ) );
                 DeleteLeftoverKeys( monitor, h );
                 // Says so loudly when the next key is missing; the party still works.
-                using( OpenCommittedNextKey( monitor, _local, _keyStore, head ) ) { }
+                using( OpenCommittedNextKey( monitor, _local, _keyStore, head, alerts ) ) { }
 
                 var certPath = keysPath.AppendPart( CurrentCertificateFileName );
                 var cert = TryLoadCertificate( monitor, certPath, head, now );

@@ -1,4 +1,5 @@
 using CK.Core;
+using CK.PerfectEvent;
 using Microsoft.AspNetCore.DataProtection;
 using System;
 using System.Collections.Generic;
@@ -11,13 +12,25 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;
     readonly ICoreKeyStore _keyStore;
+    readonly PerfectEventSender<IdentityAlert> _alertRaised;
 
     public KeyManagementFeatureDriver( ApplicationIdentityService s, IDataProtectionProvider protectorProvider, ICoreKeyStore keyStore )
         : base( s, true )
     {
         _protectorProvider = protectorProvider;
         _keyStore = keyStore;
+        _alertRaised = new PerfectEventSender<IdentityAlert>();
     }
+
+    /// <summary>
+    /// Raised for every new <see cref="IdentityAlert"/> of any local party (the root one and the tenant
+    /// domains), and again when a new remote confirms one. This is the one place to wire paging.
+    /// <para>
+    /// Raised from the heartbeat that follows the detection: the alert itself is logged at once, with
+    /// the <see cref="IdentityAlert.LogTag"/>.
+    /// </para>
+    /// </summary>
+    public PerfectEvent<IdentityAlert> AlertRaised => _alertRaised.PerfectEvent;
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
@@ -85,7 +98,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
         bool success = true;
         try
         {
-            var localKeys = new LocalKeys.Builder( local, _protectorProvider, _keyStore ).Build( context.Monitor );
+            var localKeys = new LocalKeys.Builder( local, _protectorProvider, _keyStore, _alertRaised ).Build( context.Monitor );
             local.AddFeature( localKeys );
             foreach( var r in local.Remotes )
             {

@@ -7,6 +7,9 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
+using System.Threading.Tasks;
+using CK.PerfectEvent;
 
 namespace CK.AppIdentity.KeyManagement;
 
@@ -40,13 +43,20 @@ sealed partial class LocalKeys : ILocalKeys
     LocalIdentityKey[] _identities;
     KeyEvent[] _log;
 
+    readonly IdentityAlertBook _alerts;
+    readonly PerfectEventSender<IdentityAlert> _alertRaised;
+    // The driver's event, raised after ours: one place for an application to subscribe for every local party.
+    readonly PerfectEventSender<IdentityAlert>? _driverAlertRaised;
+
     LocalKeys( ILocalParty local,
                IDataProtector protector,
                ICoreKeyStore keyStore,
                NormalizedPath keysPath,
                LocalIdentityKey current,
                KeyEvent[] log,
-               int allowedOfflineDays )
+               int allowedOfflineDays,
+               IdentityAlertBook alerts,
+               PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
         _local = local;
         _protector = protector;
@@ -56,6 +66,47 @@ sealed partial class LocalKeys : ILocalKeys
         _log = log;
         _allowedOfflineDays = allowedOfflineDays;
         _rotationLock = new object();
+        _alerts = alerts;
+        _alertRaised = new PerfectEventSender<IdentityAlert>();
+        _driverAlertRaised = driverAlertRaised;
+        local.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
+    }
+
+    public IReadOnlyList<IdentityAlert> Alerts => _alerts.Alerts;
+
+    public PerfectEvent<IdentityAlert> AlertRaised => _alertRaised.PerfectEvent;
+
+    public bool Acknowledge( IActivityMonitor monitor, IdentityAlert alert ) => _alerts.Acknowledge( monitor, alert );
+
+    internal IdentityAlertBook AlertBook => _alerts;
+
+    public bool ReportPinStatement( IActivityLineEmitter logger, string reporter, int seq, ReadOnlySpan<byte> eventDigest )
+    {
+        Throw.CheckNotNullOrEmptyArgument( reporter );
+        Throw.CheckArgument( seq >= 0 );
+        Throw.CheckArgument( eventDigest.Length == KeyEvent.HashSize );
+        var log = _log;
+        var head = log[^1];
+        if( seq > head.Seq )
+        {
+            _alerts.Raise( logger, IdentityAlertKind.IdentityTakenOver, _local.FullName, true, reporter, seq,
+                           head.GetDigest( _local.FullName ).Span, eventDigest );
+            return true;
+        }
+        // The log is complete from the inception: event 'seq' is at index 'seq'.
+        var own = log[seq].GetDigest( _local.FullName ).Span;
+        if( CryptographicOperations.FixedTimeEquals( own, eventDigest ) ) return false;
+        _alerts.Raise( logger, IdentityAlertKind.IdentityForked, _local.FullName, true, reporter, seq, own, eventDigest );
+        return true;
+    }
+
+    async Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
+    {
+        foreach( var a in _alerts.Flush( monitor ) )
+        {
+            await _alertRaised.SafeRaiseAsync( monitor, a, cancel ).ConfigureAwait( false );
+            if( _driverAlertRaised != null ) await _driverAlertRaised.SafeRaiseAsync( monitor, a, cancel ).ConfigureAwait( false );
+        }
     }
 
     public ILocalParty Party => _local;
@@ -98,7 +149,7 @@ sealed partial class LocalKeys : ILocalKeys
                 return false;
             }
             int s = head.Seq;
-            var next = OpenCommittedNextKey( monitor, _local, _keyStore, head );
+            var next = OpenCommittedNextKey( monitor, _local, _keyStore, head, _alerts );
             if( next == null ) return false;
             bool nextOwned = true;
             try
@@ -146,7 +197,7 @@ sealed partial class LocalKeys : ILocalKeys
             int s = head.Seq;
             // Only the committed next key can end the identity: a thief holding the current key
             // cannot use this to knock the party offline.
-            using var next = OpenCommittedNextKey( monitor, _local, _keyStore, head );
+            using var next = OpenCommittedNextKey( monitor, _local, _keyStore, head, _alerts );
             if( next == null ) return false;
             try
             {
@@ -198,7 +249,11 @@ sealed partial class LocalKeys : ILocalKeys
         }
     }
 
-    static ECDsa? OpenCommittedNextKey( IActivityMonitor monitor, ILocalParty local, ICoreKeyStore keyStore, KeyEvent head )
+    /// <summary>
+    /// Opens the next key and checks it is the one <paramref name="head"/> committed to. When it is not
+    /// usable, says why and raises <see cref="IdentityAlertKind.NextKeyLost"/>.
+    /// </summary>
+    static ECDsa? OpenCommittedNextKey( IActivityMonitor monitor, ILocalParty local, ICoreKeyStore keyStore, KeyEvent head, IdentityAlertBook alerts )
     {
         var next = keyStore.OpenKey( monitor, local, KeyName( head.Seq + 1 ) );
         if( next == null )
@@ -206,13 +261,16 @@ sealed partial class LocalKeys : ILocalKeys
             monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
                            $"The next identity key of '{local.FullName}' (#{head.Seq + 1}) is missing: this party can neither rotate nor be revoked. " +
                            $"The current key keeps working. The only recovery is a new identity that every remote re-approves." );
+            alerts.Raise( monitor, IdentityAlertKind.NextKeyLost, local.FullName, true, null, head.Seq + 1, head.NextCommit.Span, default );
             return null;
         }
-        if( !head.CommitsTo( next.ExportSubjectPublicKeyInfo() ) )
+        var spki = next.ExportSubjectPublicKeyInfo();
+        if( !head.CommitsTo( spki ) )
         {
             next.Dispose();
             monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
                            $"The key stored as #{head.Seq + 1} for '{local.FullName}' is not the one event #{head.Seq} committed to." );
+            alerts.Raise( monitor, IdentityAlertKind.NextKeyLost, local.FullName, true, null, head.Seq + 1, head.NextCommit.Span, KeyEvent.ComputeCommit( spki ) );
             return null;
         }
         return next;
@@ -314,6 +372,10 @@ sealed partial class LocalKeys : ILocalKeys
     /// </summary>
     internal void OnTearDown( IActivityMonitor monitor )
     {
+        _local.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
+        // Repetitions are saved from the heartbeat: the last ones must not be lost. Pending events
+        // are dropped, but the alerts themselves are persisted and logged again at the next start.
+        _alerts.Flush( monitor );
         foreach( var key in _identities )
         {
             key.OnTeardown();
