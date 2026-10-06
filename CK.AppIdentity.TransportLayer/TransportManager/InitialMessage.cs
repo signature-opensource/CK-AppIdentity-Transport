@@ -149,7 +149,6 @@ sealed class InitialMessage : IIncomingRequest
         _validClockOffset = validClockOffset;
         _clockOffset = clockOffset;
         _block = block;
-        _currentRemoteIdentityKey = block.HeadKey;
         _remoteEphemeralPublicKey = remoteEphemeralPublicKey;
         _remoteMacCapabilities = remoteMacCapabilities;
     }
@@ -312,6 +311,16 @@ sealed class InitialMessage : IIncomingRequest
     /// Gets the head of the key event log the initiator presented. Relevant only for incoming messages.
     /// </summary>
     internal KeyEvent RemoteHead => _block.Head;
+
+    /// <summary>
+    /// Gets the initiator's operational key, when its credential and signature verified. Relevant only for incoming messages.
+    /// </summary>
+    internal System.Security.Cryptography.ECDsa? RemoteOperationalKey => _block.OperationalKey;
+
+    /// <summary>
+    /// Gets the expiry of the initiator's operational credential (UTC). Relevant only for incoming messages.
+    /// </summary>
+    internal DateTime RemoteCredentialNotAfter => _block.CredentialNotAfter;
 
     /// <summary>
     /// Relevant only for incoming messages.

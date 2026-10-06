@@ -136,32 +136,36 @@ static partial class ZeroProtocol // Negotiation
     }
 
     /// <summary>
-    /// Upper bound of an identity block: the events, the pin statement and one signature.
+    /// Upper bound of an identity block: the events, the pin statement, the operational credential and
+    /// one signature.
     /// </summary>
     public const int IdentityBlockMaxLength = 5 // Version.
                                               + 5 // Event count.
                                               + KeyEventChain.MaxEventTail * (5 + KeyEvent.MaxEncodedSize)
                                               + 5 + KeyEvent.HashSize // The pin statement.
+                                              + 5 + OperationalCredential.MaxEncodedSize // The credential.
                                               + 1 + 255; // The signature, byte-length prefixed.
 
     /// <summary>
-    /// Writes the identity block and signs everything written so far with the current identity key.
+    /// Writes the identity block and signs everything written so far with the operational key.
     /// <list type="bullet">
-    ///   <item>The tail of the sender's key event log: it proves which key is current, and lets a
-    ///   receiver that pinned an earlier event catch up through rotations the sender committed to.</item>
+    ///   <item>The tail of the sender's key event log: it proves which identity key is current, and lets
+    ///   a receiver that pinned an earlier event catch up through rotations the sender committed to.</item>
     ///   <item>The pin statement: what the sender pins for the receiver (sequence and event digest), so
     ///   that a party can learn that someone rotated or forked its identity elsewhere.</item>
-    ///   <item>One signature, by the key the head of the tail reveals, over everything before it.</item>
+    ///   <item>The operational credential: a short-lived certificate, issued by the identity key at the
+    ///   head of the tail, for the key that signs.</item>
+    ///   <item>One signature, by the operational key, over everything before it.</item>
     /// </list>
-    /// The tail and the key come from one snapshot (<see cref="ILocalKeys.State"/>): read separately,
-    /// a rotation in between would pair a tail with a key of another rotation.
+    /// Everything comes from one snapshot, pinned for the whole connection
+    /// (<see cref="Transport.GetSigningState"/>): read separately, a rotation or a renewal in between
+    /// would pair pieces of different snapshots, and the peer would refuse the message.
     /// </summary>
     /// <param name="w">The writer.</param>
-    /// <param name="localKeys">The sender's keys.</param>
+    /// <param name="state">The sender's identity snapshot for this connection.</param>
     /// <param name="receiver">The sender's view of the receiver, for the pin statement. Null when the receiver is not known.</param>
-    static void WriteIdentityBlockAndSign( ref FastByteWriter w, ILocalKeys localKeys, IRemoteKeys? receiver )
+    static void WriteIdentityBlockAndSign( ref FastByteWriter w, LocalIdentityState state, IRemoteKeys? receiver )
     {
-        var state = localKeys.State;
         // Independent serialization version for the identity block.
         w.WriteSmallUInt32( 0 );
         var tail = state.Tail;
@@ -181,23 +185,28 @@ static partial class ZeroProtocol // Negotiation
             w.WriteSmallUInt32( (uint)pinned.Seq + 1 );
             w.WriteBytes( pinned.GetDigest( receiver!.Party.FullName ).Span );
         }
-        ComputeSHA512HashAndAppendSignature( ref w, state.Key );
+        var credential = state.Operational.Encoded;
+        w.WriteSmallUInt32( (uint)credential.Length );
+        w.WriteBytes( credential.Span );
+        ComputeSHA512HashAndAppendSignature( ref w, state.Operational );
     }
 
     /// <summary>
     /// Reads the identity block written by <see cref="WriteIdentityBlockAndSign"/>, applies the tail
-    /// to what we pin for the sender, and verifies the signature with the key at its head.
+    /// to what we pin for the sender, verifies the operational credential against the key at its head,
+    /// and the signature with the credential's key.
     /// <para>
-    /// The tail is applied before the signature is checked, on purpose: an event proves itself, so a
+    /// The tail is applied before anything else is checked, on purpose: an event proves itself, so a
     /// verified rotation (or abandonment) is kept whatever happens to this message. What the tail does
-    /// not prove is that the sender holds the head's key: that is the signature, and it decides
-    /// <see cref="SignatureCheck.Trusted"/> versus <see cref="SignatureCheck.SelfAsserted"/>.
+    /// not prove is that the sender holds a key the head vouches for: that is the credential and the
+    /// signature, and they decide <see cref="SignatureCheck.Trusted"/> versus <see cref="SignatureCheck.SelfAsserted"/>.
     /// </para>
     /// </summary>
     /// <param name="r">The reader.</param>
     /// <param name="logger">The logger to use.</param>
     /// <param name="senderFullName">The full name the sender claims: the events are verified for it.</param>
     /// <param name="senderKeys">What we know of the sender, or null when it is not one of our remotes.</param>
+    /// <param name="now">The current time, for the credential's validity.</param>
     /// <param name="block">Outputs what was read.</param>
     /// <returns>
     /// Whether the signature verifies AND against what. See <see cref="SignatureCheck"/>:
@@ -207,6 +216,7 @@ static partial class ZeroProtocol // Negotiation
                                                              IActivityLineEmitter logger,
                                                              string senderFullName,
                                                              IRemoteKeys? senderKeys,
+                                                             DateTime now,
                                                              out IdentityBlock block )
     {
         Throw.CheckData( r.ReadSmallUInt32() == 0 ); // Version.
@@ -228,6 +238,9 @@ static partial class ZeroProtocol // Negotiation
             statedSeq = (int)(stated - 1);
             statedDigest = r.ReadBytes( KeyEvent.HashSize );
         }
+        var credentialLength = r.ReadSmallUInt32();
+        Throw.CheckData( credentialLength > 0 && credentialLength <= OperationalCredential.MaxEncodedSize );
+        var credential = r.ReadBytes( credentialLength );
         Span<byte> hash = stackalloc byte[64];
         ComputeHash( r.GetBeforeHead(), hash );
         var lenSignature = r.ReadByte();
@@ -240,47 +253,55 @@ static partial class ZeroProtocol // Negotiation
         var head = tail[^1];
         // Malformed bytes in the head are the peer's fault: InvalidDataException, like any other.
         var headKeyData = new RemoteIdentityKeyData( head );
-        SignatureCheck check;
-        RemoteIdentityKey? headKey = null;
-        switch( chain.Verdict )
+        SignatureCheck check = SignatureCheck.Failed;
+        ECDsa? operationalKey = null;
+        DateTime credentialNotAfter = default;
+        if( chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Unpinned or KeyChainVerdict.TooFarBehind )
         {
-            case KeyChainVerdict.UpToDate:
-            case KeyChainVerdict.Advanced:
-                // The pin is now the head: reuse its key rather than build one per handshake. Another
-                // connection may have moved the pin further meanwhile, hence the check.
-                var pinnedKey = senderKeys!.TrustedIdentity;
-                headKey = pinnedKey != null && pinnedKey.Equals( headKeyData ) ? pinnedKey : new RemoteIdentityKey( headKeyData );
-                check = headKey.VerifyHash( hash, signature ) ? SignatureCheck.Trusted : SignatureCheck.Failed;
-                break;
-            case KeyChainVerdict.Unpinned:
-            case KeyChainVerdict.TooFarBehind:
-                // Verifying against the key the sender just supplied proves only that it holds some key.
-                headKey = new RemoteIdentityKey( headKeyData );
-                check = headKey.VerifyHash( hash, signature ) ? SignatureCheck.SelfAsserted : SignatureCheck.Failed;
-                break;
-            default:
-                // Invalid, Rollback, Duplicity, Abandoned, Terminated: nothing to accept. What could be
-                // applied (an abandonment, duplicity evidence) has been by ApplyTail.
-                check = SignatureCheck.Failed;
-                break;
+            operationalKey = OperationalCredential.TryVerify( credential,
+                                                              head.Spki.Span,
+                                                              now,
+                                                              senderKeys?.MaxClockOffset ?? IRemoteKeys.DefaultMaxClockOffset,
+                                                              out credentialNotAfter,
+                                                              out var error );
+            if( operationalKey == null )
+            {
+                logger.Warn( $"Refused operational credential from '{senderFullName}': {error}" );
+            }
+            else if( operationalKey.VerifyHash( hash, signature, DSASignatureFormat.IeeeP1363FixedFieldConcatenation ) )
+            {
+                // Verified against a chain that links to our pin: authenticated. Otherwise, against a
+                // head the sender supplied itself: it proves only that the sender holds some key.
+                check = chain.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced
+                            ? SignatureCheck.Trusted
+                            : SignatureCheck.SelfAsserted;
+            }
         }
-        block = new IdentityBlock( chain.Verdict, head, headKeyData, headKey, statedSeq, statedDigest );
+        // Otherwise (Invalid, Rollback, Duplicity, Abandoned, Terminated) nothing is accepted. What
+        // could be applied (an abandonment, duplicity evidence) has been by ApplyTail.
+        if( check == SignatureCheck.Failed && operationalKey != null )
+        {
+            operationalKey.Dispose();
+            operationalKey = null;
+        }
+        block = new IdentityBlock( chain.Verdict, head, headKeyData, operationalKey, credentialNotAfter, statedSeq, statedDigest );
         return check;
     }
 
-
     /// <summary>
-    /// Computes the SHA512 of the <see cref="FastByteWriter.GetBeforeHead()"/> and writes its signature with the <paramref name="identityKey"/>.
+    /// Computes the SHA512 of the <see cref="FastByteWriter.GetBeforeHead()"/> and writes its signature
+    /// by the <paramref name="credential"/>'s key.
     /// </summary>
     /// <param name="w">The writer.</param>
-    /// <param name="identityKey">The signer to use.</param>
-    static void ComputeSHA512HashAndAppendSignature( ref FastByteWriter w, LocalIdentityKey identityKey )
+    /// <param name="credential">The signer to use.</param>
+    static void ComputeSHA512HashAndAppendSignature( ref FastByteWriter w, OperationalCredential credential )
     {
         Span<byte> messageHash = stackalloc byte[64];
         Span<byte> signature = stackalloc byte[256];
         ComputeHash( w.GetBeforeHead(), messageHash );
-        Throw.CheckData( identityKey.TrySignHash( messageHash, signature, out int byteWritten ) );
-        // See above: the length is written on one byte and 256 would encode as 0.
+        Throw.CheckData( credential.TrySignHash( messageHash, signature, out int byteWritten ) );
+        // The length is written on one byte and 256 would encode as 0. P-256 r||s is 64, so this is a
+        // guard on the curve changing, not a reachable case today.
         Throw.CheckData( "Signature length must fit on one byte.", byteWritten <= 255 );
         w.WriteByte( (byte)byteWritten );
         w.WriteBytes( signature.Slice( 0, byteWritten ) );
@@ -289,19 +310,19 @@ static partial class ZeroProtocol // Negotiation
 
     /// <summary>
     /// Computes the SHA512 of the <see cref="FastByteReader.GetBeforeHead()"/>, reads its signature from <see cref="r"/>
-    /// and verify it against <paramref name="key"/>.
+    /// and verifies it against the peer's operational <paramref name="key"/>.
     /// </summary>
     /// <param name="r">The reader.</param>
-    /// <param name="key">The verifier to use.</param>
+    /// <param name="key">The verifier to use: the operational key the peer presented in this connection's handshake.</param>
     /// <returns>True if the signature can be verified.</returns>
-    static bool ComputeSHA512HashAndVerifySignature( ref FastByteReader r, RemoteIdentityKey key )
+    static bool ComputeSHA512HashAndVerifySignature( ref FastByteReader r, ECDsa key )
     {
         Span<byte> messageHash = stackalloc byte[64];
         ComputeHash( r.GetBeforeHead(), messageHash );
         var lenSignature = r.ReadByte();
         Span<byte> signature = stackalloc byte[lenSignature];
         r.ReadBytes( signature );
-        return key.VerifyHash( messageHash, signature );
+        return key.VerifyHash( messageHash, signature, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
     }
 
     static void ComputeHash( ReadOnlySequence<byte> message, Span<byte> hash )
@@ -335,7 +356,7 @@ static partial class ZeroProtocol // Negotiation
         var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
         Throw.DebugAssert( "We are the initiator: the transport knows its remote.", transport.RemoteKeys != null );
         using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey,
-                                            macCapabilities, transport.LocalCertificateBinding, transport.RemoteKeys, out var nonce );
+                                            macCapabilities, transport.LocalCertificateBinding, transport.RemoteKeys, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
@@ -346,6 +367,7 @@ static partial class ZeroProtocol // Negotiation
                                                       byte macCapabilities,
                                                       ReadOnlyMemory<byte> certificateBinding,
                                                       IRemoteKeys remoteKeys,
+                                                      LocalIdentityState state,
                                                       out ulong nonce )
         {
             var builder = _zeroFactory.CreateBuilder();
@@ -374,7 +396,7 @@ static partial class ZeroProtocol // Negotiation
             // be reused for the subsequent messages during this negotiation.
             nonce = CreateAndWriteNonce( ref w, systemClock ).Nonce;
             // Writes the identity keys and sign the message with them.
-            WriteIdentityBlockAndSign( ref w, remoteKeys.LocalKeys, remoteKeys );
+            WriteIdentityBlockAndSign( ref w, state!, remoteKeys );
             return builder.CreateMessage( sequence );
         }
     }
@@ -396,10 +418,11 @@ static partial class ZeroProtocol // Negotiation
                                                                            string? enlistUrl,
                                                                            ulong nonce )
     {
-        using var m = CreateMessage( remoteKeys, protocolIssue, clockOffset, enlistUrl, nonce );
+        using var m = CreateMessage( remoteKeys, remoteKeys != null ? transport.GetSigningState( remoteKeys.LocalKeys ) : null, protocolIssue, clockOffset, enlistUrl, nonce );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
         static IOutgoingMessage CreateMessage( IRemoteKeys? remoteKeys,
+                                               LocalIdentityState? state,
                                                ConfigurationOrTrustIssue protocolIssue,
                                                TimeSpan? clockOffset,
                                                string? enlistUrl,
@@ -425,7 +448,7 @@ static partial class ZeroProtocol // Negotiation
             else
             {
                 w.WriteBool( true );
-                WriteIdentityBlockAndSign( ref w, remoteKeys.LocalKeys, remoteKeys );
+                WriteIdentityBlockAndSign( ref w, state!, remoteKeys );
             }
             return builder.CreateMessage( sequence );
         }
@@ -455,7 +478,7 @@ static partial class ZeroProtocol // Negotiation
         // Do we have the identity keys and the signatures?
         if( r.ReadBool() )
         {
-            signatureCheck = ReadIdentityBlockAndVerify( ref r, logger, remoteKeys.Party.FullName, remoteKeys, out var read );
+            signatureCheck = ReadIdentityBlockAndVerify( ref r, logger, remoteKeys.Party.FullName, remoteKeys, remoteKeys.Party.ApplicationIdentityService.SystemClock.UtcNow, out var read );
             block = read;
         }
         else
@@ -482,14 +505,14 @@ static partial class ZeroProtocol // Negotiation
             w.WriteUInt64( nonce );
             // To be able to use the ReadString( maxLength ).
             w.WriteString( enlistUrl ?? string.Empty );
-            ComputeSHA512HashAndAppendSignature( ref w, transport.RemoteKeys!.LocalKeys.CurrentIdentity );
+            ComputeSHA512HashAndAppendSignature( ref w, transport.GetSigningState( transport.RemoteKeys!.LocalKeys ).Operational );
             return builder.CreateMessage( sequence );
         }
     }
 
     public static bool ReadRequiredEnlistUrlMessage( IncomingMessage message,
                                                      ulong expectedNonce,
-                                                     RemoteIdentityKey remoteIdentity,
+                                                     ECDsa remoteKey,
                                                      out string? enlistUrl )
     {
         var r = new FastByteReader( message.Message );
@@ -502,7 +525,7 @@ static partial class ZeroProtocol // Negotiation
         }
         enlistUrl = r.ReadString( MaxEnlistUrlLength );
         if( enlistUrl.Length == 0 ) enlistUrl = null;
-        return ComputeSHA512HashAndVerifySignature( ref r, remoteIdentity );
+        return ComputeSHA512HashAndVerifySignature( ref r, remoteKey );
     }
 
     /// <summary>
@@ -515,10 +538,10 @@ static partial class ZeroProtocol // Negotiation
     public static async ValueTask<bool> SendOffRemoteMessageAsync( Transport transport, ulong nonce, TimeSpan clockOffset, GoodbyeMessage offMessage )
     {
         Throw.DebugAssert( transport.RemoteKeys != null );
-        using var m = CreateAndSignMessage( nonce, clockOffset, offMessage, transport.RemoteKeys );
+        using var m = CreateAndSignMessage( nonce, clockOffset, offMessage, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), transport.RemoteKeys );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan clockOffset, GoodbyeMessage offMessage, IRemoteKeys keys )
+        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan clockOffset, GoodbyeMessage offMessage, LocalIdentityState state, IRemoteKeys keys )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -536,7 +559,7 @@ static partial class ZeroProtocol // Negotiation
                 w.WriteBool( true );
                 GoodbyeMessage.WriteMessage( ref w, offMessage );
             }
-            WriteIdentityBlockAndSign( ref w, keys.LocalKeys, keys );
+            WriteIdentityBlockAndSign( ref w, state, keys );
             return builder.CreateMessage( sequence );
         }
     }
@@ -563,7 +586,7 @@ static partial class ZeroProtocol // Negotiation
         {
             offMessage = GoodbyeMessage.ReadMessage( ref r );
         }
-        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, out var block );
+        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
         // Switching a remote off on the strength of a self-asserted signature would let anyone
         // answering on this connection take it down with a single packet and no key material.
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
@@ -627,6 +650,7 @@ static partial class ZeroProtocol // Negotiation
         using var m = CreateAndSignMessage( systemClock, protocolMap, nonce, initialClockOffset,
                                             ephemeralPublicKey, macAlgorithm, macCapabilities,
                                             transport.LocalCertificateBinding,
+                                            transport.GetSigningState( transport.RemoteKeys.LocalKeys ),
                                             transport.RemoteKeys );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
@@ -638,7 +662,7 @@ static partial class ZeroProtocol // Negotiation
                                                       MacAlgorithm macAlgorithm,
                                                       byte macCapabilities,
                                                       ReadOnlyMemory<byte> certificateBinding,
-                                                      IRemoteKeys keys )
+                                                      LocalIdentityState state, IRemoteKeys keys )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -663,7 +687,7 @@ static partial class ZeroProtocol // Negotiation
             w.WriteByte( macCapabilities );
             // What this side is presenting on the channel underneath, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
-            WriteIdentityBlockAndSign( ref w, keys.LocalKeys, keys );
+            WriteIdentityBlockAndSign( ref w, state, keys );
             return builder.CreateMessage( sequence );
         }
     }
@@ -735,7 +759,7 @@ static partial class ZeroProtocol // Negotiation
         // Read now because it sits inside the signed region; checked below, once the signature says
         // whose statement this is.
         var attestedBinding = ReadCertificateBinding( ref r );
-        var check = ReadIdentityBlockAndVerify( ref r, transportManager.Logger, remote.Party.FullName, remote.RemoteKeys, out var block );
+        var check = ReadIdentityBlockAndVerify( ref r, transportManager.Logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
         if( check == SignatureCheck.Failed )
         {
             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -750,6 +774,9 @@ static partial class ZeroProtocol // Negotiation
         // (IncomingConnectionBackTask) and the two sides must agree on when trust may be persisted.
         CheckCertificateBinding( attestedBinding, transport );
         foundTrustedKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, check, block );
+        // The listener's operational key verifies what it signs later on this connection, and its
+        // expiry bounds how long this connection may live.
+        if( foundTrustedKey ) transport.SetRemoteCredential( block.OperationalKey!, block.CredentialNotAfter );
         if( !foundTrustedKey )
         {
             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -776,10 +803,10 @@ static partial class ZeroProtocol // Negotiation
     public static async ValueTask<bool> SendEvictionDisallowedMessageAsync( Transport incoming, ulong nonce )
     {
         Throw.DebugAssert( incoming.RemoteKeys != null );
-        using var m = CreateAndSignMessage( nonce, incoming.RemoteKeys );
+        using var m = CreateAndSignMessage( nonce, incoming.GetSigningState( incoming.RemoteKeys.LocalKeys ), incoming.RemoteKeys );
         return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( ulong nonce, IRemoteKeys keys )
+        static IOutgoingMessage CreateAndSignMessage( ulong nonce, LocalIdentityState state, IRemoteKeys keys )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -787,7 +814,7 @@ static partial class ZeroProtocol // Negotiation
 
             w.WriteByte( DNegoEvictionDisallowed );
             w.WriteUInt64( nonce );
-            WriteIdentityBlockAndSign( ref w, keys.LocalKeys, keys );
+            WriteIdentityBlockAndSign( ref w, state, keys );
             return builder.CreateMessage( sequence );
         }
     }
@@ -804,7 +831,7 @@ static partial class ZeroProtocol // Negotiation
         {
             return false;
         }
-        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, out var block );
+        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -830,10 +857,10 @@ static partial class ZeroProtocol // Negotiation
                                                                           List<string>? heIsMissing )
     {
         Throw.DebugAssert( incoming.RemoteKeys != null );
-        using var m = CreateAndSignMessage( nonce, weAreMissing, heIsMissing, incoming.RemoteKeys );
+        using var m = CreateAndSignMessage( nonce, weAreMissing, heIsMissing, incoming.GetSigningState( incoming.RemoteKeys.LocalKeys ), incoming.RemoteKeys );
         return await incoming.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( ulong nonce, List<string>? weAreMissing, List<string>? heIsMissing, IRemoteKeys keys )
+        static IOutgoingMessage CreateAndSignMessage( ulong nonce, List<string>? weAreMissing, List<string>? heIsMissing, LocalIdentityState state, IRemoteKeys keys )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -844,7 +871,7 @@ static partial class ZeroProtocol // Negotiation
             WriteMissing( ref w, weAreMissing );
             WriteMissing( ref w, heIsMissing );
 
-            WriteIdentityBlockAndSign( ref w, keys.LocalKeys, keys );
+            WriteIdentityBlockAndSign( ref w, state, keys );
             return builder.CreateMessage( sequence );
 
             static void WriteMissing( ref FastByteWriter w, List<string>? missing )
@@ -888,7 +915,7 @@ static partial class ZeroProtocol // Negotiation
         {
             return false;
         }
-        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, out var block );
+        var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -930,10 +957,10 @@ static partial class ZeroProtocol // Negotiation
 
     public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockOffset )
     {
-        using var m = CreateAndSignMessage( nonce, finalClockOffset, remote.RemoteKeys.LocalKeys.CurrentIdentity );
+        using var m = CreateAndSignMessage( nonce, finalClockOffset, transport.GetSigningState( remote.RemoteKeys.LocalKeys ).Operational );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, LocalIdentityKey currentIdentity )
+        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, OperationalCredential credential )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -942,7 +969,7 @@ static partial class ZeroProtocol // Negotiation
             w.WriteByte( DNegoFinalSuccessMessage );
             w.WriteUInt64( nonce );
             w.WriteTimeSpan( finalClockOffset );
-            ComputeSHA512HashAndAppendSignature( ref w, currentIdentity );
+            ComputeSHA512HashAndAppendSignature( ref w, credential );
             return builder.CreateMessage( sequence );
         }
     }
@@ -951,9 +978,10 @@ static partial class ZeroProtocol // Negotiation
                                                    IncomingMessage message,
                                                    ulong expectedNonce,
                                                    TransportFeature remote,
+                                                   Transport transport,
                                                    out TimeSpan finalClockOffset )
     {
-        Throw.DebugAssert( remote.RemoteKeys.TrustedIdentity != null );
+        Throw.DebugAssert( "The initiator's identity block was verified on this connection.", transport.RemoteOperationalKey != null );
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
         Throw.DebugAssert( discriminator == DNegoFinalSuccessMessage );
@@ -963,7 +991,7 @@ static partial class ZeroProtocol // Negotiation
             return false;
         }
         finalClockOffset = r.ReadTimeSpan();
-        if( !ComputeSHA512HashAndVerifySignature( ref r, remote.RemoteKeys.TrustedIdentity ) )
+        if( !ComputeSHA512HashAndVerifySignature( ref r, transport.RemoteOperationalKey ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable FinalSuccess message from '{remote.Party}'." );
             return false;

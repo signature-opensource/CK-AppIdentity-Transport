@@ -60,6 +60,20 @@ sealed class KeepAliveBackTask : BackTask<TransportManager>
         // task to its pool, and the next connection gets a new one.
         if( controller == null || t.IsCondemned ) return;
 
+        // A session does not outlive the credential that authenticated it (DESIGN-key-pre-rotation Q9):
+        // that is what makes "a stolen operational key is worth OperationalKeyDays" hold for sessions
+        // too. Checked before the keep-alive settings, which may be switched off. The reconnection
+        // presents a fresh credential: the peer renews its own at half its life.
+        var expiry = t.RemoteCredentialNotAfter;
+        if( expiry != default
+            && TaskManager.Host.SystemClock.UtcNow > expiry + controller.Feature.RemoteKeys.MaxClockOffset )
+        {
+            monitor.Info( $"The operational credential of '{t.RemoteEndPointDescription}' expired on {expiry:u}: " +
+                          $"closing the connection so that a new handshake presents a fresh one." );
+            TaskManager.Host.KillTransport( t, 0 );
+            return;
+        }
+
         var settings = TaskManager.Host.Feature;
         var idle = settings.KeepAliveIdleTime;
         // Disabled. Checked every time rather than at initialization so that switching it off stops

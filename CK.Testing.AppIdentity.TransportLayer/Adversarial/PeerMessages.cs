@@ -275,8 +275,8 @@ public static class PeerMessages
     public static byte[] Build( BodyWriter body, PeerIdentity? signWith, PeerStatement? statement = null )
     {
         return signWith == null
-                ? Build( body, null, null, null )
-                : Build( body, signWith.Tail, signWith.CurrentKey, statement );
+                ? Build( body, null, null, null, null )
+                : Build( body, signWith.Tail, signWith.Credential.Encoded, signWith.Credential.Key, statement );
     }
 
     /// <summary>
@@ -284,9 +284,10 @@ public static class PeerMessages
     /// </summary>
     /// <param name="body">Writes the discriminator and the message-specific fields.</param>
     /// <param name="tail">The events presented; null writes no identity block.</param>
-    /// <param name="signer">The key that signs the transcript.</param>
+    /// <param name="credential">The DER of the operational credential presented.</param>
+    /// <param name="signer">The key that signs the transcript: normally the credential's.</param>
     /// <param name="statement">What we state we pin for the receiver; null states nothing.</param>
-    public static byte[] Build( BodyWriter body, IReadOnlyList<KeyEvent>? tail, ECDsa? signer, PeerStatement? statement )
+    public static byte[] Build( BodyWriter body, IReadOnlyList<KeyEvent>? tail, byte[]? credential, ECDsa? signer, PeerStatement? statement )
     {
         using var seq = new MutableSequence<byte>();
         var w = new FastByteWriter( seq );
@@ -294,6 +295,7 @@ public static class PeerMessages
         if( tail != null )
         {
             if( signer == null ) throw new ArgumentNullException( nameof( signer ) );
+            if( credential == null ) throw new ArgumentNullException( nameof( credential ) );
             w.WriteSmallUInt32( 0 );                          // identity block serialization version
             w.WriteSmallUInt32( (uint)tail.Count );
             foreach( var e in tail )
@@ -310,6 +312,8 @@ public static class PeerMessages
                 w.WriteSmallUInt32( (uint)statement.Seq + 1 );
                 w.WriteBytes( statement.Digest );
             }
+            w.WriteSmallUInt32( (uint)credential.Length );
+            w.WriteBytes( credential );
             // Commit so the sequence holds every byte written so far: the signed hash covers
             // exactly this prefix and NOT the signature that follows.
             w.Commit();

@@ -234,4 +234,32 @@ public class MutualTlsTransportTests
             buffer[0].ShouldBe( (byte)21, "A TLS alert record, not a Zero Protocol frame." );
         }
     }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task Both_sides_follow_a_rotation_over_mtls_Async( CancellationToken token )
+    {
+        // Step 8 of DESIGN-key-pre-rotation: the TLS credential is issued by the identity key, so after a
+        // rotation it names an issuer the other side does not pin yet. The reverse lookup then resolves
+        // to nothing, the connection takes the unresolved path, and the Zero Protocol negotiation moves
+        // the pin: a rotation must still come up, on both sides, with no operator.
+        CK.AppIdentity.TransportLayer.Testing.Adversarial.PeerStore.ClearRemoteTrust( "Test/$ListenerRot" );
+        CK.AppIdentity.TransportLayer.Testing.Adversarial.PeerStore.ClearRemoteTrust( "Test/$SenderRot" );
+        var (listener, sender, listenerSide, senderSide) = await ConnectPairAsync( "Rot", token );
+        await using( listener )
+        await using( sender )
+        {
+            listenerSide.RemoteKeys.TrustedEvent!.Seq.ShouldBe( 0 );
+            senderSide.RemoteKeys.TrustedEvent!.Seq.ShouldBe( 0 );
+            sender.GetRequiredFeature<ILocalKeys>().Rotate( TestHelper.Monitor ).ShouldBeTrue();
+            listener.GetRequiredFeature<ILocalKeys>().Rotate( TestHelper.Monitor ).ShouldBeTrue();
+        }
+        (listener, sender, listenerSide, senderSide) = await ConnectPairAsync( "Rot", token );
+        await using( listener )
+        await using( sender )
+        {
+            senderSide.ConnectionAvailability.ShouldBe( ConnectionAvailability.Connected );
+            listenerSide.RemoteKeys.TrustedEvent!.Seq.ShouldBe( 1, "The listener followed the sender's rotation." );
+            senderSide.RemoteKeys.TrustedEvent!.Seq.ShouldBe( 1, "The sender followed the listener's rotation." );
+        }
+    }
 }

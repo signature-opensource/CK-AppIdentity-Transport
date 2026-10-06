@@ -39,10 +39,10 @@ static partial class ZeroProtocol
         Throw.DebugAssert( message != null );
         using var m = CreateAndSignMessage( message,
                                             transport.RemoteKeys.Party.ApplicationIdentityService.SystemClock,
-                                            transport.RemoteKeys.LocalKeys.CurrentIdentity );
+                                            transport.GetSigningState( transport.RemoteKeys.LocalKeys ).Operational );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( GoodbyeMessage message, ISystemClock systemClock, LocalIdentityKey identity )
+        static IOutgoingMessage CreateAndSignMessage( GoodbyeMessage message, ISystemClock systemClock, KeyManagement.OperationalCredential credential )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -50,21 +50,21 @@ static partial class ZeroProtocol
             w.WriteByte( DRunGoodbye );
             CreateAndWriteNonce( ref w, systemClock );
             GoodbyeMessage.WriteMessage( ref w, message );
-            ComputeSHA512HashAndAppendSignature( ref w, identity );
+            ComputeSHA512HashAndAppendSignature( ref w, credential );
             return builder.CreateMessage( sequence );
         }
     }
 
     public static GoodbyeMessage? ReadGoodbyeMessage( IActivityLineEmitter logger, Transport transport, IncomingMessage message )
     {
-        Throw.DebugAssert( transport.RemoteKeys?.TrustedIdentity != null );
+        Throw.DebugAssert( "The peer's identity block was verified on this connection.", transport.RemoteKeys != null && transport.RemoteOperationalKey != null );
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
         Throw.DebugAssert( discriminator == DRunGoodbye );
         var timedNonce = ReadNonce( ref r );
         var m = GoodbyeMessage.ReadMessage( ref r );
 
-        if( !ComputeSHA512HashAndVerifySignature( ref r, transport.RemoteKeys.TrustedIdentity ) )
+        if( !ComputeSHA512HashAndVerifySignature( ref r, transport.RemoteOperationalKey ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable bye-bye message from '{transport.RemoteKeys.Party}': {m}" );
             return null;

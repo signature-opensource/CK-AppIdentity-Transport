@@ -54,7 +54,10 @@ public sealed class PeerInitialMessage
     /// <summary>What the initiator pins for us, when it pins something.</summary>
     public PeerStatement? Statement { get; init; }
 
-    /// <summary>The signature, by the key the head of <see cref="Tail"/> reveals.</summary>
+    /// <summary>The initiator's operational credential (DER), issued by the key the head of <see cref="Tail"/> reveals.</summary>
+    public required byte[] Credential { get; init; }
+
+    /// <summary>The signature, by the credential's key.</summary>
     public required byte[] Signature { get; init; }
 
     /// <summary>The head of the initiator's log.</summary>
@@ -120,6 +123,8 @@ public sealed class PeerInitialMessage
         PeerStatement? statement = null;
         uint stated = r.ReadSmallUInt32();
         if( stated != 0 ) statement = new PeerStatement( (int)(stated - 1), r.ReadBytes( KeyEvent.HashSize ) );
+        uint credentialLength = r.ReadSmallUInt32();
+        var credential = r.ReadBytes( credentialLength );
         byte sigLen = r.ReadByte();
         var signature = r.ReadBytes( sigLen );
 
@@ -138,6 +143,7 @@ public sealed class PeerInitialMessage
             Nonce = nonce,
             Tail = tail,
             Statement = statement,
+            Credential = credential,
             Signature = signature
         };
     }

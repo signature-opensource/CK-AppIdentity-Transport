@@ -29,10 +29,6 @@ namespace CK.AppIdentity.TransportLayer;
 /// </summary>
 public static class IdentityIssuance
 {
-    // ecdsa-with-SHA256. The only algorithm CreateDerivedCertificate signs with; anything else is
-    // not one of ours and is not worth guessing about.
-    const string EcdsaWithSha256 = "1.2.840.10045.4.3.2";
-
     /// <summary>
     /// Gets the Subject Key Identifier an identity's certificate carries, so that a leaf's Authority
     /// Key Identifier can be matched against it.
@@ -86,46 +82,8 @@ public static class IdentityIssuance
     /// <returns>True when the identity's key signed this certificate.</returns>
     public static bool WasIssuedBy( X509Certificate2 certificate, IPublicKeyData identity )
     {
-        try
-        {
-            if( !TrySplit( certificate.RawData, out var signedBody, out var algorithmOid, out var signature ) ) return false;
-            if( algorithmOid != EcdsaWithSha256 ) return false;
-            using var key = identity.PublicKey.GetECDsaPublicKey();
-            if( key == null ) return false;
-            // The signature inside a certificate is the DER SEQUENCE { r, s } of RFC 3279, not the
-            // fixed-width r‖s the Zero Protocol uses for its own signatures. Passing the wrong format
-            // here fails closed, which is why it is stated rather than defaulted.
-            return key.VerifyData( signedBody.Span, signature, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence );
-        }
-        catch( Exception )
-        {
-            // Malformed input from an unauthenticated peer is an ordinary event here, and the answer
-            // to all of it is the same: this is not a certificate that identity issued.
-            return false;
-        }
+        // One implementation, shared with the Zero Protocol's operational credentials.
+        return DerivedCertificateVerifier.IsIssuedBy( certificate, identity.PublicKeyRawData.Span );
     }
 
-    /// <summary>
-    /// Splits a certificate into the bytes that were signed, the signature algorithm, and the
-    /// signature. <c>Certificate ::= SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }</c>
-    /// (RFC 5280 §4.1), where what is signed is the complete encoding of <c>tbsCertificate</c>, tag
-    /// and length included.
-    /// </summary>
-    static bool TrySplit( ReadOnlyMemory<byte> der,
-                          out ReadOnlyMemory<byte> signedBody,
-                          out string algorithmOid,
-                          out byte[] signature )
-    {
-        signedBody = default;
-        algorithmOid = string.Empty;
-        signature = Array.Empty<byte>();
-
-        var outer = new AsnReader( der, AsnEncodingRules.DER );
-        var certificate = outer.ReadSequence();
-        signedBody = certificate.ReadEncodedValue();
-        var algorithm = certificate.ReadSequence();
-        algorithmOid = algorithm.ReadObjectIdentifier();
-        signature = certificate.ReadBitString( out int unusedBitCount );
-        return unusedBitCount == 0 && signature.Length > 0;
-    }
 }

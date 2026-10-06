@@ -35,6 +35,7 @@ sealed partial class LocalKeys : ILocalKeys
     readonly ICoreKeyStore _keyStore;
     readonly NormalizedPath _keysPath;
     readonly int _allowedOfflineDays;
+    readonly int _operationalKeyDays;
     // Serializes Rotate and Decommission. Readers never take it: they read the snapshot below, which
     // is replaced as a whole.
     readonly object _rotationLock;
@@ -53,6 +54,7 @@ sealed partial class LocalKeys : ILocalKeys
                LocalIdentityKey current,
                KeyEvent[] log,
                int allowedOfflineDays,
+               int operationalKeyDays,
                IdentityAlertBook alerts,
                PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
@@ -60,8 +62,9 @@ sealed partial class LocalKeys : ILocalKeys
         _protector = protector;
         _keyStore = keyStore;
         _keysPath = keysPath;
-        _state = new LocalIdentityState( current, log );
         _allowedOfflineDays = allowedOfflineDays;
+        _operationalKeyDays = operationalKeyDays;
+        _state = new LocalIdentityState( current, log, OperationalCredential.Issue( current, local.ApplicationIdentityService.SystemClock.UtcNow, operationalKeyDays ) );
         _rotationLock = new object();
         _alerts = alerts;
         _alertRaised = new PerfectEventSender<IdentityAlert>();
@@ -99,6 +102,7 @@ sealed partial class LocalKeys : ILocalKeys
 
     async Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
     {
+        RenewOperationalIfNeeded( monitor );
         foreach( var a in _alerts.Flush( monitor ) )
         {
             await _alertRaised.SafeRaiseAsync( monitor, a, cancel ).ConfigureAwait( false );
@@ -109,6 +113,8 @@ sealed partial class LocalKeys : ILocalKeys
     public ILocalParty Party => _local;
 
     public int AllowedOfflineDays => _allowedOfflineDays;
+
+    public int OperationalKeyDays => _operationalKeyDays;
 
     public IDataProtector Protector => _protector;
 
@@ -170,7 +176,7 @@ sealed partial class LocalKeys : ILocalKeys
                 // One swap: key and log change together. The replaced key is NOT disposed: a
                 // negotiation may be signing with it right now. One finalizable key per rotation,
                 // rotations being AllowedOfflineDays apart.
-                _state = new LocalIdentityState( identity, [.. state.Log, e] );
+                _state = new LocalIdentityState( identity, [.. state.Log, e], OperationalCredential.Issue( identity, now, _operationalKeyDays ) );
                 _keyStore.DeleteKey( monitor, _local, KeyName( s ) );
                 ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
                 monitor.Info( $"Local '{_local.FullName}' rotated its identity key to #{e.Seq}. Current expires on {identity.NotAfter:yyyy-MM-dd}." );
@@ -208,7 +214,7 @@ sealed partial class LocalKeys : ILocalKeys
                 // The key in memory stays the previous one: what is presented from now on is a tail
                 // that ends with the abandonment, which a remote records on its own proof before it
                 // refuses the session.
-                _state = new LocalIdentityState( state.Key, [.. state.Log, e] );
+                _state = new LocalIdentityState( state.Key, [.. state.Log, e], state.Operational );
                 ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
                 foreach( var n in _keyStore.GetKeyNames( monitor, _local ) )
                 {
@@ -222,6 +228,38 @@ sealed partial class LocalKeys : ILocalKeys
             {
                 monitor.Error( $"While decommissioning '{_local.FullName}'.", ex );
                 return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renews the operational credential once it has lived half its life. The previous one stays valid
+    /// until its own expiry, so a handshake in flight that already presented it is unaffected and no
+    /// overlap logic is needed.
+    /// </summary>
+    internal void RenewOperationalIfNeeded( IActivityMonitor monitor )
+    {
+        var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
+        var state = _state;
+        if( state.Head.IsAbandonment ) return;
+        var op = state.Operational;
+        var halfLife = TimeSpan.FromTicks( (op.NotAfter - op.IssuedAt).Ticks / 2 );
+        if( now < op.IssuedAt + halfLife ) return;
+        lock( _rotationLock )
+        {
+            // Re-read under the lock: a rotation may have replaced the snapshot meanwhile.
+            state = _state;
+            if( state.Operational != op ) return;
+            try
+            {
+                var renewed = OperationalCredential.Issue( state.Key, now, _operationalKeyDays );
+                // The replaced credential is NOT disposed: a negotiation may be signing with it.
+                _state = new LocalIdentityState( state.Key, state.Log, renewed );
+                monitor.Info( $"Operational credential of '{_local.FullName}' renewed until {renewed.NotAfter:u}." );
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"While renewing the operational credential of '{_local.FullName}'.", ex );
             }
         }
     }
@@ -244,7 +282,8 @@ sealed partial class LocalKeys : ILocalKeys
             }
             try
             {
-                _state = new LocalIdentityState( CreateIdentity( monitor, key, head, now ), state.Log );
+                var identity = CreateIdentity( monitor, key, head, now );
+                _state = new LocalIdentityState( identity, state.Log, OperationalCredential.Issue( identity, now, _operationalKeyDays ) );
                 monitor.Warn( $"Identity certificate of '{_local.FullName}' renewed for the same key #{head.Seq}, until {CurrentIdentity.NotAfter:yyyy-MM-dd}." );
             }
             catch( Exception ex )
@@ -384,6 +423,8 @@ sealed partial class LocalKeys : ILocalKeys
         // Repetitions are saved from the heartbeat: the last ones must not be lost. Pending events
         // are dropped, but the alerts themselves are persisted and logged again at the next start.
         _alerts.Flush( monitor );
-        _state.Key.OnTeardown();
+        var last = _state;
+        last.Operational.OnTeardown();
+        last.Key.OnTeardown();
     }
 }

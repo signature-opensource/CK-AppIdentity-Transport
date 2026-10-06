@@ -53,6 +53,27 @@ public interface ILocalKeys
     const int MaxPublicKeySize = 2048;
 
     /// <summary>
+    /// Default value of <see cref="OperationalKeyDays"/>.
+    /// </summary>
+    const int DefaultOperationalKeyDays = 7;
+
+    /// <summary>
+    /// Upper bound of <see cref="OperationalKeyDays"/>, and of the remaining validity a verifier
+    /// accepts on a peer's credential, whatever that peer is configured with.
+    /// </summary>
+    const int MaxOperationalKeyDays = 31;
+
+    /// <summary>
+    /// Gets the lifetime, in days, of the <see cref="OperationalCredential"/> that signs this party's
+    /// handshakes. It is renewed at half its life. A stolen operational key is worth at most this long.
+    /// <para>
+    /// Configured by "OperationalKeyDays" (1 to <see cref="MaxOperationalKeyDays"/>, default
+    /// <see cref="DefaultOperationalKeyDays"/>).
+    /// </para>
+    /// </summary>
+    int OperationalKeyDays { get; }
+
+    /// <summary>
     /// Gets the local party.
     /// </summary>
     ILocalParty Party { get; }

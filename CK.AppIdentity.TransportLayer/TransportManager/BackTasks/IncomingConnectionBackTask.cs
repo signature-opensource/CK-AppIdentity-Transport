@@ -246,7 +246,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             {
                 transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
             }
-            else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, out var finalClockOffset ) )
+            else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, incoming, out var finalClockOffset ) )
             {
                 // Final message is received: the current transport (if any) will be evicted.
                 var m = new GoodbyeMessage.Evicted( initialMessage.RemoteEndPointDescription, initialMessage.InstanceId );
@@ -391,7 +391,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             Throw.DebugAssert( remote == null || remote.IsListening );
 
             // We may know the remote (or not). If we do, its tail is applied to what we pin for it.
-            var signatureCheck = ZeroProtocol.ReadIdentityBlockAndVerify( ref r, transportManager.Logger, fullName, remote?.RemoteKeys, out var block );
+            var signatureCheck = ZeroProtocol.ReadIdentityBlockAndVerify( ref r, transportManager.Logger, fullName, remote?.RemoteKeys, transportManager.SystemClock.UtcNow, out var block );
             foundTrustKey = signatureCheck == SignatureCheck.Trusted;
             if( signatureCheck == SignatureCheck.Failed )
             {
@@ -468,6 +468,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                     // foundTrustKey stays the acceptance gate: a SelfAsserted signature only becomes
                     // trusted here if AutoTrustKey adopts the presented key.
                     foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, block );
+                    // The initiator's operational key verifies its FinalSuccess and Goodbye on this connection,
+                    // and its expiry bounds how long this connection may live.
+                    if( foundTrustKey ) incoming.SetRemoteCredential( block.OperationalKey!, block.CredentialNotAfter );
                 }
             }
             return new InitialMessage( incoming.Listener.EndPointDescription,
@@ -632,10 +635,11 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied an invalid RequiredEnlistUrl message." );
                 return;
             }
-            if( !ZeroProtocol.ReadRequiredEnlistUrlMessage( enlistReplyMessage,
-                                                            initialMessage.Nonce,
-                                                            initialMessage.GetCurrentRemoteIdentityKey(),
-                                                            out remoteEnlistUrl ) )
+            if( initialMessage.RemoteOperationalKey is not { } initiatorKey
+                || !ZeroProtocol.ReadRequiredEnlistUrlMessage( enlistReplyMessage,
+                                                               initialMessage.Nonce,
+                                                               initiatorKey,
+                                                               out remoteEnlistUrl ) )
             {
                 // Weird...
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,

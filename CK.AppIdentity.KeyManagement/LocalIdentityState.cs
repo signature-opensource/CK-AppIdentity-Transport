@@ -15,18 +15,25 @@ public sealed class LocalIdentityState
     readonly LocalIdentityKey[] _identities;
     readonly KeyEvent[] _log;
     readonly KeyEvent[] _tail;
+    readonly OperationalCredential _operational;
 
-    internal LocalIdentityState( LocalIdentityKey key, KeyEvent[] log )
+    internal LocalIdentityState( LocalIdentityKey key, KeyEvent[] log, OperationalCredential operational )
     {
         _identities = [key];
+        _operational = operational;
         _log = log;
         _tail = log.Length <= KeyEventChain.MaxEventTail ? log : log[^KeyEventChain.MaxEventTail..];
     }
 
     /// <summary>
-    /// Gets the identity key that signs.
+    /// Gets the identity key: it issues the credentials and signs the events of the log.
     /// </summary>
     public LocalIdentityKey Key => _identities[0];
+
+    /// <summary>
+    /// Gets the short-lived credential, issued by <see cref="Key"/>, that signs the handshakes.
+    /// </summary>
+    public OperationalCredential Operational => _operational;
 
     /// <summary>
     /// Gets the head of the log: the event that reveals <see cref="Key"/>.

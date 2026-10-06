@@ -28,6 +28,8 @@ public sealed class PeerIdentity : IDisposable
     readonly List<ECDsa?> _keys;
     readonly List<KeyEvent> _events;
     readonly bool _ownsKeys;
+    // Issued lazily for the current key, and dropped when the head changes.
+    PeerCredential? _credential;
 
     PeerIdentity( string fullName, bool ownsKeys = true )
     {
@@ -97,6 +99,11 @@ public sealed class PeerIdentity : IDisposable
     /// <summary>The committed next key: what a rotation reveals.</summary>
     public ECDsa NextKey => _keys[Head.Seq + 1] ?? throw new InvalidOperationException( "The next key is unknown." );
 
+    /// <summary>
+    /// The operational credential issued by the current key: what signs the transcript.
+    /// </summary>
+    public PeerCredential Credential => _credential ??= PeerCredential.Issue( CurrentKey, FullName );
+
     /// <summary>The digest of the head, which is what a pin statement about this peer states.</summary>
     public byte[] HeadDigest => Head.GetDigest( FullName ).ToArray();
 
@@ -105,6 +112,8 @@ public sealed class PeerIdentity : IDisposable
     /// </summary>
     public void Rotate( DateTime? timeName = null )
     {
+        _credential?.Dispose();
+        _credential = null;
         var next = NextKey;
         _keys.Add( NewKey() );
         _events.Add( KeyEvent.Create( FullName, Head.Seq + 1, timeName ?? DateTime.UtcNow, next, Commit( _keys[^1]! ), Head ) );
@@ -115,6 +124,8 @@ public sealed class PeerIdentity : IDisposable
     /// </summary>
     public void Abandon( DateTime? timeName = null )
     {
+        _credential?.Dispose();
+        _credential = null;
         _events.Add( KeyEvent.Create( FullName, Head.Seq + 1, timeName ?? DateTime.UtcNow, NextKey, ReadOnlySpan<byte>.Empty, Head ) );
     }
 
@@ -125,6 +136,7 @@ public sealed class PeerIdentity : IDisposable
 
     public void Dispose()
     {
+        _credential?.Dispose();
         if( _ownsKeys ) foreach( var k in _keys ) k?.Dispose();
     }
 

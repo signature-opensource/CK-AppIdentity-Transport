@@ -80,8 +80,11 @@ public class KeyTakeoverTests
         await using( var c2 = await peer.AcceptAsync( token ) )
         {
             var initial2 = await c2.ReadInitialMessageAsync( token );
+            // Its credential is issued by its own key, the one the forged head reveals: everything verifies
+            // but the commitment.
+            using var thiefCredential = PeerCredential.Issue( thiefKey, fullName );
             var reply = PeerMessages.Build( ( ref FastByteWriter w ) => WriteAcceptedBody( ref w, initial2 ),
-                                            new[] { legitimate.Head, forged }, thiefKey, null );
+                                            new[] { legitimate.Head, forged }, thiefCredential.Encoded, thiefCredential.Key, null );
             await c2.SendZeroFrameAsync( reply, token );
             var answer = await ReadFrameOrNullAsync( c2, token );
             if( answer != null )
@@ -131,8 +134,9 @@ public class KeyTakeoverTests
 
         await using var c3 = await peer.AcceptAsync( token );
         var initial3 = await c3.ReadInitialMessageAsync( token );
+        using var stolenCredential = PeerCredential.Issue( stolenKey, fullName );
         var replay = PeerMessages.Build( ( ref FastByteWriter w ) => WriteAcceptedBody( ref w, initial3 ),
-                                         stolenTail, stolenKey, null );
+                                         stolenTail, stolenCredential.Encoded, stolenCredential.Key, null );
         await c3.SendZeroFrameAsync( replay, token );
         var answer = await ReadFrameOrNullAsync( c3, token );
         if( answer != null )

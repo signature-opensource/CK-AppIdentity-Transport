@@ -45,6 +45,7 @@ sealed partial class LocalKeys
         {
             var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
             int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
+            int operationalKeyDays = ReadOperationalKeyDays( monitor );
             var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
             var keysPath = _store.FolderPath.AppendPart( "Keys" );
             var kelPath = keysPath.AppendPart( KelFolderName );
@@ -63,7 +64,7 @@ sealed partial class LocalKeys
             {
                 current = LoadCurrent( monitor, keysPath, log[^1], allowedOfflineDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, alerts, _driverAlertRaised );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, alerts, _driverAlertRaised );
 
             // Scheduled rotation: a current key that cannot guarantee AllowedOfflineDays any more is
             // replaced by the committed next one.
@@ -262,6 +263,24 @@ sealed partial class LocalKeys
                 monitor.Info( $"Trashing '{f}': identity keys are now held by the {nameof( ICoreKeyStore )}." );
                 _store.TryTrash( monitor, f );
             }
+        }
+
+        int ReadOperationalKeyDays( IActivityMonitor monitor )
+        {
+            var s = _local.Configuration.Configuration["OperationalKeyDays"];
+            if( s == null ) return ILocalKeys.DefaultOperationalKeyDays;
+            if( !int.TryParse( s, out var days ) )
+            {
+                monitor.Warn( $"Invalid configuration '{_local.Configuration.Configuration.Path}:OperationalKeyDays' = '{s}': using {nameof( ILocalKeys.DefaultOperationalKeyDays )} = {ILocalKeys.DefaultOperationalKeyDays}." );
+                return ILocalKeys.DefaultOperationalKeyDays;
+            }
+            if( days < 1 || days > ILocalKeys.MaxOperationalKeyDays )
+            {
+                var clamped = Math.Clamp( days, 1, ILocalKeys.MaxOperationalKeyDays );
+                monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
+                return clamped;
+            }
+            return days;
         }
 
         int ReadAllowedOfflineDays( IActivityMonitor monitor )

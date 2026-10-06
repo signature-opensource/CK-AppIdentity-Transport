@@ -284,6 +284,45 @@ public abstract partial class Transport
         _remoteKeys = remoteKeys;
     }
 
+    // The local identity snapshot this connection signs with, from its first signed message to its
+    // last: a rotation or a credential renewal in the middle of a handshake must not pair the pieces of
+    // two snapshots.
+    KeyManagement.LocalIdentityState? _signingState;
+    // The peer's operational key and its expiry, learned from its verified identity block. It verifies
+    // the signed messages that follow (FinalSuccess, RequiredEnlistUrl, Goodbye), and the connection is
+    // closed once the credential expires (DESIGN-key-pre-rotation Q9).
+    System.Security.Cryptography.ECDsa? _remoteOperationalKey;
+    DateTime _remoteCredentialNotAfter;
+
+    /// <summary>
+    /// Gets the local identity snapshot this connection signs with: the first call pins it.
+    /// </summary>
+    internal KeyManagement.LocalIdentityState GetSigningState( KeyManagement.ILocalKeys keys )
+    {
+        Interlocked.CompareExchange( ref _signingState, keys.State, null );
+        return _signingState!;
+    }
+
+    /// <summary>
+    /// Gets the peer's operational key, once its identity block has been verified on this connection.
+    /// </summary>
+    internal System.Security.Cryptography.ECDsa? RemoteOperationalKey => _remoteOperationalKey;
+
+    /// <summary>
+    /// Gets the expiry of the peer's operational credential (UTC), default when not known.
+    /// </summary>
+    internal DateTime RemoteCredentialNotAfter => _remoteCredentialNotAfter;
+
+    /// <summary>
+    /// Records the peer's verified operational key. Not disposed with the connection: a SafeHandle
+    /// finalizes it, and a message in flight may still be verified with it.
+    /// </summary>
+    internal void SetRemoteCredential( System.Security.Cryptography.ECDsa key, DateTime notAfter )
+    {
+        _remoteOperationalKey = key;
+        _remoteCredentialNotAfter = notAfter;
+    }
+
     /// <summary>
     /// Called by TransportManager.KillTransport before pushing the transport to be disposed:
     /// this signals the <see cref="Lifetime"/> token and may let some time for the cancellation
