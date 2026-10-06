@@ -82,7 +82,8 @@ static class IdentityStoreHelper
                                                                 IDataProtectionProvider protector,
                                                                 CancellationToken token,
                                                                 ApplicationIdentityService.ISystemClock? clock = null,
-                                                                Action<MutableConfigurationSection>? configure = null )
+                                                                Action<MutableConfigurationSection>? configure = null,
+                                                                Func<IServiceProvider, CK.AppIdentity.KeyManagement.ICoreKeyStore>? keyStore = null )
         => TestHelper.CreateApplicationServiceAsync(
                 c =>
                 {
@@ -93,6 +94,8 @@ static class IdentityStoreHelper
                 {
                     services.AddSingleton( protector );
                     if( clock != null ) services.AddSingleton( clock );
+                    // The last registration wins: the feature driver resolves this one.
+                    if( keyStore != null ) services.AddSingleton( keyStore );
                 },
                 token );
 
