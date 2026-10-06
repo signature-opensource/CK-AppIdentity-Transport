@@ -13,7 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />
     <ProjectReference Include="..\..\CK.Testing.AppIdentity.TransportLayer\CK.Testing.AppIdentity.TransportLayer.csproj" />
-    <ProjectReference Include="..\..\CK.AppIdentity.KeyManagement.Tpm\CK.AppIdentity.KeyManagement.Tpm.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.KeyManagement.Cng\CK.AppIdentity.KeyManagement.Cng.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="CK.AppIdentity.TransportLayer.Testing" />

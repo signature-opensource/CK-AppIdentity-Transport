@@ -21,7 +21,7 @@
   <Project Path="CK.Testing.AppIdentity.Cris/CK.Testing.AppIdentity.Cris.csproj" Id="8f415832-aeaf-4570-823e-2d2dde2100e2" />
   <Project Path="CK.AppIdentity.Cris/CK.AppIdentity.Cris.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement/CK.AppIdentity.KeyManagement.csproj" />
-  <Project Path="CK.AppIdentity.KeyManagement.Tpm/CK.AppIdentity.KeyManagement.Tpm.csproj" />
+  <Project Path="CK.AppIdentity.KeyManagement.Cng/CK.AppIdentity.KeyManagement.Cng.csproj" />
   <Project Path="CK.AppIdentity.Transport.MutualTls/CK.AppIdentity.Transport.MutualTls.csproj" />
   <Project Path="CK.Testing.AppIdentity.TransportLayer/CK.Testing.AppIdentity.TransportLayer.csproj" />
   <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />

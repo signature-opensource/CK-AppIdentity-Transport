@@ -10,8 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The tests drive the store on the CNG software provider, through the internal constructor that
-         names the provider: the same code path as the TPM, without the hardware. -->
+    <!-- The tests check the CNG names of the keys they create (GetCngName). -->
     <InternalsVisibleTo Include="CK.AppIdentity.TransportLayer.Tests" />
   </ItemGroup>
 
