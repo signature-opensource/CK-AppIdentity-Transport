@@ -44,8 +44,8 @@ public class C2OtherReadersTests
         PeerStore.ClearRemoteTrust( $"Test/{remoteName}" );
 
         await using var peer = new AdversarialPeer();
-        using var goodKey = PeerIdentity.Create();
-        using var evilKey = PeerIdentity.Create();
+        using var goodKey = PeerIdentity.Create( $"Test/{remoteName}/#Dev" );
+        using var evilKey = PeerIdentity.Create( $"Test/{remoteName}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -62,7 +62,7 @@ public class C2OtherReadersTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { goodKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, goodKey ), token );
             (await c1.ReadFrameAsync( token )).Discriminator
                 .ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "The baseline handshake must succeed first." );
             await feature.ReadyTask.WaitAsync( token );
@@ -97,7 +97,7 @@ public class C2OtherReadersTests
     {
         var kinds = await RunAttackAsync(
             "$C2EvictEvil", "$AdvEvictEvil",
-            ( initial, key ) => PeerMessages.EvictionDisallowed( initial.Nonce, new[] { key } ),
+            ( initial, key ) => PeerMessages.EvictionDisallowed( initial.Nonce, key ),
             signWithTrustedKey: false,
             token );
 
@@ -113,7 +113,7 @@ public class C2OtherReadersTests
         // negative test above could pass simply because the harness builds an unparseable message.
         var kinds = await RunAttackAsync(
             "$C2EvictOk", "$AdvEvictOk",
-            ( initial, key ) => PeerMessages.EvictionDisallowed( initial.Nonce, new[] { key } ),
+            ( initial, key ) => PeerMessages.EvictionDisallowed( initial.Nonce, key ),
             signWithTrustedKey: true,
             token );
 
@@ -129,7 +129,7 @@ public class C2OtherReadersTests
             ( initial, key ) => PeerMessages.MissingProtocols( initial.Nonce,
                                                                new[] { "Fake.1" },
                                                                new[] { "Other.1" },
-                                                               new[] { key } ),
+                                                               key ),
             signWithTrustedKey: false,
             token );
 
@@ -145,7 +145,7 @@ public class C2OtherReadersTests
             ( initial, key ) => PeerMessages.MissingProtocols( initial.Nonce,
                                                                new[] { "Fake.1" },
                                                                new[] { "Other.1" },
-                                                               new[] { key } ),
+                                                               key ),
             signWithTrustedKey: true,
             token );
 

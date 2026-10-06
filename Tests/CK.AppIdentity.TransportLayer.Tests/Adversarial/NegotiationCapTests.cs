@@ -196,7 +196,7 @@ public class NegotiationCapTests
         await WaitForAsync( () => f.CurrentNegotiationCount == 0, "the slots to come back", token );
 
         // A real peer now, after the storm: it must get a real answer.
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( "Test/$M12AfterPeer/#Dev" );
         using var ephemeral = new PeerEphemeral();
         var initial = PeerMessages.InitialMessage( "Test/$M12AfterPeer/#Dev",
                                                    instanceId: "M12Instance",
@@ -206,7 +206,7 @@ public class NegotiationCapTests
                                                    nonce: BitConverter.ToUInt64( System.Security.Cryptography.RandomNumberGenerator.GetBytes( 8 ) ),
                                                    ephemeralPublicKey: ephemeral.PublicKey,
                                                    macCapabilities: RunPhaseProtection.LocalCapabilities,
-                                                   signWith: new[] { key } );
+                                                   signWith: key );
         await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
         await c.SendZeroFrameAsync( initial, token );
         var reply = await c.ReadFrameAsync( token );

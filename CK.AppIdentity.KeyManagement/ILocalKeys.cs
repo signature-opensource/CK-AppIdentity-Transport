@@ -82,6 +82,12 @@ public interface ILocalKeys
     LocalIdentityKey CurrentIdentity { get; }
 
     /// <summary>
+    /// Gets the current identity as one consistent snapshot: the key that signs and the tail of the
+    /// log that proves it is current. What goes on the wire must come from one snapshot.
+    /// </summary>
+    LocalIdentityState State { get; }
+
+    /// <summary>
     /// Gets the identity keys: only <see cref="CurrentIdentity"/>. A rotation no longer needs the
     /// previous key to vouch for the new one (the key event log carries that), so there is no
     /// overlap any more. This remains for the current wire format, and a rotation replaces the list

@@ -290,7 +290,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 return null;
             }
             // Let any exception while reading the initial message be a task error.
-            initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey );
+            initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey, out var conflict );
             // Handles null parse result:
             //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
             //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
@@ -307,6 +307,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 }
                 if( otherVersion <= ZeroProtocol.CurrentVersion )
                 {
+                    if( conflict.HasValue )
+                    {
+                        // A known remote presented a log that does not extend what we pin for it: a rollback or a
+                        // fork. The refusal is signed and carries our pin statement: if the initiator's identity
+                        // was taken over, this is how it learns it.
+                        await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming, conflict.Value.Keys,
+                                                                              ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict,
+                                                                              null, null, conflict.Value.Nonce ).ConfigureAwait( false );
+                        return null;
+                    }
                     // We have read the first part of the message.
                     // If the initialMessage is null it is because its signature has failed the verification or the Nonce check failed (this has been logged).
                     // We send a one byte message and don't lose any cpu/time/bandwidth to send our identity and sign the reply message.
@@ -339,8 +349,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                          IncomingMessage message,
                                          out int otherVersion,
                                          out TransportFeature? remote,
-                                         out bool foundTrustKey )
+                                         out bool foundTrustKey,
+                                         out (IRemoteKeys Keys, ulong Nonce)? conflict )
         {
+            conflict = null;
             Throw.DebugAssert( "We are listening.", incoming.Listener != null );
             var r = new FastByteReader( message.Message );
             if( !InitialMessage.TryParse( ref r,
@@ -352,8 +364,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                           out var fullName,
                                           out var protocols,
                                           out var expectedCommonProtocolCount,
-                                          out var canAutoTrust,
-                                          out var supposedIdentity) )
+                                          out var canAutoTrust ) )
             {
                 remote = null;
                 foundTrustKey = false;
@@ -379,12 +390,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             remote = incoming.Listener.Parties.FirstOrDefault( p => p.Party.FullName.Path == fullName );
             Throw.DebugAssert( remote == null || remote.IsListening );
 
-            // We may know the remote (or not). If we do, we may have a trusted identity for it.
-            var alreadyTrusted = remote?.RemoteKeys.TrustedIdentity;
-            var signatureCheck = ZeroProtocol.ReadIdentityKeysAndVerifySignatures( ref r, alreadyTrusted, out var currentKeyData, out var currentKey );
+            // We may know the remote (or not). If we do, its tail is applied to what we pin for it.
+            var signatureCheck = ZeroProtocol.ReadIdentityBlockAndVerify( ref r, transportManager.Logger, fullName, remote?.RemoteKeys, out var block );
             foundTrustKey = signatureCheck == SignatureCheck.Trusted;
             if( signatureCheck == SignatureCheck.Failed )
             {
+                if( remote != null && block.Verdict is KeyManagement.KeyChainVerdict.Rollback or KeyManagement.KeyChainVerdict.Duplicity )
+                {
+                    conflict = (remote.RemoteKeys, timedNonce.Nonce);
+                    return null;
+                }
                 // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
                 // This is a serious issue and we cannot do a lot here.
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -452,7 +467,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 {
                     // foundTrustKey stays the acceptance gate: a SelfAsserted signature only becomes
                     // trusted here if AutoTrustKey adopts the presented key.
-                    foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, currentKeyData, currentKey );
+                    foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, block );
                 }
             }
             return new InitialMessage( incoming.Listener.EndPointDescription,
@@ -466,12 +481,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        protocols,
                                        expectedCommonProtocolCount,
                                        canAutoTrust,
-                                       supposedIdentity,
                                        timedNonce.Nonce,
                                        validClockOffset,
                                        clockOffset,
-                                       currentKeyData,
-                                       currentKey,
+                                       block,
                                        remoteEphemeral,
                                        remoteMacCapabilities );
         }
@@ -535,8 +548,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // If he can, everything is fine (he will obviously check this on its side with our identities and the signatures).
         // but if he cannot trust us, there is no point to continue because he will fail to accept us.
         bool heTrustsUs = true;
-        var supposed = initialMessage.RemoteTrustInfo.SupposedIdentity;
-        if( supposed == null || !remote.RemoteKeys.LocalKeys.Identities.Any( supposed.Equals ) )
+        // He trusts us if what he pins for us is one of our events that our tail can still link from.
+        if( !CanLinkFrom( remote.RemoteKeys.LocalKeys, initialMessage ) )
         {
             // He doesn't know us... Can he auto trust us?
             if( !initialMessage.RemoteTrustInfo.CanAutoTrust )
@@ -553,6 +566,20 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             return heTrustsUs ? PeeringIssueKind.None : PeeringIssueKind.RequiresRemoteApproval;
         }
         return heTrustsUs ? PeeringIssueKind.RequiresLocalApproval : PeeringIssueKind.RequiresBothApproval;
+    }
+
+    /// <summary>
+    /// Whether the initiator will verify our reply: it pins one of our own events (same digest), and
+    /// that event is at most one before the first event of the tail we send, so that it can link
+    /// from it to our head.
+    /// </summary>
+    static bool CanLinkFrom( KeyManagement.ILocalKeys localKeys, InitialMessage initialMessage )
+    {
+        if( initialMessage.RemoteTrustInfo.PinnedSeq is not int seq || initialMessage.PinnedDigest == null ) return false;
+        var state = localKeys.State;
+        if( seq < state.Tail[0].Seq - 1 ) return false;
+        var own = state.GetEvent( seq );
+        return own != null && own.GetDigest( localKeys.Party.FullName ).Span.SequenceEqual( initialMessage.PinnedDigest );
     }
 
     static async ValueTask HandleConfigurationOrTrustIssueAsync( TransportManager transportManager,

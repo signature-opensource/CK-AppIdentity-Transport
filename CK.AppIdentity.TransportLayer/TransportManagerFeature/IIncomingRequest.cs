@@ -63,10 +63,10 @@ public interface IIncomingRequest
     string InstanceId { get; }
 
     /// <summary>
-    /// Gets the public key that the remote has for us and whether he's able to
-    /// automatically trust us. 
+    /// Gets the sequence of our key event log that the remote pins for us (null when it pins nothing)
+    /// and whether it is able to automatically trust us.
     /// </summary>
-    (RemoteIdentityKeyData? SupposedIdentity, bool CanAutoTrust) RemoteTrustInfo { get; }
+    (int? PinnedSeq, bool CanAutoTrust) RemoteTrustInfo { get; }
 
     /// <summary>
     /// Gets the list of protocols with their versions that must be supported.

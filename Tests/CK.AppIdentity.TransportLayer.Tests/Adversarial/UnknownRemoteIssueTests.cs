@@ -52,7 +52,7 @@ public class UnknownRemoteIssueTests
     /// </summary>
     async Task KnockAsUnknownAsync( TransportManagerFeature feature, string ghostName, CancellationToken token )
     {
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( ghostName );
         using var ephemeral = new PeerEphemeral();
         var initial = PeerMessages.InitialMessage( ghostName,
                                                    instanceId: "M7Instance",
@@ -62,7 +62,7 @@ public class UnknownRemoteIssueTests
                                                    nonce: BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) ),
                                                    ephemeralPublicKey: ephemeral.PublicKey,
                                                    macCapabilities: RunPhaseProtection.LocalCapabilities,
-                                                   signWith: new[] { key } );
+                                                   signWith: key );
         await using( var c = await AdversarialPeer.ConnectAsync( cancellation: token ) )
         {
             await c.SendZeroFrameAsync( initial, token );

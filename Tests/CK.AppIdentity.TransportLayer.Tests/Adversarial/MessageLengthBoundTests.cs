@@ -129,7 +129,7 @@ public class MessageLengthBoundTests
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
 
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using( var hostile = await AdversarialPeer.ConnectAsync( cancellation: token ) )
         {
@@ -150,7 +150,7 @@ public class MessageLengthBoundTests
                                                    BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) ),
                                                    ephemeral.PublicKey,
                                                    RunPhaseProtection.LocalCapabilities,
-                                                   new[] { key } );
+                                                   key );
         await ok.SendZeroFrameAsync( initial, token );
 
         var reply = await ok.ReadFrameAsync( token );

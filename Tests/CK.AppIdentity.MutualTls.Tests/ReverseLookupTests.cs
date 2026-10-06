@@ -134,7 +134,7 @@ public class ReverseLookupTests
 
         using var cert = PeerCertificate.Create();
         await using var peer = new AdversarialPeer( cert );
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await CreateAsync( c =>
         {
@@ -149,7 +149,7 @@ public class ReverseLookupTests
         var initial = await c.ReadInitialMessageAsync( token );
         await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial,
                                                                     _systemClock.UtcNow,
-                                                                    new[] { peerKey },
+                                                                    peerKey,
                                                                     certificateBinding: c.TruthfulBinding ), token );
 
         await feature.ReadyTask.WaitAsync( token );

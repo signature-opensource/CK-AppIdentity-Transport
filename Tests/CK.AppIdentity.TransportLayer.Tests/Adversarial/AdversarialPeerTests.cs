@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer.Testing.Adversarial;
 using CK.Core;
 using CK.Testing.AppIdentity.TransportLayer;
@@ -61,26 +62,20 @@ public class AdversarialPeerTests
         initial.ExpectedCommonProtocolCount.ShouldBeLessThanOrEqualTo( initial.AvailableProtocols.Count );
         foreach( var p in initial.AvailableProtocols ) p.ShouldNotBeNullOrWhiteSpace();
 
-        // The identity block: at least one key, one signature each, and each key must be a
-        // parseable SubjectPublicKeyInfo — that is what proves the harness found the right offset
-        // rather than merely reading plausible-looking bytes.
-        initial.Identities.ShouldNotBeEmpty();
-        initial.Signatures.Count.ShouldBe( initial.Identities.Count );
-        foreach( var k in initial.Identities )
-        {
-            k.SubjectPublicKeyInfo.ShouldNotBeEmpty();
-            k.TimeName.Kind.ShouldBe( System.DateTimeKind.Utc );
-            // Throws if these are not actually SPKI bytes at the offset we computed.
-            var ecdsa = System.Security.Cryptography.ECDsa.Create();
-            ecdsa.ImportSubjectPublicKeyInfo( k.SubjectPublicKeyInfo, out int read );
-            read.ShouldBe( k.SubjectPublicKeyInfo.Length, "The key must consume exactly its declared length." );
-            ecdsa.KeySize.ShouldBe( 256, "Identity keys are ECDSA P-256." );
-            ecdsa.Dispose();
-        }
-        foreach( var s in initial.Signatures ) s.ShouldNotBeEmpty();
+        // The identity block: a tail that verifies as a log of the initiator, from its inception, and a
+        // signature: that is what proves the harness found the right offsets rather than merely reading
+        // plausible-looking bytes.
+        initial.Tail.ShouldNotBeEmpty();
+        KeyEventChain.IsValidLog( initial.FullName, initial.Tail ).ShouldBeTrue( "A fresh party presents its inception, signed for its full name." );
+        var ecdsa = System.Security.Cryptography.ECDsa.Create();
+        ecdsa.ImportSubjectPublicKeyInfo( initial.Head.Spki.Span, out int read );
+        read.ShouldBe( initial.Head.Spki.Length, "The key must consume exactly its declared length." );
+        ecdsa.KeySize.ShouldBe( 256, "Identity keys are ECDSA P-256." );
+        ecdsa.Dispose();
+        initial.Signature.Length.ShouldBe( 64, "One P-256 signature, r||s." );
 
-        // We have no trusted key for this brand new remote, so it cannot claim one for us.
-        initial.SupposedIdentity.ShouldBeNull();
+        // We have no trusted identity for this brand new remote, so it states no pin for us.
+        initial.Statement.ShouldBeNull();
 
         // The nonce must be a fresh UTC instant close to now: this pins that we read the timed
         // nonce at the right offset and not some unrelated 8 bytes.

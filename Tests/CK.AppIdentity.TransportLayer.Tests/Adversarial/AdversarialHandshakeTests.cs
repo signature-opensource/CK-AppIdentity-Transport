@@ -38,7 +38,7 @@ public class AdversarialHandshakeTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         // AutoTrustKey=Once: the initiator has no trusted key for this remote yet, so it adopts
         // the first one presented. That is what lets the harness be accepted at all.
@@ -58,7 +58,7 @@ public class AdversarialHandshakeTests
 
         // Accept exactly the protocols the initiator offered: the initiator checks that all of its
         // BestRegisteredProtocols are satisfied.
-        var reply = PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } );
+        var reply = PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, peerKey );
         await connection.SendZeroFrameAsync( reply, token );
 
         // The initiator must now verify us and answer FinalSuccess.
@@ -85,8 +85,8 @@ public class AdversarialHandshakeTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
-        using var evilKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
+        using var evilKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -100,7 +100,7 @@ public class AdversarialHandshakeTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, peerKey ), token );
             var final = await c1.ReadFrameAsync( token );
             final.Discriminator.ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "Baseline must succeed first." );
         }
@@ -109,12 +109,12 @@ public class AdversarialHandshakeTests
         await using var c2 = await peer.AcceptAsync( token );
         var initial2 = await c2.ReadInitialMessageAsync( token );
 
-        // The initiator now holds a trusted key and tells us which one it expects.
-        initial2.SupposedIdentity.ShouldNotBeNull( "The initiator should now claim a trusted key for us." );
-        initial2.SupposedIdentity!.SubjectPublicKeyInfo.ShouldBe( peerKey.SubjectPublicKeyInfo,
-                                                                  "It must be the key adopted on the first connection." );
+        // The initiator now pins us and states what: the event adopted on the first connection.
+        initial2.Statement.ShouldNotBeNull( "The initiator should now state a pin for us." );
+        initial2.Statement!.Seq.ShouldBe( 0 );
+        initial2.Statement.Digest.ShouldBe( peerKey.HeadDigest, "It must be the event adopted on the first connection." );
 
-        await c2.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial2, _systemClock.UtcNow, new[] { evilKey } ), token );
+        await c2.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial2, _systemClock.UtcNow, evilKey ), token );
 
         // The initiator must not send FinalSuccess to a key it does not trust.
         var answer = await ReadFrameOrNullAsync( c2, token );
@@ -130,7 +130,7 @@ public class AdversarialHandshakeTests
         // the first connection - otherwise the next start would come up trusting the impostor.
         var pinned = PeerStore.FindTrustedIdentityFile( $"Test/{remote}" );
         pinned.ShouldNotBeNull( "The first connection pinned a key and nothing may remove it." );
-        File.ReadAllBytes( pinned! ).ShouldBe( peerKey.SubjectPublicKeyInfo,
+        PeerStore.ReadTrustedIdentity( $"Test/{remote}" )!.Spki.ToArray().ShouldBe( peerKey.SubjectPublicKeyInfo,
             "Still the key adopted on the first connection: AutoTrustKey.Once must not replace it." );
     }
 

@@ -72,7 +72,7 @@ public class KeepAliveTests
     {
         var c = await peer.AcceptAsync( token );
         var initial = await c.ReadInitialMessageAsync( token );
-        await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } ), token );
+        await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, peerKey ), token );
         var final = await c.ReadFrameAsync( token );
         final.Discriminator.ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "The transport must become valid." );
         return c;
@@ -85,7 +85,7 @@ public class KeepAliveTests
         // never complete and writes still succeed. Only the absence of an answer gives it away.
         PeerStore.ClearRemoteTrust( "Test/$M13HalfPeer" );
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( "Test/$M13HalfPeer/#Dev" );
         await using var sender = await CreateSenderAsync( "M13Half", "$M13HalfPeer", peer.Address, token );
         SetFastKeepAlive( sender );
 
@@ -152,7 +152,7 @@ public class KeepAliveTests
         // dead, not only after.
         PeerStore.ClearRemoteTrust( "Test/$M13DangerPeer" );
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( "Test/$M13DangerPeer/#Dev" );
         await using var sender = await CreateSenderAsync( "M13Danger", "$M13DangerPeer", peer.Address, token );
         SetFastKeepAlive( sender );
 
@@ -173,7 +173,7 @@ public class KeepAliveTests
         // disabled keep-alive must not merely stop killing, it must stop probing.
         PeerStore.ClearRemoteTrust( "Test/$M13OffPeer" );
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( "Test/$M13OffPeer/#Dev" );
         await using var sender = await CreateSenderAsync( "M13Off", "$M13OffPeer", peer.Address, token );
         // Fast interval and count FIRST, then disable. Leaving them at their 5 s / 3 defaults would
         // make this test pass whether or not the disable is honoured, because nothing could have died

@@ -34,6 +34,32 @@ public sealed class RemoteIdentityKeyData : IPublicKeyData, IEquatable<IPublicKe
     }
 
     /// <summary>
+    /// Initializes a remote public key data from the key a <see cref="KeyEvent"/> reveals.
+    /// </summary>
+    /// <param name="e">The event.</param>
+    /// <exception cref="System.IO.InvalidDataException">When the event's key cannot be read.</exception>
+    public RemoteIdentityKeyData( KeyEvent e )
+    {
+        Throw.CheckNotNullArgument( e );
+        PublicKey key;
+        int read;
+        try
+        {
+            key = PublicKey.CreateFromSubjectPublicKeyInfo( e.Spki.Span, out read );
+        }
+        catch( System.Security.Cryptography.CryptographicException ex )
+        {
+            // The bytes come from a peer: malformed input, not a fault of ours.
+            throw new System.IO.InvalidDataException( "Invalid public key in key event.", ex );
+        }
+        Throw.CheckData( read == e.Spki.Length );
+        _timeName = e.TimeName;
+        _name = e.TimeName.ToString( FileUtil.FileNameUniqueTimeUtcFormat );
+        _publicKey = key;
+        _publicRaw = e.Spki.ToArray();
+    }
+
+    /// <summary>
     /// Initializes a remote public key data from a <see cref="LocalIdentityKey"/>.
     /// </summary>
     /// <param name="localIdentity">A local identity.</param>

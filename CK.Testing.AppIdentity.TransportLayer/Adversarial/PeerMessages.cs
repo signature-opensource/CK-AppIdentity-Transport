@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using CK.AppIdentity.KeyManagement;
 
 namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
@@ -56,8 +57,8 @@ public static class PeerMessages
                                          ulong nonce,
                                          byte[] ephemeralPublicKey,
                                          byte macCapabilities,
-                                         IReadOnlyList<PeerIdentity> signWith,
-                                         PeerPublicKey? supposedIdentity = null,
+                                         PeerIdentity signWith,
+                                         PeerStatement? statement = null,
                                          bool canAutoTrust = false,
                                          byte[]? certificateBinding = null )
     {
@@ -70,17 +71,6 @@ public static class PeerMessages
             w.WriteSmallUInt32( (uint)availableProtocols.Count );
             foreach( var p in availableProtocols ) w.WriteString( p );
             w.WriteSmallInt32( expectedCommonProtocolCount );
-            if( supposedIdentity != null )
-            {
-                w.WriteBool( true );
-                w.WriteDateTime( supposedIdentity.TimeName );
-                w.WriteSmallUInt32( (uint)supposedIdentity.SubjectPublicKeyInfo.Length );
-                w.WriteBytes( supposedIdentity.SubjectPublicKeyInfo );
-            }
-            else
-            {
-                w.WriteBool( false );
-            }
             w.WriteBool( canAutoTrust );
             // Per-connection key agreement material, inside the signed region.
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
@@ -91,7 +81,7 @@ public static class PeerMessages
             // The timed nonce.
             w.WriteDateTime( nonceCreationTime );
             w.WriteUInt64( nonce );
-        }, signWith );
+        }, signWith, statement );
     }
 
     /// <summary>
@@ -101,16 +91,17 @@ public static class PeerMessages
     /// <param name="initialClockOffset">The offset the peer computed from the initiator's nonce time.</param>
     /// <param name="now">The peer's current time (the initiator finishes the clock-offset calculation with it).</param>
     /// <param name="protocolFullNames">The accepted protocols, as "Name.Version".</param>
-    /// <param name="signWith">Identities presented and signed with, most recent first.</param>
+    /// <param name="signWith">The identity presented and signing.</param>
     public static byte[] AcceptedProtocols( ulong nonce,
                                             TimeSpan initialClockOffset,
                                             DateTime now,
                                             IReadOnlyList<string> protocolFullNames,
                                             byte[] ephemeralPublicKey,
                                             MacAlgorithm macAlgorithm,
-                                            IReadOnlyList<PeerIdentity> signWith,
+                                            PeerIdentity signWith,
                                             byte[]? certificateBinding = null,
-                                            byte? macCapabilities = null )
+                                            byte? macCapabilities = null,
+                                            PeerStatement? statement = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -130,7 +121,7 @@ public static class PeerMessages
             w.WriteByte( macCapabilities ?? (byte)(1 << (int)macAlgorithm) );
             // What this side states about the certificate it is presenting, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
-        }, signWith );
+        }, signWith, statement );
     }
 
     /// <summary>
@@ -150,7 +141,7 @@ public static class PeerMessages
     /// </summary>
     /// <param name="initial">The initial message being answered.</param>
     /// <param name="now">Our current time.</param>
-    /// <param name="signWith">Identities to present and sign with — the knob the C2 tests turn.</param>
+    /// <param name="signWith">The identity presented and signing — the knob the C2 tests turn.</param>
     /// <param name="ephemeral">
     /// Our ephemeral key pair. A fresh one is created when null; a test passes an existing one to
     /// REUSE it across connections, which a real peer never does.
@@ -161,10 +152,11 @@ public static class PeerMessages
     /// </param>
     public static byte[] AcceptedProtocols( PeerInitialMessage initial,
                                             DateTime now,
-                                            IReadOnlyList<PeerIdentity> signWith,
+                                            PeerIdentity signWith,
                                             PeerEphemeral? ephemeral = null,
                                             byte[]? certificateBinding = null,
-                                            byte? macCapabilities = null )
+                                            byte? macCapabilities = null,
+                                            PeerStatement? statement = null )
     {
         bool owned = ephemeral == null;
         ephemeral ??= new PeerEphemeral();
@@ -178,7 +170,8 @@ public static class PeerMessages
                                       RunPhaseProtection.Select( initial.MacCapabilities ),
                                       signWith,
                                       certificateBinding,
-                                      macCapabilities ?? RunPhaseProtection.LocalCapabilities );
+                                      macCapabilities ?? RunPhaseProtection.LocalCapabilities,
+                                      statement );
         }
         finally
         {
@@ -198,7 +191,8 @@ public static class PeerMessages
                                     TimeSpan clockOffset,
                                     string reason,
                                     DateTime? expectedAvailableTime,
-                                    IReadOnlyList<PeerIdentity> signWith )
+                                    PeerIdentity signWith,
+                                           PeerStatement? statement = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -209,7 +203,7 @@ public static class PeerMessages
             w.WriteByte( GoodbyeSwitchedOff );
             w.WriteString( reason );
             w.WriteNullableDateTime( expectedAvailableTime );
-        }, signWith );
+        }, signWith, statement );
     }
 
     /// <summary>
@@ -223,7 +217,8 @@ public static class PeerMessages
                                        byte issue,
                                        TimeSpan? clockOffset,
                                        string? enlistUrl,
-                                       IReadOnlyList<PeerIdentity>? signWith )
+                                       PeerIdentity? signWith,
+                                       PeerStatement? statement = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -234,19 +229,20 @@ public static class PeerMessages
             w.WriteString( enlistUrl ?? string.Empty );
             // The bool says whether an identity block follows.
             w.WriteBool( signWith != null );
-        }, signWith );
+        }, signWith, statement );
     }
 
     /// <summary>
     /// The listener refuses to be evicted by this new connection.
     /// </summary>
-    public static byte[] EvictionDisallowed( ulong nonce, IReadOnlyList<PeerIdentity> signWith )
+    public static byte[] EvictionDisallowed( ulong nonce, PeerIdentity signWith,
+                                           PeerStatement? statement = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
             w.WriteByte( DNegoEvictionDisallowed );
             w.WriteUInt64( nonce );
-        }, signWith );
+        }, signWith, statement );
     }
 
     /// <summary>
@@ -255,7 +251,8 @@ public static class PeerMessages
     public static byte[] MissingProtocols( ulong nonce,
                                            IReadOnlyList<string> remoteMissing,
                                            IReadOnlyList<string> localMissing,
-                                           IReadOnlyList<PeerIdentity> signWith )
+                                           PeerIdentity signWith,
+                                           PeerStatement? statement = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -265,42 +262,62 @@ public static class PeerMessages
             foreach( var p in remoteMissing ) w.WriteString( p );
             w.WriteSmallUInt32( (uint)localMissing.Count );
             foreach( var p in localMissing ) w.WriteString( p );
-        }, signWith );
+        }, signWith, statement );
+    }
+    /// <summary>
+    /// Writes a message body, then appends the identity block — the layout of the internal
+    /// <c>ZeroProtocol.WriteIdentityBlockAndSign</c>: the tail of <paramref name="signWith"/>'s log,
+    /// the pin statement, and one signature by its current key over everything before it.
+    /// </summary>
+    /// <param name="body">Writes the discriminator and the message-specific fields.</param>
+    /// <param name="signWith">The identity presented and signing; null writes no identity block.</param>
+    /// <param name="statement">What we state we pin for the receiver; null states nothing.</param>
+    public static byte[] Build( BodyWriter body, PeerIdentity? signWith, PeerStatement? statement = null )
+    {
+        return signWith == null
+                ? Build( body, null, null, null )
+                : Build( body, signWith.Tail, signWith.CurrentKey, statement );
     }
 
     /// <summary>
-    /// Writes a message body, then appends the identity block and one signature per identity over
-    /// the SHA-512 of everything written so far — the layout of the internal
-    /// <c>ZeroProtocol.WriteIdentityKeysAndSign</c>.
+    /// The low-level form, for forgeries: any tail, signed by any key.
     /// </summary>
     /// <param name="body">Writes the discriminator and the message-specific fields.</param>
-    /// <param name="signWith">Identities to present and sign with; null writes no identity block.</param>
-    public static byte[] Build( BodyWriter body, IReadOnlyList<PeerIdentity>? signWith )
+    /// <param name="tail">The events presented; null writes no identity block.</param>
+    /// <param name="signer">The key that signs the transcript.</param>
+    /// <param name="statement">What we state we pin for the receiver; null states nothing.</param>
+    public static byte[] Build( BodyWriter body, IReadOnlyList<KeyEvent>? tail, ECDsa? signer, PeerStatement? statement )
     {
         using var seq = new MutableSequence<byte>();
         var w = new FastByteWriter( seq );
         body( ref w );
-        if( signWith != null )
+        if( tail != null )
         {
+            if( signer == null ) throw new ArgumentNullException( nameof( signer ) );
             w.WriteSmallUInt32( 0 );                          // identity block serialization version
-            w.WriteSmallUInt32( (uint)signWith.Count );
-            foreach( var k in signWith )
+            w.WriteSmallUInt32( (uint)tail.Count );
+            foreach( var e in tail )
             {
-                w.WriteDateTime( k.TimeName );
-                w.WriteSmallUInt32( (uint)k.SubjectPublicKeyInfo.Length );
-                w.WriteBytes( k.SubjectPublicKeyInfo );
+                w.WriteSmallUInt32( (uint)e.Encoded.Length );
+                w.WriteBytes( e.Encoded.Span );
+            }
+            if( statement == null )
+            {
+                w.WriteSmallUInt32( 0 );
+            }
+            else
+            {
+                w.WriteSmallUInt32( (uint)statement.Seq + 1 );
+                w.WriteBytes( statement.Digest );
             }
             // Commit so the sequence holds every byte written so far: the signed hash covers
-            // exactly this prefix and NOT the signatures that follow.
+            // exactly this prefix and NOT the signature that follows.
             w.Commit();
             Span<byte> hash = stackalloc byte[64];
             ComputeSha512( seq, hash );
-            foreach( var k in signWith )
-            {
-                var sig = k.SignHash( hash );
-                w.WriteByte( (byte)sig.Length );
-                w.WriteBytes( sig );
-            }
+            var sig = signer.SignHash( hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
+            w.WriteByte( (byte)sig.Length );
+            w.WriteBytes( sig );
         }
         w.Commit();
         return seq.GetReadOnlySequence().ToArray();

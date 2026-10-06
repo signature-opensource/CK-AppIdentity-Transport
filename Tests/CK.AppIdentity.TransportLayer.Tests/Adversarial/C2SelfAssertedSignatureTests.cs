@@ -43,8 +43,8 @@ public class C2SelfAssertedSignatureTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var goodKey = PeerIdentity.Create();
-        using var evilKey = PeerIdentity.Create();
+        using var goodKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
+        using var evilKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -60,7 +60,7 @@ public class C2SelfAssertedSignatureTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { goodKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, goodKey ), token );
             (await c1.ReadFrameAsync( token )).Discriminator
                 .ShouldBe( PeerMessages.DNegoFinalSuccessMessage, "The baseline handshake must succeed first." );
             await feature.ReadyTask.WaitAsync( token );
@@ -72,14 +72,14 @@ public class C2SelfAssertedSignatureTests
         await using( var c2 = await peer.AcceptAsync( token ) )
         {
             var initial2 = await c2.ReadInitialMessageAsync( token );
-            initial2.SupposedIdentity.ShouldNotBeNull( "The initiator must now pin a key for this remote." );
-            initial2.SupposedIdentity!.SubjectPublicKeyInfo.ShouldBe( goodKey.SubjectPublicKeyInfo );
+            initial2.Statement.ShouldNotBeNull( "The initiator must now pin this remote." );
+            initial2.Statement!.Digest.ShouldBe( goodKey.HeadDigest );
 
             var attack = PeerMessages.OffRemote( initial2.Nonce,
                                                  clockOffset: TimeSpan.Zero,
                                                  reason: "Gone for good.",
                                                  expectedAvailableTime: Util.UtcMaxValue,
-                                                 signWith: new[] { evilKey } );
+                                                 signWith: evilKey );
             await c2.SendZeroFrameAsync( attack, token );
         }
 
@@ -119,7 +119,7 @@ public class C2SelfAssertedSignatureTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var goodKey = PeerIdentity.Create();
+        using var goodKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -134,7 +134,7 @@ public class C2SelfAssertedSignatureTests
         await using( var c1 = await peer.AcceptAsync( token ) )
         {
             var initial = await c1.ReadInitialMessageAsync( token );
-            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { goodKey } ), token );
+            await c1.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, goodKey ), token );
             (await c1.ReadFrameAsync( token )).Discriminator.ShouldBe( PeerMessages.DNegoFinalSuccessMessage );
             await feature.ReadyTask.WaitAsync( token );
         }
@@ -146,7 +146,7 @@ public class C2SelfAssertedSignatureTests
                                                                  TimeSpan.Zero,
                                                                  "Maintenance, not coming back.",
                                                                  Util.UtcMaxValue,
-                                                                 new[] { goodKey } ), token );
+                                                                 goodKey ), token );
         }
 
         // The remote must go off — proving the harness's OffRemote is well-formed and understood.

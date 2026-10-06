@@ -75,7 +75,7 @@ public class MutualTlsBindingTests
 
         using var cert = PeerCertificate.Create();
         await using var peer = new AdversarialPeer( cert );
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         peer.Address.ShouldStartWith( "mtls:" );
 
@@ -93,7 +93,7 @@ public class MutualTlsBindingTests
 
         await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial,
                                                                     _systemClock.UtcNow,
-                                                                    new[] { peerKey },
+                                                                    peerKey,
                                                                     certificateBinding: c.TruthfulBinding ), token );
 
         var final = await c.ReadFrameAsync( token );
@@ -116,7 +116,7 @@ public class MutualTlsBindingTests
         using var presented = PeerCertificate.Create();
         using var claimed = PeerCertificate.Create( "SomeoneElse" );
         await using var peer = new AdversarialPeer( presented );
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await CreateInitiatorAsync( "$MtlsRelayInit", remote, peer.Address, token );
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -126,7 +126,7 @@ public class MutualTlsBindingTests
 
         await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial,
                                                                     _systemClock.UtcNow,
-                                                                    new[] { peerKey },
+                                                                    peerKey,
                                                                     certificateBinding: claimed.Binding ), token );
 
         var answer = await ReadOrNullAsync( c, token );
@@ -165,7 +165,7 @@ public class MutualTlsBindingTests
 
         using var cert = PeerCertificate.Create();
         await using var peer = new AdversarialPeer( cert );
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await CreateInitiatorAsync( "$MtlsSilentInit", remote, peer.Address, token );
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -175,7 +175,7 @@ public class MutualTlsBindingTests
 
         await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial,
                                                                     _systemClock.UtcNow,
-                                                                    new[] { peerKey },
+                                                                    peerKey,
                                                                     certificateBinding: null ), token );
 
         var answer = await ReadOrNullAsync( c, token );

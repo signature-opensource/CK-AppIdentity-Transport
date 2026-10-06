@@ -44,14 +44,23 @@ public static class PeerStore
     }
 
     /// <summary>
-    /// Gets the persisted trusted identity file for a remote, or null when there is none.
+    /// Gets the persisted trusted identity file for a remote (<c>Identity.{Seq}.trust</c>), or null when there is none.
     /// </summary>
     public static string? FindTrustedIdentityFile( string remoteFullName )
     {
         var folder = GetRemoteFolder( remoteFullName );
         return Directory.Exists( folder )
-                ? Directory.EnumerateFiles( folder, "Identity.*.public" ).FirstOrDefault()
+                ? Directory.EnumerateFiles( folder, "Identity.*.trust" ).FirstOrDefault()
                 : null;
+    }
+
+    /// <summary>
+    /// Reads the event pinned for a remote, or null when nothing is pinned.
+    /// </summary>
+    public static CK.AppIdentity.KeyManagement.KeyEvent? ReadTrustedIdentity( string remoteFullName )
+    {
+        var f = FindTrustedIdentityFile( remoteFullName );
+        return f != null ? CK.AppIdentity.KeyManagement.KeyEvent.Read( File.ReadAllBytes( f ) ) : null;
     }
 
     static NormalizedPath GetRemoteFolder( string fullNameWithoutDomain )

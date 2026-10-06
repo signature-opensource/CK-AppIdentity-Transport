@@ -48,7 +48,7 @@ public class HostileInitiatorTests
                                         nonce: nonce,
                                         ephemeralPublicKey: ephemeral.PublicKey,
                                         macCapabilities: RunPhaseProtection.LocalCapabilities,
-                                        signWith: new[] { key } );
+                                        signWith: key );
     }
 
     static ulong NewNonce() => BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) );
@@ -75,7 +75,7 @@ public class HostileInitiatorTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$AdvListenA", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
         await c.SendZeroFrameAsync( BuildInitial( $"Test/{remote}/#Dev", key, NewNonce() ), token );
@@ -95,7 +95,7 @@ public class HostileInitiatorTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$AdvListenB", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         // One message, sent twice verbatim.
         var initial = BuildInitial( $"Test/{remote}/#Dev", key, NewNonce() );
@@ -135,7 +135,7 @@ public class HostileInitiatorTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$AdvListenC", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         PeerWire.Frame2? first, second;
         await using( var c1 = await AdversarialPeer.ConnectAsync( cancellation: token ) )
@@ -170,7 +170,7 @@ public class HostileInitiatorTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$AdvListenD", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         var good = BuildInitial( $"Test/{remote}/#Dev", key, NewNonce() );
 

@@ -80,7 +80,7 @@ sealed partial class LocalKeys
                 }
             }
             var c = keys.CurrentIdentity;
-            HandleIdentityPublicKeyFiles( monitor, _store, keysPath, c );
+            ExposeIdentity( monitor, _store, keysPath, keys.State.Head );
             monitor.Info( $"Local '{_local.FullName}' identity key is #{keys.Seq}, expiring on {c.NotAfter:yyyy-MM-dd}." );
             return keys;
         }

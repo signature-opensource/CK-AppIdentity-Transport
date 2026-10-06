@@ -567,8 +567,9 @@ public sealed class TransportFeature
     /// Gets the initial message to send when this is a caller.
     /// This will be used each time a new connection must be established.
     /// <para>
-    /// To support dynamic key renewal, we check that the <see cref="IncomingMessage.LocalIdentities"/>
-    /// is the same as the <see cref="ILocalKeys.Identities"/>.
+    /// The cached content does not depend on the keys: the identity block (our tail, our statement
+    /// about the remote and the signature) is written for each send. It only depends on whether we can
+    /// trust the remote automatically, which changes when a pin appears or disappears.
     /// </para>
     /// </summary>
     internal InitialMessage? OutgoingInitialMessage
@@ -576,27 +577,13 @@ public sealed class TransportFeature
         get
         {
             var m = _outgoingInitialMessage;
-            // We cannot reuse the cached message if:
-            // - Our owner's identity keys have changed.
-            // - Or our knowledge of the remote's identity has changed. 
             if( m == null
-                || m.LocalIdentities != _remoteKeys.LocalKeys.Identities
-                || HasChanged( m.RemoteTrustInfo.SupposedIdentity, _remoteKeys.TrustedIdentity )
                 || m.RemoteTrustInfo.CanAutoTrust != (_remoteKeys.AutoTrustKey == AutoTrustKey.Always
-                                                      || (_remoteKeys.AutoTrustKey == AutoTrustKey.Once && _remoteKeys.TrustedIdentity == null)) )
+                                                      || (_remoteKeys.AutoTrustKey == AutoTrustKey.Once && _remoteKeys.TrustedEvent == null)) )
             {
                 m = _outgoingInitialMessage = new InitialMessage( this );
             }
             return m;
-
-            static bool HasChanged( RemoteIdentityKeyData? supposedIdentity, RemoteIdentityKey? trustedIdentity )
-            {
-                if( trustedIdentity == null )
-                {
-                    return supposedIdentity != null;
-                }
-                return !trustedIdentity.Equals( supposedIdentity );
-            }
         }
     }
 

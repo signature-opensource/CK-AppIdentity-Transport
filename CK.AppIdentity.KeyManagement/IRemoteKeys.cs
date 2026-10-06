@@ -1,5 +1,6 @@
 using CK.Core;
 using System;
+using System.Collections.Generic;
 
 namespace CK.AppIdentity.KeyManagement;
 
@@ -59,59 +60,70 @@ public interface IRemoteKeys
     TimeSpan MaxClockOffset { get; }
 
     /// <summary>
-    /// Gets the trusted identity.
+    /// Gets the trusted identity key: the key revealed by <see cref="TrustedEvent"/>.
     /// <para>
-    /// When not null, any incoming connection must present at least this identity.
-    /// </para>
-    /// <para>
-    /// This is automatically updated during the lifetime of a remote at each connection when the
-    /// trusted remote renews its identity key.
-    /// </para>
-    /// <para>
-    /// <b>Read that with <see cref="AutoTrustKey"/> in hand.</b> "Renews its identity key" describes
-    /// the honest case, not the guarantee. Under <see cref="AutoTrustKey.Always"/> the update is not
-    /// a rotation by the trusted remote but a <b>takeover</b>: any peer claiming this remote's
-    /// FullName and signing with a key of its own replaces what is pinned here, permanently, and the
-    /// legitimate remote is locked out. <see cref="AutoTrustKey.Once"/> is bounded - it applies only
-    /// when there is no current key - and <see cref="AutoTrustKey.Never"/> requires an operator.
+    /// When not null, an incoming connection must present a key event log that links to
+    /// <see cref="TrustedEvent"/> and sign with the key at its head.
     /// </para>
     /// </summary>
     RemoteIdentityKey? TrustedIdentity { get; }
 
     /// <summary>
-    /// Sets or clears the trusted identity.
-    /// This can be called by contexts that have no <see cref="IActivityMonitor"/>: this method accepts any <see cref="IActivityLineEmitter"/>
-    /// instead of a classical monitor. 
+    /// Gets the pinned event of the remote's key event log, or null when nothing is trusted yet.
+    /// <para>
+    /// It moves forward only through rotations the remote committed to beforehand
+    /// (<see cref="ApplyTail"/>): holding the remote's current key is not enough to move it. Under
+    /// <see cref="AutoTrustKey.Always"/> it can also be replaced by an unrelated identity, which is a
+    /// takeover by configuration.
+    /// </para>
     /// </summary>
-    /// <param name="logger">The logger to use.</param>
-    /// <param name="identity">The identity key to trust for this remote or null to clear it.</param>
-    /// <returns>True if the new identity has changed, false if it was already set.</returns>
-    bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKeyData? identity );
-
-    /// <inheritdoc cref="SetTrustedIdentity(IActivityLineEmitter, RemoteIdentityKeyData?)"/>
-    bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity );
+    KeyEvent? TrustedEvent { get; }
 
     /// <summary>
-    /// Encapsulates the application of a <see cref="ReadTrustInfo"/>:
-    /// <list type="bullet">
-    ///    <item>
-    ///    If we have found our trusted key (<see cref="ReadTrustInfo.FoundTrustedKey"/>), we already trust him but its current remote key
-    ///    may have changed: we can safely update it.
-    ///    </item>
-    ///    <item>
-    ///    If we haven't found our trusted key (may be because TrustedIdentity is null), we can avoid a manual enlistment of the remote
-    ///    on our side: this depends on the <see cref="AutoTrustKey"/> configuration. This is a "dangerous" option (it defaults to Never).
-    ///    </item>
-    /// </list>
-    /// <para>
+    /// Gets whether the remote has decommissioned its identity: <see cref="TrustedEvent"/> is an
+    /// abandonment, and nothing the remote sends is accepted any more.
+    /// </summary>
+    bool IsTerminated { get; }
+
+    /// <summary>
+    /// Pins an event, or clears the pin. This is the operator's action: approving the identity a
+    /// remote presented, or pinning one handed over out of band. The event must be signed by the key
+    /// it reveals, for this remote.
     /// This can be called by contexts that have no <see cref="IActivityMonitor"/>: this method accepts any <see cref="IActivityLineEmitter"/>
-    /// instead of a classical monitor. 
+    /// instead of a classical monitor.
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="trusted">The event to pin, or null to clear the pin.</param>
+    /// <returns>True if the pin has changed, false if it was already this one.</returns>
+    bool SetTrustedIdentity( IActivityLineEmitter logger, KeyEvent? trusted );
+
+    /// <summary>
+    /// Verifies a tail of events the remote presented against <see cref="TrustedEvent"/> and applies
+    /// the verdict, under one lock: a valid rotation advances the pin, an abandonment terminates it, a
+    /// fork is stored as evidence and raises <see cref="IdentityAlertKind.RemoteDuplicity"/>.
+    /// <para>
+    /// An event proves itself, so a verified advance is kept whatever happens to the session that
+    /// carried it.
     /// </para>
     /// </summary>
     /// <param name="logger">The logger to use.</param>
-    /// <param name="trustInfo">Read informations.</param>
-    /// <returns>True if the <see cref="TrustedIdentity"/> has been updated, false otherwise.</returns>
-    bool ApplyReadTrustInfo( IActivityLineEmitter logger, in ReadTrustInfo trustInfo );
+    /// <param name="tail">The events presented, oldest first.</param>
+    /// <returns>The verdict.</returns>
+    KeyChainCheck ApplyTail( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail );
+
+    /// <summary>
+    /// Adopts a self-asserted head (one that does not link to a pin) when <see cref="AutoTrustKey"/>
+    /// allows it: <see cref="AutoTrustKey.Once"/> when nothing is pinned,
+    /// <see cref="AutoTrustKey.Always"/> in any case but a terminated identity.
+    /// <para>
+    /// The caller must have verified that the head's key signed the message: this is a
+    /// trust-on-first-use decision, not a proof.
+    /// </para>
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="head">The head of the presented tail.</param>
+    /// <returns>True if the head has been pinned.</returns>
+    bool AdoptSelfAsserted( IActivityLineEmitter logger, KeyEvent head );
 
     /// <summary>
     /// Checks a clock offset against <see cref="MaxClockOffset"/>.

@@ -47,7 +47,7 @@ public class SessionLifecycleTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -87,7 +87,7 @@ public class SessionLifecycleTests
                                                                         initial.AvailableProtocols,
                                                                         ephemeral.PublicKey,
                                                                         alg,
-                                                                        new[] { peerKey } ), token );
+                                                                        peerKey ), token );
             (await c.ReadFrameAsync( token )).Discriminator.ShouldBe( PeerMessages.DNegoFinalSuccessMessage,
                 "The handshake must complete, or the session we derived is not the one in use." );
             // Dropping the connection forces a reconnect, which must start from new key material.

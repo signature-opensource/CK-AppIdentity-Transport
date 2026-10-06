@@ -55,7 +55,7 @@ public class ReconnectBackOffTests
     {
         await using var c = await peer.AcceptAsync( token );
         var initial = await c.ReadInitialMessageAsync( token );
-        await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, new[] { peerKey } ), token );
+        await c.SendZeroFrameAsync( PeerMessages.AcceptedProtocols( initial, _systemClock.UtcNow, peerKey ), token );
         var final = await c.ReadFrameAsync( token );
         if( holdMs > 0 ) await Task.Delay( holdMs, token );
         // Disposing drops the connection: the initiator kills a validated transport.
@@ -74,7 +74,7 @@ public class ReconnectBackOffTests
 
         PeerStore.ClearRemoteTrust( "Test/$M14FlapPeer" );
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( "Test/$M14FlapPeer/#Dev" );
         await using var sender = await CreateSenderAsync( "M14Flap", "$M14FlapPeer", peer.Address, token );
 
         // Count ACCEPTED connections, not completed handshakes: each accept is one reconnection, and
@@ -126,7 +126,7 @@ public class ReconnectBackOffTests
 
         PeerStore.ClearRemoteTrust( "Test/$M14ClearPeer" );
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( "Test/$M14ClearPeer/#Dev" );
         await using var sender = await CreateSenderAsync( "M14Clear", "$M14ClearPeer", peer.Address, token );
 
         var f = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();

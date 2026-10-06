@@ -1,16 +1,35 @@
 using CK.Core;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 
 namespace CK.AppIdentity.KeyManagement;
 
+/// <summary>
+/// What this local party trusts of one remote: the pinned event of the remote's key event log, and
+/// the replay cache of the nonces it sent.
+/// <para>
+/// The pin is stored as <c>Identity.{Seq}.trust</c> in the remote's shared folder (the encoded event).
+/// The sequence is in the name on purpose: that folder is shared by every local party of the file
+/// system, across processes, and two processes that apply different rotations then write different
+/// files, of which the loader keeps the most recent. The store is monotonic without a lock.
+/// </para>
+/// </summary>
 sealed partial class RemoteKeys : IRemoteKeys
 {
-    internal const string PublicIdentityFilePattern = "Identity.*.public";
+    internal const string TrustFilePattern = "Identity.*.trust";
+    internal const string LegacyPublicFilePattern = "Identity.*.public";
+    const string DuplicityFolderName = "Duplicity";
+    const int MaxDuplicityEvidenceFiles = 16;
+
     readonly LocalKeys _localKeys;
     readonly IRemoteParty _remote;
-    // Guards _identity AND the .public files that mirror it: the pair must change together, and both
-    // back tasks and an operator approving a PeeringIssue can get here from different threads.
+    // Guards _pinned, _identity AND the .trust files that mirror them: they must change together, and
+    // back tasks and an operator approving a PeeringIssue get here from different threads.
     readonly object _trustLock;
+    KeyEvent? _pinned;
     RemoteIdentityKey? _identity;
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
@@ -22,7 +41,7 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     RemoteKeys( LocalKeys localKeys,
                 IRemoteParty remote,
-                RemoteIdentityKey? identity,
+                KeyEvent? pinned,
                 AutoTrustKey autoTrustKey,
                 TimeSpan maxClockOffset,
                 RemoteNonceCache nonceCache )
@@ -30,12 +49,15 @@ sealed partial class RemoteKeys : IRemoteKeys
         _trustLock = new object();
         _localKeys = localKeys;
         _remote = remote;
-        _identity = identity;
+        _pinned = pinned;
+        _identity = pinned != null ? CreateKey( pinned ) : null;
         _autoTrustKey = autoTrustKey;
         _maxClockOffset = maxClockOffset;
         _nonceCache = nonceCache;
         remote.ApplicationIdentityService.Heartbeat.Sync += OnHeartbeat;
     }
+
+    static RemoteIdentityKey CreateKey( KeyEvent e ) => new RemoteIdentityKey( new RemoteIdentityKeyData( e ) );
 
     void OnHeartbeat( IActivityMonitor monitor, int callCount )
     {
@@ -67,27 +89,81 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     public RemoteIdentityKey? TrustedIdentity => _identity;
 
+    public KeyEvent? TrustedEvent => _pinned;
+
+    public bool IsTerminated => _pinned?.IsAbandonment == true;
+
     public AutoTrustKey AutoTrustKey => _autoTrustKey;
 
     public TimeSpan MaxClockOffset => _maxClockOffset;
 
-    public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKeyData? identity )
+    public bool SetTrustedIdentity( IActivityLineEmitter logger, KeyEvent? trusted )
     {
+        // An operator pins what a peer presented (a PeeringIssue approval) or a file it was handed. Its
+        // signature is the one thing that can be checked without the chain behind it.
+        Throw.CheckArgument( "The event must be signed by the key it reveals, for this remote.",
+                             trusted == null || trusted.VerifySignature( _remote.FullName ) );
         lock( _trustLock )
         {
-            if( !SaveDifferingKey( logger, identity ) ) return false;
-            _identity = identity != null ? new RemoteIdentityKey( identity ) : null;
-            return true;
+            return DoPin( logger, trusted );
         }
     }
 
-    public bool SetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
+    public KeyChainCheck ApplyTail( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail )
     {
+        Throw.CheckNotNullArgument( tail );
+        // Decided and applied under one lock: two connections rotating the same remote at once must
+        // not each see the old pin and each write their own file (M15).
         lock( _trustLock )
         {
-            if( !SaveDifferingKey( logger, identity ) ) return false;
-            _identity = identity;
-            return true;
+            var check = KeyEventChain.Verify( _remote.FullName, tail, _pinned );
+            switch( check.Verdict )
+            {
+                case KeyChainVerdict.Advanced:
+                    logger.Info( $"Remote '{_remote}' rotated its identity key: #{_pinned!.Seq} -> #{check.Head!.Seq}." );
+                    DoPin( logger, check.Head );
+                    break;
+                case KeyChainVerdict.Abandoned:
+                    // Unknown parties are not pinned, not even to record their end.
+                    if( _pinned != null )
+                    {
+                        logger.Warn( $"Remote '{_remote}' has decommissioned its identity (event #{check.Head!.Seq}): nothing it sends is accepted any more." );
+                        DoPin( logger, check.Head );
+                    }
+                    break;
+                case KeyChainVerdict.Terminated:
+                    logger.Info( $"Remote '{_remote}' has decommissioned its identity: refused." );
+                    break;
+                case KeyChainVerdict.Rollback:
+                    // Usually a message a rotation overtook. Possibly a superseded key.
+                    logger.Warn( $"Remote '{_remote}' presented an identity older than the pinned #{_pinned!.Seq}: refused." );
+                    break;
+                case KeyChainVerdict.Duplicity:
+                    OnDuplicity( logger, check.Held!, check.Conflicting! );
+                    break;
+            }
+            return check;
+        }
+    }
+
+    public bool AdoptSelfAsserted( IActivityLineEmitter logger, KeyEvent head )
+    {
+        Throw.CheckNotNullArgument( head );
+        lock( _trustLock )
+        {
+            // Re-read under the lock: another connection may have pinned something meanwhile.
+            if( _pinned == null )
+            {
+                if( _autoTrustKey == AutoTrustKey.Never ) return false;
+                logger.Warn( $"Pinning the identity presented by remote '{_remote}' because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}." );
+                return DoPin( logger, head );
+            }
+            if( _autoTrustKey == AutoTrustKey.Always && !_pinned.IsAbandonment )
+            {
+                logger.Warn( $"Replacing the pinned identity of remote '{_remote}' by an unrelated one because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}: this is a takeover by configuration." );
+                return DoPin( logger, head );
+            }
+            return false;
         }
     }
 
@@ -97,116 +173,70 @@ sealed partial class RemoteKeys : IRemoteKeys
     // RemoteIdentityKey.VerifyHash on that very instance — it took its reference before this
     // rotation — and disposing under it turns a legitimate connection into a spurious authentication
     // failure. The ECDsa wraps a SafeHandle, so not disposing costs one finalizable object per
-    // rotation and nothing more; rotations are an AllowedOfflineDays affair, tens of days apart.
-    // Trading that for a correctness hazard would be a bad bargain. The current key IS disposed, at
-    // OnTeardown, when nothing can be using it any more.
-    bool DoSetTrustedIdentity( IActivityLineEmitter logger, RemoteIdentityKey? identity )
+    // rotation and nothing more. The current key IS disposed, at OnTeardown.
+    bool DoPin( IActivityLineEmitter logger, KeyEvent? e )
     {
         Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
-        if( !SaveDifferingKey( logger, identity ) ) return false;
-        _identity = identity;
-        return true;
-    }
-
-    bool SaveDifferingKey( IActivityLineEmitter logger, IPublicKeyData? identity )
-    {
-        RemoteIdentityKey? current = _identity;
-        if( (current == null && identity == null)
-            || (current != null && current.Equals( identity )) )
+        var current = _pinned;
+        if( current == null && e == null ) return false;
+        if( current != null && e != null && current.Seq == e.Seq
+            && current.GetDigest( _remote.FullName ).Span.SequenceEqual( e.GetDigest( _remote.FullName ).Span ) )
         {
             return false;
         }
-        if( identity != null )
+        var store = _remote.SharedFileStore;
+        if( e != null )
         {
-            var cPath = _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{identity.Name}.public" );
             // Atomic: a crash can't leave a truncated trust anchor that the next start would reject.
-            _remote.SharedFileStore.WriteAllBytes( cPath, identity.PublicKeyRawData );
-            if( current == null )
-            {
-                logger.Info( $"Saving new trusted identity '{identity.Name}' for remote '{_remote}'." );
-            }
+            store.WriteAllBytes( GetTrustPath( e.Seq ), e.Encoded );
+            if( current == null ) logger.Info( $"Pinning identity #{e.Seq} of remote '{_remote}'." );
         }
-        if( current != null )
+        else
         {
-            if( identity == null )
-            {
-                logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}'. This remote has no more trusted identity." );
-            }
-            else if( current.Name == identity.Name )
-            {
-                // Name is the TimeName alone, but Equals also compares the key bytes: two keys that
-                // share a TimeName and differ in their bytes are "differing" here yet map to the very
-                // same file. That file has just been rewritten above with the new key, so there is
-                // nothing left to trash - and trashing it would rotate the trust in memory while
-                // leaving no .public file at all, so the next start would find no trusted identity
-                // for this remote. TimeName comes from the wire, so this is remote-triggerable.
-                logger.Info( $"Replacing the key of trusted identity '{current.Name}' for remote '{_remote}'." );
-                return true;
-            }
-            else
-            {
-                logger.Info( $"Removing trusted identity '{current.Name}' for remote '{_remote}', replaced by '{identity.Name}'." );
-            }
-            var cPath = _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{current.Name}.public" );
-            _remote.SharedFileStore.TryTrash( logger, cPath );
+            logger.Info( $"Removing the pinned identity of remote '{_remote}'. This remote has no more trusted identity." );
         }
+        // Same sequence, other content: the file was just rewritten, there is nothing to trash.
+        if( current != null && (e == null || current.Seq != e.Seq) )
+        {
+            store.TryTrash( logger, GetTrustPath( current.Seq ) );
+        }
+        _pinned = e;
+        _identity = e != null ? CreateKey( e ) : null;
         return true;
     }
 
-    /// <summary>
-    /// The single implementation of "a verified message just told us something about this remote's
-    /// keys". <c>RemoteKeysExtensions.OnReadIdentityKeys</c> delegates here.
-    /// <para>
-    /// Deciding and writing happen under one lock, and must. The decision reads
-    /// <see cref="TrustedIdentity"/>, <c>SaveDifferingKey</c> reads it again, and the write follows —
-    /// all from back tasks on their own threads, one per connection. Left unsynchronized, two
-    /// connections rotating a key at the same time each see the old key, each write their own
-    /// <c>.public</c> file and each trash the old one, leaving a store with two identity files and no
-    /// agreement about which is trusted. That outlives the process: the set of <c>.public</c> files
-    /// is what the next start reads.
-    /// </para>
-    /// <para>
-    /// What the lock deliberately does not address is a stale message landing after a newer one and
-    /// moving the trusted key back to an earlier key <em>of the remote's own</em>. That message was
-    /// signed by a key we trust, the key it names is in the remote's own list, and the remote's next
-    /// connection presents its current key again and pulls us forward. It is staleness, not a
-    /// downgrade an attacker can force, and it heals itself.
-    /// </para>
-    /// </summary>
-    public bool ApplyReadTrustInfo( IActivityLineEmitter logger, in ReadTrustInfo trustInfo )
+    NormalizedPath GetTrustPath( int seq )
+        => _remote.SharedFileStore.FolderPath.AppendPart( $"Identity.{seq.ToString( CultureInfo.InvariantCulture )}.trust" );
+
+    // Must be called with _trustLock held.
+    void OnDuplicity( IActivityLineEmitter logger, KeyEvent held, KeyEvent conflicting )
     {
-        Throw.CheckArgument( trustInfo.CurrentKey == null || trustInfo.CurrentKey.Equals( trustInfo.CurrentKeyData ) );
-        Throw.CheckArgument( !trustInfo.FoundTrustedKey || TrustedIdentity != null );
-        lock( _trustLock )
+        var fullName = _remote.FullName;
+        var observed = conflicting.GetDigest( fullName );
+        try
         {
-            // Re-read under the lock: the caller computed FoundTrustedKey against whatever was
-            // trusted when it verified the signature, which another connection may have changed.
-            var current = _identity;
-            if( trustInfo.FoundTrustedKey )
+            var store = _remote.SharedFileStore;
+            var folder = store.FolderPath.AppendPart( DuplicityFolderName );
+            int existing = Directory.Exists( folder ) ? Directory.EnumerateFiles( folder ).Count() : 0;
+            // Bounded: producing a fork takes the committed key, but whoever has it must not be able
+            // to fill a disk with evidence of it.
+            if( existing + 2 <= MaxDuplicityEvidenceFiles )
             {
-                // We trust the remote (we can update our trusted identity key).
-                if( current != null && !current.Equals( trustInfo.CurrentKeyData ) )
+                store.CreateDirectory( folder );
+                foreach( var e in new[] { held, conflicting } )
                 {
-                    logger.Info( $"Updating the remote '{Party}' trusted key that has changed." );
-                    return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
+                    var name = $"{e.Seq.ToString( CultureInfo.InvariantCulture )}.{Convert.ToHexString( e.GetDigest( fullName ).Span[..6] ).ToLowerInvariant()}.event";
+                    var path = folder.AppendPart( name );
+                    if( !File.Exists( path ) ) store.WriteAllBytes( path, e.Encoded );
                 }
             }
-            else if( current == null )
-            {
-                // We have no trusted key. Depending on AutoTrustKey we may adopt the presented one.
-                if( AutoTrustKey != AutoTrustKey.Never )
-                {
-                    logger.Warn( $"Initializing the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
-                    return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
-                }
-            }
-            else if( AutoTrustKey == AutoTrustKey.Always )
-            {
-                logger.Warn( $"Updating the remote '{Party}' trusted key because its '{nameof( AutoTrustKey )}' is {AutoTrustKey}." );
-                return DoSetTrustedIdentity( logger, trustInfo.CurrentKey ?? new RemoteIdentityKey( trustInfo.CurrentKeyData ) );
-            }
-            return false;
         }
+        catch( Exception ex )
+        {
+            logger.Log( LogLevel.Error, IdentityAlert.LogTag, $"Unable to store the duplicity evidence of remote '{_remote}'.", ex );
+        }
+        _localKeys.AlertBook.Raise( logger, IdentityAlertKind.RemoteDuplicity, fullName, false, null, held.Seq,
+                                    held.GetDigest( fullName ).Span, observed.Span );
     }
 
     public bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error )

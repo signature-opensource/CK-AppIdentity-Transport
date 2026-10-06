@@ -422,7 +422,7 @@ public sealed class TransportManagerFeature
                                          string? enlistUrl,
                                          bool enlistUrlIsAuthenticated,
                                          TimeSpan? invalidClockOffset,
-                                         RemoteIdentityKeyData? remoteKeyForApproval,
+                                         KeyEvent? remoteKeyForApproval,
                                          IReadOnlyList<string>? localMissing,
                                          IReadOnlyList<string>? remoteMissing,
                                          GoodbyeMessage? remoteOffMessage )
@@ -499,7 +499,7 @@ public sealed class TransportManagerFeature
                                                 string? enlistUrl,
                                                 bool enlistUrlIsAuthenticated,
                                                 TimeSpan? invalidClockOffset,
-                                                RemoteIdentityKeyData? remoteKeyForApproval,
+                                                KeyEvent? remoteKeyForApproval,
                                                 IReadOnlyList<string>? localMissingProtocols,
                                                 IReadOnlyList<string>? remoteMissingProtocols,
                                                 int inExcess )
@@ -543,7 +543,7 @@ public sealed class TransportManagerFeature
                                   string? enlistUrl,
                                   bool enlistUrlIsAuthenticated,
                                   TimeSpan? invalidClockOffset,
-                                  RemoteIdentityKeyData? remoteKeyForApproval,
+                                  KeyEvent? remoteKeyForApproval,
                                   IReadOnlyList<string>? localMissingProtocols,
                                   IReadOnlyList<string>? remoteMissingProtocols )
     {

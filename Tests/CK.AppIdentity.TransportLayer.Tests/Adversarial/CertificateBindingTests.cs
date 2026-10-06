@@ -62,7 +62,7 @@ public class CertificateBindingTests
                                             nonce: NewNonce(),
                                             ephemeralPublicKey: ephemeral.PublicKey,
                                             macCapabilities: RunPhaseProtection.LocalCapabilities,
-                                            signWith: new[] { key },
+                                            signWith: key,
                                             certificateBinding: certificateBinding );
     }
 
@@ -87,7 +87,7 @@ public class CertificateBindingTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$BindListenOk", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
         await c.SendZeroFrameAsync( BuildInitial( $"Test/{remote}/#Dev", key, certificateBinding: null ), token );
@@ -107,7 +107,7 @@ public class CertificateBindingTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$BindListenClaim", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
         await c.SendZeroFrameAsync( BuildInitial( $"Test/{remote}/#Dev", key, SomeBinding() ), token );
@@ -125,7 +125,7 @@ public class CertificateBindingTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var listener = await CreateListenerAsync( "$BindListenLen", remote, token );
-        using var key = PeerIdentity.Create();
+        using var key = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
         await c.SendZeroFrameAsync( BuildInitial( $"Test/{remote}/#Dev", key, new byte[5] ), token );
@@ -143,7 +143,7 @@ public class CertificateBindingTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -163,7 +163,7 @@ public class CertificateBindingTests
 
         var reply = PeerMessages.AcceptedProtocols( initial,
                                                     _systemClock.UtcNow,
-                                                    new[] { peerKey },
+                                                    peerKey,
                                                     certificateBinding: SomeBinding() );
         await connection.SendZeroFrameAsync( reply, token );
 

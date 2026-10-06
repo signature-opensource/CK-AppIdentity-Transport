@@ -21,7 +21,7 @@ public sealed class PeeringIssue
     string? _enlistUrl;
     bool _enlistUrlIsAuthenticated;
     TimeSpan? _invalidClockOffset;
-    RemoteIdentityKeyData? _remoteKeyForApproval;
+    KeyEvent? _remoteKeyForApproval;
     IReadOnlyList<string>? _localMissingProtocols;
     IReadOnlyList<string>? _remoteMissingProtocols;
     private GoodbyeMessage? _remoteOffMessage;
@@ -40,7 +40,7 @@ public sealed class PeeringIssue
                            string? enlistUrl,
                            bool enlistUrlIsAuthenticated,
                            TimeSpan? invalidClockOffset,
-                           RemoteIdentityKeyData? remoteKeyForApproval,
+                           KeyEvent? remoteKeyForApproval,
                            IReadOnlyList<string>? localMissingProtocols,
                            IReadOnlyList<string>? remoteMissingProtocols )
     {
@@ -141,14 +141,21 @@ public sealed class PeeringIssue
     public TimeSpan? InvalidClockOffset => _invalidClockOffset;
 
     /// <summary>
-    /// Gets the remote public identity that can be approved by calling <see cref="AcceptRemoteIdentity(IActivityMonitor)"/>.
+    /// Gets the remote identity that can be approved by calling <see cref="AcceptRemoteIdentity(IActivityMonitor)"/>:
+    /// the head of the key event log the other side presented. Approving it pins it, together with the
+    /// commitment to the next key that it carries.
     /// <para>
-    /// This key is simply the one the other side sent: nothing in the protocol proves it belongs to
-    /// the party named by <see cref="FullName"/>. Show <see cref="RemoteKeyFingerprintForApproval"/>
-    /// to whoever approves it and have them compare it out of band.
+    /// This is simply what the other side sent: nothing in the protocol proves it belongs to the party
+    /// named by <see cref="FullName"/>. Show <see cref="RemoteKeyFingerprintForApproval"/> to whoever
+    /// approves it and have them compare it out of band.
     /// </para>
     /// </summary>
-    public RemoteIdentityKeyData? RemoteKeyForApproval => _remoteKeyForApproval;
+    public KeyEvent? RemoteIdentityForApproval => _remoteKeyForApproval;
+
+    /// <summary>
+    /// Gets the key <see cref="RemoteIdentityForApproval"/> reveals, null when there is nothing to approve.
+    /// </summary>
+    public RemoteIdentityKeyData? RemoteKeyForApproval => _remoteKeyForApproval != null ? new RemoteIdentityKeyData( _remoteKeyForApproval ) : null;
 
     /// <summary>
     /// Gets the <see cref="PublicKeyDataExtensions.GetFingerprint(IPublicKeyData)"/> of <see cref="RemoteKeyForApproval"/>,
@@ -159,7 +166,7 @@ public sealed class PeeringIssue
     /// for confirmation against a value obtained through another channel.
     /// </para>
     /// </summary>
-    public string? RemoteKeyFingerprintForApproval => _remoteKeyForApproval?.GetFingerprint();
+    public string? RemoteKeyFingerprintForApproval => _remoteKeyForApproval != null ? PublicKeyFingerprint.Compute( _remoteKeyForApproval.Spki.Span ) : null;
 
     /// <summary>
     /// Gets the missing local protocols.
@@ -244,7 +251,7 @@ public sealed class PeeringIssue
                           string? enlistUrl,
                           bool enlistUrlIsAuthenticated,
                           TimeSpan? invalidClockOffset,
-                          RemoteIdentityKeyData? remoteKeyForApproval,
+                          KeyEvent? remoteKeyForApproval,
                           IReadOnlyList<string>? localMissingProtocols,
                           IReadOnlyList<string>? remoteMissingProtocols,
                           GoodbyeMessage? remoteOffMessage )
@@ -355,7 +362,7 @@ public sealed class PeeringIssue
                                  TransportFeature? remote,
                                  string? enlistUrl,
                                  TimeSpan? invalidClockOffset,
-                                 RemoteIdentityKeyData? remoteKeyForApproval,
+                                 KeyEvent? remoteKeyForApproval,
                                  IReadOnlyList<string>? localMissingProtocols,
                                  IReadOnlyList<string>? remoteMissingProtocols )
     {

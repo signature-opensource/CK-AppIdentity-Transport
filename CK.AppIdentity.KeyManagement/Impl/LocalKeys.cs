@@ -35,13 +35,11 @@ sealed partial class LocalKeys : ILocalKeys
     readonly ICoreKeyStore _keyStore;
     readonly NormalizedPath _keysPath;
     readonly int _allowedOfflineDays;
-    // Serializes Rotate and Decommission. Readers never take it: they read the arrays below, which
-    // are replaced as a whole.
+    // Serializes Rotate and Decommission. Readers never take it: they read the snapshot below, which
+    // is replaced as a whole.
     readonly object _rotationLock;
-    // Replaced as a whole on rotation: TransportFeature detects a rotation by reference inequality,
-    // so this must be an array (not an ImmutableArray, whose equality is by content).
-    LocalIdentityKey[] _identities;
-    KeyEvent[] _log;
+    // The key and the log, as one reference: a reader never pairs a key with the tail of another rotation.
+    LocalIdentityState _state;
 
     readonly IdentityAlertBook _alerts;
     readonly PerfectEventSender<IdentityAlert> _alertRaised;
@@ -62,8 +60,7 @@ sealed partial class LocalKeys : ILocalKeys
         _protector = protector;
         _keyStore = keyStore;
         _keysPath = keysPath;
-        _identities = [current];
-        _log = log;
+        _state = new LocalIdentityState( current, log );
         _allowedOfflineDays = allowedOfflineDays;
         _rotationLock = new object();
         _alerts = alerts;
@@ -85,7 +82,7 @@ sealed partial class LocalKeys : ILocalKeys
         Throw.CheckNotNullOrEmptyArgument( reporter );
         Throw.CheckArgument( seq >= 0 );
         Throw.CheckArgument( eventDigest.Length == KeyEvent.HashSize );
-        var log = _log;
+        var log = _state.Log;
         var head = log[^1];
         if( seq > head.Seq )
         {
@@ -115,22 +112,17 @@ sealed partial class LocalKeys : ILocalKeys
 
     public IDataProtector Protector => _protector;
 
-    public LocalIdentityKey CurrentIdentity => _identities[0];
+    public LocalIdentityState State => _state;
 
-    public IReadOnlyList<LocalIdentityKey> Identities => _identities;
+    public LocalIdentityKey CurrentIdentity => _state.Key;
 
-    public int Seq => _log[^1].Seq;
+    public IReadOnlyList<LocalIdentityKey> Identities => _state.Identities;
 
-    public IReadOnlyList<KeyEvent> EventTail
-    {
-        get
-        {
-            var log = _log;
-            return log.Length <= KeyEventChain.MaxEventTail ? log : log[^KeyEventChain.MaxEventTail..];
-        }
-    }
+    public int Seq => _state.Head.Seq;
 
-    public bool IsDecommissioned => _log[^1].IsAbandonment;
+    public IReadOnlyList<KeyEvent> EventTail => _state.Tail;
+
+    public bool IsDecommissioned => _state.Head.IsAbandonment;
 
     static string KeyName( int seq ) => seq.ToString( CultureInfo.InvariantCulture );
 
@@ -142,13 +134,21 @@ sealed partial class LocalKeys : ILocalKeys
     {
         lock( _rotationLock )
         {
-            var head = _log[^1];
+            var state = _state;
+            var head = state.Head;
             if( head.IsAbandonment )
             {
                 monitor.Error( $"Local '{_local.FullName}' is decommissioned: it cannot rotate." );
                 return false;
             }
             int s = head.Seq;
+            if( File.Exists( KelPath.AppendPart( KeyName( s + 1 ) + EventExtension ) ) )
+            {
+                // A previous rotation went past its commit point and failed after it: the log on disk
+                // is ahead of this process. Writing another event s+1 would fork our own log.
+                monitor.Error( $"Event #{s + 1} of '{_local.FullName}' is already written: restart to complete that rotation." );
+                return false;
+            }
             var next = OpenCommittedNextKey( monitor, _local, _keyStore, head, _alerts );
             if( next == null ) return false;
             bool nextOwned = true;
@@ -164,15 +164,15 @@ sealed partial class LocalKeys : ILocalKeys
                 // The commit point: from here, the log says s+1 is current. A crash after this line
                 // leaves a state the next start completes (see Builder).
                 WriteEvent( e );
-                _log = [.. _log, e];
 
                 var identity = CreateIdentity( monitor, next, e, now );
                 nextOwned = false;
-                // The replaced key is NOT disposed: a negotiation may be signing with it right now.
-                // One finalizable key per rotation, rotations being AllowedOfflineDays apart.
-                _identities = [identity];
+                // One swap: key and log change together. The replaced key is NOT disposed: a
+                // negotiation may be signing with it right now. One finalizable key per rotation,
+                // rotations being AllowedOfflineDays apart.
+                _state = new LocalIdentityState( identity, [.. state.Log, e] );
                 _keyStore.DeleteKey( monitor, _local, KeyName( s ) );
-                HandleIdentityPublicKeyFiles( monitor, _local.LocalFileStore, _keysPath, identity );
+                ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
                 monitor.Info( $"Local '{_local.FullName}' rotated its identity key to #{e.Seq}. Current expires on {identity.NotAfter:yyyy-MM-dd}." );
                 return true;
             }
@@ -192,7 +192,8 @@ sealed partial class LocalKeys : ILocalKeys
     {
         lock( _rotationLock )
         {
-            var head = _log[^1];
+            var state = _state;
+            var head = state.Head;
             if( head.IsAbandonment ) return false;
             int s = head.Seq;
             // Only the committed next key can end the identity: a thief holding the current key
@@ -204,7 +205,11 @@ sealed partial class LocalKeys : ILocalKeys
                 var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
                 var e = KeyEvent.Create( _local.FullName, s + 1, now, next, ReadOnlySpan<byte>.Empty, head );
                 WriteEvent( e );
-                _log = [.. _log, e];
+                // The key in memory stays the previous one: what is presented from now on is a tail
+                // that ends with the abandonment, which a remote records on its own proof before it
+                // refuses the session.
+                _state = new LocalIdentityState( state.Key, [.. state.Log, e] );
+                ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
                 foreach( var n in _keyStore.GetKeyNames( monitor, _local ) )
                 {
                     _keyStore.DeleteKey( monitor, _local, n );
@@ -229,7 +234,8 @@ sealed partial class LocalKeys : ILocalKeys
     {
         lock( _rotationLock )
         {
-            var head = _log[^1];
+            var state = _state;
+            var head = state.Head;
             var key = _keyStore.OpenKey( monitor, _local, KeyName( head.Seq ) );
             if( key == null )
             {
@@ -238,7 +244,7 @@ sealed partial class LocalKeys : ILocalKeys
             }
             try
             {
-                _identities = [CreateIdentity( monitor, key, head, now )];
+                _state = new LocalIdentityState( CreateIdentity( monitor, key, head, now ), state.Log );
                 monitor.Warn( $"Identity certificate of '{_local.FullName}' renewed for the same key #{head.Seq}, until {CurrentIdentity.NotAfter:yyyy-MM-dd}." );
             }
             catch( Exception ex )
@@ -328,32 +334,34 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     /// <summary>
-    /// Exposes the current public key as <c>Identity.{Name}.public</c> (the bare SPKI) for an operator
-    /// to hand to a remote, and removes any other one.
+    /// Exposes the head of the log as <c>Identity.{Seq}.trust</c>: exactly the file a remote pins. An
+    /// operator who copies it into this party's folder on a peer pins it there, out of band. Any other
+    /// one, and any bare public key of the previous layout, is removed.
     /// </summary>
-    static void HandleIdentityPublicKeyFiles( IActivityMonitor monitor, IFileStore store, NormalizedPath keysPath, LocalIdentityKey current )
+    static void ExposeIdentity( IActivityMonitor monitor, IFileStore store, NormalizedPath keysPath, KeyEvent head )
     {
         try
         {
-            var currentPath = keysPath.AppendPart( $"Identity.{current.Name}.public" );
-            foreach( var f in Directory.EnumerateFiles( keysPath, RemoteKeys.PublicIdentityFilePattern ) )
+            var currentPath = keysPath.AppendPart( $"Identity.{KeyName( head.Seq )}.trust" );
+            foreach( var f in Directory.EnumerateFiles( keysPath, RemoteKeys.TrustFilePattern )
+                                       .Concat( Directory.EnumerateFiles( keysPath, RemoteKeys.LegacyPublicFilePattern ) ).ToArray() )
             {
                 NormalizedPath p = f;
                 if( !StringComparer.OrdinalIgnoreCase.Equals( p, currentPath ) )
                 {
-                    monitor.Info( $"Removing obsolete identity public key '{p}'." );
+                    monitor.Info( $"Removing obsolete exposed identity '{p}'." );
                     store.TryTrash( monitor, p );
                 }
             }
             if( !File.Exists( currentPath )
-                || !store.ReadAllBytes( currentPath ).AsSpan().SequenceEqual( current.PublicKeyRawData.Span ) )
+                || !store.ReadAllBytes( currentPath ).AsSpan().SequenceEqual( head.Encoded.Span ) )
             {
-                store.WriteAllBytes( currentPath, current.PublicKeyRawData );
+                store.WriteAllBytes( currentPath, head.Encoded );
             }
         }
         catch( Exception ex )
         {
-            monitor.Error( $"While handling '{RemoteKeys.PublicIdentityFilePattern}' in '{keysPath}'.", ex );
+            monitor.Error( $"While exposing the identity in '{keysPath}'.", ex );
         }
     }
 
@@ -376,9 +384,6 @@ sealed partial class LocalKeys : ILocalKeys
         // Repetitions are saved from the heartbeat: the last ones must not be lost. Pending events
         // are dropped, but the alerts themselves are persisted and logged again at the next start.
         _alerts.Flush( monitor );
-        foreach( var key in _identities )
-        {
-            key.OnTeardown();
-        }
+        _state.Key.OnTeardown();
     }
 }

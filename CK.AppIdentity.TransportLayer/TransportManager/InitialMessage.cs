@@ -24,10 +24,6 @@ sealed class InitialMessage : IIncomingRequest
     /// The <see cref="CoreApplicationIdentity.InstanceId"/> is currently 21 characters long.
     /// </summary>
     const int InstanceIdMaxLength = 21;
-    const int MaxPublicKeyCount = ILocalKeys.MaxIdentityCount;
-    // Signatures can have varying length but no more than 256 bytes.
-    const int MaxSignatureSize = 256;
-    const int MaxPublicKeySize = 8 + ILocalKeys.MaxPublicKeySize; // TimeName (DateTime) + really enough size for ECDsa keys.
     // Used as a high limit so that weirdly big messages are just skipped.
     // Note that each string or array read are also protected.
     public const int MaxLength = 8 // "CK-AppId"
@@ -37,16 +33,12 @@ sealed class InitialMessage : IIncomingRequest
                                + 5 // Number of protocol names (allows uint.MaxValue)
                                + MaxProtocolFullNameCount * (2 + MessageProtocol.FullNameMaxLength)
                                + 5 // expectedCommonProtocolCount
-                               + 1 // Is there a RemoteTrustInfo.SupposedIdentity?
                                + 1 // RemoteTrustInfo.CanAutoTrust?
-                               + MaxPublicKeySize // The SupposedIdentity: TimeName + public key bytes.
                                + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
                                + 1 // Its MAC capabilities.
                                + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.
                                + 8 + 8 // The timed nonce: creation time and value.
-                               + 5 // Number of public keys (allows uint.MaxValue)
-                               + MaxPublicKeyCount * (4 + MaxPublicKeySize)
-                               + MaxPublicKeyCount * MaxSignatureSize;
+                               + ZeroProtocol.IdentityBlockMaxLength;
     readonly string _endPointDescription;
     readonly string _remoteEndPointDescription;
     readonly string _domainName;
@@ -54,7 +46,6 @@ sealed class InitialMessage : IIncomingRequest
     readonly string _environmentName;
     readonly string _fullName;
     readonly string _instanceId;
-    readonly RemoteIdentityKeyData? _supposedIdentity;
     readonly bool _canAutoTrust;
     readonly int _version;
 
@@ -70,11 +61,8 @@ sealed class InitialMessage : IIncomingRequest
     // listener to detect that he cannot satisfy the initiator.
     readonly int _expectedCommonProtocolCount;
 
-    // Local identities is empty for incoming message.
-    readonly IReadOnlyList<LocalIdentityKey> _localIdentities;
-
-    // Relevant only for incoming messages.
-    readonly RemoteIdentityKeyData? _currentRemoteIdentity;
+    // Relevant only for incoming messages: what the initiator's identity block said.
+    readonly IdentityBlock _block;
     RemoteIdentityKey? _currentRemoteIdentityKey;
     readonly TimeSpan _clockOffset;
     readonly ulong _nonce;
@@ -114,14 +102,12 @@ sealed class InitialMessage : IIncomingRequest
         _environmentName = local.EnvironmentName;
         _fullName = local.FullName;
         _instanceId = CoreApplicationIdentity.InstanceId;
-        _supposedIdentity = f.RemoteKeys.TrustedIdentity?.GetKeyData();
         _canAutoTrust = f.RemoteKeys.AutoTrustKey == AutoTrustKey.Always
-                        || (f.RemoteKeys.AutoTrustKey == AutoTrustKey.Once && _supposedIdentity == null);
+                        || (f.RemoteKeys.AutoTrustKey == AutoTrustKey.Once && f.RemoteKeys.TrustedEvent == null);
         _endPointDescription = string.Empty;
         _remoteEndPointDescription = string.Empty;
         _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );
         _expectedCommonProtocolCount = f.BestRegisteredProtocols.Count;
-        _localIdentities = f.RemoteKeys.LocalKeys.Identities;
         // Outgoing: the ephemeral belongs to the Transport, not here — this object is cached and
         // reused across connection attempts, and a reused ephemeral would reuse the session key.
         _remoteEphemeralPublicKey = Array.Empty<byte>();
@@ -141,12 +127,10 @@ sealed class InitialMessage : IIncomingRequest
                            string[] protocols,
                            int expectedCommonProtocolCount,
                            bool canAutoTrust,
-                           RemoteIdentityKeyData? supposedIdentity,
                            ulong nonce,
                            bool validClockOffset,
                            TimeSpan clockOffset,
-                           RemoteIdentityKeyData currentRemoteIdentity,
-                           RemoteIdentityKey? currentRemoteIdentityKey,
+                           IdentityBlock block,
                            byte[] remoteEphemeralPublicKey,
                            byte remoteMacCapabilities )
     {
@@ -161,15 +145,13 @@ sealed class InitialMessage : IIncomingRequest
         _availableProtocols = protocols;
         _expectedCommonProtocolCount = expectedCommonProtocolCount;
         _canAutoTrust = canAutoTrust;
-        _supposedIdentity = supposedIdentity;
         _nonce = nonce;
         _validClockOffset = validClockOffset;
         _clockOffset = clockOffset;
-        _currentRemoteIdentity = currentRemoteIdentity;
-        _currentRemoteIdentityKey = currentRemoteIdentityKey;
+        _block = block;
+        _currentRemoteIdentityKey = block.HeadKey;
         _remoteEphemeralPublicKey = remoteEphemeralPublicKey;
         _remoteMacCapabilities = remoteMacCapabilities;
-        _localIdentities = Array.Empty<LocalIdentityKey>();
     }
 
     /// <summary>
@@ -194,17 +176,6 @@ sealed class InitialMessage : IIncomingRequest
             w.WriteString( protocol );
         }
         w.WriteSmallInt32( _expectedCommonProtocolCount );
-        if( _supposedIdentity != null )
-        {
-            w.WriteBool( true );
-            w.WriteDateTime( _supposedIdentity.TimeName );
-            w.WriteSmallUInt32( (uint)_supposedIdentity.PublicKeyRawData.Length );
-            w.WriteBytes( _supposedIdentity.PublicKeyRawData.Span );
-        }
-        else
-        {
-            w.WriteBool( false );
-        }
         w.WriteBool( _canAutoTrust );
     }
 
@@ -222,15 +193,14 @@ sealed class InitialMessage : IIncomingRequest
                                  [NotNullWhen( true )] out string? fullName,
                                  [NotNullWhen( true )] out string[]? protocols,
                                  out int expectedCommonProtocolCount,
-                                 out bool canAutoTrust,
-                                 out RemoteIdentityKeyData? supposedIdentity )
+                                 out bool canAutoTrust )
     {
         Span<byte> header = stackalloc byte[8];
         r.ReadBytes( header );
         if( !header.SequenceEqual( _prefix ) )
         {
             otherVersion = -1;
-            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust, out supposedIdentity );
+            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust );
         }
         // If the other's version is greater than ours we must reply with a
         // downgrade version message.
@@ -242,7 +212,7 @@ sealed class InitialMessage : IIncomingRequest
         otherVersion = (int)declaredVersion;
         if( otherVersion > ZeroProtocol.CurrentVersion )
         {
-            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust, out supposedIdentity );
+            return False( out instanceId, out domainName, out partyName, out environmentName, out fullName, out protocols, out expectedCommonProtocolCount, out canAutoTrust );
         }
         // If a new protocol version appears, the previous versions should be handled here.
         // For now, we have only one version.
@@ -264,36 +234,6 @@ sealed class InitialMessage : IIncomingRequest
             protocols[i] = r.ReadString( MessageProtocol.FullNameMaxLength );
         }
         expectedCommonProtocolCount = r.ReadSmallInt32();
-        // Our SupposedIdentity known by the remote may not exist.
-        if( r.ReadBool() )
-        {
-            var timeName = r.ReadDateTime();
-            var lenKey = r.ReadSmallUInt32();
-            Throw.CheckData( lenKey <= ILocalKeys.MaxPublicKeySize );
-            if( !r.TryReadBytes( (int)lenKey, out var keyData  ) )
-            {
-                keyData = r.ReadBytes( lenKey );
-            }
-            // CreateFromSubjectPublicKeyInfo raises CryptographicException on malformed DER, and the
-            // bytes are length-checked only - an unauthenticated peer chooses them. Restated as
-            // InvalidDataException so ConnectionFault.IsPeerFault sees it for what it is.
-            PublicKey publicKey;
-            int bytesRead;
-            try
-            {
-                publicKey = PublicKey.CreateFromSubjectPublicKeyInfo( keyData, out bytesRead );
-            }
-            catch( System.Security.Cryptography.CryptographicException ex )
-            {
-                throw new System.IO.InvalidDataException( "Invalid SupposedIdentity public key.", ex );
-            }
-            Throw.CheckData( bytesRead == keyData.Length );
-            supposedIdentity = new RemoteIdentityKeyData( timeName, publicKey );
-        }
-        else
-        {
-            supposedIdentity = null;
-        }
         canAutoTrust = r.ReadBool();
         return true;
 
@@ -304,8 +244,7 @@ sealed class InitialMessage : IIncomingRequest
                            out string? fullName,
                            out string[]? protocols,
                            out int expectedCommonProtocolCount,
-                           out bool canAutoTrust,
-                           out RemoteIdentityKeyData? supposedIdentity )
+                           out bool canAutoTrust )
         {
             instanceId = null;
             domainName = null;
@@ -315,7 +254,6 @@ sealed class InitialMessage : IIncomingRequest
             protocols = null;
             expectedCommonProtocolCount = 0;
             canAutoTrust = false;
-            supposedIdentity = null;
             return false;
         }
     }
@@ -359,17 +297,21 @@ sealed class InitialMessage : IIncomingRequest
     public int ExpectedCommonProtocolCount => _expectedCommonProtocolCount;
 
     /// <summary>
-    /// Gets the list of public keys that identify this local party.
-    /// This is empty for an incoming message.
+    /// Gets the sequence of our key event log the initiator pins for us (null when it pins nothing)
+    /// and whether it can trust us automatically. Relevant only for incoming messages.
     /// </summary>
-    public IReadOnlyList<LocalIdentityKey> LocalIdentities => _localIdentities;
+    public (int? PinnedSeq, bool CanAutoTrust) RemoteTrustInfo => (_block.StatedSeq, _canAutoTrust);
 
     /// <summary>
-    /// Gets the remote identity that the initiator expects the listener to be and whether it can accept
-    /// the .
-    /// A null implies that the initiator doesn't trust its remote and is expecting to be peered.
+    /// Gets the digest of the event the initiator pins for us, when <see cref="RemoteTrustInfo"/> says
+    /// it pins one. Relevant only for incoming messages.
     /// </summary>
-    public (RemoteIdentityKeyData? SupposedIdentity, bool CanAutoTrust) RemoteTrustInfo => (_supposedIdentity, _canAutoTrust);
+    internal byte[]? PinnedDigest => _block.StatedDigest;
+
+    /// <summary>
+    /// Gets the head of the key event log the initiator presented. Relevant only for incoming messages.
+    /// </summary>
+    internal KeyEvent RemoteHead => _block.Head;
 
     /// <summary>
     /// Relevant only for incoming messages.
@@ -393,12 +335,8 @@ sealed class InitialMessage : IIncomingRequest
     /// </summary>
     internal RemoteIdentityKey GetCurrentRemoteIdentityKey()
     {
-        Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _currentRemoteIdentity != null );
-        if( _currentRemoteIdentityKey == null )
-        {
-            _currentRemoteIdentityKey = new RemoteIdentityKey( _currentRemoteIdentity );
-        }
-        return _currentRemoteIdentityKey;
+        Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _block.Head != null );
+        return _currentRemoteIdentityKey ??= new RemoteIdentityKey( _block.HeadKeyData );
     }
 
     /// <summary>
@@ -406,16 +344,16 @@ sealed class InitialMessage : IIncomingRequest
     /// </summary>
     internal RemoteIdentityKeyData GetCurrentRemoteIdentityKeyData()
     {
-        Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _currentRemoteIdentity != null );
-        return _currentRemoteIdentity;
+        Throw.DebugAssert( "Called only from the IncomingConnectionBackTask.", _block.Head != null );
+        return _block.HeadKeyData;
     }
 
     RemoteIdentityKeyData IIncomingRequest.CurrentRemoteIdentity
     {
         get
         {
-            Throw.DebugAssert( "Called only from public IIncomingRequest facade.", _currentRemoteIdentity != null );
-            return _currentRemoteIdentity;
+            Throw.DebugAssert( "Called only from public IIncomingRequest facade.", _block.Head != null );
+            return _block.HeadKeyData;
         }
     }
 }

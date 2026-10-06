@@ -2,22 +2,22 @@ using CK.Core;
 using System;
 using System.Globalization;
 using System.IO;
-using System.Security.Cryptography.X509Certificates;
 
 namespace CK.AppIdentity.KeyManagement;
 
 sealed partial class RemoteKeys
 {
-    internal sealed class Builder : KeyLoader
+    internal sealed class Builder
     {
         readonly LocalKeys _localKeys;
         readonly IRemoteParty _remote;
+        readonly IFileStore _store;
 
         public Builder( LocalKeys localKeys, IRemoteParty remote )
-            : base( remote.SharedFileStore )
         {
             _localKeys = localKeys;
             _remote = remote;
+            _store = remote.SharedFileStore;
         }
 
         internal RemoteKeys Build( IActivityMonitor monitor )
@@ -25,36 +25,75 @@ sealed partial class RemoteKeys
             ImmutableConfigurationSection configuration = _remote.Configuration.Configuration;
             AutoTrustKey autoTrust = GetAutoTrustKey( monitor, configuration );
             TimeSpan maxClockOffset = GetMaxClockOffset( monitor, configuration );
-            DateTime now = _remote.ApplicationIdentityService.SystemClock.UtcNow;
             // This local party's record of nonces seen from this remote, kept in the remote's folder.
             var nonceCache = RemoteNonceCache.Load( monitor, _remote, _localKeys.Party );
-            RemoteIdentityKeyData? c = null;
-            foreach( var f in FilterFileNames( monitor,
-                                               now,
-                                               Directory.EnumerateFiles( _store.FolderPath, PublicIdentityFilePattern ),
-                                               ExtractTimeName ) )
+            var pinned = LoadPin( monitor );
+            if( pinned != null )
             {
-                if( c == null || f.TimeName > c.TimeName )
+                monitor.Info( $"Found pinned identity #{pinned.Seq} for remote '{_remote}'{(pinned.IsAbandonment ? " (decommissioned)" : "")}." );
+            }
+            else
+            {
+                monitor.Info( $"No trusted identity found for remote '{_remote}'." );
+            }
+            return new RemoteKeys( _localKeys, _remote, pinned, autoTrust, maxClockOffset, nonceCache );
+        }
+
+        /// <summary>
+        /// Loads the most recent pin. Two processes sharing this folder may each have written theirs:
+        /// the highest sequence wins and the others go to the '$TrashBin', like any file this loader
+        /// does not keep.
+        /// </summary>
+        KeyEvent? LoadPin( IActivityMonitor monitor )
+        {
+            var folder = _store.FolderPath;
+            if( !Directory.Exists( folder ) ) return null;
+            // No migration (DESIGN-key-pre-rotation Q1): a bare public key cannot be linked to a log.
+            foreach( var f in Directory.EnumerateFiles( folder, LegacyPublicFilePattern ) )
+            {
+                monitor.Info( $"Trashing '{f}': a trusted identity is now a key event ('{TrustFilePattern}')." );
+                _store.TryTrash( monitor, f );
+            }
+            KeyEvent? best = null;
+            NormalizedPath bestPath = default;
+            foreach( var f in Directory.EnumerateFiles( folder, TrustFilePattern ) )
+            {
+                NormalizedPath path = f;
+                var name = Path.GetFileNameWithoutExtension( path.LastPart );
+                KeyEvent? e = null;
+                try
                 {
-                    var better = TryLoad( monitor, f.TimeName, f.Path );
-                    if( better != null ) c = better;
+                    int seq = -1;
+                    Throw.CheckData( "The file name must be 'Identity.{Seq}.trust'.",
+                                     name.StartsWith( "Identity.", StringComparison.Ordinal )
+                                     && int.TryParse( name.AsSpan( 9 ), NumberStyles.None, CultureInfo.InvariantCulture, out seq ) );
+                    e = KeyEvent.Read( _store.ReadAllBytes( path ) );
+                    Throw.CheckData( "The file name must be the sequence of the event it holds.", e.Seq == seq );
+                    Throw.CheckData( "The event must be signed by the key it reveals, for this remote.", e.VerifySignature( _remote.FullName ) );
+                }
+                catch( Exception ex )
+                {
+                    monitor.Error( $"Invalid trusted identity file '{path}'. Sending it to the '$TrashBin'.", ex );
+                    _store.TryTrash( monitor, path );
+                    continue;
+                }
+                if( best == null || e.Seq > best.Seq )
+                {
+                    if( best != null ) Obsolete( monitor, bestPath );
+                    best = e;
+                    bestPath = path;
                 }
                 else
                 {
-                    LogAndCleanup( monitor, f.Path, $"Obsolete public identity found ('{c.Name}' is more recent)." );
+                    Obsolete( monitor, path );
                 }
             }
-            if( c != null )
-            {
-                monitor.Info( $"Found trusted identity key '{c.Name}' for remote '{_remote}'." );
-                return new RemoteKeys( _localKeys, _remote, new RemoteIdentityKey( c ), autoTrust, maxClockOffset, nonceCache );
-            }
-            monitor.Info( $"No trusted identity found for remote '{_remote}'." );
-            return new RemoteKeys( _localKeys, _remote, null, autoTrust, maxClockOffset, nonceCache );
+            return best;
 
-            static string ExtractTimeName( string s )
+            void Obsolete( IActivityMonitor monitor, NormalizedPath path )
             {
-                return s.Substring( s.IndexOf( '.' ) + 1 );
+                monitor.Info( $"Trashing obsolete trusted identity '{path}'." );
+                _store.TryTrash( monitor, path );
             }
         }
 
@@ -99,26 +138,5 @@ sealed partial class RemoteKeys
             }
             return autoTrust;
         }
-
-        RemoteIdentityKeyData? TryLoad( IActivityMonitor monitor, DateTime timeName, in NormalizedPath path )
-        {
-            try
-            {
-                var content = _store.ReadAllBytes( path );
-                var key = PublicKey.CreateFromSubjectPublicKeyInfo( content, out int bytesRead );
-                // A file holding a valid key followed by anything else is not this key's file: accepting
-                // it silently means a trusted identity whose bytes on disk are not the bytes we trust.
-                // The wire path checks this too.
-                Throw.CheckData( bytesRead == content.Length );
-                return new RemoteIdentityKeyData( timeName, key );
-            }
-            catch ( Exception ex )
-            {
-                LogAndCleanup( monitor, path, $"While loading '{path}'", LogLevel.Error, ex );
-                return null;
-            }
-        }
     }
-
-
 }

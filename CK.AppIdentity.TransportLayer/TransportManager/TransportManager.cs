@@ -197,7 +197,7 @@ sealed partial class TransportManager : MicroAgent
                                   or PeeringIssueKind.RequiresRemoteApproval
                                   or PeeringIssueKind.RequiresBothApproval );
         var usefulRemoteKey = kind is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
-                                ? message.GetCurrentRemoteIdentityKeyData()
+                                ? message.RemoteHead
                                 : null;
         PushTypedJob( new PeeringIssueJob( kind,
                                            message,
@@ -230,7 +230,7 @@ sealed partial class TransportManager : MicroAgent
                                                      TimeSpan? clockOffset,
                                                      string? enlistUrl,
                                                      bool enlistUrlIsAuthenticated,
-                                                     RemoteIdentityKeyData? remoteKeyForApproval )
+                                                     KeyEvent? remoteKeyForApproval )
     {
         Throw.DebugAssert( remote != null && remote.TargetAddress != null );
         Throw.DebugAssert( kind is PeeringIssueKind.RequiresRemoteCreation
@@ -369,7 +369,7 @@ sealed partial class TransportManager : MicroAgent
                                          // pipeline without its provenance travelling with it.
                                          bool EnlistUrlIsAuthenticated,
                                          TimeSpan? InvalidClockOffset,
-                                         RemoteIdentityKeyData? RemoteKeyForApproval,
+                                         KeyEvent? RemoteKeyForApproval,
                                          IReadOnlyList<string>? LocalMissing,
                                          IReadOnlyList<string>? RemoteMissing,
                                          GoodbyeMessage? RemoteOffMessage );

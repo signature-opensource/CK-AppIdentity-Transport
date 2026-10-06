@@ -315,17 +315,17 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                     }
                 case ZeroProtocol.DNegoRejectRemote:
                     {
-                        RemoteIdentityKey? trustedIdentity = remote.RemoteKeys.TrustedIdentity;
-                        ZeroProtocol.ReadRejectRemoteReplyMessage( firstAnswer,
+                        ZeroProtocol.ReadRejectRemoteReplyMessage( transportManager.Logger,
+                                                                    firstAnswer,
                                                                     sentNonce.Value,
-                                                                    trustedIdentity,
+                                                                    remote.RemoteKeys,
                                                                     out bool nonceFailure,
                                                                     out ZeroProtocol.ConfigurationOrTrustIssue pIssue,
                                                                     out TimeSpan? clockOffset,
                                                                     out string? enlistUrl,
-                                                                    out RemoteIdentityKeyData? currentKeyData,
-                                                                    out RemoteIdentityKey? currentKey,
+                                                                    out IdentityBlock? block,
                                                                     out SignatureCheck signatureCheck );
+                        var currentKeyData = block?.HeadKeyData;
                         bool signatureVerified = signatureCheck != SignatureCheck.Failed;
                         // We have data but if the nonce we sent is not the one we have in reply, this is a serious issue.
                         if( nonceFailure )
@@ -401,12 +401,19 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                            $"Ignoring it. Retrying in 30 seconds." );
                             return 30;
                         }
-                        // Either we already trust this key, or we have no trusted key yet and this is the
-                        // trust-on-first-use path (subject to AutoTrustKey / operator approval).
-                        remote.RemoteKeys.OnReadIdentityKeys( transportManager.Logger,
-                                                              signatureCheck == SignatureCheck.Trusted,
-                                                              currentKeyData,
-                                                              currentKey );
+                        // Either we already trust this key (and then report what the listener pins for
+                        // us), or we have no trusted key yet and this is the trust-on-first-use path
+                        // (subject to AutoTrustKey / operator approval).
+                        remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, block );
+                        if( pIssue == ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict )
+                        {
+                            // The listener pins, for us, a log ours does not extend. If our identity was
+                            // taken over, its statement has just raised the alert. Nothing an operator can
+                            // approve here: retry later, a benign rollback heals on the next attempt.
+                            transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                                                           $"The remote '{remote.Party}' pins for us an identity our log does not extend. Retrying in 30 seconds." );
+                            return 30;
+                        }
                         // Thanks to the InitialMessage.RemoteTrustInfo, the remote has detected that we won't be able to trust him:
                         // we must provide him our EnlistUrl (even if it is null).
                         if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
@@ -433,7 +440,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             _ => Throw.NotSupportedException<PeeringIssueKind>( pIssue.ToString() )
                         };
                         var usefulRemoteKey = issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
-                                                ? currentKeyData
+                                                ? block?.Head
                                                 : null;
                         // Signed — but SelfAsserted only proves the sender holds some key: reaching here
                         // with SelfAsserted means we had no trusted key to compare against (TOFU).

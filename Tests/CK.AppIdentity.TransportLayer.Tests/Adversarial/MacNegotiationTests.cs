@@ -110,7 +110,7 @@ public class MacNegotiationTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
         using var ephemeral = new PeerEphemeral();
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
@@ -136,7 +136,7 @@ public class MacNegotiationTests
                                                     initial.AvailableProtocols,
                                                     ephemeral.PublicKey,
                                                     MacAlgorithm.HmacSha256,   // our "hardware" cannot do GMAC
-                                                    new[] { peerKey } );
+                                                    peerKey );
         await connection.SendZeroFrameAsync( reply, token );
 
         (await connection.ReadFrameAsync( token )).Discriminator
@@ -156,7 +156,7 @@ public class MacNegotiationTests
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
 
         await using var peer = new AdversarialPeer();
-        using var peerKey = PeerIdentity.Create();
+        using var peerKey = PeerIdentity.Create( $"Test/{remote}/#Dev" );
         using var ephemeral = new PeerEphemeral();
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
@@ -176,7 +176,7 @@ public class MacNegotiationTests
                                                     initial.AvailableProtocols,
                                                     ephemeral.PublicKey,
                                                     MacAlgorithm.Invalid,   // never offered, and cannot be
-                                                    new[] { peerKey } );
+                                                    peerKey );
         await connection.SendZeroFrameAsync( reply, token );
 
         var answer = await ReadOrNullAsync( connection, token );
