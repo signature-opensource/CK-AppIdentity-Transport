@@ -39,6 +39,14 @@ public class NonceCacheTests
     static TimedNonce Nonce( DateTime now, ulong? value = null )
         => new TimedNonce( now, value ?? BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) ) );
 
+    // Thousands of nonces through one remote are thousands of disk syncs (one per handshake in real
+    // life): the flood tests skip them. What they check is the memory guard, not the journal.
+    static IDisposable NoDiskSync()
+    {
+        RemoteNonceCache.FlushJournalToDisk = false;
+        return Util.CreateDisposableAction( () => RemoteNonceCache.FlushJournalToDisk = true );
+    }
+
     /// <summary>
     /// Two remotes of one local party. The caller must dispose the service: leaving it running
     /// holds the listening port and the remotes' store folders, which breaks every later test.
@@ -112,6 +120,7 @@ public class NonceCacheTests
 
         // Comfortably more than any plausible shared capacity, and more than this remote's own guard, so
         // A also sheds its own oldest entries — which must not touch B.
+        using var _ = NoDiskSync();
         for( int i = 0; i < IRemoteKeys.MaxNonceCacheEntries + 2000; ++i )
         {
             a.CheckAndAddNonceValue( TestHelper.Monitor, Nonce( now, (ulong)(i + 1) ), LogLevel.None ).ShouldBeTrue();
@@ -172,6 +181,79 @@ public class NonceCacheTests
             "to forget it and replay a captured handshake inside the clock window." );
     }
 
+    [Test, CancelAfter( 60000 )]
+    public async Task A_nonce_survives_a_crash_Async( CancellationToken token )
+    {
+        // The cache file is rewritten from the heartbeat; a crash between two rewrites must not
+        // forget what was accepted since the last one. A crash is simulated by putting back the
+        // files as they were right after the nonce was accepted: the journal alone, no cache file.
+        // A torn record (a crash during an append) is added at its end.
+        const string local = "NonceCrash";
+        var folder = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${local}A/-Locals/Test/${local}/#Dev" );
+        var cachePath = folder.AppendPart( "Nonce.cache" );
+        var journalPath = folder.AppendPart( "Nonce.journal" );
+        var n = Nonce( _systemClock.UtcNow );
+        var m = Nonce( _systemClock.UtcNow );
+
+        // The service alive at any point: disposed on failure too, or it would keep the listening port
+        // and fail every later test.
+        ApplicationIdentityService? live = null;
+        try
+        {
+            var (service, a, _) = await TwoRemotesAsync( local, token );
+            live = service;
+            a.CheckAndAddNonceValue( TestHelper.Monitor, n ).ShouldBeTrue();
+            System.IO.File.Exists( cachePath ).ShouldBeFalse( "Not rewritten yet: this is the window a crash would hit." );
+            var journal = await CrashAsync();
+            System.IO.File.WriteAllBytes( journalPath, [.. journal, 1, 2, 3, 4, 5] );
+
+            // Restarted: n comes back from the journal, and m, accepted now, is journaled after the
+            // torn record was cut. A second crash must not lose it to a misaligned journal.
+            var a2 = await RestartAsync();
+            a2.CheckAndAddNonceValue( TestHelper.Monitor, n, LogLevel.None ).ShouldBeFalse(
+                "A nonce accepted just before a crash must still be known: the journal holds it." );
+            a2.CheckAndAddNonceValue( TestHelper.Monitor, m ).ShouldBeTrue();
+            System.IO.File.WriteAllBytes( journalPath, await CrashAsync() );
+
+            var a3 = await RestartAsync();
+            a3.CheckAndAddNonceValue( TestHelper.Monitor, n, LogLevel.None ).ShouldBeFalse();
+            a3.CheckAndAddNonceValue( TestHelper.Monitor, m, LogLevel.None ).ShouldBeFalse(
+                "Journaled after a torn record: the torn bytes were cut, so the record is aligned and read back." );
+        }
+        finally
+        {
+            if( live != null ) await live.DisposeAsync();
+        }
+
+        // Takes the journal as it is, stops the service (which rewrites the cache and empties the
+        // journal), then removes the cache: the files are left as a crash would have left them,
+        // once the caller writes the journal back.
+        async Task<byte[]> CrashAsync()
+        {
+            System.IO.File.Exists( journalPath ).ShouldBeTrue( "Journaled before being accepted." );
+            var bytes = System.IO.File.ReadAllBytes( journalPath );
+            var s = live!;
+            live = null;
+            await s.DisposeAsync();
+            System.IO.File.Exists( cachePath ).ShouldBeTrue( "A clean stop rewrites the cache..." );
+            System.IO.File.Exists( journalPath ).ShouldBeFalse( "...and empties the journal." );
+            System.IO.File.Delete( cachePath );
+            return bytes;
+        }
+
+        async Task<IRemoteKeys> RestartAsync()
+        {
+            live = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = $"Test/${local}";
+                c["AlwaysListening"] = "True";
+                c["Parties:0:PartyName"] = $"${local}A";
+                c["Parties:1:PartyName"] = $"${local}B";
+            }, ConfigureFastClock, token: token );
+            return live.AllRemotes.Single( r => r.PartyName == $"${local}A" ).GetRequiredFeature<IRemoteKeys>();
+        }
+    }
+
     [Test, CancelAfter( 30000 )]
     public async Task Each_local_party_keeps_its_own_record_of_a_remote_Async( CancellationToken token )
     {
@@ -205,6 +287,7 @@ public class NonceCacheTests
         var bNonce = Nonce( now, 7777 );
         b.CheckAndAddNonceValue( TestHelper.Monitor, bNonce ).ShouldBeTrue();
 
+        using var _ = NoDiskSync();
         for( int i = 0; i < IRemoteKeys.MaxNonceCacheEntries + 10; ++i )
         {
             a.CheckAndAddNonceValue( TestHelper.Monitor, Nonce( now, (ulong)(i + 100) ), LogLevel.None ).ShouldBeTrue();

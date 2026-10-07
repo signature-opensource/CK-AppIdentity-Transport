@@ -256,7 +256,16 @@ sealed partial class RemoteKeys : IRemoteKeys
                                            nonce.CreationTime,
                                            _remote.ApplicationIdentityService.SystemClock.UtcNow,
                                            _maxClockOffset,
-                                           out bool evicted );
+                                           out bool evicted,
+                                           out var journalError );
+        if( journalError != null )
+        {
+            // Accepted all the same: refusing every handshake on a full or failing disk would be
+            // worse than the risk, which is a replay after a crash before the next rewrite.
+            logger.Log( LogLevel.Warn, ActivityMonitor.Tags.ToBeInvestigated,
+                        $"Unable to journal a nonce of '{_remote}': a crash before the next save of its nonce cache " +
+                        $"would forget it. {journalError.Message}" );
+        }
         if( evicted )
         {
             // Only a peer handshaking far faster than any legitimate one reaches this, and the

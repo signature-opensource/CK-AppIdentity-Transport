@@ -1,5 +1,6 @@
 using CK.Core;
 using System;
+using System.Buffers.Binary;
 using System.IO;
 
 namespace CK.AppIdentity.KeyManagement;
@@ -32,6 +33,14 @@ namespace CK.AppIdentity.KeyManagement;
 /// forgetting them would let a message be replayed later, once that peer has been trusted. Holding
 /// the cache per remote is what makes that safe.
 /// </para>
+/// <para>
+/// <b>A crash forgets nothing.</b> The cache file is rewritten from the heartbeat; between two
+/// rewrites, every nonce is first appended to a journal next to it (<c>Nonce.journal</c>), before
+/// <see cref="CheckAndAdd"/> accepts it. Loading merges both, and a rewrite empties the journal. So a
+/// process that crashes rejects, once restarted, exactly what a process that never stopped rejects.
+/// Each append is flushed to the disk itself: neither a process crash nor an OS crash or a power loss
+/// can lose it. It costs one disk sync per handshake, which is cheap at that rate.
+/// </para>
 /// </summary>
 sealed class RemoteNonceCache
 {
@@ -54,6 +63,15 @@ sealed class RemoteNonceCache
     public const string LocalsFolderName = "-Locals";
 
     const string FileName = "Nonce.cache";
+    const string JournalFileName = "Nonce.journal";
+    const int JournalRecordSize = 16;
+
+    /// <summary>
+    /// Test seam, deliberately not a configuration: a production switch that weakens replay
+    /// protection would end up turned off "for performance". Only tests that push thousands of
+    /// nonces through one remote (the memory guard) clear it, to avoid thousands of disk syncs.
+    /// </summary>
+    internal static bool FlushJournalToDisk = true;
 
     /// <summary>
     /// File format marker. Anything not starting with this is discarded rather than misread —
@@ -61,10 +79,17 @@ sealed class RemoteNonceCache
     /// </summary>
     static ReadOnlySpan<byte> FileMagic => "CKNonce2"u8;
 
+    /// <summary>
+    /// Journal marker, followed by records of <see cref="JournalRecordSize"/> bytes: the nonce and its
+    /// creation time. A record torn by a crash during its append is a short tail, ignored on load.
+    /// </summary>
+    static ReadOnlySpan<byte> JournalMagic => "CKNJrnl1"u8;
+
     readonly FIFOBuffer<(ulong Nonce, DateTime CreationTime)> _entries;
     readonly object _lock;
     readonly IFileStore _store;
     readonly NormalizedPath _filePath;
+    readonly NormalizedPath _journalPath;
     uint _version;
     uint _savedVersion;
 
@@ -72,6 +97,7 @@ sealed class RemoteNonceCache
     {
         _store = store;
         _filePath = filePath;
+        _journalPath = filePath.RemoveLastPart().AppendPart( JournalFileName );
         _entries = entries;
         _lock = new object();
     }
@@ -98,19 +124,31 @@ sealed class RemoteNonceCache
     /// <param name="utcNow">Current time.</param>
     /// <param name="window">The replay window: <see cref="IRemoteKeys.MaxClockOffset"/>.</param>
     /// <param name="evicted">True when the memory guard had to drop a still-valid entry.</param>
+    /// <param name="journalError">
+    /// Set when the nonce could not be journaled: it is accepted all the same (refusing every
+    /// handshake on a full disk would be worse), but a crash before the next rewrite would forget it.
+    /// </param>
     /// <returns>True if the nonce is new, false if it has already been used.</returns>
-    public bool CheckAndAdd( ulong nonce, DateTime creationTime, DateTime utcNow, TimeSpan window, out bool evicted )
+    public bool CheckAndAdd( ulong nonce, DateTime creationTime, DateTime utcNow, TimeSpan window, out bool evicted, out Exception? journalError )
     {
         lock( _lock )
         {
+            journalError = null;
             DropStale( utcNow - window );
-            for( int i = 0; i < _entries.Count; ++i )
+            if( Contains( nonce ) )
             {
-                if( _entries[i].Nonce == nonce )
-                {
-                    evicted = false;
-                    return false;
-                }
+                evicted = false;
+                return false;
+            }
+            // Journaled before it is accepted, and under the lock: a rewrite (Save) cannot empty the
+            // journal between this append and the entry it must hold.
+            try
+            {
+                AppendToJournal( nonce, creationTime );
+            }
+            catch( Exception ex )
+            {
+                journalError = ex;
             }
             // Push drops the oldest by itself once the buffer is full: IsFull is read first only so
             // that the caller can report a peer handshaking far faster than any legitimate one.
@@ -119,6 +157,30 @@ sealed class RemoteNonceCache
             ++_version;
             return true;
         }
+    }
+
+    bool Contains( ulong nonce )
+    {
+        for( int i = 0; i < _entries.Count; ++i )
+        {
+            if( _entries[i].Nonce == nonce ) return true;
+        }
+        return false;
+    }
+
+    void AppendToJournal( ulong nonce, DateTime creationTime )
+    {
+        // Opened per append: handshakes are rare, and holding no handle lets the rewrite and Delete
+        // remove the file at any time.
+        Directory.CreateDirectory( _journalPath.RemoveLastPart() );
+        using var f = new FileStream( _journalPath, FileMode.Append, FileAccess.Write, FileShare.Read | FileShare.Delete );
+        if( f.Position == 0 ) f.Write( JournalMagic );
+        Span<byte> record = stackalloc byte[JournalRecordSize];
+        BinaryPrimitives.WriteUInt64LittleEndian( record, nonce );
+        BinaryPrimitives.WriteInt64LittleEndian( record.Slice( 8 ), creationTime.ToBinary() );
+        f.Write( record );
+        // To the disk itself, not only to the OS: a power loss must not lose it either.
+        f.Flush( flushToDisk: FlushJournalToDisk );
     }
 
     /// <summary>
@@ -148,11 +210,12 @@ sealed class RemoteNonceCache
     {
         try
         {
-            byte[] bytes;
+            // Under the lock, files included: an append between the rewrite and the journal's
+            // removal would otherwise be lost. At most MaxNonceCacheEntries entries, from the
+            // heartbeat: a short hold.
             lock( _lock )
             {
                 if( _savedVersion == _version ) return true;
-                _savedVersion = _version;
                 using var stream = new MemoryStream();
                 using( var w = new BinaryWriter( stream ) )
                 {
@@ -164,12 +227,14 @@ sealed class RemoteNonceCache
                         w.Write( _entries[i].CreationTime.ToBinary() );
                     }
                 }
-                bytes = stream.ToArray();
+                // Atomic write. A crash during a plain write leaves a truncated file that Load discards,
+                // losing the entire replay record for this remote: the file on disk is always a whole
+                // one - either the previous version or the new one. Missing folders are created.
+                _store.WriteAllBytes( _filePath, stream.ToArray() );
+                // Only then is the journal emptied: a crash in between leaves both, and Load merges them.
+                if( File.Exists( _journalPath ) ) File.Delete( _journalPath );
+                _savedVersion = _version;
             }
-            // Atomic write. A crash during a plain write leaves a truncated file that Load discards,
-            // losing the entire replay record for this remote: the file on disk is always a whole
-            // one - either the previous version or the new one. Missing folders are created.
-            _store.WriteAllBytes( _filePath, bytes );
             return true;
         }
         catch( Exception ex )
@@ -185,8 +250,12 @@ sealed class RemoteNonceCache
     /// </summary>
     public void Delete( IActivityMonitor monitor )
     {
-        // Never throws (errors are logged) and succeeds when the file doesn't exist.
-        _store.TryTrash( monitor, _filePath, immediateDelete: true );
+        // Never throws (errors are logged) and succeeds when the files don't exist.
+        lock( _lock )
+        {
+            _store.TryTrash( monitor, _filePath, immediateDelete: true );
+            _store.TryTrash( monitor, _journalPath, immediateDelete: true );
+        }
     }
 
     /// <summary>
@@ -232,7 +301,55 @@ sealed class RemoteNonceCache
             monitor.Warn( $"Unable to read '{filePath}'. Starting with an empty nonce cache.", ex );
             entries.Clear();
         }
-        return new RemoteNonceCache( store, filePath, entries );
+        var cache = new RemoteNonceCache( store, filePath, entries );
+        // What was accepted after the last rewrite: a crash left it there. The next rewrite folds it
+        // into the file and removes the journal.
+        if( cache.ReplayJournal( monitor, staleBefore ) ) cache._version = 1;
+        return cache;
+    }
+
+    bool ReplayJournal( IActivityMonitor monitor, DateTime staleBefore )
+    {
+        if( !File.Exists( _journalPath ) ) return false;
+        try
+        {
+            var bytes = File.ReadAllBytes( _journalPath );
+            if( bytes.Length < JournalMagic.Length || !bytes.AsSpan( 0, JournalMagic.Length ).SequenceEqual( JournalMagic ) )
+            {
+                // Removed now: appends would otherwise follow content that is not ours.
+                monitor.Info( $"Removing '{_journalPath}': not a recognized nonce journal." );
+                File.Delete( _journalPath );
+                return true;
+            }
+            int torn = (bytes.Length - JournalMagic.Length) % JournalRecordSize;
+            if( torn != 0 )
+            {
+                // Cut now: the next appends would otherwise be misaligned, and lost to the next replay.
+                using var f = new FileStream( _journalPath, FileMode.Open, FileAccess.Write, FileShare.Read | FileShare.Delete );
+                f.SetLength( bytes.Length - torn );
+            }
+            int count = 0;
+            // A torn last record (a crash during its append) is a short tail: the loop stops before it.
+            for( var records = bytes.AsSpan( JournalMagic.Length ); records.Length >= JournalRecordSize; records = records.Slice( JournalRecordSize ) )
+            {
+                var nonce = BinaryPrimitives.ReadUInt64LittleEndian( records );
+                var time = DateTime.FromBinary( BinaryPrimitives.ReadInt64LittleEndian( records.Slice( 8 ) ) );
+                // Journaled entries were accepted after the file's ones: pushed after them, the
+                // buffer stays (roughly) oldest first, as DropStale expects.
+                if( time >= staleBefore && !Contains( nonce ) )
+                {
+                    _entries.Push( (nonce, time) );
+                    ++count;
+                }
+            }
+            if( count > 0 ) monitor.Info( $"Recovered {count} nonce(s) from '{_journalPath}': accepted after the last rewrite." );
+            return true;
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to read '{_journalPath}'.", ex );
+            return false;
+        }
     }
 
     /// <summary>
