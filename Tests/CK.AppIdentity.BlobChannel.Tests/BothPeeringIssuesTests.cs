@@ -46,7 +46,11 @@ public class BothPeeringIssuesTests
         TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
 
         TestHelper.Monitor.Info( "Tests: Creating Listener & Sender." );
-        await using var listener = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Listener", Configure, token );
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$Listener";
+            c["ListeningAddress:0"] = BlobChannelTester.Address;
+        }, Configure, token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", Configure, token: token );
 
         var senderTransportManager = sender.GetRequiredFeature<TransportManagerFeature>();
@@ -56,7 +60,7 @@ public class BothPeeringIssuesTests
         var senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
         {
             c["PartyName"] = "$Listener";
-            c["Address"] = "tcp:127.0.0.1";
+            c["Address"] = BlobChannelTester.Address;
             if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
         } );
         Throw.DebugAssert( senderParty != null );
@@ -140,7 +144,7 @@ public class BothPeeringIssuesTests
         senderParty = await sender.AddRemoteAsync( TestHelper.Monitor, c =>
         {
             c["PartyName"] = "$Listener";
-            c["Address"] = "tcp:127.0.0.1";
+            c["Address"] = BlobChannelTester.Address;
             if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
         } );
         Throw.DebugAssert( senderParty != null );

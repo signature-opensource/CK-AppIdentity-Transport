@@ -19,6 +19,17 @@ namespace CK.AppIdentity.BlobChannel.Tests;
 /// </summary>
 public sealed class BlobChannelTester : IAsyncDisposable
 {
+    /// <summary>
+    /// A dedicated port: the default 37120 one is used by other test assemblies that
+    /// can run concurrently (dotnet test runs the test assemblies of a solution in parallel).
+    /// </summary>
+    public const int Port = 37130;
+
+    /// <summary>
+    /// The listener address: the "ListeningAddress" of the listener and the "Address" of the sender's party.
+    /// </summary>
+    public static readonly string Address = $"tcp:127.0.0.1:{Port}";
+
     readonly List<byte[]> _listenerReceived;
     readonly List<byte[]> _senderReceived;
     readonly ApplicationIdentityService _sender;
@@ -129,7 +140,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
 
     /// <summary>
     /// Creates a "Test/$Sender" <see cref="ApplicationIdentityService"/> with a remote party "Test/$Listener"
-    /// that targets the Address = "tcp:127.0.0.1". This will use the default 37120 port.
+    /// that targets the <see cref="Address"/> (dedicated <see cref="Port"/>).
     /// AllowFeatures = "BlobChannel" is obviously specified.
     /// </summary>
     /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
@@ -148,14 +159,14 @@ public sealed class BlobChannelTester : IAsyncDisposable
             c["AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "$Listener";
-            c["Parties:0:Address"] = "tcp:127.0.0.1";
+            c["Parties:0:Address"] = Address;
             c["AllowFeatures"] = "BlobChannel";
         }, Configure( configureServices ), token );
     }
 
     /// <summary>
     /// Creates a "Test/$Listener" <see cref="ApplicationIdentityService"/> with a remote party "Test/$Sender".
-    /// This uses the default configuration: the TCP listener will listen to "127.0.0.1:37120".
+    /// The TCP listener listens to <see cref="Address"/> (dedicated <see cref="Port"/>).
     /// AllowFeatures = "BlobChannel" is obviously specified.
     /// </summary>
     /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
@@ -173,6 +184,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
             if( !storeSubPath.IsEmptyPath ) c["RootStorePath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
             c["AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Listener";
+            c["ListeningAddress:0"] = Address;
             c["Parties:0:PartyName"] = "$Sender";
             c["AllowFeatures"] = "BlobChannel";
         }, Configure( configureServices ), token );

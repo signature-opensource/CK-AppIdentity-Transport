@@ -42,6 +42,7 @@ public class BasicExchangeTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Listener";
+            c["ListeningAddress:0"] = BlobChannelTester.Address;
             c["Parties:0:PartyName"] = "Sender";
             c["AllowFeatures"] = "BlobChannel";
         }, AddFastClockAndBlobChannel, token );
@@ -49,7 +50,7 @@ public class BasicExchangeTests
         {
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "Listener";
-            c["Parties:0:Address"] = "tcp:127.0.0.1";
+            c["Parties:0:Address"] = BlobChannelTester.Address;
             c["AllowFeatures"] = "BlobChannel";
         }, AddFastClockAndBlobChannel, token );
         var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
