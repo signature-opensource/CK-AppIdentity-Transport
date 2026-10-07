@@ -1,5 +1,6 @@
 using CK.Core;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 
@@ -36,7 +37,13 @@ sealed partial class RemoteKeys
             {
                 monitor.Info( $"No trusted identity found for remote '{_remote}'." );
             }
-            return new RemoteKeys( _localKeys, _remote, pinned, autoTrust, maxClockOffset, nonceCache );
+            var history = LoadHistory( monitor, pinned );
+            var keys = new RemoteKeys( _localKeys, _remote, pinned, history, autoTrust, maxClockOffset, nonceCache );
+            if( pinned != null )
+            {
+                lock( keys._trustLock ) keys.PruneHistory( monitor );
+            }
+            return keys;
         }
 
         /// <summary>
@@ -95,6 +102,57 @@ sealed partial class RemoteKeys
                 monitor.Info( $"Trashing obsolete trusted identity '{path}'." );
                 _store.TryTrash( monitor, path );
             }
+        }
+
+        /// <summary>
+        /// Loads the events the pin moved past: walking back from the pin, each one must link to the
+        /// next. The first gap or broken link ends the history; whatever else is there is removed.
+        /// </summary>
+        List<KeyEvent> LoadHistory( IActivityMonitor monitor, KeyEvent? pinned )
+        {
+            var history = new List<KeyEvent>();
+            var folder = _store.FolderPath.AppendPart( HistoryFolderName );
+            if( !Directory.Exists( folder ) ) return history;
+            var files = new Dictionary<int, NormalizedPath>();
+            foreach( var f in Directory.EnumerateFiles( folder ) )
+            {
+                NormalizedPath path = f;
+                if( path.LastPart.EndsWith( ".event", StringComparison.Ordinal )
+                    && int.TryParse( path.LastPart.AsSpan( 0, path.LastPart.Length - 6 ), NumberStyles.None, CultureInfo.InvariantCulture, out var seq ) )
+                {
+                    files[seq] = path;
+                }
+                else
+                {
+                    _store.TryTrash( monitor, path, immediateDelete: true );
+                }
+            }
+            var expected = pinned;
+            while( expected != null && files.Remove( expected.Seq - 1, out var path ) )
+            {
+                KeyEvent? e = null;
+                try
+                {
+                    e = KeyEvent.Read( _store.ReadAllBytes( path ) );
+                }
+                catch( Exception ex )
+                {
+                    monitor.Warn( $"Invalid key history file '{path}'.", ex );
+                }
+                if( e == null || e.Seq != expected.Seq - 1 || !KeyEventChain.Links( _remote.FullName, e, expected ) )
+                {
+                    _store.TryTrash( monitor, path, immediateDelete: true );
+                    break;
+                }
+                history.Insert( 0, e );
+                expected = e;
+            }
+            foreach( var path in files.Values )
+            {
+                monitor.Info( $"Removing '{path}': not part of the history of the pinned identity." );
+                _store.TryTrash( monitor, path, immediateDelete: true );
+            }
+            return history;
         }
 
         static TimeSpan GetMaxClockOffset( IActivityMonitor monitor, ImmutableConfigurationSection configuration )

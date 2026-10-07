@@ -46,6 +46,7 @@ sealed partial class LocalKeys
             var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
             int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
             int operationalKeyDays = ReadOperationalKeyDays( monitor );
+            int maxSignatureDays = ReadMaxSignatureDays( monitor, allowedOfflineDays );
             var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
             var keysPath = _store.FolderPath.AppendPart( "Keys" );
             var kelPath = keysPath.AppendPart( KelFolderName );
@@ -67,22 +68,9 @@ sealed partial class LocalKeys
                 if( log[^1].IsRecovery ) CompleteRecovery( monitor, kelPath, log, now );
                 current = LoadCurrent( monitor, keysPath, log, allowedOfflineDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, alerts, _driverAlertRaised );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, maxSignatureDays, alerts, _driverAlertRaised );
 
-            // Scheduled rotation: a current key that cannot guarantee AllowedOfflineDays any more is
-            // replaced by the committed next one.
-            if( current.NotAfter < now.AddDays( allowedOfflineDays + 1 ) )
-            {
-                monitor.Info( $"Identity key #{log[^1].Seq} of '{_local.FullName}' expires on {current.NotAfter:yyyy-MM-dd}. " +
-                              $"It is not enough to guarantee AllowedOfflineDays = {allowedOfflineDays}: rotating." );
-                if( !keys.Rotate( monitor ) )
-                {
-                    // Keep working rather than stop: same key, fresh certificate. The failure has
-                    // been logged as an error by Rotate.
-                    alerts.Raise( monitor, IdentityAlertKind.RotationFailing, _local.FullName, true, null, log[^1].Seq, default, default );
-                    keys.RenewCertificate( monitor, now );
-                }
-            }
+            keys.RotateIfDue( monitor, now );
             var c = keys.CurrentIdentity;
             ExposeIdentity( monitor, _store, keysPath, keys.State.Head );
             monitor.Info( $"Local '{_local.FullName}' identity key is #{keys.Seq}, expiring on {c.NotAfter:yyyy-MM-dd}." );
@@ -341,6 +329,27 @@ sealed partial class LocalKeys
                 var clamped = Math.Clamp( days, 1, ILocalKeys.MaxOperationalKeyDays );
                 monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
                 return clamped;
+            }
+            return days;
+        }
+
+        int ReadMaxSignatureDays( IActivityMonitor monitor, int allowedOfflineDays )
+        {
+            var path = _local.Configuration.Configuration.Path;
+            var s = _local.Configuration.Configuration["MaxSignatureDays"];
+            int days = ILocalKeys.DefaultMaxSignatureDays;
+            if( s != null && !int.TryParse( s, out days ) )
+            {
+                monitor.Warn( $"Invalid configuration '{path}:MaxSignatureDays' = '{s}': using {nameof( ILocalKeys.DefaultMaxSignatureDays )} = {ILocalKeys.DefaultMaxSignatureDays}." );
+                days = ILocalKeys.DefaultMaxSignatureDays;
+            }
+            // Bounded by AllowedOfflineDays: a credential issued just before a rotation must end within
+            // its issuer's life, and a verifier accepts no longer than its own AllowedOfflineDays.
+            if( days < 1 || days > allowedOfflineDays )
+            {
+                var clamped = Math.Clamp( days, 1, allowedOfflineDays );
+                monitor.Warn( $"Configuration '{path}:MaxSignatureDays' = {days} is out of 1..AllowedOfflineDays ({allowedOfflineDays}): using {clamped}." );
+                days = clamped;
             }
             return days;
         }

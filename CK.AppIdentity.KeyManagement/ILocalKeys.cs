@@ -10,8 +10,12 @@ namespace CK.AppIdentity.KeyManagement;
 /// <see cref="ILocalParty"/> key management: handles the private keys
 /// of the party.
 /// </summary>
-public interface ILocalKeys
+public interface ILocalKeys : IPartyKeys
 {
+    /// <summary>
+    /// Default value of <see cref="MaxSignatureDays"/>.
+    /// </summary>
+    const int DefaultMaxSignatureDays = 7;
     /// <summary>
     /// Minimal number of days for <see cref="AllowedOfflineDays"/>.
     /// </summary>
@@ -74,9 +78,44 @@ public interface ILocalKeys
     int OperationalKeyDays { get; }
 
     /// <summary>
+    /// Gets the longest a signature made by <see cref="Sign"/> can live, in days.
+    /// <para>
+    /// Configured by "MaxSignatureDays" (1 to <see cref="AllowedOfflineDays"/>, default
+    /// <see cref="DefaultMaxSignatureDays"/>). A verifier accepts a credential valid for no more than its
+    /// own <see cref="AllowedOfflineDays"/>, so a party whose signatures are checked by others must not be
+    /// configured above theirs. It also bounds what the holder of a stolen key can still sign once the
+    /// key has been replaced (DESIGN-key-pre-rotation §18.4).
+    /// </para>
+    /// </summary>
+    int MaxSignatureDays { get; }
+
+    /// <summary>
     /// Gets the local party.
     /// </summary>
-    ILocalParty Party { get; }
+    new ILocalParty Party { get; }
+
+    /// <summary>
+    /// Signs <paramref name="data"/> for the application, until <paramref name="expiration"/>.
+    /// <para>
+    /// Every verifier (<see cref="IPartyKeys.Verify"/>) refuses the signature after its expiration, and
+    /// accepts it until then unless this identity is revoked: a regular rotation has no effect on it, a
+    /// recovery condemns it. The signature is made by an application credential (its own key, issued by
+    /// the identity key), which it contains.
+    /// </para>
+    /// </summary>
+    /// <param name="purpose">
+    /// What the signature is for, bound into it: a signature made for one purpose is refused for any
+    /// other. Not empty, at most <see cref="ApplicationSignature.MaxPurposeLength"/> UTF-8 bytes.
+    /// </param>
+    /// <param name="data">The data to sign.</param>
+    /// <param name="expiration">
+    /// The expiration (UTC). Must be in the future and at most <see cref="MaxSignatureDays"/> ahead: it is
+    /// never silently shortened.
+    /// </param>
+    /// <returns>The signature, with its credential.</returns>
+    /// <exception cref="ArgumentException">When the purpose or the expiration is not valid.</exception>
+    /// <exception cref="InvalidOperationException">When this party is decommissioned.</exception>
+    ApplicationSignature Sign( string purpose, ReadOnlySpan<byte> data, DateTime expiration );
 
     /// <summary>
     /// Gets the number of days during which this party or a remote party can be offline
@@ -87,12 +126,15 @@ public interface ILocalKeys
     /// </para>
     /// <para>
     /// So it is also the rotation period: the current key is replaced by the committed next one
-    /// (<see cref="Rotate"/>) once its certificate has less than this left.
+    /// (<see cref="Rotate"/>) once its certificate has less than this left. This is checked at start and
+    /// from the heartbeat, so a process that never restarts rotates like one that does.
     /// </para>
     /// <para>
     /// <b>It does not bound a stolen key by itself.</b> A verifier holds a <see cref="RemoteIdentityKey"/>,
     /// which carries no validity window. What bounds a stolen current key is the next rotation: a
-    /// verifier that has seen it refuses the superseded key. Revoking is rotating early.
+    /// verifier that has seen it refuses the superseded key for handshakes. Revoking is rotating early.
+    /// Application signatures are the exception: a regular rotation does not end them, and what a
+    /// stolen replaced key can still sign is bounded by this value (see <see cref="ApplicationSignature"/>).
     /// </para>
     /// </summary>
     int AllowedOfflineDays { get; }

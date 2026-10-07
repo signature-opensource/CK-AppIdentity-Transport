@@ -7,7 +7,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// <summary>
 /// <see cref="IRemoteParty"/> public key management.
 /// </summary>
-public interface IRemoteKeys
+public interface IRemoteKeys : IPartyKeys
 {
     /// <summary>
     /// Default maximal allowed clock offset between parties is 5 minutes.
@@ -44,7 +44,7 @@ public interface IRemoteKeys
     /// <summary>
     /// Gets the remote party.
     /// </summary>
-    IRemoteParty Party { get; }
+    new IRemoteParty Party { get; }
 
     /// <summary>
     /// Gets the "AutoTrustKey" configuration option.

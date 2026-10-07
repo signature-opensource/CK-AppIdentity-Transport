@@ -204,7 +204,7 @@ public static class KeyEventChain
     /// ordinary event, which must then carry the recovery commitment unchanged) or the recovery key
     /// previous committed to (a recovery event, which may commit to a new one).
     /// </summary>
-    static bool Links( string fullName, KeyEvent previous, KeyEvent next )
+    internal static bool Links( string fullName, KeyEvent previous, KeyEvent next )
     {
         return next.Seq == previous.Seq + 1
                && (next.IsRecovery

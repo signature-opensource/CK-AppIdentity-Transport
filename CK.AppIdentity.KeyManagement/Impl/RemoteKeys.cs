@@ -16,12 +16,19 @@ namespace CK.AppIdentity.KeyManagement;
 /// system, across processes, and two processes that apply different rotations then write different
 /// files, of which the loader keeps the most recent. The store is monotonic without a lock.
 /// </para>
+/// <para>
+/// The events the pin has moved past are kept too, in <c>KeyHistory/{Seq}.event</c>: a regular rotation
+/// must not end what the remote signed for the application (<see cref="ApplicationSignature"/>), so the
+/// keys it replaced still verify what they issued while they were current. They are dropped once
+/// nothing they issued can still be valid, and all of them on a recovery, which condemns them.
+/// </para>
 /// </summary>
 sealed partial class RemoteKeys : IRemoteKeys
 {
     internal const string TrustFilePattern = "Identity.*.trust";
     internal const string LegacyPublicFilePattern = "Identity.*.public";
     const string DuplicityFolderName = "Duplicity";
+    internal const string HistoryFolderName = "KeyHistory";
     const int MaxDuplicityEvidenceFiles = 16;
 
     readonly LocalKeys _localKeys;
@@ -31,6 +38,9 @@ sealed partial class RemoteKeys : IRemoteKeys
     readonly object _trustLock;
     KeyEvent? _pinned;
     RemoteIdentityKey? _identity;
+    // The events the pin moved past: consecutive, linked, ending just before _pinned. Guarded by
+    // _trustLock and mirrored in the KeyHistory folder.
+    readonly List<KeyEvent> _history;
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
 
@@ -42,6 +52,7 @@ sealed partial class RemoteKeys : IRemoteKeys
     RemoteKeys( LocalKeys localKeys,
                 IRemoteParty remote,
                 KeyEvent? pinned,
+                List<KeyEvent> history,
                 AutoTrustKey autoTrustKey,
                 TimeSpan maxClockOffset,
                 RemoteNonceCache nonceCache )
@@ -50,6 +61,7 @@ sealed partial class RemoteKeys : IRemoteKeys
         _localKeys = localKeys;
         _remote = remote;
         _pinned = pinned;
+        _history = history;
         _identity = pinned != null ? CreateKey( pinned ) : null;
         _autoTrustKey = autoTrustKey;
         _maxClockOffset = maxClockOffset;
@@ -64,6 +76,7 @@ sealed partial class RemoteKeys : IRemoteKeys
         // Prune first: an idle process must not hold nonces that can no longer be replayed.
         _nonceCache.Prune( _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset );
         _nonceCache.Save( monitor );
+        lock( _trustLock ) PruneHistory( monitor );
     }
 
     /// <summary>
@@ -87,6 +100,17 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     public IRemoteParty Party => _remote;
 
+    IParty IPartyKeys.Party => _remote;
+
+    public bool Verify( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    {
+        KeyEvent[] chain;
+        lock( _trustLock ) chain = _pinned == null ? [] : [.. _history, _pinned];
+        // Bounded by this party's AllowedOfflineDays: what it accepts, whatever the remote is configured with.
+        return ApplicationSignature.Verify( logger, _remote.FullName, chain, purpose, data, signature,
+                                            _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset, _localKeys.AllowedOfflineDays );
+    }
+
     public RemoteIdentityKey? TrustedIdentity => _identity;
 
     public KeyEvent? TrustedEvent => _pinned;
@@ -105,7 +129,10 @@ sealed partial class RemoteKeys : IRemoteKeys
                              trusted == null || trusted.VerifySignature( _remote.FullName ) );
         lock( _trustLock )
         {
-            return DoPin( logger, trusted );
+            // An operator's pin proves no link to what was pinned before: the history goes.
+            if( !DoPin( logger, trusted ) ) return false;
+            ReplaceHistory( logger, [] );
+            return true;
         }
     }
 
@@ -121,18 +148,18 @@ sealed partial class RemoteKeys : IRemoteKeys
             {
                 case KeyChainVerdict.Advanced:
                     logger.Info( $"Remote '{_remote}' rotated its identity key: #{_pinned!.Seq} -> #{check.Head!.Seq}." );
-                    DoPin( logger, check.Head );
+                    MoveOn( logger, tail, check );
                     break;
                 case KeyChainVerdict.Recovered:
                     logger.Warn( $"Remote '{_remote}' recovered its identity with its recovery key, superseding pinned #{_pinned!.Seq}: now #{check.Head!.Seq}." );
-                    DoPin( logger, check.Head );
+                    MoveOn( logger, tail, check );
                     break;
                 case KeyChainVerdict.Abandoned:
                     // Unknown parties are not pinned, not even to record their end.
                     if( _pinned != null )
                     {
                         logger.Warn( $"Remote '{_remote}' has decommissioned its identity (event #{check.Head!.Seq}): nothing it sends is accepted any more." );
-                        DoPin( logger, check.Head );
+                        MoveOn( logger, tail, check );
                     }
                     break;
                 case KeyChainVerdict.Terminated:
@@ -165,6 +192,80 @@ sealed partial class RemoteKeys : IRemoteKeys
             return false;
         }
     }
+
+    // Must be called with _trustLock held. The pin moves to the verified head of the tail. The events it
+    // moved past join the history - unless a recovery is among them (Held is then the superseded pin):
+    // the recovery condemns everything before it, so the history restarts at the recovery event.
+    void MoveOn( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail, KeyChainCheck check )
+    {
+        Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
+        var previous = _pinned!;
+        var head = check.Head!;
+        int a = tail[0].Seq;
+        List<KeyEvent> history;
+        if( check.Held != null )
+        {
+            int r = head.Seq;
+            while( r >= a && !tail[r - a].IsRecovery ) --r;
+            history = [];
+            for( int seq = r; seq < head.Seq; ++seq ) history.Add( tail[seq - a] );
+        }
+        else
+        {
+            history = [.. _history, previous];
+            for( int seq = previous.Seq + 1; seq < head.Seq; ++seq ) history.Add( tail[seq - a] );
+        }
+        DoPin( logger, head );
+        ReplaceHistory( logger, history );
+    }
+
+    // Must be called with _trustLock held. Writes what is new, removes what is gone, then prunes.
+    void ReplaceHistory( IActivityLineEmitter logger, List<KeyEvent> history )
+    {
+        Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
+        var store = _remote.SharedFileStore;
+        var folder = store.FolderPath.AppendPart( HistoryFolderName );
+        try
+        {
+            foreach( var e in _history )
+            {
+                if( !history.Contains( e ) ) store.TryTrash( logger, GetHistoryPath( folder, e.Seq ), immediateDelete: true );
+            }
+            if( history.Count > 0 ) store.CreateDirectory( folder );
+            foreach( var e in history )
+            {
+                if( !_history.Contains( e ) ) store.WriteAllBytes( GetHistoryPath( folder, e.Seq ), e.Encoded );
+            }
+        }
+        catch( Exception ex )
+        {
+            // In memory it is right: only a restart would forget it, and refuse what it verified.
+            logger.Log( LogLevel.Error, $"While saving the key history of remote '{_remote}'.", ex );
+        }
+        _history.Clear();
+        _history.AddRange( history );
+        PruneHistory( logger );
+    }
+
+    // Must be called with _trustLock held. A replaced key issued nothing still valid once the longest
+    // lifetime this party accepts has elapsed since its replacement: it is dropped, with the older ones.
+    void PruneHistory( IActivityLineEmitter logger )
+    {
+        Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
+        var limit = _remote.ApplicationIdentityService.SystemClock.UtcNow
+                    - TimeSpan.FromDays( _localKeys.AllowedOfflineDays ) - ApplicationSignature.TimePrecisionSlack;
+        int drop = 0;
+        while( drop < _history.Count && ReplacedAt( drop ) < limit ) ++drop;
+        if( drop == 0 ) return;
+        var folder = _remote.SharedFileStore.FolderPath.AppendPart( HistoryFolderName );
+        for( int i = 0; i < drop; ++i ) _remote.SharedFileStore.TryTrash( logger, GetHistoryPath( folder, _history[i].Seq ), immediateDelete: true );
+        _history.RemoveRange( 0, drop );
+
+        DateTime ReplacedAt( int i ) => (i + 1 < _history.Count ? _history[i + 1] : _pinned!).TimeName;
+    }
+
+    static NormalizedPath GetHistoryPath( NormalizedPath folder, int seq )
+        => folder.AppendPart( seq.ToString( CultureInfo.InvariantCulture ) + ".event" );
 
     // Must be called with _trustLock held.
     //

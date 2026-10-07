@@ -82,9 +82,26 @@ public sealed class OperationalCredential
     {
         var notAfter = now.AddDays( days );
         if( notAfter > identity.NotAfter ) notAfter = identity.NotAfter;
+        return Issue( identity, now, null, notAfter, TranscriptSigningOid );
+    }
+
+    /// <summary>
+    /// Issues a credential of <paramref name="identity"/> for one purpose (<paramref name="ekuOid"/>).
+    /// </summary>
+    /// <param name="identity">The issuing identity.</param>
+    /// <param name="now">The current time: <see cref="IssuedAt"/>.</param>
+    /// <param name="notBefore">
+    /// The start of validity, or null for the issuer's own. An application credential states its issue
+    /// time: what a verifier checks against the rotation that replaced its issuer.
+    /// </param>
+    /// <param name="notAfter">The expiry, inside the identity's validity.</param>
+    /// <param name="ekuOid">The extended key usage, critical.</param>
+    internal static OperationalCredential Issue( LocalIdentityKey identity, DateTime now, DateTime? notBefore, DateTime notAfter, string ekuOid )
+    {
         var cert = identity.CreateDerivedCertificate( notAfter: notAfter,
+                                                      notBefore: notBefore,
                                                       configure: r => r.CertificateExtensions.Add(
-                                                          new X509EnhancedKeyUsageExtension( new OidCollection { new Oid( TranscriptSigningOid ) },
+                                                          new X509EnhancedKeyUsageExtension( new OidCollection { new Oid( ekuOid ) },
                                                                                              critical: true ) ) );
         var key = cert.GetECDsaPrivateKey();
         Throw.CheckState( "A credential just issued has its private key.", key != null );
@@ -109,21 +126,8 @@ public sealed class OperationalCredential
                                     out string? error )
     {
         notAfter = default;
-        if( encoded.IsEmpty || encoded.Length > MaxEncodedSize )
-        {
-            error = "Credential size out of bounds.";
-            return null;
-        }
-        X509Certificate2 c;
-        try
-        {
-            c = X509CertificateLoader.LoadCertificate( encoded );
-        }
-        catch( Exception )
-        {
-            error = "Unreadable credential.";
-            return null;
-        }
+        var c = TryLoad( encoded, out error );
+        if( c == null ) return null;
         using( c )
         {
             if( !DerivedCertificateVerifier.IsIssuedBy( c, issuerSpki ) )
@@ -131,23 +135,8 @@ public sealed class OperationalCredential
                 error = "The credential is not issued by the presented identity key.";
                 return null;
             }
-            if( c.Extensions.OfType<X509EnhancedKeyUsageExtension>().FirstOrDefault() is not { } eku
-                || !eku.EnhancedKeyUsages.Cast<Oid>().Any( o => o.Value == TranscriptSigningOid ) )
-            {
-                error = "The credential is not for transcript signing.";
-                return null;
-            }
-            if( c.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: false } )
-            {
-                error = "The credential must state CA:false.";
-                return null;
-            }
-            if( c.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault() is not { } ku
-                || (ku.KeyUsages & X509KeyUsageFlags.DigitalSignature) == 0 )
-            {
-                error = "The credential must allow DigitalSignature.";
-                return null;
-            }
+            error = CheckLeaf( c, TranscriptSigningOid, "transcript signing" );
+            if( error != null ) return null;
             // X509Certificate2.NotBefore/NotAfter are LOCAL time: converted, never compared raw (M10).
             var notBefore = c.NotBefore.ToUniversalTime();
             notAfter = c.NotAfter.ToUniversalTime();
@@ -169,16 +158,56 @@ public sealed class OperationalCredential
                 error = $"The credential is valid for more than {ILocalKeys.MaxOperationalKeyDays} days.";
                 return null;
             }
-            var key = c.GetECDsaPublicKey();
-            if( key == null || key.KeySize != 256 )
-            {
-                key?.Dispose();
-                error = "The credential key must be ECDSA P-256.";
-                return null;
-            }
-            error = null;
-            return key;
+            return c.GetECDsaPublicKey();
         }
+    }
+
+    /// <summary>
+    /// Reads a credential presented by a peer, bounded in size. Never throws.
+    /// </summary>
+    internal static X509Certificate2? TryLoad( ReadOnlySpan<byte> encoded, out string? error )
+    {
+        if( encoded.IsEmpty || encoded.Length > MaxEncodedSize )
+        {
+            error = "Credential size out of bounds.";
+            return null;
+        }
+        try
+        {
+            error = null;
+            return X509CertificateLoader.LoadCertificate( encoded );
+        }
+        catch( Exception )
+        {
+            error = "Unreadable credential.";
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Checks what every credential of an identity states, whatever its purpose: the extended key usage
+    /// <paramref name="ekuOid"/>, <c>CA:false</c>, <c>DigitalSignature</c> and a P-256 key.
+    /// </summary>
+    /// <returns>Why the credential is refused, null when it is fine.</returns>
+    internal static string? CheckLeaf( X509Certificate2 c, string ekuOid, string purposeName )
+    {
+        if( c.Extensions.OfType<X509EnhancedKeyUsageExtension>().FirstOrDefault() is not { } eku
+            || !eku.EnhancedKeyUsages.Cast<Oid>().Any( o => o.Value == ekuOid ) )
+        {
+            return $"The credential is not for {purposeName}.";
+        }
+        if( c.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: false } )
+        {
+            return "The credential must state CA:false.";
+        }
+        if( c.Extensions.OfType<X509KeyUsageExtension>().FirstOrDefault() is not { } ku
+            || (ku.KeyUsages & X509KeyUsageFlags.DigitalSignature) == 0 )
+        {
+            return "The credential must allow DigitalSignature.";
+        }
+        using var key = c.GetECDsaPublicKey();
+        if( key == null || key.KeySize != 256 ) return "The credential key must be ECDSA P-256.";
+        return null;
     }
 
     /// <summary>

@@ -36,6 +36,12 @@ sealed partial class LocalKeys : ILocalKeys
     readonly NormalizedPath _keysPath;
     readonly int _allowedOfflineDays;
     readonly int _operationalKeyDays;
+    readonly int _maxSignatureDays;
+    // The cached application credential and the identity that issued it: a rotation is detected by
+    // reference. Issued lazily by Sign, renewed there at half its life.
+    readonly object _signLock;
+    OperationalCredential? _application;
+    LocalIdentityKey? _applicationIssuer;
     // Serializes Rotate and Decommission. Readers never take it: they read the snapshot below, which
     // is replaced as a whole.
     readonly object _rotationLock;
@@ -55,6 +61,7 @@ sealed partial class LocalKeys : ILocalKeys
                KeyEvent[] log,
                int allowedOfflineDays,
                int operationalKeyDays,
+               int maxSignatureDays,
                IdentityAlertBook alerts,
                PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
@@ -64,6 +71,8 @@ sealed partial class LocalKeys : ILocalKeys
         _keysPath = keysPath;
         _allowedOfflineDays = allowedOfflineDays;
         _operationalKeyDays = operationalKeyDays;
+        _maxSignatureDays = maxSignatureDays;
+        _signLock = new object();
         _state = new LocalIdentityState( current, log, OperationalCredential.Issue( current, local.ApplicationIdentityService.SystemClock.UtcNow, operationalKeyDays ) );
         _rotationLock = new object();
         _alerts = alerts;
@@ -102,6 +111,8 @@ sealed partial class LocalKeys : ILocalKeys
 
     async Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
     {
+        // A process that never restarts must rotate like one that does.
+        RotateIfDue( monitor, _local.ApplicationIdentityService.SystemClock.UtcNow );
         RenewOperationalIfNeeded( monitor );
         foreach( var a in _alerts.Flush( monitor ) )
         {
@@ -111,6 +122,73 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     public ILocalParty Party => _local;
+
+    IParty IPartyKeys.Party => _local;
+
+    public int MaxSignatureDays => _maxSignatureDays;
+
+    public ApplicationSignature Sign( string purpose, ReadOnlySpan<byte> data, DateTime expiration )
+    {
+        Throw.CheckArgument( "The expiration must be a UTC DateTime.", expiration.Kind == DateTimeKind.Utc );
+        var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
+        Throw.CheckArgument( "The expiration must be in the future.", expiration > now );
+        Throw.CheckArgument( $"The expiration must be at most MaxSignatureDays = {_maxSignatureDays} days ahead.",
+                             expiration <= now.AddDays( _maxSignatureDays ) );
+        // Before anything is issued: an invalid purpose throws here.
+        var hash = ApplicationSignature.ComputeHash( purpose, expiration, data );
+        var state = _state;
+        if( state.Head.IsAbandonment ) Throw.InvalidOperationException( $"Local '{_local.FullName}' is decommissioned: it signs nothing any more." );
+        var cached = GetApplicationCredential( state.Key, now );
+        if( expiration <= cached.NotAfter )
+        {
+            return ApplicationSignature.Sign( cached, expiration, hash );
+        }
+        // A one-shot credential, valid exactly until the expiration: its key signs once and is
+        // discarded, nothing is left to steal. X.509 times are to the second: rounded outwards.
+        var oneShot = OperationalCredential.Issue( state.Key, now, TruncateToSecond( now ), CeilToSecond( expiration ), ApplicationSignature.SigningOid );
+        try
+        {
+            return ApplicationSignature.Sign( oneShot, expiration, hash );
+        }
+        finally
+        {
+            oneShot.OnTeardown();
+        }
+    }
+
+    /// <summary>
+    /// The cached application credential of <paramref name="key"/>, issued or renewed when needed. It
+    /// lives the shortest of <see cref="OperationalKeyDays"/> and <see cref="MaxSignatureDays"/>, and is
+    /// renewed at half its life. A replaced one is not disposed: a signature may be in progress with it.
+    /// </summary>
+    OperationalCredential GetApplicationCredential( LocalIdentityKey key, DateTime now )
+    {
+        lock( _signLock )
+        {
+            var c = _application;
+            if( c != null && _applicationIssuer == key && now < c.IssuedAt + (c.NotAfter - c.IssuedAt) / 2 ) return c;
+            var notAfter = now.AddDays( Math.Min( _operationalKeyDays, _maxSignatureDays ) );
+            if( notAfter > key.NotAfter ) notAfter = key.NotAfter;
+            _application = c = OperationalCredential.Issue( key, now, TruncateToSecond( now ), notAfter, ApplicationSignature.SigningOid );
+            _applicationIssuer = key;
+            return c;
+        }
+    }
+
+    static DateTime TruncateToSecond( DateTime d ) => new DateTime( d.Ticks - d.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc );
+
+    static DateTime CeilToSecond( DateTime d )
+    {
+        var t = TruncateToSecond( d );
+        return t == d ? d : t.AddSeconds( 1 );
+    }
+
+    public bool Verify( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    {
+        // Its own log, complete from the inception: no clock offset with itself.
+        return ApplicationSignature.Verify( logger, _local.FullName, _state.Log, purpose, data, signature,
+                                            _local.ApplicationIdentityService.SystemClock.UtcNow, TimeSpan.Zero, _allowedOfflineDays );
+    }
 
     public int AllowedOfflineDays => _allowedOfflineDays;
 
@@ -350,6 +428,35 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     /// <summary>
+    /// Scheduled rotation: a current key that cannot guarantee <see cref="AllowedOfflineDays"/> any more is
+    /// replaced by the committed next one. Called at start and from the heartbeat. When the rotation fails,
+    /// the party keeps working with the same key under a fresh certificate, and says so.
+    /// </summary>
+    internal void RotateIfDue( IActivityMonitor monitor, DateTime now )
+    {
+        if( !IsRotationDue( _state, now ) ) return;
+        // Decided again under the lock (Rotate and RenewCertificate take it too: it is re-entrant): two
+        // heartbeats seeing the same due key must not rotate twice.
+        lock( _rotationLock )
+        {
+            var state = _state;
+            if( !IsRotationDue( state, now ) ) return;
+            monitor.Info( $"Identity key #{state.Head.Seq} of '{_local.FullName}' expires on {state.Key.NotAfter:yyyy-MM-dd}. " +
+                          $"It is not enough to guarantee AllowedOfflineDays = {_allowedOfflineDays}: rotating." );
+            if( !Rotate( monitor ) )
+            {
+                // Keep working rather than stop: same key, fresh certificate. The failure has been
+                // logged as an error by Rotate.
+                _alerts.Raise( monitor, IdentityAlertKind.RotationFailing, _local.FullName, true, null, state.Head.Seq, default, default );
+                RenewCertificate( monitor, now );
+            }
+        }
+    }
+
+    bool IsRotationDue( LocalIdentityState state, DateTime now )
+        => !state.Head.IsAbandonment && state.Key.NotAfter < now.AddDays( _allowedOfflineDays + 1 );
+
+    /// <summary>
     /// Renews the operational credential once it has lived half its life. The previous one stays valid
     /// until its own expiry, so a handshake in flight that already presented it is unaffected and no
     /// overlap logic is needed.
@@ -542,6 +649,7 @@ sealed partial class LocalKeys : ILocalKeys
         _alerts.Flush( monitor );
         var last = _state;
         last.Operational.OnTeardown();
+        lock( _signLock ) _application?.OnTeardown();
         last.Key.OnTeardown();
     }
 }

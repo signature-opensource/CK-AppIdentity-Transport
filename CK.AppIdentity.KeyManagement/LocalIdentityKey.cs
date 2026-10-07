@@ -151,11 +151,25 @@ public sealed class LocalIdentityKey : IPublicKeyData
     /// Identifier — those describe the issuance and are set here. Key Usage may be set; it defaults
     /// to <see cref="X509KeyUsageFlags.DigitalSignature"/>.
     /// </param>
+    /// <param name="notBefore">
+    /// UTC start of validity, which must be inside this identity's validity period and before
+    /// <paramref name="notAfter"/>. Defaults to the identity's own NotBefore. A credential whose issue time
+    /// matters to its verifier (see <see cref="ApplicationSignature"/>) states it here.
+    /// </param>
     /// <returns>A new certificate with its private key.</returns>
     public X509Certificate2 CreateDerivedCertificate( X500DistinguishedName? subject = null,
                                                       DateTime? notAfter = null,
-                                                      Action<CertificateRequest>? configure = null )
+                                                      Action<CertificateRequest>? configure = null,
+                                                      DateTime? notBefore = null )
     {
+        DateTimeOffset start = _certificate.NotBefore;
+        if( notBefore.HasValue )
+        {
+            var v = notBefore.Value;
+            Throw.CheckArgument( "notBefore must be a UTC DateTime.", v.Kind == DateTimeKind.Utc );
+            Throw.CheckArgument( "notBefore must be inside the issuing identity's validity period.", v >= _notBefore && v < _notAfter );
+            start = new DateTimeOffset( v );
+        }
         DateTimeOffset end;
         if( notAfter.HasValue )
         {
@@ -229,9 +243,10 @@ public sealed class LocalIdentityKey : IPublicKeyData
             // identity ever signs, 8 random bytes is a collision probability worth nothing.
             Span<byte> serialNumber = stackalloc byte[8];
             RandomNumberGenerator.Fill( serialNumber );
-            // NotBefore is the issuer's: a window nested inside the issuer's is what a chain
-            // validator expects, and this certificate has no reason to start any later.
-            using( var cert = request.Create( _certificate, _certificate.NotBefore, end, serialNumber ) )
+            Throw.CheckArgument( "notBefore must be before notAfter.", start < end );
+            // NotBefore is the issuer's unless stated: a window nested inside the issuer's is what a
+            // chain validator expects, and most credentials have no reason to start any later.
+            using( var cert = request.Create( _certificate, start, end, serialNumber ) )
             {
                 return cert.CopyWithPrivateKey( ecdsa );
             }
