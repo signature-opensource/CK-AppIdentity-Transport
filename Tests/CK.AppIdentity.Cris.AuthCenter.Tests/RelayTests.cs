@@ -56,6 +56,8 @@ public class RelayTests
                                          typeof( IRelaySessionCommand ),
                                          typeof( IRelaySessionResult )];
 
+    const int Port = 37145;
+
     sealed class Pair : IAsyncDisposable
     {
         public required RunningApplication Front { get; init; }
@@ -104,11 +106,14 @@ public class RelayTests
         {
             c["AllowFeatures"] = "AuthCenter";
             c["Parties:0:AuthCenter"] = "true";
+            // Not RunningApplication.Port: it is the one of CK.AppIdentity.Cris.Tests, that may run concurrently.
+            c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, FrontServices, _authTypes );
         // The AuthCenter knows its front: the "$Sender" remote has the AuthCenter feature (unless it is disallowed).
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
             c["AllowFeatures"] = "AuthCenter";
+            c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             c["AuthCenter"] = "true";
             if( !frontIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
         }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider )] );
