@@ -37,5 +37,19 @@ public interface IPartyKeys
     bool Verify( IActivityLineEmitter logger,
                  string purpose,
                  ReadOnlySpan<byte> data,
-                 in ApplicationSignature signature );
+                 in ApplicationSignature signature ) => Check( logger, purpose, data, signature ) == SignatureVerdict.Valid;
+
+    /// <summary>
+    /// Same as <see cref="Verify"/> but tells why a signature is refused: a <see cref="SignatureVerdict.UnknownIssuer"/>
+    /// may become valid once the signer's last key events are known here (see <c>IRemoteKeys.ApplyTail</c>).
+    /// </summary>
+    /// <param name="logger">Receives the reason of a refusal.</param>
+    /// <param name="purpose">The purpose the signature was made for.</param>
+    /// <param name="data">The signed data.</param>
+    /// <param name="signature">The signature.</param>
+    /// <returns>The verdict.</returns>
+    SignatureVerdict Check( IActivityLineEmitter logger,
+                            string purpose,
+                            ReadOnlySpan<byte> data,
+                            in ApplicationSignature signature );
 }

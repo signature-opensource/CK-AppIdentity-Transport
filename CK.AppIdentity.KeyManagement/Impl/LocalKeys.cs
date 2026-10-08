@@ -50,6 +50,9 @@ sealed partial class LocalKeys : ILocalKeys
 
     readonly IdentityAlertBook _alerts;
     readonly PerfectEventSender<IdentityAlert> _alertRaised;
+    readonly PerfectEventSender<LocalIdentityState> _keyEventAppended;
+    // The head of the log last announced by KeyEventAppended (only the heartbeat reads and writes it).
+    KeyEvent _announcedHead;
     // The driver's event, raised after ours: one place for an application to subscribe for every local party.
     readonly PerfectEventSender<IdentityAlert>? _driverAlertRaised;
 
@@ -77,6 +80,8 @@ sealed partial class LocalKeys : ILocalKeys
         _rotationLock = new object();
         _alerts = alerts;
         _alertRaised = new PerfectEventSender<IdentityAlert>();
+        _keyEventAppended = new PerfectEventSender<LocalIdentityState>();
+        _announcedHead = _state.Log[^1];
         _driverAlertRaised = driverAlertRaised;
         local.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
@@ -84,6 +89,8 @@ sealed partial class LocalKeys : ILocalKeys
     public IReadOnlyList<IdentityAlert> Alerts => _alerts.Alerts;
 
     public PerfectEvent<IdentityAlert> AlertRaised => _alertRaised.PerfectEvent;
+
+    public PerfectEvent<LocalIdentityState> KeyEventAppended => _keyEventAppended.PerfectEvent;
 
     public bool Acknowledge( IActivityMonitor monitor, IdentityAlert alert ) => _alerts.Acknowledge( monitor, alert );
 
@@ -118,6 +125,13 @@ sealed partial class LocalKeys : ILocalKeys
         {
             await _alertRaised.SafeRaiseAsync( monitor, a, cancel ).ConfigureAwait( false );
             if( _driverAlertRaised != null ) await _driverAlertRaised.SafeRaiseAsync( monitor, a, cancel ).ConfigureAwait( false );
+        }
+        // Rotate, Recover and Decommission swap the state: any of them appends an event.
+        var state = _state;
+        if( state.Log[^1] != _announcedHead )
+        {
+            _announcedHead = state.Log[^1];
+            await _keyEventAppended.SafeRaiseAsync( monitor, state, cancel ).ConfigureAwait( false );
         }
     }
 
@@ -183,10 +197,10 @@ sealed partial class LocalKeys : ILocalKeys
         return t == d ? d : t.AddSeconds( 1 );
     }
 
-    public bool Verify( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    public SignatureVerdict Check( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
         // Its own log, complete from the inception: no clock offset with itself.
-        return ApplicationSignature.Verify( logger, _local.FullName, _state.Log, purpose, data, signature,
+        return ApplicationSignature.Check( logger, _local.FullName, _state.Log, purpose, data, signature,
                                             _local.ApplicationIdentityService.SystemClock.UtcNow, TimeSpan.Zero, _allowedOfflineDays );
     }
 

@@ -248,6 +248,23 @@ public class ApplicationSignatureTests
         clock.Offset = TimeSpan.Zero;
     }
 
+    [Test, CancelAfter( 30000 )]
+    public async Task A_rotation_raises_KeyEventAppended_from_the_heartbeat_Async( CancellationToken token )
+    {
+        const string partyName = "AppSigKeyEventAppended";
+        IdentityStoreHelper.ClearKeys( partyName );
+        var clock = new SystemClockTester( 50 );
+        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, clock );
+        var keys = s.GetRequiredFeature<ILocalKeys>();
+        var appended = new TaskCompletionSource<LocalIdentityState>( TaskCreationOptions.RunContinuationsAsynchronously );
+        keys.KeyEventAppended.Sync += ( monitor, state ) => appended.TrySetResult( state );
+
+        keys.Rotate( TestHelper.Monitor ).ShouldBeTrue();
+        var state = await appended.Task.WaitAsync( token );
+        state.ShouldBeSameAs( keys.State );
+        state.Tail[^1].Seq.ShouldBe( 1, "The tail ends with the new event: what the remotes need to move their pin." );
+    }
+
     #endregion
 
     #region Remote side
@@ -298,6 +315,36 @@ public class ApplicationSignatureTests
             .ShouldBe( 64 );
         ApplicationSignature.TryCombine( c.Encoded, signature, out var result ).ShouldBeTrue();
         return result;
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_signature_under_a_key_unknown_here_is_an_UnknownIssuer_until_the_tail_is_applied_Async( CancellationToken token )
+    {
+        const string name = "AppSigUnknownIssuer";
+        var clock = NewClock();
+        var (service, keys, _) = await CreateRemoteAsync( name, clock, token );
+        using var peer = PeerIdentity.Create( PeerName( name ) );
+        try
+        {
+            var unpinned = PeerSign( peer.CurrentKey, peer.FullName, DateTime.UtcNow.AddDays( 1 ) );
+            keys.Check( TestHelper.Monitor, Purpose, Data, unpinned ).ShouldBe( SignatureVerdict.UnknownIssuer, "Nothing pinned yet." );
+
+            keys.SetTrustedIdentity( TestHelper.Monitor, peer.Head ).ShouldBeTrue();
+            keys.Check( TestHelper.Monitor, Purpose, "other data"u8, unpinned ).ShouldBe( SignatureVerdict.Refused );
+
+            // The peer rotates and signs with its new key: this party is still pinned on the previous one.
+            peer.Rotate();
+            var s1 = PeerSign( peer.CurrentKey, peer.FullName, DateTime.UtcNow.AddDays( 1 ) );
+            keys.Check( TestHelper.Monitor, Purpose, Data, s1 ).ShouldBe( SignatureVerdict.UnknownIssuer );
+            keys.Verify( TestHelper.Monitor, Purpose, Data, s1 ).ShouldBeFalse();
+
+            keys.ApplyTail( TestHelper.Monitor, peer.Tail ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+            keys.Check( TestHelper.Monitor, Purpose, Data, s1 ).ShouldBe( SignatureVerdict.Valid );
+        }
+        finally
+        {
+            await service.DisposeAsync();
+        }
     }
 
     [Test, CancelAfter( 60000 )]

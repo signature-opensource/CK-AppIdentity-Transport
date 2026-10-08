@@ -223,8 +223,8 @@ public readonly struct ApplicationSignature
     /// <param name="now">The verifier's time.</param>
     /// <param name="maxClockOffset">The offset tolerated on the credential's start (never on the expiration).</param>
     /// <param name="maxLifetimeDays">The verifier's bound on a credential's validity: its AllowedOfflineDays.</param>
-    /// <returns>True if the signature is valid.</returns>
-    internal static bool Verify( IActivityLineEmitter logger,
+    /// <returns>The verdict.</returns>
+    internal static SignatureVerdict Check( IActivityLineEmitter logger,
                                  string signerName,
                                  IReadOnlyList<KeyEvent> chain,
                                  string purpose,
@@ -237,38 +237,38 @@ public readonly struct ApplicationSignature
         if( applicationSignature.IsDefault )
         {
             logger.Warn( $"Signature of '{signerName}' refused: there is none (default value)." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         var credential = applicationSignature.Credential.Span;
         var signature = applicationSignature.Signature.Span;
         if( chain.Count == 0 )
         {
             logger.Warn( $"Signature of '{signerName}' refused: no identity of it is trusted here." );
-            return false;
+            return SignatureVerdict.UnknownIssuer;
         }
         var expiration = ReadExpiration( signature );
         if( expiration == null )
         {
             logger.Warn( $"Signature of '{signerName}' refused: it is malformed." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         // Strict: the signer's bound is what counts.
         if( now > expiration.Value )
         {
             logger.Info( $"Signature of '{signerName}' refused: it expired on {expiration.Value:u}." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         using var c = OperationalCredential.TryLoad( credential, out var error );
         if( c == null )
         {
             logger.Warn( $"Signature of '{signerName}' refused: {error}" );
-            return false;
+            return SignatureVerdict.Refused;
         }
         error = OperationalCredential.CheckLeaf( c, SigningOid, "application signing" );
         if( error != null )
         {
             logger.Warn( $"Signature of '{signerName}' refused: {error}" );
-            return false;
+            return SignatureVerdict.Refused;
         }
         // The issuer, from the head back. An abandonment reveals a key that never issues anything, a
         // recovery event the recovery key: neither can be an issuer.
@@ -290,14 +290,14 @@ public readonly struct ApplicationSignature
         if( issuer < 0 )
         {
             logger.Warn( $"Signature of '{signerName}' refused: its credential is not issued by a key of its identity known here." );
-            return false;
+            return SignatureVerdict.UnknownIssuer;
         }
         for( int j = issuer + 1; j < chain.Count; ++j )
         {
             if( chain[j].IsRecovery )
             {
                 logger.Warn( $"Signature of '{signerName}' refused: its credential was issued by key #{chain[issuer].Seq}, condemned by the recovery #{chain[j].Seq}." );
-                return false;
+                return SignatureVerdict.Refused;
             }
         }
         // X509Certificate2.NotBefore/NotAfter are LOCAL time: converted, never compared raw (M10).
@@ -310,7 +310,7 @@ public readonly struct ApplicationSignature
             if( notBefore > replacedAt )
             {
                 logger.Warn( $"Signature of '{signerName}' refused: its credential starts on {notBefore:u}, after key #{chain[issuer].Seq} was replaced on {replacedAt:u}." );
-                return false;
+                return SignatureVerdict.Refused;
             }
         }
         if( notAfter - notBefore > maxLifetime )
@@ -321,25 +321,25 @@ public readonly struct ApplicationSignature
                         $"Signature of '{signerName}' refused: its credential is valid for {(notAfter - notBefore).TotalDays:0.#} days, " +
                         $"more than this party's AllowedOfflineDays = {maxLifetimeDays}. Check that the MaxSignatureDays of '{signerName}' " +
                         $"is not above the AllowedOfflineDays of the parties that verify its signatures." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         if( expiration.Value > notAfter )
         {
             logger.Warn( $"Signature of '{signerName}' refused: it claims to outlive its credential ({notAfter:u})." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         if( now < notBefore - maxClockOffset )
         {
             logger.Warn( $"Signature of '{signerName}' refused: its credential is not yet valid (NotBefore: {notBefore:u})." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         using var key = c.GetECDsaPublicKey();
         if( key == null
             || !key.VerifyHash( ComputeHash( purpose, expiration.Value, data ), signature.Slice( 8 ), DSASignatureFormat.IeeeP1363FixedFieldConcatenation ) )
         {
             logger.Warn( $"Signature of '{signerName}' refused: it does not match the purpose and the data." );
-            return false;
+            return SignatureVerdict.Refused;
         }
-        return true;
+        return SignatureVerdict.Valid;
     }
 }

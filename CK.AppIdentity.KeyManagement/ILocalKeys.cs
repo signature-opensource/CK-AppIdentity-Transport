@@ -232,6 +232,13 @@ public interface ILocalKeys : IPartyKeys
     PerfectEvent<IdentityAlert> AlertRaised { get; }
 
     /// <summary>
+    /// Raised when the key event log gains an event: a rotation, a recovery or a decommission. Raised from the heartbeat
+    /// that follows the change, with the new <see cref="State"/> (its <see cref="LocalIdentityState.Tail"/> is what the
+    /// remotes need to move their pin: the transport pushes it to the connected ones).
+    /// </summary>
+    PerfectEvent<LocalIdentityState> KeyEventAppended { get; }
+
+    /// <summary>
     /// Acknowledges an alert: it is removed and stops being logged at start. This does not fix what
     /// it reported: a condition that is still there raises it again.
     /// </summary>

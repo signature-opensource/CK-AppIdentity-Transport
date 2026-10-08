@@ -102,12 +102,12 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     IParty IPartyKeys.Party => _remote;
 
-    public bool Verify( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    public SignatureVerdict Check( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
         KeyEvent[] chain;
         lock( _trustLock ) chain = _pinned == null ? [] : [.. _history, _pinned];
         // Bounded by this party's AllowedOfflineDays: what it accepts, whatever the remote is configured with.
-        return ApplicationSignature.Verify( logger, _remote.FullName, chain, purpose, data, signature,
+        return ApplicationSignature.Check( logger, _remote.FullName, chain, purpose, data, signature,
                                             _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset, _localKeys.AllowedOfflineDays );
     }
 
