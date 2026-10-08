@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
-    <PackageReference Include="CK.Testing.NUnit" Version="17.0.1-0.nunit-5.0.ci.1" />
+    <PackageReference Include="CK.Testing.NUnit" Version="17.0.1" />
   </ItemGroup>
 
   <ItemGroup>
