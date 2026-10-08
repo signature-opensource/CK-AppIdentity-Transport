@@ -29,6 +29,8 @@ public class SessionCommandsTests
         await using var app = await AuthCenterApp.StartAsync();
         (await app.LoginAsync( "Albert" )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Critical );
         var firstCookies = app.Caller.Cookies.ShouldNotBeNull();
+        var firstEnd = (await ReadSessionAsync( app )).ShouldNotBeNull().Expires;
+        await Task.Delay( 20 );
 
         var r = await RefreshAsync( app );
         r.Success.ShouldBeTrue();
@@ -38,7 +40,10 @@ public class SessionCommandsTests
         var cookies = app.Caller.Cookies.ShouldNotBeNull();
         cookies.SessionKey.ShouldBe( firstCookies.SessionKey );
         cookies.RefreshSecretHash.ShouldNotBe( firstCookies.RefreshSecretHash );
-        (await ReadSessionAsync( app )).ShouldNotBeNull().Matches( cookies ).ShouldBeTrue();
+        var refreshed = (await ReadSessionAsync( app )).ShouldNotBeNull();
+        refreshed.Matches( cookies ).ShouldBeTrue();
+        refreshed.Expires.ShouldBeGreaterThan( firstEnd, "The session slides." );
+        app.Caller.Issued[^1].RefreshExpires.ShouldBe( refreshed.Expires );
 
         // The first secrets are presented again: they have been stolen (or copied). The session is revoked.
         app.Caller.Cookies = firstCookies;

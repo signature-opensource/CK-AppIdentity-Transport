@@ -68,7 +68,7 @@ Read from the `"AuthCenter"` section of the local party (never inherited, static
 
 | Key | Default | |
 |---|---|---|
-| `SessionLifetime` | 1 day | The `Expires` of a login. |
+| `SessionLifetime` | 1 day | The `Expires` of a login. The session slides: each refresh moves its end `SessionLifetime` later. |
 | `CriticalLifetime` | 5 minutes | The `CriticalExpires` of a login at `Critical` level. |
 | `TokenLifetime` | 10 minutes | The lifetime of a token (at most the session's). |
 
@@ -109,7 +109,7 @@ They carry nothing: they act on **the current session**, the one whose proof the
 
 | Command | |
 |---|---|
-| `IRefreshSessionCommand` | Reads the actors again (a disabled or removed actor cannot refresh), at most at `Normal` level (the `Critical` level requires a login), rotates the secrets and issues a new token. The impersonation is kept. |
+| `IRefreshSessionCommand` | Reads the actors again (a disabled or removed actor cannot refresh), at most at `Normal` level (the `Critical` level requires a login), slides the session (it ends `SessionLifetime` after the refresh), rotates the secrets and issues a new token. The impersonation is kept. |
 | `ILogoutSessionCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
 | `IImpersonateCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. |
 | `IClearImpersonationCommand` | Always possible: it can only lower the privileges. |

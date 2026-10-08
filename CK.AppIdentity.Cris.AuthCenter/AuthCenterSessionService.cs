@@ -83,21 +83,22 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         return (new Current( center.Local, session ), null, null);
     }
 
-    // Rotates the endpoint secrets, saves the session and returns the new token.
-    async ValueTask<ISessionResult> IssueAsync<T>( IActivityMonitor monitor, T command, Current c, int actorId, AuthenticationInfo info, DateTime utcNow )
+    // Rotates the endpoint secrets, saves the session (with its actor and its end) and returns the new token.
+    async ValueTask<ISessionResult> IssueAsync<T>( IActivityMonitor monitor, T command, Current c, int actorId, DateTime expires, AuthenticationInfo info, DateTime utcNow )
         where T : ICommand<ISessionResult>
     {
         var s = c.Session;
-        var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, s.Expires );
-        await c.Center.Sessions.SaveAsync( s with { ActorId = actorId, RefreshSecretHash = proof.RefreshSecretHash, BindingSecretHash = proof.BindingSecretHash } )
+        var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, expires );
+        await c.Center.Sessions.SaveAsync( s with { ActorId = actorId, Expires = expires, RefreshSecretHash = proof.RefreshSecretHash, BindingSecretHash = proof.BindingSecretHash } )
                                .ConfigureAwait( false );
         return AuthCenterResults.Success( command, info, c.Center.CreateToken( s.SessionId, info, utcNow ), s.RememberMe );
     }
 
     /// <summary>
     /// Refreshes the current session: the actors are read again (a disabled actor cannot refresh), the levels are
-    /// at most <see cref="AuthLevel.Normal"/> (the <see cref="AuthLevel.Critical"/> level requires a login), the secrets
-    /// rotate and a new token is issued.
+    /// at most <see cref="AuthLevel.Normal"/> (the <see cref="AuthLevel.Critical"/> level requires a login), the session
+    /// slides (it ends <see cref="AuthCenterOptions.SessionLifetime"/> after this refresh), the secrets rotate and a new
+    /// token is issued.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="command">The command.</param>
@@ -122,8 +123,10 @@ public sealed class AuthCenterSessionService : IScopedAutoService
             return AuthCenterResults.Failure( monitor, command, "The actor cannot be used anymore.", "Authentication.InvalidActor" );
         }
         var utcNow = DateTime.UtcNow;
-        var info = AuthenticationInfo.Create( ToNormal( actual ), ToNormal( actor ), s.Expires, null, s.DeviceId, utcNow );
-        return await IssueAsync( monitor, command, c.Value, actor.ActorId, info, utcNow ).ConfigureAwait( false );
+        // The session slides: it ends SessionLifetime after its last refresh.
+        var expires = utcNow + c.Value.Center.Options.SessionLifetime;
+        var info = AuthenticationInfo.Create( ToNormal( actual ), ToNormal( actor ), expires, null, s.DeviceId, utcNow );
+        return await IssueAsync( monitor, command, c.Value, actor.ActorId, expires, info, utcNow ).ConfigureAwait( false );
 
         static ActorInfo ToNormal( ActorInfo a ) => a.Level > AuthLevel.Normal ? a.WithLevel( AuthLevel.Normal ) : a;
     }
@@ -186,7 +189,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow )
                                      .Impersonate( target, utcNow );
         monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"{actual} impersonates {target}." );
-        return await IssueAsync( monitor, command, c.Value, target.ActorId, info, utcNow ).ConfigureAwait( false );
+        return await IssueAsync( monitor, command, c.Value, target.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
     }
 
     /// <summary>
@@ -207,6 +210,6 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         }
         var utcNow = DateTime.UtcNow;
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow );
-        return await IssueAsync( monitor, command, c.Value, actual.ActorId, info, utcNow ).ConfigureAwait( false );
+        return await IssueAsync( monitor, command, c.Value, actual.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
     }
 }

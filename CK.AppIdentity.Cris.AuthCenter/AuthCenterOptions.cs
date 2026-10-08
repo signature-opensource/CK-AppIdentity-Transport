@@ -22,7 +22,8 @@ public sealed class AuthCenterOptions
     }
 
     /// <summary>
-    /// Gets the lifetime of a session: the <see cref="AuthenticationInfo.Expires"/> of a login.
+    /// Gets the lifetime of a session: the <see cref="AuthenticationInfo.Expires"/> of a login. The session slides: each
+    /// refresh moves its end to this lifetime after the refresh.
     /// Defaults to 1 day.
     /// </summary>
     public TimeSpan SessionLifetime { get; }
