@@ -3,6 +3,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer;
@@ -46,19 +47,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         }
         else if( _runTask.IsFaulted )
         {
-            var ex = _runTask.Exception;
-            if( ConnectionFault.IsPeerFault( ex ) )
-            {
-                // An unauthenticated peer sending garbage is an ordinary event on a listening port.
-                // One short line, no stack.
-                monitor.Warn( $"Incoming connection for '{_incoming}' failed on its own data " +
-                              $"({ConnectionFault.ShortName( ex! )}). Destroying the transport." );
-            }
-            else
-            {
-                monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
-                               $"Error while handling incoming connection for '{_incoming}'. Destroying the transport.", ex );
-            }
+            // The fault itself is observed and logged by ObserveFault.
             TaskManager.Host.KillTransport( _incoming, int.MaxValue );
         }
         else
@@ -96,8 +85,34 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // starting a fresh clock here would let an unauthenticated peer hold a slot for twice the
         // number the concurrency cap is sized against.
         _initializeTime = acceptedAtUtc;
-        _runTask = Task.Run( () => RunAsync( TaskManager.Host, incoming, incomingTime ) );
+        var host = TaskManager.Host;
+        _runTask = Task.Run( () => RunAsync( host, incoming, incomingTime ) );
+        _runTask.ContinueWith( t => ObserveFault( host, incoming, t ),
+                               CancellationToken.None,
+                               TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                               TaskScheduler.Default );
         NextCheckDelay = 1;
+    }
+
+    // The fault of the run task is always observed, here, as soon as it happens: Check sees the end of the task only if this
+    // back task still exists, and it can be destroyed (and reset) before (at shutdown, or when the transport is killed).
+    // A fault no one reads surfaces at garbage collection as an UnobservedTaskException, logged as a Fatal error.
+    // Logging it here (and only here) also logs it exactly once.
+    static void ObserveFault( TransportManager host, Transport incoming, Task t )
+    {
+        var ex = t.Exception;
+        if( ConnectionFault.IsPeerFault( ex ) )
+        {
+            // An unauthenticated peer sending garbage (or going away) is an ordinary event on a listening port.
+            // One short line, no stack.
+            host.Logger.Warn( $"Incoming connection for '{incoming}' failed on its own data " +
+                              $"({ConnectionFault.ShortName( ex! )}). Destroying the transport." );
+        }
+        else
+        {
+            host.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
+                               $"Error while handling incoming connection for '{incoming}'. Destroying the transport.", ex );
+        }
     }
 
     // Wraps the call to DoRunAsync that does the real job of handling the incoming InitialMessage:

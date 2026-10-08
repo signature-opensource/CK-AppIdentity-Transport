@@ -207,7 +207,7 @@ public class RelayTests
         {
             var s = scope.ServiceProvider;
             var schemes = (await s.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( s, s.GetRequiredService<PocoDirectory>().Create<IGetLoginSchemesQCommand>() )).Result;
-            schemes.ShouldBeAssignableTo<IList<string>>().ShouldContain( "Oidc.Test" );
+            schemes.ShouldBeAssignableTo<IList<string>>().ShouldNotBeNull().ShouldContain( "Oidc.Test" );
         }
     }
 
