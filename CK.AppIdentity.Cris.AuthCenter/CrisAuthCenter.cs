@@ -64,7 +64,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
 
     /// <summary>
     /// Reads a token issued by the Authentication Center for the <see cref="Owner"/>: its signature is verified
-    /// (see <see cref="Verify"/>), then its audience (a token issued for another local party is refused).
+    /// (see <see cref="Verify"/>), then its audience: the <see cref="AuthCenter"/> party (a token issued by another Authentication Center, of another tenant domain for instance, is refused).
     /// The authentication cannot outlive the token.
     /// </summary>
     /// <param name="logger">Receives the reason of a refusal.</param>
@@ -80,7 +80,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
                               [NotNullWhen( true )] out string? sessionId )
     {
         Throw.CheckNotNullArgument( token );
-        return AuthCenterToken.TryRead( logger, this, _owner.FullName, token, utcNow, out info, out sessionId );
+        return AuthCenterToken.TryRead( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId );
     }
 
     /// <summary>

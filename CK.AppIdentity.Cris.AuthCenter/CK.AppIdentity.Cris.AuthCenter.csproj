@@ -4,9 +4,11 @@
     <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain).</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="2.0.1-0.cris-auth.0.ci.10" />
+    <PackageReference Include="CK.Cris.Authentication" Version="2.0.1-0.cris-auth.0.ci.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />
+    <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
+    <ProjectReference Include="..\CK.IO.AuthCenter\CK.IO.AuthCenter.csproj" />
   </ItemGroup>
 </Project>

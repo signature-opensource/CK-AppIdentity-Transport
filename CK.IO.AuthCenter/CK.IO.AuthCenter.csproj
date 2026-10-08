@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The relay protocol between the fronts and their remote Authentication Center.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CK.Cris" Version="2.0.1-0.cris-auth.0.ci.9" />
+  </ItemGroup>
+</Project>

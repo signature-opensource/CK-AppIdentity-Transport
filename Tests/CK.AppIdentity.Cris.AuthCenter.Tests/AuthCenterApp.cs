@@ -78,11 +78,24 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public AuthenticationInfo Current { get; set; } = AuthenticationInfo.None;
 
+        public string? Token { get; set; }
+
+        (string, string)? _prepared;
+
+        internal (string, string) PrepareSecrets()
+        {
+            ++_count;
+            var p = ("refresh-hash-" + _count, "binding-hash-" + _count);
+            _prepared = p;
+            return p;
+        }
+
         internal AuthenticationSessionProof Issue( string sessionKey, bool rememberMe, DateTime refreshExpires )
         {
             Issued.Add( (sessionKey, rememberMe, refreshExpires) );
-            ++_count;
-            return Cookies = new AuthenticationSessionProof( sessionKey, "refresh-hash-" + _count, "binding-hash-" + _count );
+            var (refresh, binding) = _prepared ?? PrepareSecrets();
+            _prepared = null;
+            return Cookies = new AuthenticationSessionProof( sessionKey, refresh, binding );
         }
 
         internal void Clear()
@@ -99,6 +112,10 @@ public sealed class AuthCenterApp : IAsyncDisposable
         public FakeEndpoint( Browser browser ) => _browser = browser;
 
         public AuthenticationSessionProof? PresentedProof => _browser.Cookies;
+
+        public string? PresentedToken => _browser.Token;
+
+        public (string RefreshSecretHash, string BindingSecretHash) PrepareSecrets() => _browser.PrepareSecrets();
 
         public AuthenticationSessionProof Issue( string sessionKey, bool rememberMe, DateTime refreshExpires ) => _browser.Issue( sessionKey, rememberMe, refreshExpires );
 
@@ -190,6 +207,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
         {
             Center.TryReadToken( TestHelper.Monitor, r.Token, DateTime.UtcNow, out var info, out _ ).ShouldBeTrue();
             Caller.Current = info;
+            Caller.Token = r.Token;
         }
         return r;
     }

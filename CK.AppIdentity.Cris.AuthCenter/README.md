@@ -98,8 +98,8 @@ The `IAuthenticationSessionOpener` of a local Authentication Center. The provide
 account creation or binding of an unregistered user), then stores the session, lets the endpoint issue its secrets and
 returns the signed token.
 
-A remote Authentication Center is reached by a relay at the receiving endpoint, before the handlers (to come): a session
-command that reaches the opener while the Authentication Center is remote fails closed. It is never executed locally.
+A session command that reaches the opener while the Authentication Center is remote fails closed: it is never
+executed locally (the relay happens before, see below).
 
 ### The other session commands ([`AuthCenterSessionService`](AuthCenterSessionService.cs))
 
@@ -123,3 +123,32 @@ session is deleted and the endpoint secrets are cleared. The legitimate caller t
 background, never on the agent loop. No setting: every save writes the session file and a session never ends later
 than `SessionLifetime` after it, so the files written before "now - SessionLifetime" are the candidates, and their
 end is checked before they are deleted. An expired session that is presented is also deleted at once.
+
+## The relay to a remote Authentication Center
+
+When the Authentication Center of the current local party is a remote one, the endpoints that accept the session
+commands call `IAuthenticationSessionRelay.TryRelay` (CK.Cris.Authentication) **before** the handlers: a front may have
+no login provider at all. The protocol is in [CK.IO.AuthCenter](../CK.IO.AuthCenter).
+
+**The front** ([`AuthCenterRelay`](AuthCenterRelay.cs)):
+- its endpoint prepares the next secrets: their hashes travel with the command, the secrets stay in the front;
+- it sends an `IRelaySessionCommand` (the command, the presented bearer token and proof, the prepared hashes) over the
+  Cris channel and waits for the Authentication Center (at most `AuthCenterRelay.Timeout`, 30 seconds);
+- it applies what the Authentication Center issued (with the prepared secrets) or cleared to its endpoint.
+- It fails closed: an unavailable or unreachable Authentication Center is an error, never a local execution.
+
+**The Authentication Center** ([`AuthCenterRelayHandler`](AuthCenterRelayHandler.cs)):
+- **Authorization without configuration:** only its remotes that have its "AuthCenter" feature (its fronts) can relay.
+- It reads the bearer token again (the front is never trusted), validates the relayed command as an incoming command and
+  executes it in its own endpoint ([`AuthCenterRelayDIContainerDefinition`](AuthCenterRelayDIContainerDefinition.cs)):
+  the session endpoint is the relayed one (it presents what the front presented, its `Issue` uses the front's prepared
+  hashes), the current local party is the Authentication Center, the caller is the front.
+
+`IGetLoginSchemesQCommand` is not a session command: a front simply asks its Authentication Center.
+
+**The tokens of a remote Authentication Center** are verified by the front with the pinned keys of the Authentication
+Center (`TryReadToken`). Their audience is the Authentication Center party. Right after a key rotation of the
+Authentication Center, a front refuses its new tokens until a handshake moves its pin (R1, accepted for now).
+
+**Not yet:** the commands with sensitive data (the Basic login password) are refused by both sides: their sensitive
+fields will be encrypted for the Authentication Center (next step).

@@ -55,9 +55,19 @@ public sealed class AuthCenterCommandHandlers : ISingletonAutoService
         => sessions.ClearImpersonationAsync( monitor, command );
 
     /// <summary>
-    /// Handles the <see cref="IGetLoginSchemesQCommand"/>: the provider names of the login providers.
+    /// Handles the <see cref="IGetLoginSchemesQCommand"/>: the provider names of the login providers of the AuthCenter.
+    /// A front asks its remote AuthCenter (it may have no providers at all).
     /// </summary>
     [CommandHandler]
-    public IList<string> Handle( IGetLoginSchemesQCommand command )
-        => _providers.SelectMany( p => p.ProviderNames ).Distinct( StringComparer.OrdinalIgnoreCase ).Order( StringComparer.OrdinalIgnoreCase ).ToList();
+    public async Task<IList<string>> HandleAsync( IActivityMonitor monitor, IGetLoginSchemesQCommand command, CurrentLocalParty localParty )
+    {
+        var center = localParty.LocalParty.GetFeature<CrisAuthCenter>();
+        if( center != null && !center.IsLocal )
+        {
+            var channel = center.AuthCenter.GetFeature<CrisChannelFeature>();
+            if( !center.IsAvailable || channel == null ) return [];
+            return await channel.SendCommand( monitor, command ).WithResult<IList<string>>().Result.WaitAsync( AuthCenterRelay.Timeout ).ConfigureAwait( false );
+        }
+        return _providers.SelectMany( p => p.ProviderNames ).Distinct( StringComparer.OrdinalIgnoreCase ).Order( StringComparer.OrdinalIgnoreCase ).ToList();
+    }
 }

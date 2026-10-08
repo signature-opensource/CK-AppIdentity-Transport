@@ -17,8 +17,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <para>
 /// The token string is "base64url( len16(data) ‖ data ‖ signature )". The data is:
 /// version(1) ‖ audience ‖ sessionId ‖ deviceId ‖ expires ‖ criticalExpires ‖ actual actor ‖ impersonated(1) [‖ actor]
-/// where an actor is its identifier, name and level. The audience is the full name of the local party: a token
-/// of a tenant domain is refused by another one. The token expires with its signature.
+/// where an actor is its identifier, name and level. The audience is the full name of the Authentication Center party: a token
+/// of a tenant domain is refused by another one (that has another Authentication Center). The token expires with its signature.
 /// </para>
 /// </summary>
 static class AuthCenterToken
