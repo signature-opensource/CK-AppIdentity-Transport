@@ -86,6 +86,7 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
         // A destroyed tenant domain takes its AuthCenter (and all its remotes) with it.
+        if( party is ILocalParty local ) local.GetFeature<CrisAuthCenter>()?.Local?.OnTeardown();
         // A destroyed remote that is the AuthCenter of a living local party is an issue.
         if( party is IRemoteParty remote
             && remote.Owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter f
@@ -97,7 +98,14 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     }
 
     /// <inheritdoc />
-    protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
+    protected override Task TeardownAsync( FeatureLifetimeContext context )
+    {
+        foreach( var local in context.GetAllLocals() )
+        {
+            local.GetFeature<CrisAuthCenter>()?.Local?.OnTeardown();
+        }
+        return Task.CompletedTask;
+    }
 
     bool PlugLocal( IActivityMonitor monitor, ILocalParty local )
     {

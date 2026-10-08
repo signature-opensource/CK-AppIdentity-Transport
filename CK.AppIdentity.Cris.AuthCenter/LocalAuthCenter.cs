@@ -1,6 +1,8 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
 
@@ -19,7 +21,46 @@ public sealed class LocalAuthCenter
         _party = party;
         _options = options;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
+        party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
+
+    /// <summary>
+    /// The period of the purge of the expired sessions: 1 hour.
+    /// </summary>
+    public static readonly TimeSpan PurgePeriod = TimeSpan.FromHours( 1 );
+
+    DateTime _nextPurge;
+    int _purging;
+
+    // The heartbeat runs on the agent loop: the purge (that enumerates files) runs in the background.
+    Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
+    {
+        var utcNow = DateTime.UtcNow;
+        if( utcNow >= _nextPurge && Interlocked.CompareExchange( ref _purging, 1, 0 ) == 0 )
+        {
+            _nextPurge = utcNow + PurgePeriod;
+            _ = Task.Run( async () =>
+            {
+                var m = new ActivityMonitor( $"AuthCenter '{_party}' session purge." );
+                try
+                {
+                    await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
+                }
+                catch( Exception ex )
+                {
+                    m.Error( "While purging the expired sessions.", ex );
+                }
+                finally
+                {
+                    m.MonitorEnd();
+                    _purging = 0;
+                }
+            } );
+        }
+        return Task.CompletedTask;
+    }
+
+    internal void OnTeardown() => _party.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
 
     /// <summary>
     /// Gets the local party that is the Authentication Center.

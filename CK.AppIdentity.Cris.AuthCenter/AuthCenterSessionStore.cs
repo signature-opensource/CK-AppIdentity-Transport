@@ -1,6 +1,7 @@
 using CK.Core;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,10 +40,24 @@ public sealed class AuthCenterSessionStore
     /// <param name="session">The session to save.</param>
     /// <param name="cancel">Optional cancellation token.</param>
     /// <returns>The awaitable.</returns>
-    public Task SaveAsync( AuthCenterSession session, CancellationToken cancel = default )
+    public async Task SaveAsync( AuthCenterSession session, CancellationToken cancel = default )
     {
         var path = GetPath( session.ActualActorId, session.SessionId );
         _store.CreateDirectory( path.RemoveLastPart() );
+        try
+        {
+            await WriteAsync( path, session, cancel ).ConfigureAwait( false );
+        }
+        catch( DirectoryNotFoundException )
+        {
+            // The purge deleted the (empty) actor folder in the meantime.
+            _store.CreateDirectory( path.RemoveLastPart() );
+            await WriteAsync( path, session, cancel ).ConfigureAwait( false );
+        }
+    }
+
+    Task WriteAsync( NormalizedPath path, AuthCenterSession session, CancellationToken cancel )
+    {
         return _store.WriteAtomicallyAsync( path, async ( stream, c ) =>
         {
             await using var w = new Utf8JsonWriter( stream );
@@ -98,6 +113,49 @@ public sealed class AuthCenterSessionStore
             monitor.Error( $"Unable to read the session '{path}'.", ex );
             return null;
         }
+    }
+
+    /// <summary>
+    /// Deletes the expired sessions (and the actor folders that become empty).
+    /// <para>
+    /// Every save writes the session file and a session never ends later than <paramref name="sessionLifetime"/> after it
+    /// has been saved: the files written before "now - sessionLifetime" are the candidates, their end is then checked.
+    /// A candidate that cannot be read is deleted (it cannot be used anyway).
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <param name="sessionLifetime">The <see cref="AuthCenterOptions.SessionLifetime"/>.</param>
+    /// <param name="cancel">Optional cancellation token.</param>
+    /// <returns>The number of deleted sessions.</returns>
+    public async Task<int> PurgeExpiredAsync( IActivityMonitor monitor, DateTime utcNow, TimeSpan sessionLifetime, CancellationToken cancel = default )
+    {
+        if( !Directory.Exists( _root ) ) return 0;
+        int count = 0;
+        var limit = utcNow - sessionLifetime;
+        foreach( var actorFolder in Directory.EnumerateDirectories( _root ) )
+        {
+            if( !int.TryParse( Path.GetFileName( actorFolder ), System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var actorId )
+                || actorId == 0 )
+            {
+                continue;
+            }
+            foreach( var file in Directory.EnumerateFiles( actorFolder ) )
+            {
+                cancel.ThrowIfCancellationRequested();
+                var sessionId = Path.GetFileName( file );
+                if( !AuthCenterSession.IsValidSessionId( sessionId ) || File.GetLastWriteTimeUtc( file ) >= limit ) continue;
+                var s = await TryReadAsync( monitor, actorId, sessionId, cancel ).ConfigureAwait( false );
+                if( (s == null || s.Expires <= utcNow) && _store.TryTrash( monitor, file, immediateDelete: true ) ) ++count;
+            }
+            if( !Directory.EnumerateFileSystemEntries( actorFolder ).Any() )
+            {
+                // A concurrent login may write in it: an error is not an issue (the next purge retries).
+                try { Directory.Delete( actorFolder ); } catch( IOException ) { }
+            }
+        }
+        if( count > 0 ) monitor.Info( $"{count} expired sessions purged." );
+        return count;
     }
 
     /// <summary>

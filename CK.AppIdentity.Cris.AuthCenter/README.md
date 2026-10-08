@@ -119,4 +119,7 @@ They carry nothing: they act on **the current session**, the one whose proof the
 right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The
 session is deleted and the endpoint secrets are cleared. The legitimate caller then has to log in again.
 
-**Not done yet:** the purge of the expired sessions (an expired session is deleted when it is presented).
+**The purge of the expired sessions** runs every hour (`LocalAuthCenter.PurgePeriod`, from the first heartbeat) in the
+background, never on the agent loop. No setting: every save writes the session file and a session never ends later
+than `SessionLifetime` after it, so the files written before "now - SessionLifetime" are the candidates, and their
+end is checked before they are deleted. An expired session that is presented is also deleted at once.

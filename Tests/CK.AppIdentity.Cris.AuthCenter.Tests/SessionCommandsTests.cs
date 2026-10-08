@@ -150,3 +150,47 @@ public class SessionCommandsTests
         schemes.ShouldBe( ["Weak"] );
     }
 }
+
+[TestFixture]
+public class SessionPurgeTests
+{
+    [Test]
+    public async Task the_purge_deletes_the_expired_sessions_Async()
+    {
+        await using var app = await AuthCenterApp.StartAsync();
+        var local = app.Center.Local.ShouldNotBeNull();
+        var store = local.Sessions;
+        var utcNow = System.DateTime.UtcNow;
+        var lifetime = local.Options.SessionLifetime;
+        var root = app.Identity.LocalFileStore.FolderPath.Combine( "AuthCenter/Sessions" );
+        // The test store persists between runs: starts clean.
+        if( System.IO.Directory.Exists( root ) ) System.IO.Directory.Delete( root, recursive: true );
+
+        async Task<AuthCenterSession> SaveAsync( int actorId, System.DateTime expires, System.DateTime lastWrite )
+        {
+            var s = new AuthCenterSession( AuthCenterSession.NewSessionId(), actorId, actorId, utcNow, expires, false, "D", "r", "b" );
+            await store.SaveAsync( s );
+            System.IO.File.SetLastWriteTimeUtc( root.AppendPart( actorId.ToString() ).AppendPart( s.SessionId ), lastWrite );
+            return s;
+        }
+        var expired = await SaveAsync( 1001, utcNow.AddHours( -1 ), utcNow - lifetime - System.TimeSpan.FromHours( 1 ) );
+        var alive = await SaveAsync( 1002, utcNow.AddHours( 1 ), utcNow - lifetime - System.TimeSpan.FromHours( 1 ) );
+        var recent = await SaveAsync( 1003, utcNow.AddHours( -1 ), utcNow );
+        // A candidate that cannot be read cannot be used: it is deleted.
+        var corrupted = AuthCenterSession.NewSessionId();
+        System.IO.File.WriteAllText( root.AppendPart( "1002" ).AppendPart( corrupted ), "not a session" );
+        System.IO.File.SetLastWriteTimeUtc( root.AppendPart( "1002" ).AppendPart( corrupted ), utcNow - lifetime - System.TimeSpan.FromHours( 1 ) );
+
+        (await store.PurgeExpiredAsync( TestHelper.Monitor, utcNow, lifetime )).ShouldBe( 2 );
+
+        (await store.TryReadAsync( TestHelper.Monitor, 1001, expired.SessionId )).ShouldBeNull();
+        System.IO.Directory.Exists( root.AppendPart( "1001" ) ).ShouldBeFalse( "The empty actor folder is removed." );
+        (await store.TryReadAsync( TestHelper.Monitor, 1002, alive.SessionId )).ShouldNotBeNull( "Its end is checked: it is alive." );
+        System.IO.File.Exists( root.AppendPart( "1002" ).AppendPart( corrupted ) ).ShouldBeFalse();
+        // Written now: not a candidate (it is refused when presented, and purged later).
+        (await store.TryReadAsync( TestHelper.Monitor, 1003, recent.SessionId )).ShouldNotBeNull();
+
+        // A session saved after the purge recreates its actor folder.
+        await SaveAsync( 1001, utcNow.AddHours( 1 ), utcNow );
+    }
+}
