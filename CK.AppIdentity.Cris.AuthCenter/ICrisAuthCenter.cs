@@ -36,5 +36,15 @@ public interface ICrisAuthCenter
     /// <param name="data">The signed token data.</param>
     /// <param name="signature">The signature.</param>
     /// <returns>True if the token signature is valid now.</returns>
-    bool Verify( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature );
+    bool Verify( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature ) => Check( logger, data, signature ) == SignatureVerdict.Valid;
+
+    /// <summary>
+    /// Same as <see cref="Verify"/> but tells why a token is refused: a <see cref="SignatureVerdict.UnknownIssuer"/> may become
+    /// valid once the last key events of a remote Authentication Center are known here.
+    /// </summary>
+    /// <param name="logger">Receives the reason of a refusal.</param>
+    /// <param name="data">The signed token data.</param>
+    /// <param name="signature">The signature.</param>
+    /// <returns>The verdict.</returns>
+    SignatureVerdict Check( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature );
 }

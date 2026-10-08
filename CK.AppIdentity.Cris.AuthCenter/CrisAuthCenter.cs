@@ -1,7 +1,9 @@
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
 
@@ -52,14 +54,18 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
 
     /// <inheritdoc />
     public bool Verify( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+        => Check( logger, data, signature ) == SignatureVerdict.Valid;
+
+    /// <inheritdoc />
+    public SignatureVerdict Check( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
         if( !IsAvailable )
         {
             logger.Warn( $"Token refused: the AuthCenter '{_authCenter}' of '{_owner}' has been destroyed." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         // The driver checked that the AuthCenter has its keys.
-        return _authCenter.GetRequiredFeature<IPartyKeys>().Verify( logger, ICrisAuthCenter.TokenPurpose, data, signature );
+        return _authCenter.GetRequiredFeature<IPartyKeys>().Check( logger, ICrisAuthCenter.TokenPurpose, data, signature );
     }
 
     /// <summary>
@@ -80,7 +86,34 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
                               [NotNullWhen( true )] out string? sessionId )
     {
         Throw.CheckNotNullArgument( token );
-        return AuthCenterToken.TryRead( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId );
+        return AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId ) == SignatureVerdict.Valid;
+    }
+
+    /// <summary>
+    /// The maximal time <see cref="ReadTokenAsync"/> waits for the key events of a remote Authentication Center: 2 seconds.
+    /// </summary>
+    public static readonly TimeSpan KeyEventsTimeout = TimeSpan.FromSeconds( 2 );
+
+    /// <summary>
+    /// Same as <see cref="TryReadToken"/>, with a safety net for a remote Authentication Center: when its signature is refused
+    /// because its issuer is not known here (it rotated its key and its key events have not been received), its key events
+    /// are requested (at most <see cref="KeyEventsTimeout"/>) and the token is read again, once.
+    /// </summary>
+    /// <param name="logger">Receives the reason of a refusal.</param>
+    /// <param name="token">The token.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <returns>The authentication and the session identifier, or null if the token is refused.</returns>
+    public async ValueTask<(AuthenticationInfo Info, string SessionId)?> ReadTokenAsync( IActivityLineEmitter logger, string token, DateTime utcNow )
+    {
+        Throw.CheckNotNullArgument( token );
+        var verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out var info, out var sessionId );
+        if( verdict == SignatureVerdict.UnknownIssuer
+            && _authCenter.GetFeature<TransportFeature>() is TransportFeature transport
+            && await transport.RequestKeyEventsAsync( KeyEventsTimeout ).ConfigureAwait( false ) )
+        {
+            verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId );
+        }
+        return verdict == SignatureVerdict.Valid ? (info!, sessionId!) : null;
     }
 
     /// <summary>

@@ -62,13 +62,13 @@ static class AuthCenterToken
         }
     }
 
-    internal static bool TryRead( IActivityLineEmitter logger,
+    internal static SignatureVerdict Read( IActivityLineEmitter logger,
                                   ICrisAuthCenter center,
                                   NormalizedPath audience,
                                   string token,
                                   DateTime utcNow,
-                                  [NotNullWhen( true )] out AuthenticationInfo? info,
-                                  [NotNullWhen( true )] out string? sessionId )
+                                  out AuthenticationInfo? info,
+                                  out string? sessionId )
     {
         info = null;
         sessionId = null;
@@ -80,7 +80,7 @@ static class AuthCenterToken
         catch( FormatException )
         {
             logger.Warn( "Token refused: it is malformed." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         if( all.Length < 2 ) return Malformed( logger );
         int dataLength = BinaryPrimitives.ReadUInt16BigEndian( all );
@@ -90,10 +90,11 @@ static class AuthCenterToken
         if( signature.Expiration <= utcNow )
         {
             logger.Warn( $"Token refused: it expired at {signature.Expiration:O}." );
-            return false;
+            return SignatureVerdict.Refused;
         }
         // The signature first: nothing is read from unverified data.
-        if( !center.Verify( logger, data, signature ) ) return false;
+        var verdict = center.Check( logger, data, signature );
+        if( verdict != SignatureVerdict.Valid ) return verdict;
         try
         {
             using var r = new BinaryReader( new MemoryStream( all, 2, dataLength, writable: false ), Encoding.UTF8 );
@@ -101,13 +102,13 @@ static class AuthCenterToken
             if( version != _version )
             {
                 logger.Warn( $"Token refused: unknown version {version}." );
-                return false;
+                return SignatureVerdict.Refused;
             }
             var tokenAudience = r.ReadString();
             if( tokenAudience != audience.Path )
             {
                 logger.Warn( $"Token refused: it has been issued for '{tokenAudience}', not for '{audience}'." );
-                return false;
+                return SignatureVerdict.Refused;
             }
             sessionId = r.ReadString();
             var deviceId = r.ReadString();
@@ -121,7 +122,7 @@ static class AuthCenterToken
             expires = expires.HasValue && expires.Value > end ? end : expires;
             criticalExpires = criticalExpires.HasValue && criticalExpires.Value > end ? end : criticalExpires;
             info = AuthenticationInfo.Create( actual, actor, expires, criticalExpires, deviceId, utcNow );
-            return true;
+            return SignatureVerdict.Valid;
         }
         catch( Exception ex ) when( ex is EndOfStreamException or ArgumentException or FormatException )
         {
@@ -144,9 +145,9 @@ static class AuthCenterToken
         }
     }
 
-    static bool Malformed( IActivityLineEmitter logger )
+    static SignatureVerdict Malformed( IActivityLineEmitter logger )
     {
         logger.Warn( "Token refused: it is malformed." );
-        return false;
+        return SignatureVerdict.Refused;
     }
 }

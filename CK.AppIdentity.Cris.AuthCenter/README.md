@@ -147,8 +147,10 @@ no login provider at all. The protocol is in [CK.IO.AuthCenter](../CK.IO.AuthCen
 `IGetLoginSchemesQCommand` is not a session command: a front simply asks its Authentication Center.
 
 **The tokens of a remote Authentication Center** are verified by the front with the pinned keys of the Authentication
-Center (`TryReadToken`). Their audience is the Authentication Center party. Right after a key rotation of the
-Authentication Center, a front refuses its new tokens until a handshake moves its pin (R1, accepted for now).
+Center. Their audience is the Authentication Center party. After a key rotation, the Authentication Center pushes its new
+key events to its connected fronts (the transport does it, see CK.AppIdentity.TransportLayer). A front that missed them
+uses `ReadTokenAsync`: when a token is refused because its issuer is not known (`SignatureVerdict.UnknownIssuer`), the key
+events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once.
 
 **Not yet:** the commands with sensitive data (the Basic login password) are refused by both sides: their sensitive
 fields will be encrypted for the Authentication Center (next step).

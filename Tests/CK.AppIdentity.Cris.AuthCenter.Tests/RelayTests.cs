@@ -58,7 +58,7 @@ public class RelayTests
 
     const int Port = 37145;
 
-    sealed class Pair : IAsyncDisposable
+    internal sealed class Pair : IAsyncDisposable
     {
         public required RunningApplication Front { get; init; }
         public required RunningApplication Center { get; init; }
@@ -73,17 +73,23 @@ public class RelayTests
         }
 
         // A request of the browser to the front: the session command is relayed.
-        public async Task<object?> SendAsync( Func<PocoDirectory, ICommandAuthenticationSession> create )
+        public async Task<object?> RelayAsync( Func<PocoDirectory, ICommandAuthenticationSession> create )
         {
             await using var scope = Front.CreateAsyncScopeServices();
             var services = scope.ServiceProvider;
             var relay = services.GetRequiredService<IAuthenticationSessionRelay>();
             var t = relay.TryRelay( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) ).ShouldNotBeNull( "The AuthCenter is remote." );
-            var result = await t;
+            return await t;
+        }
+
+        // Relays and, like a front, reads the token (with the safety net of ReadTokenAsync).
+        public async Task<object?> SendAsync( Func<PocoDirectory, ICommandAuthenticationSession> create )
+        {
+            var result = await RelayAsync( create );
             if( result is ISessionResult r && r.Token != null )
             {
-                FrontCenter.TryReadToken( TestHelper.Monitor, r.Token, DateTime.UtcNow, out var info, out _ ).ShouldBeTrue( "The front verifies the token of its remote AuthCenter." );
-                Browser.Current = info;
+                var read = (await FrontCenter.ReadTokenAsync( TestHelper.Monitor, r.Token, DateTime.UtcNow )).ShouldNotBeNull( "The front verifies the token of its remote AuthCenter." );
+                Browser.Current = read.Info;
                 Browser.Token = r.Token;
             }
             return result;
@@ -98,6 +104,8 @@ public class RelayTests
         services.AddScoped<IActivityMonitor>( sp => TestHelper.Monitor );
         services.AddScoped( sp => new CurrentLocalParty( sp.GetRequiredService<ApplicationIdentityService>() ) );
     }
+
+    internal static Task<Pair> StartPairAsync() => StartAsync();
 
     static async Task<Pair> StartAsync( bool frontIsAllowed = true )
     {
@@ -178,5 +186,30 @@ public class RelayTests
         r.Success.ShouldBeFalse();
         r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
         p.Browser.Cookies.ShouldBeNull();
+    }
+}
+
+[TestFixture]
+public class RelayKeyRotationTests
+{
+    [Test]
+    public async Task a_front_reads_the_tokens_of_its_AuthCenter_after_a_rotation_it_missed_Async()
+    {
+        await using var p = await RelayTests.StartPairAsync();
+        (await p.SendAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Operator" ) )).ShouldNotBeNull();
+
+        // The AuthCenter rotates its key. These test applications have no heartbeat: nothing is pushed to the front.
+        var centerKeys = p.Center.ApplicationIdentityService.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>();
+        centerKeys.Rotate( TestHelper.Monitor ).ShouldBeTrue();
+
+        // The refreshed token is signed by the new key: the front is still pinned on the previous one.
+        var refresh = (ISessionResult)(await p.RelayAsync( pocos => pocos.Create<IRefreshSessionCommand>() )).ShouldNotBeNull();
+        var token = refresh.Token.ShouldNotBeNull();
+        p.FrontCenter.TryReadToken( TestHelper.Monitor, token, DateTime.UtcNow, out _, out _ ).ShouldBeFalse( "Without the safety net." );
+
+        // The safety net asks the AuthCenter for its key events and reads the token again.
+        var read = (await p.FrontCenter.ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldNotBeNull();
+        read.Info.UnsafeActor.ActorName.ShouldBe( "Operator" );
+        p.FrontCenter.TryReadToken( TestHelper.Monitor, token, DateTime.UtcNow, out _, out _ ).ShouldBeTrue( "The pin moved." );
     }
 }
