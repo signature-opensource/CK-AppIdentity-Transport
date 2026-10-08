@@ -15,12 +15,14 @@ public sealed class LocalAuthCenter
     readonly ILocalParty _party;
     readonly AuthCenterOptions _options;
     readonly AuthCenterSessionStore _sessions;
+    readonly AuthCenterEncryptionKeys _encryptionKeys;
 
-    internal LocalAuthCenter( ILocalParty party, AuthCenterOptions options )
+    internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options )
     {
         _party = party;
         _options = options;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
+        _encryptionKeys = new AuthCenterEncryptionKeys( monitor, party );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
 
@@ -59,6 +61,8 @@ public sealed class LocalAuthCenter
         }
         return Task.CompletedTask;
     }
+
+    internal AuthCenterEncryptionKeys EncryptionKeys => _encryptionKeys;
 
     internal void OnTeardown() => _party.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
 

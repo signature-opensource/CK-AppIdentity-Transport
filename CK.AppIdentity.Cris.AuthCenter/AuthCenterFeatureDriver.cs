@@ -152,7 +152,7 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         {
             var options = AuthCenterOptions.Read( monitor, settings );
             if( options == null ) return false;
-            localCenter = new LocalAuthCenter( local, options );
+            localCenter = new LocalAuthCenter( monitor, local, options );
         }
         else if( settings != null )
         {

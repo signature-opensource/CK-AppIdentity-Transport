@@ -152,5 +152,17 @@ key events to its connected fronts (the transport does it, see CK.AppIdentity.Tr
 uses `ReadTokenAsync`: when a token is refused because its issuer is not known (`SignatureVerdict.UnknownIssuer`), the key
 events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once.
 
-**Not yet:** the commands with sensitive data (the Basic login password) are refused by both sides: their sensitive
-fields will be encrypted for the Authentication Center (next step).
+**The sensitive fields** ([Sensitive] strings, like the Basic login password) are **encrypted in place** by the front
+for the Authentication Center ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs)), so a `tcp:` channel stays
+acceptable:
+- HPKE-like: ephemeral ECDH P-256 with the Authentication Center's encryption key, HKDF-SHA256, AES-256-GCM. A value
+  becomes `"ckenc1:..."`. The relayed command carries the ciphertext, never the clear value.
+- The associated data binds a ciphertext to the Authentication Center, the front, the command type, the property and
+  its creation time: it cannot be moved to another field, command or front, and one older than 5 minutes is refused.
+- The Authentication Center decrypts before validating and executing, and **refuses a clear value**.
+- The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the `LocalFileStore`
+  ("AuthCenter/EncryptionKeys"), protected by the local party's data protector. One is published for a day (a new
+  one 10 minutes before its end), the previous one still decrypts for 10 more minutes.
+- A front gets the current key with `IGetAuthCenterEncryptionKeyQCommand`: it is signed by the Authentication Center
+  for the "CK.AuthCenter.EncryptionKey" purpose (verified like a token, with the same safety net) and cached until
+  its signature expires.

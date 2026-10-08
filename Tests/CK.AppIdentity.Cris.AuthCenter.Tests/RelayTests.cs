@@ -54,7 +54,9 @@ public class RelayTests
                                          typeof( IAuthenticationInfoPoco ),
                                          typeof( IActorInfoPoco ),
                                          typeof( IRelaySessionCommand ),
-                                         typeof( IRelaySessionResult )];
+                                         typeof( IRelaySessionResult ),
+                                         typeof( IGetAuthCenterEncryptionKeyQCommand ),
+                                         typeof( IAuthCenterEncryptionKey )];
 
     const int Port = 37145;
 
@@ -124,7 +126,7 @@ public class RelayTests
             c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             c["AuthCenter"] = "true";
             if( !frontIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
-        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider )] );
+        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterApp.FakeBasicLoginProvider )] );
         return new Pair { Front = front, Center = center };
     }
 
@@ -154,7 +156,7 @@ public class RelayTests
         {
             var s = scope.ServiceProvider;
             var schemes = (await s.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( s, s.GetRequiredService<PocoDirectory>().Create<IGetLoginSchemesQCommand>() )).Result;
-            schemes.ShouldBeAssignableTo<IList<string>>().ShouldBe( ["Weak"] );
+            schemes.ShouldBeAssignableTo<IList<string>>().ShouldBe( ["Basic", "Weak"] );
         }
 
         // Logout: the session is deleted by the AuthCenter, the front's endpoint is cleared.
@@ -164,18 +166,46 @@ public class RelayTests
     }
 
     [Test]
-    public async Task the_AuthCenter_executes_locally_and_the_sensitive_commands_are_not_relayed_Async()
+    public async Task the_AuthCenter_executes_locally_Async()
     {
         await using var p = await StartAsync();
-        await using( var scope = p.Center.CreateAsyncScopeServices() )
+        await using var scope = p.Center.CreateAsyncScopeServices();
+        // No IAuthenticationSessionEndpoint in the AuthCenter's root container: a local relay only needs the current local party.
+        var relay = ActivatorUtilities.CreateInstance<AuthCenterRelay>( scope.ServiceProvider, new CurrentLocalParty( p.Center.ApplicationIdentityService ), new AuthCenterApp.FakeEndpoint( new AuthCenterApp.Browser() ) );
+        relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IRefreshSessionCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
+    }
+
+    [Test]
+    public async Task the_sensitive_fields_are_encrypted_for_the_AuthCenter_Async()
+    {
+        await using var p = await StartAsync();
+        AuthCenterApp.FakeBasicLoginProvider.LastPassword = null;
+
+        // The password is encrypted in place by the front, the AuthCenter decrypts it before the provider sees it.
+        IBasicLoginCommand? sent = null;
+        var r = (ISessionResult)(await p.SendAsync( pocos => sent = pocos.Create<IBasicLoginCommand>( c => { c.UserName = "Albert"; c.Password = "secret"; } ) )).ShouldNotBeNull();
+        r.Success.ShouldBeTrue();
+        p.Browser.Current.ActualActor.ActorName.ShouldBe( "Albert" );
+        AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBe( "secret" );
+        sent.ShouldNotBeNull().Password.ShouldStartWith( "ckenc1:", customMessage: "The relayed command carries the ciphertext, never the password." );
+
+        var wrong = (ISessionResult)(await p.SendAsync( pocos => pocos.Create<IBasicLoginCommand>( c => { c.UserName = "Albert"; c.Password = "not-the-secret"; } ) )).ShouldNotBeNull();
+        wrong.Success.ShouldBeFalse();
+        AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBe( "not-the-secret" );
+
+        // A front that sends a clear password (bypassing the relay) is refused.
+        AuthCenterApp.FakeBasicLoginProvider.LastPassword = null;
+        var channel = p.Front.CrisChannel;
+        var clear = p.Front.PocoDirectory.Create<IRelaySessionCommand>( c =>
         {
-            // No IAuthenticationSessionEndpoint in the AuthCenter's root container: a local relay only needs the current local party.
-            var relay = ActivatorUtilities.CreateInstance<AuthCenterRelay>( scope.ServiceProvider, new CurrentLocalParty( p.Center.ApplicationIdentityService ), new AuthCenterApp.FakeEndpoint( new AuthCenterApp.Browser() ) );
-            relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IRefreshSessionCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
-        }
-        var r = (ISessionResult)(await p.SendAsync( pocos => pocos.Create<IBasicLoginCommand>( c => { c.UserName = "Albert"; c.Password = "secret"; } ) )).ShouldNotBeNull();
-        r.Success.ShouldBeFalse();
-        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.SensitiveRelayNotSupported" );
+            c.Command = p.Front.PocoDirectory.Create<IBasicLoginCommand>( b => { b.UserName = "Albert"; b.Password = "secret"; } );
+            c.NextRefreshSecretHash = "r";
+            c.NextBindingSecretHash = "b";
+        } );
+        var relayed = await channel.SendCommand( TestHelper.Monitor, clear ).WithResult<IRelaySessionResult>().Result.WaitAsync( TimeSpan.FromSeconds( 30 ) );
+        relayed.Result.ShouldBeAssignableTo<ISessionResult>().ShouldNotBeNull().UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.SensitiveNotEncrypted" );
+        relayed.IssuedSessionKey.ShouldBeNull();
+        AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBeNull( "The provider never saw it." );
     }
 
     [Test]

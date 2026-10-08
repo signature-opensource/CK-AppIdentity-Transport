@@ -14,7 +14,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// clears is applied to the <see cref="IAuthenticationSessionEndpoint"/>.
 /// <para>
 /// It fails closed: an unavailable or unreachable Authentication Center is an error, the command is never executed here.
-/// The commands with sensitive data are refused until their fields are encrypted for the Authentication Center.
+/// The [Sensitive] strings of a command are encrypted in place for the Authentication Center (see <see cref="AuthCenterFieldEncryption"/>).
 /// </para>
 /// </summary>
 public sealed class AuthCenterRelay : IAuthenticationSessionRelay
@@ -56,14 +56,14 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
         {
             return Failure( monitor, command, $"The AuthCenter '{center.AuthCenter}' of '{center.Owner}' is not available.", "Authentication.AuthCenterUnavailable" );
         }
-        if( command.CrisPocoModel.HasSensitiveData )
-        {
-            return Failure( monitor, command, "A command with sensitive data cannot be relayed yet.", "Authentication.SensitiveRelayNotSupported" );
-        }
         var channel = center.AuthCenter.GetFeature<CrisChannelFeature>();
         if( channel == null )
         {
             return Failure( monitor, command, $"The AuthCenter '{center.AuthCenter}' has no Cris channel.", "Authentication.AuthCenterUnreachable" );
+        }
+        if( command.CrisPocoModel.HasSensitiveData && !await EncryptSensitiveFieldsAsync( monitor, center, channel, command ).ConfigureAwait( false ) )
+        {
+            return Failure( monitor, command, $"The sensitive fields cannot be encrypted for the AuthCenter '{center.AuthCenter}'.", "Authentication.SensitiveEncryptionFailed" );
         }
         var (nextRefresh, nextBinding) = _endpoint.PrepareSecrets();
         var presented = _endpoint.PresentedProof;
@@ -99,6 +99,30 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
             }
         }
         return r.Result;
+    }
+
+    // Replaces every [Sensitive] string of the command by its ciphertext for the AuthCenter. The command is consumed by the
+    // relay: its clear values are not restored (it may still be queued for sending when the relay gives up).
+    async ValueTask<bool> EncryptSensitiveFieldsAsync( IActivityMonitor monitor, CrisAuthCenter center, CrisChannelFeature channel, ICommandAuthenticationSession command )
+    {
+        var fields = AuthCenterFieldEncryption.GetSensitiveFields( command.GetType() );
+        if( fields == null )
+        {
+            monitor.Warn( $"'{command.CrisPocoModel.PocoName}' has sensitive data that is not a string: it cannot be encrypted." );
+            return false;
+        }
+        var key = await center.GetEncryptionKeyAsync( monitor, channel, _pocos ).ConfigureAwait( false );
+        if( key == null ) return false;
+        var utcNow = DateTime.UtcNow;
+        foreach( var f in fields )
+        {
+            if( f.GetValue( command ) is string clear )
+            {
+                var context = AuthCenterFieldEncryption.GetContext( center.AuthCenter.FullName, center.Owner.FullName, command.CrisPocoModel.PocoName, f.Name );
+                f.SetValue( command, AuthCenterFieldEncryption.Encrypt( key, clear, context, utcNow ) );
+            }
+        }
+        return true;
     }
 
     // A failure of a command that has no result (logout) is a null result: the endpoint secrets are cleared anyway.

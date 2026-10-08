@@ -1,6 +1,7 @@
 using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
+using CK.IO.AuthCenter;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
@@ -98,6 +99,69 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
             verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId );
         }
         return verdict == SignatureVerdict.Valid ? (info!, sessionId!) : null;
+    }
+
+    // The encryption key of a remote Authentication Center (front side), until the expiration of its signature.
+    (byte[] Spki, DateTime Expires)? _encryptionKey;
+
+    /// <summary>
+    /// Gets the current encryption key of the remote Authentication Center (front side): it is asked for over the Cris
+    /// channel, its signature is verified (with the same safety net as the tokens) and it is cached until it expires.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="channel">The Cris channel to the Authentication Center.</param>
+    /// <param name="pocos">The poco directory.</param>
+    /// <returns>The SubjectPublicKeyInfo of the key, or null if it cannot be obtained (the reason is logged).</returns>
+    internal async ValueTask<byte[]?> GetEncryptionKeyAsync( IActivityMonitor monitor, CrisChannelFeature channel, PocoDirectory pocos )
+    {
+        Throw.DebugAssert( !IsLocal );
+        var cached = _encryptionKey;
+        if( cached.HasValue && cached.Value.Expires - TimeSpan.FromMinutes( 1 ) > DateTime.UtcNow ) return cached.Value.Spki;
+        IAuthCenterEncryptionKey published;
+        try
+        {
+            published = await channel.SendCommand( monitor, pocos.Create<IGetAuthCenterEncryptionKeyQCommand>() )
+                                     .WithResult<IAuthCenterEncryptionKey>().Result.WaitAsync( AuthCenterRelay.Timeout ).ConfigureAwait( false );
+        }
+        catch( Exception ex )
+        {
+            monitor.Error( $"Unable to get the encryption key of the AuthCenter '{_authCenter}'.", ex );
+            return null;
+        }
+        byte[] spki, encodedSignature;
+        try
+        {
+            spki = System.Buffers.Text.Base64Url.DecodeFromChars( published.PublicKey );
+            encodedSignature = System.Buffers.Text.Base64Url.DecodeFromChars( published.Signature );
+        }
+        catch( FormatException )
+        {
+            monitor.Warn( $"The encryption key of the AuthCenter '{_authCenter}' is malformed." );
+            return null;
+        }
+        if( !ApplicationSignature.TryRead( encodedSignature, out var signature )
+            || await CheckWithKeyEventsAsync( monitor, AuthCenterEncryptionKeys.Purpose, spki, signature ).ConfigureAwait( false ) != SignatureVerdict.Valid )
+        {
+            monitor.Warn( $"The encryption key of the AuthCenter '{_authCenter}' is refused." );
+            return null;
+        }
+        _encryptionKey = (spki, signature.Expiration);
+        return spki;
+    }
+
+    // Checks a signature of the AuthCenter for a purpose, with the safety net of a remote AuthCenter (see ReadTokenAsync).
+    async ValueTask<SignatureVerdict> CheckWithKeyEventsAsync( IActivityLineEmitter logger, string purpose, byte[] data, ApplicationSignature signature )
+    {
+        if( !IsAvailable ) return SignatureVerdict.Refused;
+        var keys = _authCenter.GetRequiredFeature<IPartyKeys>();
+        var verdict = keys.Check( logger, purpose, data, signature );
+        if( verdict == SignatureVerdict.UnknownIssuer
+            && _authCenter.GetFeature<TransportFeature>() is TransportFeature transport
+            && await transport.RequestKeyEventsAsync( KeyEventsTimeout ).ConfigureAwait( false ) )
+        {
+            verdict = keys.Check( logger, purpose, data, signature );
+        }
+        return verdict;
     }
 
     /// <summary>

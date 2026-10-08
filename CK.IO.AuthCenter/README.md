@@ -7,3 +7,6 @@ The relay protocol between the fronts and their remote Authentication Center (se
   presented to the front, and the hashes of the secrets the front prepared (the secrets never leave the front).
 - [`IRelaySessionResult`](IRelaySessionResult.cs): the result of the relayed command and what the front's endpoint must
   apply (a session issued with the prepared secrets, or cleared).
+- [`IGetAuthCenterEncryptionKeyQCommand`](IGetAuthCenterEncryptionKeyQCommand.cs) and
+  [`IAuthCenterEncryptionKey`](IAuthCenterEncryptionKey.cs): the current public encryption key of the Authentication Center,
+  signed by it. A front encrypts the sensitive fields of the session commands it relays with it.

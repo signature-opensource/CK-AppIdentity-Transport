@@ -60,6 +60,31 @@ public sealed class AuthCenterApp : IAsyncDisposable
             => opener.OpenSessionAsync( monitor, cmd, ActorInfo.WeakScheme, cmd, rememberMe: true );
     }
 
+    /// <summary>
+    /// A "Basic" provider whose payload is the command: Albert's password is "secret". It records the password it receives.
+    /// </summary>
+    public sealed class FakeBasicLoginProvider : ILoginProvider
+    {
+        public static string? LastPassword;
+
+        public IReadOnlyCollection<string> ProviderNames => ["Basic"];
+
+        public object CreatePayload( string scheme ) => throw new ArgumentException( "No payload." );
+
+        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
+        {
+            var cmd = (CK.IO.Authentication.Basic.IBasicLoginCommand)payload;
+            LastPassword = cmd.Password;
+            return ValueTask.FromResult( cmd.UserName == "Albert" && cmd.Password == "secret"
+                                            ? ActorLoginResult.Success( Albert )
+                                            : ActorLoginResult.Failure( 4, "Invalid credentials." ) );
+        }
+
+        [CommandHandler]
+        public ValueTask<ISessionResult> HandleAsync( IActivityMonitor monitor, CK.IO.Authentication.Basic.IBasicLoginCommand cmd, IAuthenticationSessionOpener opener )
+            => opener.OpenSessionAsync( monitor, cmd, "Basic", cmd, cmd.RememberMe );
+    }
+
     public sealed class AllowImpersonation : IImpersonationService
     {
         public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, int actorId ) => ValueTask.FromResult( Find( actorId ) );
