@@ -8,7 +8,9 @@ using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
@@ -123,6 +125,10 @@ public sealed class AuthCenterOidc
         }
         var configuration = await GetConfigurationAsync( monitor, scheme ).ConfigureAwait( false );
         if( configuration == null ) return (null, $"The provider of the scheme '{scheme.Scheme}' is not available.");
+        if( GetTokenEndpointAuthMethod( monitor, scheme, configuration ) == null )
+        {
+            return (null, $"The provider of the scheme '{scheme.Scheme}' does not accept a client secret.");
+        }
 
         var state = NewRandom();
         // The nonce of the protocol validator (it holds its creation time: its lifetime is checked).
@@ -217,17 +223,30 @@ public sealed class AuthCenterOidc
     {
         try
         {
+            var authMethod = GetTokenEndpointAuthMethod( monitor, p.Scheme, configuration );
+            if( authMethod == null ) return null;
             var request = new OpenIdConnectMessage
             {
                 GrantType = OpenIdConnectGrantTypes.AuthorizationCode,
                 Code = code,
                 RedirectUri = p.CallbackUrl,
-                ClientId = p.Scheme.ClientId,
-                ClientSecret = p.Scheme.ClientSecret
             };
             request.SetParameter( "code_verifier", p.CodeVerifier );
-            using var content = new FormUrlEncodedContent( request.Parameters );
-            using var response = await _http.PostAsync( configuration.TokenEndpoint, content ).ConfigureAwait( false );
+            using var httpRequest = new HttpRequestMessage( HttpMethod.Post, configuration.TokenEndpoint );
+            if( authMethod == OidcSchemeOptions.ClientSecretBasic )
+            {
+                // RFC 6749 section 2.3.1: the client id and the secret are form-url-encoded before being joined (a ':'
+                // in the id or the secret is then unambiguous).
+                var credentials = WebUtility.UrlEncode( p.Scheme.ClientId ) + ':' + WebUtility.UrlEncode( p.Scheme.ClientSecret );
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue( "Basic", Convert.ToBase64String( Encoding.UTF8.GetBytes( credentials ) ) );
+            }
+            else
+            {
+                request.ClientId = p.Scheme.ClientId;
+                request.ClientSecret = p.Scheme.ClientSecret;
+            }
+            httpRequest.Content = new FormUrlEncodedContent( request.Parameters );
+            using var response = await _http.SendAsync( httpRequest ).ConfigureAwait( false );
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait( false );
             if( !response.IsSuccessStatusCode )
             {
@@ -299,6 +318,19 @@ public sealed class AuthCenterOidc
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes( 2 )
         };
+    }
+
+    // The configured method, else the one announced by the provider: the basic one when it announces nothing (the default
+    // of OpenID Connect Discovery) or when it announces it, the post one only when it announces it and not the basic one.
+    // Null (with an error) when the provider announces neither: the other methods use no client secret.
+    static string? GetTokenEndpointAuthMethod( IActivityMonitor monitor, OidcSchemeOptions scheme, OpenIdConnectConfiguration configuration )
+    {
+        if( scheme.TokenEndpointAuthMethod != null ) return scheme.TokenEndpointAuthMethod;
+        var supported = configuration.TokenEndpointAuthMethodsSupported;
+        if( supported.Count == 0 || supported.Contains( OidcSchemeOptions.ClientSecretBasic ) ) return OidcSchemeOptions.ClientSecretBasic;
+        if( supported.Contains( OidcSchemeOptions.ClientSecretPost ) ) return OidcSchemeOptions.ClientSecretPost;
+        monitor.Error( $"The provider of '{scheme.Scheme}' accepts neither '{OidcSchemeOptions.ClientSecretBasic}' nor '{OidcSchemeOptions.ClientSecretPost}' (it announces '{string.Join( "', '", supported )}')." );
+        return null;
     }
 
     async Task<OpenIdConnectConfiguration?> GetConfigurationAsync( IActivityMonitor monitor, OidcSchemeOptions scheme )

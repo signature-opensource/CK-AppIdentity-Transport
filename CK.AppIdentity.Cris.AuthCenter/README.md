@@ -149,6 +149,7 @@ secrets: a front relays the start of a login and the callback, like any session 
       "Issuer": "...",                            // Optional: defaults to the Authority.
       "ClientId": "...",
       "ClientSecret": "...",
+      "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
       "Scopes": "openid email",                   // "openid" is always included.
       "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ]
     }
@@ -162,13 +163,21 @@ secrets: a front relays the start of a login and the callback, like any session 
    (at most 10,000 of them) and the result is the authorization URL.
 2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use). The
    correlation presented by the endpoint must be the one of the start (**login CSRF**: only the caller that started a
-   login can complete it), then the code is redeemed (client secret + PKCE verifier) and the identity token is
+   login can complete it), then the code is redeemed (client secret + PKCE verifier) at the token endpoint (see the client authentication below) and the identity token is
    validated: signature (the provider's keys, read again once on an unknown key), issuer, audience, lifetime, then the
    protocol rules of `OpenIdConnectProtocolValidator` (nonce, `at_hash`, required claims). The messages are
    `OpenIdConnectMessage`: the protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET handler, that
    cannot be used here: it is bound to an HTTP request, the AuthCenter receives Cris commands).
 3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
    `Sub` (the payload of CK.DB.User.UserOidc for instance). The session is opened like any login.
+
+**The client authentication at the token endpoint** is `client_secret_basic` by default, the default of the
+specification: an HTTP Basic `Authorization` header, whose client id and secret are form-url-encoded before being joined
+(RFC 6749 section 2.3.1: a `:` in the id or the secret stays unambiguous). Without `TokenEndpointAuthMethod`, the
+`token_endpoint_auth_methods_supported` of the discovery document decides: `client_secret_basic` when it is absent or
+announces it, `client_secret_post` (the secret in the body) only when it announces it and not the basic one. A provider
+that announces neither (only `private_key_jwt`, `tls_client_auth`...) is refused at the start of the login: the user is
+not sent to it. One method per request, the secret is never sent twice.
 
 **One issuer per scheme:** `sub` is unique per issuer only and the identity of an actor is (scheme, sub). The issuer
 announced by the provider and the `iss` of the tokens must be exactly the configured one: multi-tenant endpoints (whose

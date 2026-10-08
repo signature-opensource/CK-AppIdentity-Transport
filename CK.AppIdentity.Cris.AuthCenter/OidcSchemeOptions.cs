@@ -23,6 +23,7 @@ public sealed partial class OidcSchemeOptions
                        string issuer,
                        string clientId,
                        string clientSecret,
+                       string? tokenEndpointAuthMethod,
                        string scopes,
                        ImmutableArray<string> callbackUrls )
     {
@@ -31,6 +32,7 @@ public sealed partial class OidcSchemeOptions
         Issuer = issuer;
         ClientId = clientId;
         ClientSecret = clientSecret;
+        TokenEndpointAuthMethod = tokenEndpointAuthMethod;
         Scopes = scopes;
         CallbackUrls = callbackUrls;
     }
@@ -66,6 +68,25 @@ public sealed partial class OidcSchemeOptions
     /// Gets the client secret at the provider. Only the Authentication Center knows it.
     /// </summary>
     public string ClientSecret { get; }
+
+    /// <summary>
+    /// The <see cref="TokenEndpointAuthMethod"/> that sends the client secret in an HTTP Basic Authorization header (RFC 6749
+    /// section 2.3.1): the default of OpenID Connect.
+    /// </summary>
+    public const string ClientSecretBasic = "client_secret_basic";
+
+    /// <summary>
+    /// The <see cref="TokenEndpointAuthMethod"/> that sends the client secret in the body of the token request.
+    /// </summary>
+    public const string ClientSecretPost = "client_secret_post";
+
+    /// <summary>
+    /// Gets how the client authenticates at the token endpoint: <see cref="ClientSecretBasic"/> or <see cref="ClientSecretPost"/>.
+    /// When null (the default), it is chosen from the <c>token_endpoint_auth_methods_supported</c> of the discovery
+    /// document: <see cref="ClientSecretBasic"/> (the default of the specification when the provider announces nothing),
+    /// <see cref="ClientSecretPost"/> only when the provider announces it and not the basic one.
+    /// </summary>
+    public string? TokenEndpointAuthMethod { get; }
 
     /// <summary>
     /// Gets the requested scopes (space separated, "openid" is always included). Defaults to "openid".
@@ -120,6 +141,11 @@ public sealed partial class OidcSchemeOptions
         if( string.IsNullOrWhiteSpace( clientId ) ) Error( "'ClientId' is required." );
         var clientSecret = s["ClientSecret"];
         if( string.IsNullOrWhiteSpace( clientSecret ) ) Error( "'ClientSecret' is required." );
+        var authMethod = s["TokenEndpointAuthMethod"];
+        if( authMethod != null && authMethod != ClientSecretBasic && authMethod != ClientSecretPost )
+        {
+            Error( $"'TokenEndpointAuthMethod' must be '{ClientSecretBasic}' or '{ClientSecretPost}' (or absent: it is chosen from the discovery document)." );
+        }
         var scopes = (s["Scopes"] ?? "openid").Split( ' ', StringSplitOptions.RemoveEmptyEntries ).ToList();
         if( !scopes.Contains( "openid" ) ) scopes.Insert( 0, "openid" );
         var callbacks = ReadStrings( s.TryGetSection( "CallbackUrls" ) );
@@ -132,7 +158,7 @@ public sealed partial class OidcSchemeOptions
             }
         }
         if( !success ) return null;
-        return new OidcSchemeOptions( suffix, authority!, issuer!, clientId!, clientSecret!, string.Join( ' ', scopes ), callbacks.ToImmutableArray() );
+        return new OidcSchemeOptions( suffix, authority!, issuer!, clientId!, clientSecret!, authMethod, string.Join( ' ', scopes ), callbacks.ToImmutableArray() );
     }
 
     // A list ("CallbackUrls:0", "CallbackUrls:1"...) or a comma separated value.

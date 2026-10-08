@@ -79,6 +79,7 @@ public class OidcTests
         r.RememberMe.ShouldBeTrue();
         r.Info.UnsafeActor.ActorName.ShouldBe( "Albert" );
         app.Caller.Current.Actor.ActorName.ShouldBe( "Albert" );
+        idp.LastAuthMethod.ShouldBe( "client_secret_basic", "The default of OpenID Connect when the provider announces nothing." );
         var payload = AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull();
         payload.SchemeSuffix.ShouldBe( "Test" );
         payload.Sub.ShouldBe( "albert-sub" );
@@ -200,11 +201,86 @@ public class OidcTests
     [TestCase( "Authority", "http://idp.example.com", "'Authority' must be an absolute https URL" )]
     [TestCase( "ClientSecret", "", "'ClientSecret' is required." )]
     [TestCase( "CallbackUrls:0", "https://front.example.com/cb?x=1", "without query nor fragment" )]
+    [TestCase( "TokenEndpointAuthMethod", "private_key_jwt", "'TokenEndpointAuthMethod' must be" )]
     public async Task invalid_oidc_configurations_are_errors_Async( string key, string value, string message )
     {
         using var idp = new FakeIdentityProvider();
         using var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
         await Should.ThrowAsync<Exception>( () => AuthCenterApp.StartAsync( Configuration( idp, c => c[$"AuthCenter:Oidc:Test:{key}"] = value ) ) );
         await AuthCenterFeatureTests.ShouldLogAsync( logs, message );
+    }
+
+    static async Task<ISessionResult> LoginAsync( AuthCenterApp app, FakeIdentityProvider idp )
+    {
+        var start = (RedirectedUrl)(await StartAsync( app )).ShouldNotBeNull();
+        var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
+        return await CallbackAsync( app, state, code );
+    }
+
+    [TestCase( null, null, "client_secret_basic" )]
+    [TestCase( "client_secret_basic,client_secret_post", null, "client_secret_basic" )]
+    [TestCase( "client_secret_post,client_secret_basic", null, "client_secret_basic" )]
+    [TestCase( "private_key_jwt,client_secret_post", null, "client_secret_post" )]
+    [TestCase( null, "client_secret_post", "client_secret_post" )]
+    [TestCase( "client_secret_basic,client_secret_post", "client_secret_post", "client_secret_post" )]
+    public async Task the_client_authenticates_with_client_secret_basic_unless_the_provider_only_accepts_post_Async( string? announced,
+                                                                                                                    string? configured,
+                                                                                                                    string expected )
+    {
+        using var idp = new FakeIdentityProvider { AuthMethods = announced?.Split( ',' ) };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c =>
+        {
+            if( configured != null ) c["AuthCenter:Oidc:Test:TokenEndpointAuthMethod"] = configured;
+        } ) );
+        var r = await LoginAsync( app, idp );
+        r.Success.ShouldBeTrue();
+        idp.LastAuthMethod.ShouldBe( expected );
+        idp.RedeemCount.ShouldBe( 1 );
+    }
+
+    // RFC 6749 section 2.3.1: the id and the secret are form-url-encoded before being joined with ':' and base64 encoded.
+    [TestCase( "client_secret_basic" )]
+    [TestCase( "client_secret_post" )]
+    public async Task client_ids_and_secrets_with_special_characters_are_sent_as_specified_Async( string method )
+    {
+        const string id = "the:client id+é";
+        const string secret = "s3cr:t %2B+ &=é/€";
+        using var idp = new FakeIdentityProvider { ExpectedClientId = id, ExpectedClientSecret = secret, AuthMethods = [method] };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c =>
+        {
+            c["AuthCenter:Oidc:Test:ClientId"] = id;
+            c["AuthCenter:Oidc:Test:ClientSecret"] = secret;
+        } ) );
+        var r = await LoginAsync( app, idp );
+        idp.LastAuthMethod.ShouldBe( method );
+        r.Success.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task a_wrong_client_secret_cannot_redeem_the_code_Async()
+    {
+        using var idp = new FakeIdentityProvider { ExpectedClientSecret = "another-secret" };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            var r = await LoginAsync( app, idp );
+            r.Success.ShouldBeFalse();
+            r.Token.ShouldBeNull();
+            texts.ShouldContain( t => t.Contains( "answered 401" ) && t.Contains( "invalid_client" ) );
+        }
+        idp.RedeemCount.ShouldBe( 0 );
+    }
+
+    [Test]
+    public async Task a_provider_that_accepts_no_client_secret_is_refused_at_the_start_Async()
+    {
+        using var idp = new FakeIdentityProvider { AuthMethods = ["private_key_jwt", "tls_client_auth"] };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            (await StartAsync( app )).ShouldBeAssignableTo<ICrisResultError>();
+            texts.ShouldContain( t => t.Contains( "accepts neither 'client_secret_basic' nor 'client_secret_post'" ) );
+        }
+        app.Center.Local.ShouldNotBeNull().Oidc.PendingLoginCount.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
     }
 }
