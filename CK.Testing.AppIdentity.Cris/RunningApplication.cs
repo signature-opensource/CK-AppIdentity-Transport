@@ -144,7 +144,7 @@ public sealed class RunningApplication : IAsyncDisposable
                                                     typeof( TransportFeatureDriver ),
                                                     typeof( CrisChannelFeatureDriver ),
                                                     typeof( AppIdentityDIContainerDefinition ),
-                                                    typeof( CK.Auth.StdAuthenticationTypeSystem ),
+                                                    typeof( AuthenticationInfoDefaultProvider ),
                                                     typeof( KeyManagementFeatureDriver ),
                                                     typeof( DefaultCoreKeyStore ),
                                                     typeof( TcpSocketTransportTypeService ) );

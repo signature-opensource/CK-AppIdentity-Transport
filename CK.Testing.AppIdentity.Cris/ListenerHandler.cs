@@ -1,5 +1,4 @@
 using CK.AppIdentity;
-using CK.Auth;
 using CK.Core;
 using CK.Cris;
 using System.Threading.Tasks;
@@ -16,8 +15,8 @@ public class ListenerHandler : IAutoService
     }
 
     [CommandHandler]
-    public string Handle( IWhoAmICommand c, IRemoteParty caller, IAuthenticationInfo authInfo )
+    public string Handle( IWhoAmICommand c, IRemoteParty caller, AuthenticationInfo authInfo )
     {
-        return $"{caller.FullName}/{authInfo.User.UserName}";
+        return $"{caller.FullName}/{authInfo.Actor.ActorName}";
     }
 }

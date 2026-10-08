@@ -1,4 +1,3 @@
-using CK.Auth;
 using CK.Core;
 using CK.Cris;
 using CK.Testing.AppIdentity.Cris;
@@ -87,9 +86,9 @@ public class BasicTests
     [Test]
     public async Task the_remote_executes_as_the_authenticated_party_and_anonymous_user_Async()
     {
-        // StdAuthenticationInfo makes IAuthenticationInfo an (ambient) service of the applications.
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, typeof( StdAuthenticationInfo ) );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null, typeof( StdAuthenticationInfo ) );
+        // AuthenticationInfo (CK.AuthenticationInfo) is an ambient service of the applications.
+        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, typeof( AuthenticationInfo ) );
+        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null, typeof( AuthenticationInfo ) );
 
         // Nothing in the message can carry a user identity: the only identity established is
         // the one of the remote party itself (authenticated by the transport).
