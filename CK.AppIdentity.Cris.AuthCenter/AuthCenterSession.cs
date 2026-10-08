@@ -34,6 +34,61 @@ public sealed record AuthCenterSession( string SessionId,
     public const int SessionIdLength = 22;
 
     /// <summary>
+    /// Gets the session key that the endpoint keeps and presents back: "{ActualActorId}.{SessionId}".
+    /// It is not a secret (the token holds the session identifier).
+    /// </summary>
+    public string SessionKey => GetSessionKey( ActualActorId, SessionId );
+
+    /// <summary>
+    /// Gets the session key of a session (see <see cref="SessionKey"/>).
+    /// </summary>
+    /// <param name="actualActorId">The actual actor identifier.</param>
+    /// <param name="sessionId">The session identifier.</param>
+    /// <returns>The session key.</returns>
+    public static string GetSessionKey( int actualActorId, string sessionId ) => $"{actualActorId.ToString( System.Globalization.CultureInfo.InvariantCulture )}.{sessionId}";
+
+    /// <summary>
+    /// Parses a session key (see <see cref="SessionKey"/>) presented by an endpoint.
+    /// </summary>
+    /// <param name="sessionKey">The session key.</param>
+    /// <param name="actualActorId">The actual actor identifier.</param>
+    /// <param name="sessionId">The session identifier.</param>
+    /// <returns>True if the key is valid.</returns>
+    public static bool TryParseSessionKey( string? sessionKey, out int actualActorId, [System.Diagnostics.CodeAnalysis.NotNullWhen( true )] out string? sessionId )
+    {
+        actualActorId = 0;
+        sessionId = null;
+        if( sessionKey == null ) return false;
+        int dot = sessionKey.IndexOf( '.' );
+        if( dot <= 0 ) return false;
+        var id = sessionKey.Substring( dot + 1 );
+        if( !IsValidSessionId( id )
+            || !int.TryParse( sessionKey.AsSpan( 0, dot ), System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out actualActorId )
+            || actualActorId == 0 )
+        {
+            actualActorId = 0;
+            return false;
+        }
+        sessionId = id;
+        return true;
+    }
+
+    /// <summary>
+    /// Checks that a presented proof matches this session: same key and same secret hashes (compared in constant time).
+    /// </summary>
+    /// <param name="proof">The presented proof.</param>
+    /// <returns>True if the proof matches this session.</returns>
+    public bool Matches( CK.Auth.AuthenticationSessionProof proof )
+    {
+        return proof.SessionKey == SessionKey
+               && FixedTimeEquals( proof.RefreshSecretHash, RefreshSecretHash )
+               && FixedTimeEquals( proof.BindingSecretHash, BindingSecretHash );
+
+        static bool FixedTimeEquals( string a, string b )
+            => CryptographicOperations.FixedTimeEquals( System.Text.Encoding.UTF8.GetBytes( a ), System.Text.Encoding.UTF8.GetBytes( b ) );
+    }
+
+    /// <summary>
     /// Creates a new random session identifier.
     /// </summary>
     /// <returns>A new session identifier.</returns>

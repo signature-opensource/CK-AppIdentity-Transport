@@ -100,3 +100,23 @@ returns the signed token.
 
 A remote Authentication Center is reached by a relay at the receiving endpoint, before the handlers (to come): a session
 command that reaches the opener while the Authentication Center is remote fails closed. It is never executed locally.
+
+### The other session commands ([`AuthCenterSessionService`](AuthCenterSessionService.cs))
+
+They carry nothing: they act on **the current session**, the one whose proof the endpoint presents. The session key
+(`"{ActualActorId}.{SessionId}"`, given to `IAuthenticationSessionEndpoint.Issue`) finds it, and the proof must match
+**exactly**: the key and both secret hashes (compared in constant time). The key is not a secret.
+
+| Command | |
+|---|---|
+| `IRefreshSessionCommand` | Reads the actors again (a disabled or removed actor cannot refresh), at most at `Normal` level (the `Critical` level requires a login), rotates the secrets and issues a new token. The impersonation is kept. |
+| `ILogoutSessionCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
+| `IImpersonateCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. |
+| `IClearImpersonationCommand` | Always possible: it can only lower the privileges. |
+| `IGetLoginSchemesQCommand` | The provider names of the login providers. Not a session command. |
+
+**A replayed secret revokes the session.** The secrets rotate at each refresh, so a refresh secret is used once: the
+right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The
+session is deleted and the endpoint secrets are cleared. The legitimate caller then has to log in again.
+
+**Not done yet:** the purge of the expired sessions (an expired session is deleted when it is presented).

@@ -138,7 +138,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         var info = AuthenticationInfo.Create( actor, expires, criticalExpires, deviceId, utcNow );
 
         var sessionId = AuthCenterSession.NewSessionId();
-        var proof = _endpoint.Issue( rememberMe, expires );
+        var proof = _endpoint.Issue( AuthCenterSession.GetSessionKey( actor.ActorId, sessionId ), rememberMe, expires );
         await center.Sessions.SaveAsync( new AuthCenterSession( sessionId,
                                                                 actor.ActorId,
                                                                 actor.ActorId,
@@ -150,21 +150,9 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
                                                                 proof.BindingSecretHash ) ).ConfigureAwait( false );
         var token = center.CreateToken( sessionId, info, utcNow );
         monitor.Info( $"Session opened for {actor} in '{center.Party}'." );
-        return command.CreateResult( r =>
-        {
-            r.Info.InitializeFrom( info );
-            r.Token = token;
-            r.RememberMe = rememberMe;
-        } );
+        return AuthCenterResults.Success( command, info, token, rememberMe );
     }
 
     static ISessionResult Failure<T>( IActivityMonitor monitor, T command, string text, string resName ) where T : ICommand<ISessionResult>
-    {
-        monitor.Warn( $"Login refused: {text}" );
-        return command.CreateResult( r =>
-        {
-            r.Success = false;
-            r.UserMessages.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) );
-        } );
-    }
+        => AuthCenterResults.Failure( monitor, command, text, resName );
 }
