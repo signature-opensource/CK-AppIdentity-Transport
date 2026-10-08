@@ -16,18 +16,18 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// session result.
 /// <para>
 /// The token string is "base64url( len16(data) ‖ data ‖ signature )". The data is:
-/// version(1) ‖ audience ‖ sessionId ‖ deviceId ‖ expires ‖ criticalExpires ‖ actual actor ‖ impersonated(1) [‖ actor]
+/// version(1) ‖ audience ‖ sessionId ‖ bindingSecretHash ‖ deviceId ‖ expires ‖ criticalExpires ‖ actual actor ‖ impersonated(1) [‖ actor]
 /// where an actor is its identifier, name and level. The audience is the full name of the Authentication Center party: a token
 /// of a tenant domain is refused by another one (that has another Authentication Center). The token expires with its signature.
 /// </para>
 /// </summary>
 static class AuthCenterToken
 {
-    const byte _version = 1;
+    const byte _version = 2;
 
-    internal static string Create( ILocalKeys keys, NormalizedPath audience, string sessionId, AuthenticationInfo info, DateTime expiration )
+    internal static string Create( ILocalKeys keys, NormalizedPath audience, string sessionId, string bindingSecretHash, AuthenticationInfo info, DateTime expiration )
     {
-        var data = Write( audience, sessionId, info );
+        var data = Write( audience, sessionId, bindingSecretHash, info );
         var signature = keys.Sign( ICrisAuthCenter.TokenPurpose, data, expiration );
         var encoded = signature.Encoded.Span;
         var all = new byte[2 + data.Length + encoded.Length];
@@ -37,7 +37,7 @@ static class AuthCenterToken
         return Base64Url.EncodeToString( all );
     }
 
-    static byte[] Write( NormalizedPath audience, string sessionId, AuthenticationInfo info )
+    static byte[] Write( NormalizedPath audience, string sessionId, string bindingSecretHash, AuthenticationInfo info )
     {
         var m = new MemoryStream();
         using( var w = new BinaryWriter( m, Encoding.UTF8, leaveOpen: true ) )
@@ -45,6 +45,7 @@ static class AuthCenterToken
             w.Write( _version );
             w.Write( audience.Path );
             w.Write( sessionId );
+            w.Write( bindingSecretHash );
             w.Write( info.DeviceId );
             w.Write( info.Expires?.Ticks ?? 0L );
             w.Write( info.CriticalExpires?.Ticks ?? 0L );
@@ -68,10 +69,12 @@ static class AuthCenterToken
                                   string token,
                                   DateTime utcNow,
                                   out AuthenticationInfo? info,
-                                  out string? sessionId )
+                                  out string? sessionId,
+                                  out string? bindingSecretHash )
     {
         info = null;
         sessionId = null;
+        bindingSecretHash = null;
         byte[] all;
         try
         {
@@ -111,6 +114,7 @@ static class AuthCenterToken
                 return SignatureVerdict.Refused;
             }
             sessionId = r.ReadString();
+            bindingSecretHash = r.ReadString();
             var deviceId = r.ReadString();
             var expires = ReadDate( r );
             var criticalExpires = ReadDate( r );
@@ -127,6 +131,7 @@ static class AuthCenterToken
         catch( Exception ex ) when( ex is EndOfStreamException or ArgumentException or FormatException )
         {
             sessionId = null;
+            bindingSecretHash = null;
             return Malformed( logger );
         }
 

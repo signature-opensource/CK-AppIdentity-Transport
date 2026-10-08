@@ -87,18 +87,18 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// <param name="logger">Receives the reason of a refusal.</param>
     /// <param name="token">The token.</param>
     /// <param name="utcNow">The current time.</param>
-    /// <returns>The authentication and the session identifier, or null if the token is refused.</returns>
-    public async ValueTask<(AuthenticationInfo Info, string SessionId)?> ReadTokenAsync( IActivityLineEmitter logger, string token, DateTime utcNow )
+    /// <returns>The token content, or null if the token is refused.</returns>
+    public async ValueTask<AuthCenterTokenContent?> ReadTokenAsync( IActivityLineEmitter logger, string token, DateTime utcNow )
     {
         Throw.CheckNotNullArgument( token );
-        var verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out var info, out var sessionId );
+        var verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out var info, out var sessionId, out var bindingSecretHash );
         if( verdict == SignatureVerdict.UnknownIssuer
             && _authCenter.GetFeature<TransportFeature>() is TransportFeature transport
             && await transport.RequestKeyEventsAsync( KeyEventsTimeout ).ConfigureAwait( false ) )
         {
-            verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId );
+            verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId, out bindingSecretHash );
         }
-        return verdict == SignatureVerdict.Valid ? (info!, sessionId!) : null;
+        return verdict == SignatureVerdict.Valid ? new AuthCenterTokenContent( info!, sessionId!, bindingSecretHash! ) : null;
     }
 
     // The encryption key of a remote Authentication Center (front side), until the expiration of its signature.

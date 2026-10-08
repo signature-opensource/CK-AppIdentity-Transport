@@ -1,4 +1,5 @@
 using CK.Core;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
@@ -31,7 +32,7 @@ public class SessionOpenerTests
         issued.RememberMe.ShouldBeTrue();
 
         // The token is read back by the AuthCenter (this is what a front does): it holds the session.
-        var (info, sessionId) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
+        var (info, sessionId, bindingHash) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
         info.UnsafeActor.ActorId.ShouldBe( 42 );
         info.UnsafeActor.ActorName.ShouldBe( "Operator" );
         info.UnsafeActor.Level.ShouldBe( AuthLevel.Unsafe );
@@ -46,6 +47,17 @@ public class SessionOpenerTests
         session.RememberMe.ShouldBeTrue();
         session.Expires.ShouldBe( issued.RefreshExpires );
         session.Matches( app.Caller.Cookies.ShouldNotBeNull() ).ShouldBeTrue();
+        bindingHash.ShouldBe( session.BindingSecretHash, "The token is bound to the binding secret of its session." );
+
+        // The endpoints read the tokens through IAuthenticationTokenReader.
+        await using( var scope = app.Services.Services.CreateAsyncScope() )
+        {
+            var reader = scope.ServiceProvider.GetRequiredService<CK.Auth.IAuthenticationTokenReader>();
+            var data = (await reader.ReadTokenAsync( TestHelper.Monitor, r.Token )).ShouldNotBeNull();
+            data.Info.UnsafeActor.ActorId.ShouldBe( 42 );
+            data.BindingSecretHash.ShouldBe( session.BindingSecretHash );
+            (await reader.ReadTokenAsync( TestHelper.Monitor, "not a token" )).ShouldBeNull();
+        }
     }
 
     [Test]
@@ -91,9 +103,10 @@ public class SessionOpenerTests
         var utcNow = DateTime.UtcNow;
         var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Paula, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
         var sessionId = AuthCenterSession.NewSessionId();
-        var token = root.Local.ShouldNotBeNull().CreateToken( sessionId, auth, utcNow );
+        var token = root.Local.ShouldNotBeNull().CreateToken( sessionId, "the-binding-hash", auth, utcNow );
 
-        var (info, readId) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
+        var (info, readId, readBinding) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
+        readBinding.ShouldBe( "the-binding-hash" );
         readId.ShouldBe( sessionId );
         info.IsImpersonated.ShouldBeTrue();
         info.UnsafeActualActor.ActorName.ShouldBe( "Albert" );

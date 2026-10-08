@@ -91,7 +91,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, expires );
         await c.Center.Sessions.SaveAsync( s with { ActorId = actorId, Expires = expires, RefreshSecretHash = proof.RefreshSecretHash, BindingSecretHash = proof.BindingSecretHash } )
                                .ConfigureAwait( false );
-        return AuthCenterResults.Success( command, info, c.Center.CreateToken( s.SessionId, info, utcNow ), s.RememberMe );
+        return AuthCenterResults.Success( command, info, c.Center.CreateToken( s.SessionId, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
     }
 
     /// <summary>

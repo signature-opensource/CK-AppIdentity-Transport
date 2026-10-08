@@ -176,6 +176,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( AuthCenterSessionOpener ),
                                        typeof( AuthCenterSessionService ),
                                        typeof( AuthCenterCommandHandlers ),
+                                       typeof( CK.Auth.IAuthenticationTokenReader ),
+                                       typeof( AuthCenterTokenReader ),
                                        typeof( IAuthenticationSessionEndpoint ),
                                        typeof( CrisAuthenticationService ),
                                        typeof( AuthenticationInfo ),

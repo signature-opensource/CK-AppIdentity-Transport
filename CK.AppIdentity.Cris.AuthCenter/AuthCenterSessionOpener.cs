@@ -148,7 +148,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
                                                                 deviceId,
                                                                 proof.RefreshSecretHash,
                                                                 proof.BindingSecretHash ) ).ConfigureAwait( false );
-        var token = center.CreateToken( sessionId, info, utcNow );
+        var token = center.CreateToken( sessionId, proof.BindingSecretHash, info, utcNow );
         monitor.Info( $"Session opened for {actor} in '{center.Party}'." );
         return AuthCenterResults.Success( command, info, token, rememberMe );
     }
