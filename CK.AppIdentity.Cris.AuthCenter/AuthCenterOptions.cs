@@ -70,7 +70,7 @@ public sealed class AuthCenterOptions
             monitor.Error( $"Invalid '{section.Path}': the {nameof( CriticalLifetime )} ({critical}) and the {nameof( TokenLifetime )} ({token}) cannot exceed the {nameof( SessionLifetime )} ({session})." );
             return null;
         }
-        return new AuthCenterOptions( session, critical, token, oidc.Value );
+        return new AuthCenterOptions( session, critical, token, oidc.GetValueOrDefault() );
     }
 
     static TimeSpan ReadTimeSpan( IActivityMonitor monitor, ImmutableConfigurationSection section, string key, TimeSpan defaultValue, ref bool success )

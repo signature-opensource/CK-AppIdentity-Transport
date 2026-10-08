@@ -155,7 +155,10 @@ secrets: a front relays the start of a login and the callback, like any session 
 2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use). The
    correlation presented by the endpoint must be the one of the start (**login CSRF**: only the caller that started a
    login can complete it), then the code is redeemed (client secret + PKCE verifier) and the identity token is
-   validated: signature (the provider's keys, read again once on an unknown key), issuer, audience, lifetime, nonce.
+   validated: signature (the provider's keys, read again once on an unknown key), issuer, audience, lifetime, then the
+   protocol rules of `OpenIdConnectProtocolValidator` (nonce, `at_hash`, required claims). The messages are
+   `OpenIdConnectMessage`: the protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET handler, that
+   cannot be used here: it is bound to an HTTP request, the AuthCenter receives Cris commands).
 3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
    `Sub` (the payload of CK.DB.User.UserOidc for instance). The session is opened like any login.
 

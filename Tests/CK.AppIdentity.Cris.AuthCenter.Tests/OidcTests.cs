@@ -136,6 +136,7 @@ public class OidcTests
     [TestCase( "issuer" )]
     [TestCase( "audience" )]
     [TestCase( "nonce" )]
+    [TestCase( "at_hash" )]
     public async Task an_invalid_identity_token_is_refused_Async( string what )
     {
         using var idp = new FakeIdentityProvider();
@@ -145,6 +146,7 @@ public class OidcTests
             case "issuer": idp.TokenIssuer = "https://evil.example.com"; break;
             case "audience": idp.TokenAudience = "another-client"; break;
             case "nonce": idp.TokenNonce = "a-replayed-nonce"; break;
+            case "at_hash": idp.TokenAtHash = "not-the-hash-of-the-access-token"; break;
         }
         var start = (RedirectedUrl)(await StartAsync( app )).ShouldNotBeNull();
         var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );

@@ -25,6 +25,7 @@ public sealed class FakeIdentityProvider : IDisposable
 {
     public const string ClientId = "the-client";
     public const string ClientSecret = "the-client-secret";
+    const string AccessToken = "the-access-token";
 
     readonly HttpListener _listener;
     readonly RSA _rsa;
@@ -65,6 +66,11 @@ public sealed class FakeIdentityProvider : IDisposable
     /// Gets or sets a nonce that replaces the one of the authorization request.
     /// </summary>
     public string? TokenNonce { get; set; }
+
+    /// <summary>
+    /// Gets or sets an at_hash that replaces the one of the access token.
+    /// </summary>
+    public string? TokenAtHash { get; set; }
 
     /// <summary>
     /// Gets the number of the redeemed codes.
@@ -164,10 +170,16 @@ public sealed class FakeIdentityProvider : IDisposable
                 IssuedAt = now,
                 NotBefore = now,
                 Expires = now.AddMinutes( 5 ),
-                Claims = new Dictionary<string, object> { ["sub"] = g.Sub, ["nonce"] = TokenNonce ?? g.Nonce },
+                Claims = new Dictionary<string, object>
+                {
+                    ["sub"] = g.Sub,
+                    ["nonce"] = TokenNonce ?? g.Nonce,
+                    // The left half of the SHA-256 of the access token.
+                    ["at_hash"] = TokenAtHash ?? Base64Url.EncodeToString( SHA256.HashData( Encoding.ASCII.GetBytes( AccessToken ) ).AsSpan( 0, 16 ) )
+                },
                 SigningCredentials = new SigningCredentials( _key, SecurityAlgorithms.RsaSha256 )
             } );
-            await WriteJsonAsync( ctx, new Dictionary<string, object> { ["access_token"] = "at", ["token_type"] = "Bearer", ["id_token"] = idToken } );
+            await WriteJsonAsync( ctx, new Dictionary<string, object> { ["access_token"] = AccessToken, ["token_type"] = "Bearer", ["id_token"] = idToken } );
         }
         else
         {

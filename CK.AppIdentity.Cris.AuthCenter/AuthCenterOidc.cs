@@ -11,7 +11,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
@@ -29,6 +29,11 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 ///   exchanges the code and validates the identity token (signature, issuer, audience, lifetime, nonce).
 ///   </item>
 /// </list>
+/// The protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET OpenID Connect handler): the messages
+/// (<see cref="OpenIdConnectMessage"/>), the discovery and the keys (<see cref="ConfigurationManager{T}"/>), the token validation
+/// (<see cref="JsonWebTokenHandler"/>) and the protocol rules (<see cref="OpenIdConnectProtocolValidator"/>: nonce, at_hash,
+/// required claims). What is specific here is the pending login (state, PKCE verifier, correlation) and the HTTP call to the
+/// token endpoint: the ASP.NET handler is bound to an HTTP request, the AuthCenter receives Cris commands.
 /// The pending logins live in memory (a restart cancels the logins in progress) for <see cref="PendingLoginLifetime"/>,
 /// and there are at most <see cref="MaxPendingLogins"/> of them.
 /// </summary>
@@ -47,6 +52,7 @@ public sealed class AuthCenterOidc
     readonly HttpClient _http;
     readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _configurations;
     readonly ConcurrentDictionary<string, PendingLogin> _pending;
+    readonly OpenIdConnectProtocolValidator _validator;
 
     sealed record PendingLogin( OidcSchemeOptions Scheme,
                                 string CallbackUrl,
@@ -77,6 +83,8 @@ public sealed class AuthCenterOidc
         _http = new HttpClient() { Timeout = TimeSpan.FromSeconds( 30 ) };
         _configurations = new ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>>( StringComparer.OrdinalIgnoreCase );
         _pending = new ConcurrentDictionary<string, PendingLogin>( StringComparer.Ordinal );
+        // The state is checked by the pending logins (one use). The nonce lives as long as a pending login.
+        _validator = new OpenIdConnectProtocolValidator { RequireStateValidation = false, NonceLifetime = PendingLoginLifetime };
     }
 
     /// <summary>
@@ -117,22 +125,25 @@ public sealed class AuthCenterOidc
         if( configuration == null ) return (null, $"The provider of the scheme '{scheme.Scheme}' is not available.");
 
         var state = NewRandom();
-        var nonce = NewRandom();
+        // The nonce of the protocol validator (it holds its creation time: its lifetime is checked).
+        var nonce = _validator.GenerateNonce();
         var verifier = NewRandom();
         var challenge = Base64Url.EncodeToString( SHA256.HashData( Encoding.ASCII.GetBytes( verifier ) ) );
         _pending[state] = new PendingLogin( scheme, callbackUrl, correlationHash, nonce, verifier, rememberMe, utcNow + PendingLoginLifetime );
 
-        var endpoint = configuration.AuthorizationEndpoint;
-        var url = new StringBuilder( endpoint ).Append( endpoint.Contains( '?' ) ? '&' : '?' )
-                    .Append( "response_type=code" )
-                    .Append( "&client_id=" ).Append( Uri.EscapeDataString( scheme.ClientId ) )
-                    .Append( "&redirect_uri=" ).Append( Uri.EscapeDataString( callbackUrl ) )
-                    .Append( "&scope=" ).Append( Uri.EscapeDataString( scheme.Scopes ) )
-                    .Append( "&state=" ).Append( state )
-                    .Append( "&nonce=" ).Append( nonce )
-                    .Append( "&code_challenge=" ).Append( challenge )
-                    .Append( "&code_challenge_method=S256" )
-                    .ToString();
+        var request = new OpenIdConnectMessage
+        {
+            IssuerAddress = configuration.AuthorizationEndpoint,
+            ClientId = scheme.ClientId,
+            RedirectUri = callbackUrl,
+            ResponseType = OpenIdConnectResponseType.Code,
+            Scope = scheme.Scopes,
+            State = state,
+            Nonce = nonce
+        };
+        request.SetParameter( "code_challenge", challenge );
+        request.SetParameter( "code_challenge_method", "S256" );
+        var url = request.CreateAuthenticationRequestUrl();
         monitor.Info( $"'{scheme.Scheme}' login started." );
         return (url, null);
     }
@@ -182,12 +193,12 @@ public sealed class AuthCenterOidc
         {
             return Failure( monitor, p.Scheme, $"The provider of the scheme '{p.Scheme.Scheme}' is not available.", "Authentication.RemoteLoginFailed" );
         }
-        var idToken = await RedeemCodeAsync( monitor, configuration, p, code ).ConfigureAwait( false );
-        if( idToken == null )
+        var tokenResponse = await RedeemCodeAsync( monitor, configuration, p, code ).ConfigureAwait( false );
+        if( tokenResponse == null )
         {
             return Failure( monitor, p.Scheme, "The authorization code cannot be redeemed.", "Authentication.RemoteLoginFailed" );
         }
-        var sub = await ValidateIdTokenAsync( monitor, p, configuration, idToken ).ConfigureAwait( false );
+        var sub = await ValidateTokenResponseAsync( monitor, p, configuration, tokenResponse ).ConfigureAwait( false );
         if( sub == null )
         {
             return Failure( monitor, p.Scheme, "The identity token is invalid.", "Authentication.RemoteLoginFailed" );
@@ -202,19 +213,20 @@ public sealed class AuthCenterOidc
         return new Completion( scheme, null, false, text, resName );
     }
 
-    async Task<string?> RedeemCodeAsync( IActivityMonitor monitor, OpenIdConnectConfiguration configuration, PendingLogin p, string code )
+    async Task<OpenIdConnectMessage?> RedeemCodeAsync( IActivityMonitor monitor, OpenIdConnectConfiguration configuration, PendingLogin p, string code )
     {
         try
         {
-            using var content = new FormUrlEncodedContent( new Dictionary<string, string>
+            var request = new OpenIdConnectMessage
             {
-                ["grant_type"] = "authorization_code",
-                ["code"] = code,
-                ["redirect_uri"] = p.CallbackUrl,
-                ["client_id"] = p.Scheme.ClientId,
-                ["client_secret"] = p.Scheme.ClientSecret,
-                ["code_verifier"] = p.CodeVerifier
-            } );
+                GrantType = OpenIdConnectGrantTypes.AuthorizationCode,
+                Code = code,
+                RedirectUri = p.CallbackUrl,
+                ClientId = p.Scheme.ClientId,
+                ClientSecret = p.Scheme.ClientSecret
+            };
+            request.SetParameter( "code_verifier", p.CodeVerifier );
+            using var content = new FormUrlEncodedContent( request.Parameters );
             using var response = await _http.PostAsync( configuration.TokenEndpoint, content ).ConfigureAwait( false );
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait( false );
             if( !response.IsSuccessStatusCode )
@@ -223,13 +235,13 @@ public sealed class AuthCenterOidc
                 monitor.Warn( $"Token endpoint of '{p.Scheme.Scheme}' answered {(int)response.StatusCode}: {body}" );
                 return null;
             }
-            using var json = JsonDocument.Parse( body );
-            if( json.RootElement.TryGetProperty( "id_token", out var idToken ) && idToken.ValueKind == JsonValueKind.String )
+            var tokenResponse = new OpenIdConnectMessage( body );
+            if( string.IsNullOrEmpty( tokenResponse.IdToken ) )
             {
-                return idToken.GetString();
+                monitor.Warn( $"Token endpoint of '{p.Scheme.Scheme}' returned no id_token." );
+                return null;
             }
-            monitor.Warn( $"Token endpoint of '{p.Scheme.Scheme}' returned no id_token." );
-            return null;
+            return tokenResponse;
         }
         catch( Exception ex )
         {
@@ -238,15 +250,17 @@ public sealed class AuthCenterOidc
         }
     }
 
-    async Task<string?> ValidateIdTokenAsync( IActivityMonitor monitor, PendingLogin p, OpenIdConnectConfiguration configuration, string idToken )
+    // The token: its signature, issuer, audience and lifetime (JsonWebTokenHandler). Then the protocol rules
+    // (OpenIdConnectProtocolValidator): the required claims, the nonce, the at_hash when there is an access token.
+    async Task<string?> ValidateTokenResponseAsync( IActivityMonitor monitor, PendingLogin p, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse )
     {
+        var idToken = tokenResponse.IdToken;
         var handler = new JsonWebTokenHandler();
         var result = await handler.ValidateTokenAsync( idToken, CreateParameters( p.Scheme, configuration ) ).ConfigureAwait( false );
         if( !result.IsValid && result.Exception is SecurityTokenSignatureKeyNotFoundException )
         {
             // The provider may have rotated its keys: reads its configuration again (once).
-            var manager = _configurations[p.Scheme.Scheme];
-            manager.RequestRefresh();
+            _configurations[p.Scheme.Scheme].RequestRefresh();
             var refreshed = await GetConfigurationAsync( monitor, p.Scheme ).ConfigureAwait( false );
             if( refreshed != null ) result = await handler.ValidateTokenAsync( idToken, CreateParameters( p.Scheme, refreshed ) ).ConfigureAwait( false );
         }
@@ -255,17 +269,22 @@ public sealed class AuthCenterOidc
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Invalid identity token for a '{p.Scheme.Scheme}' login.", result.Exception );
             return null;
         }
-        if( !result.Claims.TryGetValue( "nonce", out var nonce ) || nonce is not string n || n != p.Nonce )
+        try
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Invalid nonce in the identity token of a '{p.Scheme.Scheme}' login." );
+            _validator.ValidateTokenResponse( new OpenIdConnectProtocolValidationContext
+            {
+                ClientId = p.Scheme.ClientId,
+                Nonce = p.Nonce,
+                ProtocolMessage = tokenResponse,
+                ValidatedIdToken = new JwtSecurityToken( idToken )
+            } );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity token of a '{p.Scheme.Scheme}' login breaks the protocol.", ex );
             return null;
         }
-        if( !result.Claims.TryGetValue( "sub", out var sub ) || sub is not string s || s.Length == 0 )
-        {
-            monitor.Warn( $"No subject in the identity token of a '{p.Scheme.Scheme}' login." );
-            return null;
-        }
-        return s;
+        return result.Claims.TryGetValue( "sub", out var sub ) && sub is string s && s.Length > 0 ? s : null;
     }
 
     static TokenValidationParameters CreateParameters( OidcSchemeOptions scheme, OpenIdConnectConfiguration configuration )
