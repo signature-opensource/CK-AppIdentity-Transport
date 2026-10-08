@@ -89,4 +89,12 @@ sealed class RelayedEndpoint : IAuthenticationSessionEndpoint
         IssuedSessionKey = null;
         Cleared = true;
     }
+
+    public string? RemoteLoginCallbackUrl => _command.RemoteLoginCallbackUrl;
+
+    // The front's endpoint prepared it before relaying a starting remote login.
+    public string PrepareRemoteLogin() => _command.RemoteLoginCorrelationHash
+                                          ?? Throw.InvalidOperationException<string>( "The front did not prepare the remote login correlation." );
+
+    public string? PresentedRemoteLoginHash => _command.PresentedRemoteLoginHash;
 }

@@ -67,6 +67,8 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
         }
         var (nextRefresh, nextBinding) = _endpoint.PrepareSecrets();
         var presented = _endpoint.PresentedProof;
+        var callbackUrl = _endpoint.RemoteLoginCallbackUrl;
+        var correlation = command is IStartLoginCommand && callbackUrl != null ? _endpoint.PrepareRemoteLogin() : null;
         var relayed = _pocos.Create<IRelaySessionCommand>( c =>
         {
             c.Command = command;
@@ -76,6 +78,9 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
             c.PresentedBindingSecretHash = presented?.BindingSecretHash;
             c.NextRefreshSecretHash = nextRefresh;
             c.NextBindingSecretHash = nextBinding;
+            c.RemoteLoginCallbackUrl = callbackUrl;
+            c.RemoteLoginCorrelationHash = correlation;
+            c.PresentedRemoteLoginHash = _endpoint.PresentedRemoteLoginHash;
         } );
         IRelaySessionResult r;
         try
@@ -126,11 +131,16 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
     }
 
     // A failure of a command that has no result (logout) is a null result: the endpoint secrets are cleared anyway.
+    // A command with another result (the RedirectedUrl of a start login) fails with an error.
     object? Failure( IActivityMonitor monitor, ICommandAuthenticationSession command, string text, string resName )
     {
         if( command is ICommand<ISessionResult> c ) return AuthCenterResults.Failure( monitor, c, text, resName );
         monitor.Warn( $"Session command '{command.CrisPocoModel.PocoName}' not relayed: {text}" );
-        if( command is ILogoutSessionCommand ) _endpoint.Clear();
-        return null;
+        if( command is ILogoutSessionCommand )
+        {
+            _endpoint.Clear();
+            return null;
+        }
+        return _pocos.Create<ICrisResultError>( e => e.Errors.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) ) );
     }
 }

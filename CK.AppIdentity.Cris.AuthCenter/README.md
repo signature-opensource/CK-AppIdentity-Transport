@@ -117,7 +117,7 @@ They carry nothing: they act on **the current session**, the one whose proof the
 | `ILogoutSessionCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
 | `IImpersonateCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. |
 | `IClearImpersonationCommand` | Always possible: it can only lower the privileges. |
-| `IGetLoginSchemesQCommand` | The provider names of the login providers. Not a session command. |
+| `IGetLoginSchemesQCommand` | The provider names of the login providers ("Oidc" appears as its configured `Oidc.<Suffix>` schemes). Not a session command. |
 
 **A replayed secret revokes the session.** The secrets rotate at each refresh, so a refresh secret is used once: the
 right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The
@@ -128,6 +128,43 @@ background, never on the agent loop. No setting: every save writes the session f
 than `SessionLifetime` after it, so the files written before "now - SessionLifetime" are the candidates, and their
 end is checked before they are deleted. An expired session that is presented is also deleted at once.
 
+### OpenID Connect ([`AuthCenterOidc`](AuthCenterOidc.cs), [`AuthCenterOidcHandlers`](AuthCenterOidcHandlers.cs))
+
+The remote logins (authorization code flow with PKCE). The local Authentication Center alone holds the client
+secrets: a front relays the start of a login and the callback, like any session command.
+
+```jsonc
+"AuthCenter": {
+  "Oidc": {
+    "Google": {                                   // The scheme is "Oidc.Google".
+      "Authority": "https://accounts.google.com", // https (http only on a loopback address).
+      "Issuer": "...",                            // Optional: defaults to the Authority.
+      "ClientId": "...",
+      "ClientSecret": "...",
+      "Scopes": "openid email",                   // "openid" is always included.
+      "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ]
+    }
+  }
+}
+```
+
+1. **`IStartLoginCommand`** (scheme "Oidc.Google"): the endpoint must be able to receive remote logins and its
+   `RemoteLoginCallbackUrl` must be one of the `CallbackUrls`; the `ReturnUrl` must be a relative path. A **pending login**
+   (state, nonce, PKCE verifier, callback, the hash of the endpoint's correlation secret) is kept in memory for 10 minutes
+   (at most 10,000 of them) and the result is the authorization URL.
+2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use). The
+   correlation presented by the endpoint must be the one of the start (**login CSRF**: only the caller that started a
+   login can complete it), then the code is redeemed (client secret + PKCE verifier) and the identity token is
+   validated: signature (the provider's keys, read again once on an unknown key), issuer, audience, lifetime, nonce.
+3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
+   `Sub` (the payload of CK.DB.User.UserOidc for instance). The session is opened like any login.
+
+**One issuer per scheme:** `sub` is unique per issuer only and the identity of an actor is (scheme, sub). The issuer
+announced by the provider and the `iss` of the tokens must be exactly the configured one: multi-tenant endpoints (whose
+issuer varies) are not supported. **No automatic account creation or binding:** a login succeeds only for an actor
+already bound to the identity (unless the application registers an `IAutoCreateAccountService`). The `Code` of the
+callback is `[Sensitive]`: it is encrypted in place when relayed.
+
 ## The relay to a remote Authentication Center
 
 When the Authentication Center of the current local party is a remote one, the endpoints that accept the session
@@ -136,7 +173,8 @@ no login provider at all. The protocol is in [CK.IO.AuthCenter](../CK.IO.AuthCen
 
 **The front** ([`AuthCenterRelay`](AuthCenterRelay.cs)):
 - its endpoint prepares the next secrets: their hashes travel with the command, the secrets stay in the front;
-- it sends an `IRelaySessionCommand` (the command, the presented bearer token and proof, the prepared hashes) over the
+- it sends an `IRelaySessionCommand` (the command, the presented bearer token and proof, the prepared hashes, and for
+  the remote logins its callback URL and the correlation hashes) over the
   Cris channel and waits for the Authentication Center (at most `AuthCenterRelay.Timeout`, 30 seconds);
 - it applies what the Authentication Center issued (with the prepared secrets) or cleared to its endpoint.
 - It fails closed: an unavailable or unreachable Authentication Center is an error, never a local execution.

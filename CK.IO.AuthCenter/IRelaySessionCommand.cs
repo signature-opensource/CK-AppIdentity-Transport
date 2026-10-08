@@ -45,4 +45,20 @@ public interface IRelaySessionCommand : ICommand<IRelaySessionResult>
     /// Gets or sets the hash of the binding secret that the front will use if a session is issued.
     /// </summary>
     string NextBindingSecretHash { get; set; }
+
+    /// <summary>
+    /// Gets or sets the callback URL of the front's endpoint for the remote logins. Null when it cannot receive them.
+    /// </summary>
+    string? RemoteLoginCallbackUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hash of the correlation secret that the front's endpoint prepared for a starting remote login
+    /// (an <c>IStartLoginCommand</c> relayed by an endpoint that can receive remote logins). Null otherwise.
+    /// </summary>
+    string? RemoteLoginCorrelationHash { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hash of the correlation secret presented to the front (when a remote login completes).
+    /// </summary>
+    string? PresentedRemoteLoginHash { get; set; }
 }

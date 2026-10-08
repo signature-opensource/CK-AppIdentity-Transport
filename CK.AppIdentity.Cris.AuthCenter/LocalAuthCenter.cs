@@ -16,6 +16,7 @@ public sealed class LocalAuthCenter
     readonly AuthCenterOptions _options;
     readonly AuthCenterSessionStore _sessions;
     readonly AuthCenterEncryptionKeys _encryptionKeys;
+    readonly AuthCenterOidc _oidc;
 
     internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options )
     {
@@ -23,6 +24,7 @@ public sealed class LocalAuthCenter
         _options = options;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _encryptionKeys = new AuthCenterEncryptionKeys( monitor, party );
+        _oidc = new AuthCenterOidc();
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
 
@@ -80,6 +82,11 @@ public sealed class LocalAuthCenter
     /// Gets the session store.
     /// </summary>
     public AuthCenterSessionStore Sessions => _sessions;
+
+    /// <summary>
+    /// Gets the OpenID Connect client (see <see cref="AuthCenterOptions.OidcSchemes"/>).
+    /// </summary>
+    public AuthCenterOidc Oidc => _oidc;
 
     /// <summary>
     /// Creates a signed token for a session. It expires after <see cref="AuthCenterOptions.TokenLifetime"/>, or with

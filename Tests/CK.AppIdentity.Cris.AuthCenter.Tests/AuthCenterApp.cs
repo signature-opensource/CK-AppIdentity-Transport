@@ -85,6 +85,38 @@ public sealed class AuthCenterApp : IAsyncDisposable
             => opener.OpenSessionAsync( monitor, cmd, "Basic", cmd, cmd.RememberMe );
     }
 
+    /// <summary>
+    /// The payload of the fake "Oidc" provider (like the IUserOidcInfo of CK.DB.User.UserOidc).
+    /// </summary>
+    public sealed class OidcPayload
+    {
+        public string SchemeSuffix { get; set; } = "";
+        public string Sub { get; set; } = "";
+    }
+
+    /// <summary>
+    /// A fake "Oidc" provider: in the "Test" scheme, "albert-sub" is Albert and "paula-sub" is Paula (the actors bound
+    /// to these identities). It records the last payload.
+    /// </summary>
+    public sealed class FakeOidcLoginProvider : ILoginProvider
+    {
+        public static OidcPayload? LastPayload;
+
+        public IReadOnlyCollection<string> ProviderNames => ["Oidc"];
+
+        public object CreatePayload( string scheme ) => new OidcPayload();
+
+        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
+        {
+            var p = (OidcPayload)payload;
+            LastPayload = p;
+            var a = p.SchemeSuffix != "Test"
+                        ? null
+                        : p.Sub switch { "albert-sub" => Albert, "paula-sub" => Paula, _ => null };
+            return ValueTask.FromResult( a != null ? ActorLoginResult.Success( a ) : ActorLoginResult.Failure( 5, "No actor is bound to this identity.", isUnregisteredUser: true ) );
+        }
+    }
+
     public sealed class AllowImpersonation : IImpersonationService
     {
         public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, int actorId ) => ValueTask.FromResult( Find( actorId ) );
@@ -106,6 +138,18 @@ public sealed class AuthCenterApp : IAsyncDisposable
         public string? Token { get; set; }
 
         (string, string)? _prepared;
+
+        /// <summary>
+        /// The callback URL of this browser's endpoint for the remote logins (null: it cannot receive them).
+        /// </summary>
+        public string? RemoteLoginCallbackUrl { get; set; } = "https://front.example.com/.auth/oidc/callback";
+
+        /// <summary>
+        /// The hash of the remote login correlation secret (the "cookie" of a starting remote login).
+        /// </summary>
+        public string? RemoteLoginCorrelation { get; set; }
+
+        internal string PrepareRemoteLogin() => RemoteLoginCorrelation = "correlation-hash-" + (++_count);
 
         internal (string, string) PrepareSecrets()
         {
@@ -145,6 +189,12 @@ public sealed class AuthCenterApp : IAsyncDisposable
         public AuthenticationSessionProof Issue( string sessionKey, bool rememberMe, DateTime refreshExpires ) => _browser.Issue( sessionKey, rememberMe, refreshExpires );
 
         public void Clear() => _browser.Clear();
+
+        public string? RemoteLoginCallbackUrl => _browser.RemoteLoginCallbackUrl;
+
+        public string PrepareRemoteLogin() => _browser.PrepareRemoteLogin();
+
+        public string? PresentedRemoteLoginHash => _browser.RemoteLoginCorrelation;
     }
 
     public required AutomaticServices Services { get; init; }
@@ -184,6 +234,15 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( AuthenticationInfoDefaultProvider ),
                                        typeof( FakeActors ),
                                        typeof( FakeWeakLoginProvider ),
+                                       typeof( FakeOidcLoginProvider ),
+                                       typeof( AuthCenterOidcHandlers ),
+                                       // The handling validators (UserMessageCollector) need the current culture.
+                                       typeof( NormalizedCultureInfoAmbientServiceDefault ),
+                                       typeof( TranslationService ),
+                                       typeof( NormalizedCultureInfo ),
+                                       typeof( CurrentCultureInfo ),
+                                       typeof( IStartLoginCommand ),
+                                       typeof( IRemoteLoginCallbackCommand ),
                                        typeof( RawCrisExecutor ),
                                        typeof( CrisDirectory ),
                                        typeof( ICrisResultError ),

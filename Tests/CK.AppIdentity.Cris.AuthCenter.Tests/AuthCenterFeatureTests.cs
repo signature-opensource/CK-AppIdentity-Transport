@@ -47,7 +47,7 @@ public class AuthCenterFeatureTests
 
     // The setup runs in the agent loop (its own monitor): the logs are collected from the GrandOutput,
     // that dispatches them asynchronously.
-    static async Task ShouldLogAsync( GrandOutputMemoryCollector logs, string fragment )
+    internal static async Task ShouldLogAsync( GrandOutputMemoryCollector logs, string fragment )
     {
         var all = new List<string>();
         for( int i = 0; i < 50; ++i )

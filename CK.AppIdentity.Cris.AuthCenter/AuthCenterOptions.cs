@@ -1,5 +1,7 @@
 using CK.Core;
 using System;
+using System.Collections.Immutable;
+using System.Linq;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
 
@@ -12,13 +14,14 @@ public sealed class AuthCenterOptions
     /// <summary>
     /// The default options.
     /// </summary>
-    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ) );
+    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ), [] );
 
-    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime )
+    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime, ImmutableArray<OidcSchemeOptions> oidcSchemes )
     {
         SessionLifetime = sessionLifetime;
         CriticalLifetime = criticalLifetime;
         TokenLifetime = tokenLifetime;
+        OidcSchemes = oidcSchemes;
     }
 
     /// <summary>
@@ -40,6 +43,18 @@ public sealed class AuthCenterOptions
     /// </summary>
     public TimeSpan TokenLifetime { get; }
 
+    /// <summary>
+    /// Gets the OpenID Connect schemes ("Oidc:&lt;Suffix&gt;" sections). Empty by default.
+    /// </summary>
+    public ImmutableArray<OidcSchemeOptions> OidcSchemes { get; }
+
+    /// <summary>
+    /// Finds an OpenID Connect scheme.
+    /// </summary>
+    /// <param name="scheme">The scheme ("Oidc.Google" for instance).</param>
+    /// <returns>The scheme options or null.</returns>
+    public OidcSchemeOptions? FindOidcScheme( string scheme ) => OidcSchemes.FirstOrDefault( o => string.Equals( o.Scheme, scheme, StringComparison.OrdinalIgnoreCase ) );
+
     internal static AuthCenterOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section )
     {
         if( section == null ) return Default;
@@ -47,13 +62,15 @@ public sealed class AuthCenterOptions
         var session = ReadTimeSpan( monitor, section, nameof( SessionLifetime ), Default.SessionLifetime, ref success );
         var critical = ReadTimeSpan( monitor, section, nameof( CriticalLifetime ), Default.CriticalLifetime, ref success );
         var token = ReadTimeSpan( monitor, section, nameof( TokenLifetime ), Default.TokenLifetime, ref success );
+        var oidc = OidcSchemeOptions.Read( monitor, section.TryGetSection( "Oidc" ) );
+        if( oidc == null ) success = false;
         if( !success ) return null;
         if( critical > session || token > session )
         {
             monitor.Error( $"Invalid '{section.Path}': the {nameof( CriticalLifetime )} ({critical}) and the {nameof( TokenLifetime )} ({token}) cannot exceed the {nameof( SessionLifetime )} ({session})." );
             return null;
         }
-        return new AuthCenterOptions( session, critical, token );
+        return new AuthCenterOptions( session, critical, token, oidc.Value );
     }
 
     static TimeSpan ReadTimeSpan( IActivityMonitor monitor, ImmutableConfigurationSection section, string key, TimeSpan defaultValue, ref bool success )

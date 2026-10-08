@@ -56,7 +56,14 @@ public class RelayTests
                                          typeof( IRelaySessionCommand ),
                                          typeof( IRelaySessionResult ),
                                          typeof( IGetAuthCenterEncryptionKeyQCommand ),
-                                         typeof( IAuthCenterEncryptionKey )];
+                                         typeof( IAuthCenterEncryptionKey ),
+                                         typeof( IStartLoginCommand ),
+                                         typeof( IRemoteLoginCallbackCommand ),
+                                         typeof( AuthCenterOidcHandlers ),
+                                         typeof( NormalizedCultureInfoAmbientServiceDefault ),
+                                         typeof( TranslationService ),
+                                         typeof( NormalizedCultureInfo ),
+                                         typeof( CurrentCultureInfo )];
 
     const int Port = 37145;
 
@@ -109,7 +116,7 @@ public class RelayTests
 
     internal static Task<Pair> StartPairAsync() => StartAsync();
 
-    static async Task<Pair> StartAsync( bool frontIsAllowed = true )
+    static async Task<Pair> StartAsync( bool frontIsAllowed = true, Action<MutableConfigurationSection>? centerSettings = null )
     {
         // The front has no login provider: its AuthCenter is its remote "$Listener".
         var front = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
@@ -124,9 +131,9 @@ public class RelayTests
         {
             c["AllowFeatures"] = "AuthCenter";
             c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
-            c["AuthCenter"] = "true";
+            if( centerSettings != null ) centerSettings( c ); else c["AuthCenter"] = "true";
             if( !frontIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
-        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterApp.FakeBasicLoginProvider )] );
+        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterApp.FakeOidcLoginProvider )] );
         return new Pair { Front = front, Center = center };
     }
 
@@ -163,6 +170,45 @@ public class RelayTests
         (await p.SendAsync( pocos => pocos.Create<ILogoutSessionCommand>() )).ShouldBeNull();
         p.Browser.Cookies.ShouldBeNull();
         (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task an_oidc_login_is_relayed_to_the_remote_AuthCenter_Async()
+    {
+        const string callback = "https://front.example.com/.auth/oidc/callback";
+        using var idp = new FakeIdentityProvider();
+        await using var p = await StartAsync( centerSettings: c =>
+        {
+            c["AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+            c["AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+            c["AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+            c["AuthCenter:Oidc:Test:CallbackUrls:0"] = callback;
+        } );
+        p.Browser.RemoteLoginCallbackUrl = callback;
+
+        // The front relays the start with its callback and the hash of the correlation it prepared.
+        var start = (RedirectedUrl)(await p.RelayAsync( pocos => pocos.Create<IStartLoginCommand>( c => { c.Scheme = "Oidc.Test"; c.ReturnUrl = "/"; } ) )).ShouldNotBeNull();
+        p.Browser.RemoteLoginCorrelation.ShouldNotBeNull();
+        p.LocalCenter.Oidc.PendingLoginCount.ShouldBe( 1 );
+
+        // The provider redirects the browser to the front, that relays the callback: the code is encrypted for the AuthCenter.
+        var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
+        IRemoteLoginCallbackCommand? sent = null;
+        var r = (ISessionResult)(await p.SendAsync( pocos => sent = pocos.Create<IRemoteLoginCallbackCommand>( c => { c.State = state; c.Code = code; } ) )).ShouldNotBeNull();
+        r.Success.ShouldBeTrue();
+        sent.ShouldNotBeNull().Code.ShouldStartWith( "ckenc1:", customMessage: "The relayed command carries the ciphertext of the code." );
+        p.Browser.Current.ActualActor.ActorName.ShouldBe( "Albert" );
+        var cookies = p.Browser.Cookies.ShouldNotBeNull( "The front's endpoint issued the session." );
+        AuthCenterSession.TryParseSessionKey( cookies.SessionKey, out var actorId, out var sessionId ).ShouldBeTrue();
+        (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldNotBeNull().Matches( cookies ).ShouldBeTrue();
+
+        // The AuthCenter lists the scheme to the front.
+        await using( var scope = p.Front.CreateAsyncScopeServices() )
+        {
+            var s = scope.ServiceProvider;
+            var schemes = (await s.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( s, s.GetRequiredService<PocoDirectory>().Create<IGetLoginSchemesQCommand>() )).Result;
+            schemes.ShouldBeAssignableTo<IList<string>>().ShouldContain( "Oidc.Test" );
+        }
     }
 
     [Test]
