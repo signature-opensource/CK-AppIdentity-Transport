@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Collections.Generic;
@@ -464,6 +465,35 @@ sealed partial class TransportController
                             _transportManager.KillTransport( _transport, reconnectDelay );
                         }
                         return false;
+                    }
+                case ZeroProtocol.DRunKeyEvents:
+                    {
+                        // The peer rotated (or answers our request): its events prove themselves.
+                        KeyEvent[] tail;
+                        try
+                        {
+                            tail = ZeroProtocol.ReadKeyEvents( m );
+                        }
+                        catch( Exception ex )
+                        {
+                            receiveMonitor.Error( $"Invalid key events received from '{_transport.RemoteEndPointDescription}'.", ex );
+                            _transportManager.KillTransport( _transport, 0 );
+                            return false;
+                        }
+                        var check = _transport.RemoteKeys.ApplyTail( receiveMonitor, tail );
+                        receiveMonitor.Info( $"Received the key events of '{_transport.RemoteKeys.Party}' up to #{tail[^1].Seq}: {check.Verdict}." );
+                        _feature.OnKeyEventsReceived();
+                        break;
+                    }
+                case ZeroProtocol.DRunKeyEventsRequest:
+                    {
+                        var answer = ZeroProtocol.CreateKeyEventsMessage( _transport.RemoteKeys.LocalKeys.State );
+                        if( !TryEnqueueHighPriority( answer ) )
+                        {
+                            answer.Release();
+                            receiveMonitor.Warn( $"Unable to answer the key events request of '{_transport.RemoteEndPointDescription}'." );
+                        }
+                        break;
                     }
                 default:
                     receiveMonitor.Warn( $"Received unknown '0 Protocol' message (Discriminator: '{m.Message.FirstSpan[0]}', Length: {m.Message.Length}). Ignoring it." );

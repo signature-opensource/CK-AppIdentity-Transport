@@ -13,6 +13,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
     readonly IDataProtectionProvider _protectorProvider;
     readonly ICoreKeyStore _keyStore;
     readonly PerfectEventSender<IdentityAlert> _alertRaised;
+    readonly PerfectEventSender<ILocalKeys> _keyEventAppended;
 
     public KeyManagementFeatureDriver( ApplicationIdentityService s, IDataProtectionProvider protectorProvider, ICoreKeyStore keyStore )
         : base( s, true )
@@ -20,6 +21,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
         _protectorProvider = protectorProvider;
         _keyStore = keyStore;
         _alertRaised = new PerfectEventSender<IdentityAlert>();
+        _keyEventAppended = new PerfectEventSender<ILocalKeys>();
     }
 
     /// <summary>
@@ -31,6 +33,13 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
     /// </para>
     /// </summary>
     public PerfectEvent<IdentityAlert> AlertRaised => _alertRaised.PerfectEvent;
+
+    /// <summary>
+    /// Raised when the key event log of any local party gains an event (see <see cref="ILocalKeys.KeyEventAppended"/>),
+    /// with its keys: <see cref="IPartyKeys.Party"/> and <see cref="ILocalKeys.State"/>. The transport pushes the new tail
+    /// to the connected remotes of the party.
+    /// </summary>
+    public PerfectEvent<ILocalKeys> KeyEventAppended => _keyEventAppended.PerfectEvent;
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
@@ -99,6 +108,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
         try
         {
             var localKeys = new LocalKeys.Builder( local, _protectorProvider, _keyStore, _alertRaised ).Build( context.Monitor );
+            localKeys.KeyEventAppended.Async += ( monitor, state, cancel ) => _keyEventAppended.SafeRaiseAsync( monitor, localKeys, cancel );
             local.AddFeature( localKeys );
             foreach( var r in local.Remotes )
             {

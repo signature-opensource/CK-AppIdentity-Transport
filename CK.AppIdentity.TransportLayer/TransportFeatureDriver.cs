@@ -3,6 +3,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.TransportLayer;
@@ -16,6 +17,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     readonly TransportTypeService[] _transportTypes;
     readonly TcpSocketTransportTypeService _tcp;
     readonly MessageProtocolDirectoryService _protocolDirectory;
+    readonly KeyManagementFeatureDriver _keyManagement;
     TransportManager? _transportManager;
 
     /// <summary>
@@ -34,6 +36,28 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
         _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
         _protocolDirectory = protocolDirectory;
+        _keyManagement = keyManagement;
+    }
+
+    // R1: right after a rotation (or a recovery or a decommission), the new key events are pushed to the connected
+    // remotes of the party, so that they move their pin at once: without this, a connection that stays up keeps the
+    // previous pin until the peer's operational credential expires.
+    Task OnKeyEventAppendedAsync( IActivityMonitor monitor, ILocalKeys keys, CancellationToken cancel )
+    {
+        if( keys.Party is ILocalParty local )
+        {
+            int count = 0;
+            foreach( var r in local.Remotes )
+            {
+                var controller = r.GetFeature<TransportFeature>()?.TransportController;
+                if( controller == null ) continue;
+                var m = ZeroProtocol.CreateKeyEventsMessage( keys.State );
+                if( controller.TryEnqueueHighPriority( m ) ) ++count;
+                else m.Release();
+            }
+            monitor.Info( $"Key events of '{local}' up to #{keys.State.Tail[^1].Seq} pushed to {count} remote(s)." );
+        }
+        return Task.CompletedTask;
     }
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
@@ -46,6 +70,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         }
         // Even if initialization fails, register the feature: it may be required by others.
         ApplicationIdentityService.AddFeature( _transportManager.Feature );
+        _keyManagement.KeyEventAppended.Async += OnKeyEventAppendedAsync;
         // Local and External remote parties have no Transport.
         // Locals hold the Listeners.
         // Starts by creating the remotes.
@@ -101,6 +126,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     protected override async Task TeardownAsync( FeatureLifetimeContext context )
     {
         Throw.DebugAssert( _transportManager != null );
+        _keyManagement.KeyEventAppended.Async -= OnKeyEventAppendedAsync;
         foreach( var r in context.GetAllRemotes() )
         {
             var t = r.GetFeature<TransportFeature>();

@@ -552,6 +552,35 @@ public sealed class TransportFeature
     /// </summary>
     public IRemoteKeys RemoteKeys => _remoteKeys;
 
+    TaskCompletionSource? _keyEventsWaiter;
+
+    /// <summary>
+    /// Asks the remote for its last key events and waits for them (at most <paramref name="timeout"/>).
+    /// A remote pushes them itself right after a rotation: this is the safety net when a signature of the remote is
+    /// refused because its issuer is not known here (<see cref="SignatureVerdict.UnknownIssuer"/>).
+    /// </summary>
+    /// <param name="timeout">The maximal time to wait.</param>
+    /// <returns>True if the pin on the remote moved, false otherwise (not connected, timeout or nothing new).</returns>
+    public async Task<bool> RequestKeyEventsAsync( TimeSpan timeout )
+    {
+        var controller = _controller;
+        if( controller == null ) return false;
+        var before = _remoteKeys.TrustedEvent;
+        var waiter = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+        // Concurrent requests: the previous waiter is released, its caller sees the same pin.
+        Interlocked.Exchange( ref _keyEventsWaiter, waiter )?.TrySetResult();
+        var request = ZeroProtocol.CreateKeyEventsRequestMessage();
+        if( !controller.TryEnqueueHighPriority( request ) )
+        {
+            request.Release();
+            return false;
+        }
+        await Task.WhenAny( waiter.Task, Task.Delay( timeout ) ).ConfigureAwait( false );
+        return _remoteKeys.TrustedEvent != before;
+    }
+
+    internal void OnKeyEventsReceived() => Interlocked.Exchange( ref _keyEventsWaiter, null )?.TrySetResult();
+
     /// <summary>
     /// Gets or sets whether this remote disallows a new remote incoming transport
     /// when a remote instance is currently connected. This applies only if <see cref="IsListening"/> is true.
