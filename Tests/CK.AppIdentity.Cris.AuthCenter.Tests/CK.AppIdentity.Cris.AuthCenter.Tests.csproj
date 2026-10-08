@@ -4,6 +4,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.1-0.cris-auth.0.ci.9" />
+    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.1-0.cris-auth.0.ci.8" />
+    <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="CK.Testing.Nunit" Version="17.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />

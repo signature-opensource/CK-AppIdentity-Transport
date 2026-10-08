@@ -136,7 +136,21 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
             monitor.Error( $"'{authCenter}' cannot be the AuthCenter of '{local}': it has no 'KeyManagement' feature (its keys verify the tokens)." );
             return false;
         }
-        var f = new CrisAuthCenter( local, authCenter );
+        // The settings are the ones of a local AuthCenter: a remote one has its own.
+        var settings = authCenter.Configuration.Configuration.TryGetSection( ConfigurationKey );
+        if( settings != null && !settings.GetChildren().Any() ) settings = null;
+        LocalAuthCenter? localCenter = null;
+        if( authCenter == local )
+        {
+            var options = AuthCenterOptions.Read( monitor, settings );
+            if( options == null ) return false;
+            localCenter = new LocalAuthCenter( local, options );
+        }
+        else if( settings != null )
+        {
+            monitor.Warn( $"The '{settings.Path}' settings are ignored: '{authCenter}' is a remote AuthCenter (its settings are its own)." );
+        }
+        var f = new CrisAuthCenter( local, authCenter, localCenter );
         local.AddFeature( f );
         foreach( var r in local.Remotes )
         {

@@ -55,3 +55,48 @@ local Authentication Center signs, with its `ILocalKeys`.
 - **Lifetime:** features cannot be removed. When a remote Authentication Center is destroyed (a remote of a dynamic
   tenant domain), its local party has no more authentication: the feature stays, is no more `IsAvailable`, and an
   error is logged. It fails closed. Destroying a tenant domain takes its Authentication Center with it.
+
+## The local Authentication Center
+
+When the Authentication Center is the local party, `CrisAuthCenter.Local` is a [`LocalAuthCenter`](LocalAuthCenter.cs):
+its settings, its sessions and the signing of its tokens. A remote Authentication Center has its own settings: a
+settings section on a remote is ignored (with a warning).
+
+### Settings ([`AuthCenterOptions`](AuthCenterOptions.cs))
+
+Read from the `"AuthCenter"` section of the local party (never inherited, static):
+
+| Key | Default | |
+|---|---|---|
+| `SessionLifetime` | 1 day | The `Expires` of a login. |
+| `CriticalLifetime` | 5 minutes | The `CriticalExpires` of a login at `Critical` level. |
+| `TokenLifetime` | 10 minutes | The lifetime of a token (at most the session's). |
+
+### Tokens ([`AuthCenterToken`](AuthCenterToken.cs))
+
+A token is the authentication (actual actor, actor, levels, dates, device) and its session identifier, signed by the
+Authentication Center for `ICrisAuthCenter.TokenPurpose`. It is the Authentication Center's format, with its own version
+number: only `CrisAuthCenter.TryReadToken` reads it (a client gets the authentication from `ISessionResult.Info`).
+
+- **The signature is verified first**, then the audience: the full name of the local party. A token of a tenant domain
+  is refused by another one (that also has other keys).
+- **The authentication cannot outlive the token:** its dates are clamped to the token expiration.
+- **Revocation:** tokens are verified locally, without the session store, so a revoked session stays usable until its
+  token expires: at most `TokenLifetime`. The client refreshes its token with `IRefreshSessionCommand`.
+- The credential of the signature is embedded in every token (simpler; the "credential sent once" option stays open).
+
+### Sessions ([`AuthCenterSessionStore`](AuthCenterSessionStore.cs))
+
+The sessions are in the `LocalFileStore` of the local party: `AuthCenter/Sessions/{ActualActorId}/{SessionId}`, so all
+the sessions of an actor are in one folder. A session holds the **hashes** of the endpoint secrets, never the secrets.
+The session identifiers are random (16 bytes, base64url) and checked before being used as file names.
+
+### Opening a session ([`AuthCenterSessionOpener`](AuthCenterSessionOpener.cs))
+
+The `IAuthenticationSessionOpener` of a local Authentication Center. The provider handlers call it
+(see CK.Cris.Authentication). It runs the login sequence (the `ILoginProvider` of the scheme, the `ILoginValidator`s, the
+account creation or binding of an unregistered user), then stores the session, lets the endpoint issue its secrets and
+returns the signed token.
+
+A remote Authentication Center is reached by a relay at the receiving endpoint, before the handlers (to come): a session
+command that reaches the opener while the Authentication Center is remote fails closed. It is never executed locally.
