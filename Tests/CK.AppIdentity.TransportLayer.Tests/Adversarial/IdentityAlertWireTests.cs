@@ -60,6 +60,9 @@ public class IdentityAlertWireTests
 
     static string DefaultAddress => $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
 
+    // Nothing listens there: a party configured with it is offline (its key events reach nobody).
+    const string UnreachableAddress = "tcp:127.0.0.1:1";
+
     static void ClearAll()
     {
         PeerStore.ClearRemoteTrust( $"Test/{Listener}" );
@@ -188,19 +191,26 @@ public class IdentityAlertWireTests
         var protector = new HeaderProtector();
         await using var listener = await CreateListenerAsync( token );
 
-        // 1. The victim connects, then rotates: its current key is now key 1.
-        KeyEvent e0;
-        ECDsa stolenCurrent;
+        // 1. The victim connects: both sides pin each other's inception.
         await using( var victim = await CreateVictimAsync( protector, DefaultAddress, "Once", token ) )
         {
             await victim.AllRemotes.Single().GetRequiredFeature<TransportFeature>().ReadyTask.WaitAsync( token );
-            var keys = victim.GetRequiredFeature<ILocalKeys>();
+        }
+        // Then it rotates while it is not connected: its current key is now key 1, and the listener still pins #0.
+        // (Connected, its key events would be pushed to the listener, that would see the legitimate chain first:
+        // see A_fork_after_the_legitimate_rotation_is_refused_and_leaves_the_victim_connected_Async.)
+        KeyEvent e0;
+        ECDsa stolenCurrent;
+        await using( var offline = await CreateVictimAsync( protector, UnreachableAddress, "Once", token ) )
+        {
+            var keys = offline.GetRequiredFeature<ILocalKeys>();
             e0 = keys.State.Head;
             keys.Rotate( TestHelper.Monitor ).ShouldBeTrue();
             // 2. Key 1 leaks. It is the key event 0 committed to: whoever holds it can write AN event 1.
-            stolenCurrent = IdentityStoreHelper.OpenKey( victim, protector, 1 );
+            stolenCurrent = IdentityStoreHelper.OpenKey( offline, protector, 1 );
         }
         using var _stolen = stolenCurrent;
+        PeerStore.ReadTrustedIdentity( $"Test/{Victim}" ).ShouldNotBeNull().Seq.ShouldBe( 0, "The listener has not seen the rotation." );
 
         // 3. The thief writes its own event 1 and reaches the listener first.
         using var thiefNext = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
@@ -223,6 +233,53 @@ public class IdentityAlertWireTests
         listenerAlert.Seq.ShouldBe( 1 );
         var evidence = Path.Combine( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath, "#Dev", "Test", Victim, "Duplicity" );
         Directory.EnumerateFiles( evidence, "*.event" ).Count().ShouldBe( 2, "Both events are kept as evidence." );
+    }
+
+    /// <summary>
+    /// The other order (DESIGN-key-pre-rotation §8, "The worst case has no peering problem"): the listener saw the
+    /// legitimate rotation first (the victim pushed its key events). The fork is refused and raises RemoteDuplicity on
+    /// the listener; the legitimate chain keeps its pin and the victim keeps connecting, without any alert of its own.
+    /// </summary>
+    [Test, CancelAfter( 60000 )]
+    public async Task A_fork_after_the_legitimate_rotation_is_refused_and_leaves_the_victim_connected_Async( CancellationToken token )
+    {
+        ClearAll();
+        var protector = new HeaderProtector();
+        await using var listener = await CreateListenerAsync( token );
+
+        // 1. The victim connects and rotates while connected: its key events are pushed, the listener pins its event 1.
+        KeyEvent e0, e1;
+        ECDsa stolenCurrent;
+        await using( var victim = await CreateVictimAsync( protector, DefaultAddress, "Once", token ) )
+        {
+            await victim.AllRemotes.Single().GetRequiredFeature<TransportFeature>().ReadyTask.WaitAsync( token );
+            var keys = victim.GetRequiredFeature<ILocalKeys>();
+            e0 = keys.State.Head;
+            keys.Rotate( TestHelper.Monitor ).ShouldBeTrue();
+            e1 = keys.State.Head;
+            await WaitForAsync( () => PeerStore.ReadTrustedIdentity( $"Test/{Victim}" )?.Seq == 1, "the listener to pin the legitimate event 1", token );
+            stolenCurrent = IdentityStoreHelper.OpenKey( victim, protector, 1 );
+        }
+        using var _stolen = stolenCurrent;
+
+        // 2. The thief writes its own event 1: the listener refuses it and keeps the evidence.
+        using var thiefNext = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        var forked = KeyEvent.Create( VictimFullName, 1, DateTime.UtcNow, stolenCurrent, KeyEvent.ComputeCommit( thiefNext.ExportSubjectPublicKeyInfo() ), e0 );
+        using( var thief = PeerIdentity.Adopt( VictimFullName, new[] { e0, forked }, stolenCurrent, thiefNext ) )
+        {
+            await KnockAsAsync( thief, token );
+        }
+        var listenerKeys = listener.GetRequiredFeature<ILocalKeys>();
+        await WaitForAsync( () => listenerKeys.Alerts.Any( a => a.Kind == IdentityAlertKind.RemoteDuplicity ), "the duplicity alert on the listener", token );
+        var pinned = PeerStore.ReadTrustedIdentity( $"Test/{Victim}" ).ShouldNotBeNull();
+        pinned.GetDigest( VictimFullName ).ToArray().ShouldBe( e1.GetDigest( VictimFullName ).ToArray(), "First seen, always seen: the legitimate event keeps its pin." );
+        var evidence = Path.Combine( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath, "#Dev", "Test", Victim, "Duplicity" );
+        Directory.EnumerateFiles( evidence, "*.event" ).Count().ShouldBe( 2, "Both events are kept as evidence." );
+
+        // 3. The victim comes back: it connects, nothing pins it differently, it has no alert.
+        await using var back = await CreateVictimAsync( protector, DefaultAddress, "Once", token );
+        await back.AllRemotes.Single().GetRequiredFeature<TransportFeature>().ReadyTask.WaitAsync( token );
+        back.GetRequiredFeature<ILocalKeys>().Alerts.ShouldBeEmpty( "The listener pins its legitimate chain: only the listener's operator knows (RemoteDuplicity)." );
     }
 
     [Test, CancelAfter( 60000 )]
