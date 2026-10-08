@@ -1,13 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain).</Description>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
   </ItemGroup>
-
 </Project>

@@ -11,6 +11,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/CK.AppIdentity.BlobChannel.Tests/CK.AppIdentity.BlobChannel.Tests.csproj" />
+    <Project Path="Tests/CK.AppIdentity.Cris.AuthCenter.Tests/CK.AppIdentity.Cris.AuthCenter.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.Cris.Tests/CK.AppIdentity.Cris.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.MutualTls.Tests/CK.AppIdentity.MutualTls.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.TransportLayer.Tests/CK.AppIdentity.TransportLayer.Tests.csproj" />

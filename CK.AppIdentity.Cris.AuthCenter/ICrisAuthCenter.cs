@@ -1,7 +1,6 @@
-using CK.Auth;
 using CK.Core;
 
-namespace CK.AppIdentity.Cris;
+namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
 /// The "AuthCenter" feature is carried by a <see cref="ILocalParty"/> and all its <see cref="IRemoteParty"/>
