@@ -205,8 +205,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
         // Like a front: the token becomes the current authentication.
         if( r.Token != null )
         {
-            Center.TryReadToken( TestHelper.Monitor, r.Token, DateTime.UtcNow, out var info, out _ ).ShouldBeTrue();
-            Caller.Current = info;
+            Caller.Current = (await Center.ReadTokenAsync( TestHelper.Monitor, r.Token, DateTime.UtcNow )).ShouldNotBeNull().Info;
             Caller.Token = r.Token;
         }
         return r;

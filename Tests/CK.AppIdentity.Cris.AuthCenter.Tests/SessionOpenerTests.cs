@@ -31,7 +31,7 @@ public class SessionOpenerTests
         issued.RememberMe.ShouldBeTrue();
 
         // The token is read back by the AuthCenter (this is what a front does): it holds the session.
-        center.TryReadToken( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow, out var info, out var sessionId ).ShouldBeTrue();
+        var (info, sessionId) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
         info.UnsafeActor.ActorId.ShouldBe( 42 );
         info.UnsafeActor.ActorName.ShouldBe( "Operator" );
         info.UnsafeActor.Level.ShouldBe( AuthLevel.Unsafe );
@@ -93,7 +93,7 @@ public class SessionOpenerTests
         var sessionId = AuthCenterSession.NewSessionId();
         var token = root.Local.ShouldNotBeNull().CreateToken( sessionId, auth, utcNow );
 
-        root.TryReadToken( TestHelper.Monitor, token, utcNow, out var info, out var readId ).ShouldBeTrue();
+        var (info, readId) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
         readId.ShouldBe( sessionId );
         info.IsImpersonated.ShouldBeTrue();
         info.UnsafeActualActor.ActorName.ShouldBe( "Albert" );
@@ -101,12 +101,12 @@ public class SessionOpenerTests
         info.Actor.Level.ShouldBe( AuthLevel.Critical );
         info.CriticalExpires.ShouldNotBeNull().ShouldBeLessThanOrEqualTo( utcNow.AddMinutes( 2 ), "Clamped by the token (2 minutes)." );
 
-        acme.TryReadToken( TestHelper.Monitor, token, utcNow, out _, out _ ).ShouldBeFalse( "Another local party: other keys, other audience." );
+        (await acme.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldBeNull( "Another local party: other keys, other audience." );
 
         var bytes = System.Buffers.Text.Base64Url.DecodeFromChars( token );
         bytes[10] ^= 1;
-        root.TryReadToken( TestHelper.Monitor, System.Buffers.Text.Base64Url.EncodeToString( bytes ), utcNow, out _, out _ ).ShouldBeFalse();
-        root.TryReadToken( TestHelper.Monitor, "not a token", utcNow, out _, out _ ).ShouldBeFalse();
-        root.TryReadToken( TestHelper.Monitor, token, utcNow.AddMinutes( 3 ), out _, out _ ).ShouldBeFalse( "Expired." );
+        (await root.ReadTokenAsync( TestHelper.Monitor, System.Buffers.Text.Base64Url.EncodeToString( bytes ), utcNow )).ShouldBeNull();
+        (await root.ReadTokenAsync( TestHelper.Monitor, "not a token", utcNow )).ShouldBeNull();
+        (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow.AddMinutes( 3 ) )).ShouldBeNull( "Expired." );
     }
 }

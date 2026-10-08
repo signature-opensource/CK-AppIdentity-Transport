@@ -59,9 +59,9 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
             return Result( pocos, Failure( monitor, inner, "A command with sensitive data cannot be relayed yet.", "Authentication.SensitiveRelayNotSupported" ) );
         }
         var authentication = AuthenticationInfo.None;
-        if( command.Token != null && center.TryReadToken( monitor, command.Token, DateTime.UtcNow, out var info, out _ ) )
+        if( command.Token != null && await center.ReadTokenAsync( monitor, command.Token, DateTime.UtcNow ).ConfigureAwait( false ) is { } read )
         {
-            authentication = info;
+            authentication = read.Info;
         }
         var endpoint = new RelayedEndpoint( command );
         await using var scope = _container.GetContainer().CreateAsyncScope( new AuthCenterRelayDIContainerDefinition.Data( monitor, caller, authentication, endpoint ) );

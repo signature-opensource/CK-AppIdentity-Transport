@@ -12,7 +12,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <summary>
 /// The token of an Authentication Center: the authentication and its session identifier, signed by the Authentication
 /// Center for the <see cref="ICrisAuthCenter.TokenPurpose"/>. It is the Authentication Center's format (with its own
-/// version number): only <see cref="CrisAuthCenter.TryReadToken"/> reads it, a client gets the authentication from the
+/// version number): only <see cref="CrisAuthCenter.ReadTokenAsync"/> reads it, a client gets the authentication from the
 /// session result.
 /// <para>
 /// The token string is "base64url( len16(data) ‖ data ‖ signature )". The data is:

@@ -69,35 +69,19 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     }
 
     /// <summary>
-    /// Reads a token issued by the Authentication Center for the <see cref="Owner"/>: its signature is verified
-    /// (see <see cref="Verify"/>), then its audience: the <see cref="AuthCenter"/> party (a token issued by another Authentication Center, of another tenant domain for instance, is refused).
-    /// The authentication cannot outlive the token.
-    /// </summary>
-    /// <param name="logger">Receives the reason of a refusal.</param>
-    /// <param name="token">The token.</param>
-    /// <param name="utcNow">The current time.</param>
-    /// <param name="info">The authentication on success.</param>
-    /// <param name="sessionId">The session identifier on success.</param>
-    /// <returns>True on success, false if the token is refused.</returns>
-    public bool TryReadToken( IActivityLineEmitter logger,
-                              string token,
-                              DateTime utcNow,
-                              [NotNullWhen( true )] out AuthenticationInfo? info,
-                              [NotNullWhen( true )] out string? sessionId )
-    {
-        Throw.CheckNotNullArgument( token );
-        return AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId ) == SignatureVerdict.Valid;
-    }
-
-    /// <summary>
     /// The maximal time <see cref="ReadTokenAsync"/> waits for the key events of a remote Authentication Center: 2 seconds.
     /// </summary>
     public static readonly TimeSpan KeyEventsTimeout = TimeSpan.FromSeconds( 2 );
 
     /// <summary>
-    /// Same as <see cref="TryReadToken"/>, with a safety net for a remote Authentication Center: when its signature is refused
-    /// because its issuer is not known here (it rotated its key and its key events have not been received), its key events
-    /// are requested (at most <see cref="KeyEventsTimeout"/>) and the token is read again, once.
+    /// Reads a token issued by the Authentication Center: its signature is verified (see <see cref="Check"/>), then its
+    /// expiration and its audience: the <see cref="AuthCenter"/> party (a token issued by another Authentication Center, of
+    /// another tenant domain for instance, is refused). The authentication cannot outlive the token.
+    /// <para>
+    /// For a remote Authentication Center, when the signature is refused because its issuer is not known here (it rotated
+    /// its key and its key events, normally pushed, have not been received), the key events are requested (at most
+    /// <see cref="KeyEventsTimeout"/>) and the token is read again, once.
+    /// </para>
     /// </summary>
     /// <param name="logger">Receives the reason of a refusal.</param>
     /// <param name="token">The token.</param>

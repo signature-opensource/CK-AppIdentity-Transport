@@ -205,11 +205,12 @@ public class RelayKeyRotationTests
         // The refreshed token is signed by the new key: the front is still pinned on the previous one.
         var refresh = (ISessionResult)(await p.RelayAsync( pocos => pocos.Create<IRefreshSessionCommand>() )).ShouldNotBeNull();
         var token = refresh.Token.ShouldNotBeNull();
-        p.FrontCenter.TryReadToken( TestHelper.Monitor, token, DateTime.UtcNow, out _, out _ ).ShouldBeFalse( "Without the safety net." );
+        var centerOnFront = p.Front.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<CK.AppIdentity.KeyManagement.IRemoteKeys>();
+        centerOnFront.TrustedEvent.ShouldNotBeNull().Seq.ShouldBeLessThan( centerKeys.Seq, "The front missed the rotation." );
 
         // The safety net asks the AuthCenter for its key events and reads the token again.
         var read = (await p.FrontCenter.ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldNotBeNull();
         read.Info.UnsafeActor.ActorName.ShouldBe( "Operator" );
-        p.FrontCenter.TryReadToken( TestHelper.Monitor, token, DateTime.UtcNow, out _, out _ ).ShouldBeTrue( "The pin moved." );
+        centerOnFront.TrustedEvent.ShouldNotBeNull().Seq.ShouldBe( centerKeys.Seq, "The pin moved." );
     }
 }

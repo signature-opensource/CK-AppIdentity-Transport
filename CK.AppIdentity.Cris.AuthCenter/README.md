@@ -76,7 +76,7 @@ Read from the `"AuthCenter"` section of the local party (never inherited, static
 
 A token is the authentication (actual actor, actor, levels, dates, device) and its session identifier, signed by the
 Authentication Center for `ICrisAuthCenter.TokenPurpose`. It is the Authentication Center's format, with its own version
-number: only `CrisAuthCenter.TryReadToken` reads it (a client gets the authentication from `ISessionResult.Info`).
+number: only `CrisAuthCenter.ReadTokenAsync` reads it (a client gets the authentication from `ISessionResult.Info`).
 
 - **The signature is verified first**, then the audience: the full name of the local party. A token of a tenant domain
   is refused by another one (that also has other keys).
