@@ -133,7 +133,7 @@ public class RelayTests
             c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             if( centerSettings != null ) centerSettings( c ); else c["AuthCenter"] = "true";
             if( !frontIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
-        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterApp.FakeOidcLoginProvider )] );
+        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider )] );
         return new Pair { Front = front, Center = center };
     }
 

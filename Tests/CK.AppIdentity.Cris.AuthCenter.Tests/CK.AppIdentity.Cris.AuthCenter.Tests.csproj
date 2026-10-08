@@ -5,8 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.1-0.cris-auth.0.ci.15" />
-    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.1-0.cris-auth.0.ci.10" />
-    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.1-0.cris-auth.0.ci.10" />
     <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.1-0.cris-auth.0.ci.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="CK.Testing.NUnit" Version="17.0.1-0.cris-auth.0.ci.3" />

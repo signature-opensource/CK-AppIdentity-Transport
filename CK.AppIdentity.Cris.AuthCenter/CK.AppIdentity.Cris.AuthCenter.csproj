@@ -8,6 +8,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris.Authentication" Version="2.0.1-0.cris-auth.0.ci.15" />
+    <!-- For the Basic and Weak login handlers (AuthCenterLoginHandlers.cs): temporary, until the old stack is retired. -->
+    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.1-0.cris-auth.0.ci.10" />
+    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.1-0.cris-auth.0.ci.10" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
   </ItemGroup>
   <ItemGroup>

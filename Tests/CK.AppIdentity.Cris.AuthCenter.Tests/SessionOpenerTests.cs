@@ -24,12 +24,12 @@ public class SessionOpenerTests
 
         var r = await app.LoginAsync( "Operator" );
         r.Success.ShouldBeTrue();
-        r.RememberMe.ShouldBeTrue();
+        r.RememberMe.ShouldBeFalse( "The Weak login handler never remembers (the OIDC and Basic tests remember)." );
         r.Info.UnsafeActor.ActorId.ShouldBe( 42 );
         r.Info.UnsafeActor.Level.ShouldBe( AuthLevel.Unsafe );
         r.Info.DeviceId.ShouldNotBeNullOrEmpty();
         var issued = app.Caller.Issued.ShouldHaveSingleItem();
-        issued.RememberMe.ShouldBeTrue();
+        issued.RememberMe.ShouldBeFalse();
 
         // The token is read back by the AuthCenter (this is what a front does): it holds the session.
         var (info, sessionId, bindingHash) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
@@ -44,7 +44,7 @@ public class SessionOpenerTests
         issued.SessionKey.ShouldBe( session.SessionKey );
         session.RefreshSecretHash.ShouldBe( "refresh-hash-1" );
         session.BindingSecretHash.ShouldBe( "binding-hash-1" );
-        session.RememberMe.ShouldBeTrue();
+        session.RememberMe.ShouldBeFalse();
         session.Expires.ShouldBe( issued.RefreshExpires );
         session.Matches( app.Caller.Cookies.ShouldNotBeNull() ).ShouldBeTrue();
         bindingHash.ShouldBe( session.BindingSecretHash, "The token is bound to the binding secret of its session." );

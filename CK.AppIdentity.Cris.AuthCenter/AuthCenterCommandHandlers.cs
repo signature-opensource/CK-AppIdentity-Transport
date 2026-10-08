@@ -12,7 +12,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// Handles the session commands that are not logins (refresh, logout, impersonation) with the
 /// <see cref="AuthCenterSessionService"/>, and the <see cref="IGetLoginSchemesQCommand"/> (the "Oidc" provider appears as its
 /// configured "Oidc.&lt;Suffix&gt;" schemes).
-/// The logins are handled by the packages that implement the authentication providers.
+/// The logins are handled by the packages that implement the authentication providers (except, temporarily, the Basic
+/// and Weak ones: see <see cref="AuthCenterBasicLoginHandler"/> and <see cref="AuthCenterWeakLoginHandler"/>).
 /// </summary>
 public sealed class AuthCenterCommandHandlers : ISingletonAutoService
 {

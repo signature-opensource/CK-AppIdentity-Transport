@@ -53,15 +53,10 @@ public sealed class AuthCenterApp : IAsyncDisposable
             var a = Find( ((IWeakLoginCommand)payload).WeakActorName );
             return ValueTask.FromResult( a != null ? ActorLoginResult.Success( a ) : ActorLoginResult.Failure( 3, "Invalid user name or identifier." ) );
         }
-
-        // "I implement an authentication provider, I handle its login commands."
-        [CommandHandler]
-        public ValueTask<ISessionResult> HandleAsync( IActivityMonitor monitor, IWeakLoginCommand cmd, IAuthenticationSessionOpener opener )
-            => opener.OpenSessionAsync( monitor, cmd, ActorInfo.WeakScheme, cmd, rememberMe: true );
     }
 
     /// <summary>
-    /// A "Basic" provider whose payload is the command: Albert's password is "secret". It records the password it receives.
+    /// A "Basic" provider (its payload is a BasicLoginPayload): Albert's password is "secret". It records the password it receives.
     /// </summary>
     public sealed class FakeBasicLoginProvider : ILoginProvider
     {
@@ -73,16 +68,12 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
         {
-            var cmd = (CK.IO.Authentication.Basic.IBasicLoginCommand)payload;
+            var cmd = (BasicLoginPayload)payload;
             LastPassword = cmd.Password;
             return ValueTask.FromResult( cmd.UserName == "Albert" && cmd.Password == "secret"
                                             ? ActorLoginResult.Success( Albert )
                                             : ActorLoginResult.Failure( 4, "Invalid credentials." ) );
         }
-
-        [CommandHandler]
-        public ValueTask<ISessionResult> HandleAsync( IActivityMonitor monitor, CK.IO.Authentication.Basic.IBasicLoginCommand cmd, IAuthenticationSessionOpener opener )
-            => opener.OpenSessionAsync( monitor, cmd, "Basic", cmd, cmd.RememberMe );
     }
 
     /// <summary>
@@ -234,6 +225,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( AuthenticationInfoDefaultProvider ),
                                        typeof( FakeActors ),
                                        typeof( FakeWeakLoginProvider ),
+                                       typeof( AuthCenterWeakLoginHandler ),
                                        typeof( FakeOidcLoginProvider ),
                                        typeof( AuthCenterOidcHandlers ),
                                        // The handling validators (UserMessageCollector) need the current culture.
