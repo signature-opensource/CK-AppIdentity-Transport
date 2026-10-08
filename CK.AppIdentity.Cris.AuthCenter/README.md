@@ -36,9 +36,17 @@ A single [`CrisAuthCenter`](CrisAuthCenter.cs) ([`ICrisAuthCenter`](ICrisAuthCen
 and all its remotes that allow the feature. It exposes the `AuthCenter` party, its `Owner` local party, whether it
 `IsLocal` and whether it `IsAvailable`.
 
+`Verify` checks a token signed by the Authentication Center. It is the same call whether the Authentication Center is
+the local party or a remote: it delegates to the `IPartyKeys` of the Authentication Center (CK.AppIdentity.KeyManagement).
+The purpose is fixed (`ICrisAuthCenter.TokenPurpose`, "CK.AuthCenter.Token"): no other signature of the Authentication
+Center can be taken for a token. It fails closed when the feature is not `IsAvailable`. Signing is not here: only a
+local Authentication Center signs, with its `ILocalKeys`.
+
 ## Rules ([`AuthCenterFeatureDriver`](AuthCenterFeatureDriver.cs))
 
 - **Uniqueness:** two parties configured with `"AuthCenter"` in the same local party is a configuration error.
+- **Keys:** the Authentication Center must have the "KeyManagement" feature (its keys verify the tokens). A remote
+  Authentication Center that is not pinned yet is accepted: `Verify` refuses until it is.
 - **Not allowed:** a party configured with `"AuthCenter"` where the feature is not allowed (on the local party or on
   the remote itself) is a configuration error. An allowed feature without any Authentication Center is a warning.
 - **Defined with its local party:** the Authentication Center is set when its local party is set up (at start, or when

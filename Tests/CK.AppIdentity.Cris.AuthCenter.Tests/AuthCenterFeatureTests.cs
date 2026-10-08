@@ -1,5 +1,8 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.Monitoring;
+using CK.Testing.AppIdentity.TransportLayer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
@@ -21,6 +24,11 @@ public class AuthCenterFeatureTests
         var services = new ServiceCollection();
         services.AddSingleton( c );
         services.AddSingleton<ApplicationIdentityService>();
+        services.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
+        services.AddSingleton<DefaultCoreKeyStore>();
+        services.AddSingleton<ICoreKeyStore>( sp => sp.GetRequiredService<DefaultCoreKeyStore>() );
+        services.AddSingleton<KeyManagementFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
         services.AddSingleton<AuthCenterFeatureDriver>();
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<AuthCenterFeatureDriver>() );
         var s = services.BuildServiceProvider().GetRequiredService<ApplicationIdentityService>();
@@ -79,6 +87,31 @@ public class AuthCenterFeatureTests
         s.Remotes.Single( r => r.PartyName == "$Front1" ).GetFeature<ICrisAuthCenter>().ShouldBeSameAs( f );
         s.Remotes.Single( r => r.PartyName == "$Front2" ).GetFeature<ICrisAuthCenter>().ShouldBeSameAs( f );
         s.Remotes.Single( r => r.PartyName == "$NoAuth" ).GetFeature<ICrisAuthCenter>().ShouldBeNull();
+    }
+
+    [Test]
+    public async Task the_AuthCenter_verifies_its_tokens_Async()
+    {
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter"] = "true";
+            c["Parties:0:PartyName"] = "Front";
+        } );
+        var keys = s.GetRequiredFeature<ILocalKeys>();
+        var f = s.GetRequiredFeature<ICrisAuthCenter>();
+        var data = "the-token"u8.ToArray();
+        var expiration = DateTime.UtcNow.AddHours( 1 );
+
+        var token = keys.Sign( ICrisAuthCenter.TokenPurpose, data, expiration );
+        f.Verify( TestHelper.Monitor, data, token ).ShouldBeTrue();
+        // The remotes share the feature: same verification.
+        s.Remotes.Single().GetRequiredFeature<ICrisAuthCenter>().Verify( TestHelper.Monitor, data, token ).ShouldBeTrue();
+
+        f.Verify( TestHelper.Monitor, "another-token"u8, token ).ShouldBeFalse( "Tampered data." );
+        var other = keys.Sign( "Some.Other.Purpose", data, expiration );
+        f.Verify( TestHelper.Monitor, data, other ).ShouldBeFalse( "Another signature of the AuthCenter is not a token." );
     }
 
     [Test]
@@ -169,6 +202,14 @@ public class AuthCenterFeatureTests
             c["Parties:0:AuthCenter"] = "true";
             c["Parties:0:DisallowFeatures"] = "AuthCenter";
         } );
+        await StartMustFailAsync( "it has no 'KeyManagement' feature", c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["Parties:0:PartyName"] = "Remote";
+            c["Parties:0:AuthCenter"] = "true";
+            c["Parties:0:DisallowFeatures"] = "KeyManagement";
+        } );
         await StartMustFailAsync( "expected true, false or a configuration section", c =>
         {
             c["FullName"] = "D/$App";
@@ -217,6 +258,7 @@ public class AuthCenterFeatureTests
         {
             await ((IRemoteParty)acmeCenter.AuthCenter).DestroyAsync();
             acmeCenter.IsAvailable.ShouldBeFalse();
+            acmeCenter.Verify( TestHelper.Monitor, "the-token"u8, default ).ShouldBeFalse();
             box.GetFeature<CrisAuthCenter>().ShouldNotBeNull().IsAvailable.ShouldBeFalse();
             await ShouldLogAsync( logs, "authentication is no more available for 'Acme/$Acme" );
         }

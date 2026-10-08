@@ -1,4 +1,6 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
 
@@ -38,6 +40,18 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// cannot be removed, this feature stays and fails closed).
     /// </summary>
     public bool IsAvailable => !(_authCenter is IRemoteParty r && r.IsDestroyed);
+
+    /// <inheritdoc />
+    public bool Verify( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    {
+        if( !IsAvailable )
+        {
+            logger.Warn( $"Token refused: the AuthCenter '{_authCenter}' of '{_owner}' has been destroyed." );
+            return false;
+        }
+        // The driver checked that the AuthCenter has its keys.
+        return _authCenter.GetRequiredFeature<IPartyKeys>().Verify( logger, ICrisAuthCenter.TokenPurpose, data, signature );
+    }
 
     /// <summary>
     /// Overridden to return the Authentication Center and its owner.

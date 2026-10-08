@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 ///   stays (features cannot be removed) and is no more <see cref="CrisAuthCenter.IsAvailable"/>.
 ///   </item>
 ///   <item>Designating an Authentication Center where the feature is not allowed is a configuration error.</item>
+///   <item>The Authentication Center must have the "KeyManagement" feature: its keys verify the tokens.</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -40,7 +42,10 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     /// Initializes a new <see cref="AuthCenterFeatureDriver"/>.
     /// </summary>
     /// <param name="s">The application identity service.</param>
-    public AuthCenterFeatureDriver( ApplicationIdentityService s )
+    /// <param name="keys">
+    /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
+    /// </param>
+    public AuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys )
         : base( s, isAllowedByDefault: false )
     {
     }
@@ -123,6 +128,12 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         if( !isAllowed || !IsAllowedFeature( authCenter ) )
         {
             monitor.Error( $"'{authCenter}' is configured with '{ConfigurationKey}' but the '{FeatureName}' feature is not allowed for '{(isAllowed ? authCenter : local)}'." );
+            return false;
+        }
+        // Its keys verify the tokens. A remote may not be pinned yet: Verify refuses until it is.
+        if( authCenter.GetFeature<IPartyKeys>() == null )
+        {
+            monitor.Error( $"'{authCenter}' cannot be the AuthCenter of '{local}': it has no 'KeyManagement' feature (its keys verify the tokens)." );
             return false;
         }
         var f = new CrisAuthCenter( local, authCenter );
