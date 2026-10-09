@@ -1,8 +1,10 @@
 using CK.Core;
+using CK.Cris;
 using CK.IO.Authentication;
 using NUnit.Framework;
 using Shouldly;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -148,6 +150,16 @@ public class SessionCommandsTests
         await using var app = await AuthCenterApp.StartAsync();
         var schemes = (IList<string>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
         schemes.ShouldBe( ["Weak"] );
+    }
+
+    [Test]
+    public async Task without_a_scheme_family_package_its_schemes_do_not_exist_Async()
+    {
+        // The configuration has no "AuthCenter:Oidc" section (it would be an error without the package).
+        await using var app = await AuthCenterApp.StartAsync( withOidc: false );
+        app.Center.Local.ShouldNotBeNull().SchemeFamilies.ShouldBeEmpty();
+        var start = await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) );
+        start.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull().Errors.Select( e => e.Text ).ShouldContain( "Unknown login scheme 'Oidc.Test'." );
     }
 }
 

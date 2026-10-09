@@ -18,7 +18,7 @@ namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 [TestFixture]
 public class AuthCenterFeatureTests
 {
-    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration )
+    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, bool withOidc = false )
     {
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ).ShouldNotBeNull();
         var services = new ServiceCollection();
@@ -31,6 +31,12 @@ public class AuthCenterFeatureTests
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
         services.AddSingleton<AuthCenterFeatureDriver>();
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<AuthCenterFeatureDriver>() );
+        if( withOidc )
+        {
+            services.AddSingleton<IAuthCenterSchemeConfiguration, Oidc.AuthCenterOidcConfiguration>();
+            services.AddSingleton<Oidc.AuthCenterOidcFeatureDriver>();
+            services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<Oidc.AuthCenterOidcFeatureDriver>() );
+        }
         var s = services.BuildServiceProvider().GetRequiredService<ApplicationIdentityService>();
         _ = ((IHostedService)s).StartAsync( default );
         try
@@ -263,5 +269,78 @@ public class AuthCenterFeatureTests
             await ShouldLogAsync( logs, "authentication is no more available for 'Acme/$Acme" );
         }
         f.IsAvailable.ShouldBeTrue();
+    }
+
+    static void OidcScheme( MutableConfigurationSection c, string prefix = "" )
+    {
+        c[$"{prefix}AuthCenter:Oidc:Test:Authority"] = "https://idp.example.com";
+        c[$"{prefix}AuthCenter:Oidc:Test:ClientId"] = "client";
+        c[$"{prefix}AuthCenter:Oidc:Test:ClientSecret"] = "secret";
+        c[$"{prefix}AuthCenter:Oidc:Test:Scopes"] = "openid";
+        c[$"{prefix}AuthCenter:Oidc:Test:CallbackUrls:0"] = "https://front.example.com/.auth/oidc/callback";
+    }
+
+    [Test]
+    public async Task a_scheme_family_section_requires_its_package_Async()
+    {
+        // Without the Oidc package, its section is an error: a configured family must not silently do nothing.
+        await StartMustFailAsync( "AuthCenter:Oidc' section belongs to no installed scheme family (is a package missing?)", c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            OidcScheme( c );
+        } );
+
+        // With the package, the family is a feature of the local party.
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            OidcScheme( c );
+        }, withOidc: true );
+        var center = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull();
+        center.SchemeFamilies.ShouldHaveSingleItem().Schemes.ShouldBe( ["Oidc.Test"] );
+        center.FindSchemeFamily( "oidc.test" ).ShouldBeOfType<Oidc.AuthCenterOidc>();
+    }
+
+    [Test]
+    public async Task an_installed_family_without_configuration_has_no_scheme_Async()
+    {
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter"] = "true";
+        }, withOidc: true );
+        var family = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+        family.ProviderName.ShouldBe( "Oidc" );
+        family.Schemes.ShouldBeEmpty( "It still hides the 'Oidc' provider name in the scheme listing." );
+    }
+
+    [Test]
+    public async Task a_dynamic_tenant_has_its_own_scheme_families_Async()
+    {
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            OidcScheme( c );
+        }, withOidc: true );
+        var rootFamily = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+
+        var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
+        {
+            c["FullName"] = "Acme/$Acme";
+            c["AllowFeatures"] = "AuthCenter";
+            OidcScheme( c );
+            c["AuthCenter:Oidc:Other:Authority"] = "https://other-idp.example.com";
+            c["AuthCenter:Oidc:Other:ClientId"] = "client";
+            c["AuthCenter:Oidc:Other:ClientSecret"] = "secret";
+            c["AuthCenter:Oidc:Other:Scopes"] = "openid";
+            c["AuthCenter:Oidc:Other:CallbackUrls:0"] = "https://acme.example.com/.auth/oidc/callback";
+        } );
+        var acmeFamily = acme.ShouldNotBeNull().GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+        acmeFamily.ShouldNotBeSameAs( rootFamily );
+        acmeFamily.Schemes.ShouldBe( ["Oidc.Test", "Oidc.Other"], ignoreOrder: true );
     }
 }

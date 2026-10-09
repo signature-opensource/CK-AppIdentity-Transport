@@ -1,6 +1,6 @@
 using CK.Core;
 using System;
-using System.Collections.Immutable;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
@@ -8,20 +8,23 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <summary>
 /// The settings of a local Authentication Center, read from its "AuthCenter" configuration section (never inherited).
 /// They are static: the configuration of an application identity never changes at runtime.
+/// <para>
+/// The sub-sections belong to the scheme families ("AuthCenter:Oidc"...): each one is read by its package, and a
+/// sub-section that no installed package declares (see <see cref="IAuthCenterSchemeConfiguration"/>) is an error.
+/// </para>
 /// </summary>
 public sealed class AuthCenterOptions
 {
     /// <summary>
     /// The default options.
     /// </summary>
-    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ), [] );
+    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ) );
 
-    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime, ImmutableArray<OidcSchemeOptions> oidcSchemes )
+    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime )
     {
         SessionLifetime = sessionLifetime;
         CriticalLifetime = criticalLifetime;
         TokenLifetime = tokenLifetime;
-        OidcSchemes = oidcSchemes;
     }
 
     /// <summary>
@@ -43,34 +46,28 @@ public sealed class AuthCenterOptions
     /// </summary>
     public TimeSpan TokenLifetime { get; }
 
-    /// <summary>
-    /// Gets the OpenID Connect schemes ("Oidc:&lt;Suffix&gt;" sections). Empty by default.
-    /// </summary>
-    public ImmutableArray<OidcSchemeOptions> OidcSchemes { get; }
-
-    /// <summary>
-    /// Finds an OpenID Connect scheme.
-    /// </summary>
-    /// <param name="scheme">The scheme ("Oidc.Google" for instance).</param>
-    /// <returns>The scheme options or null.</returns>
-    public OidcSchemeOptions? FindOidcScheme( string scheme ) => OidcSchemes.FirstOrDefault( o => string.Equals( o.Scheme, scheme, StringComparison.OrdinalIgnoreCase ) );
-
-    internal static AuthCenterOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section )
+    internal static AuthCenterOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section, IReadOnlyCollection<string> schemeKeys )
     {
         if( section == null ) return Default;
         bool success = true;
         var session = ReadTimeSpan( monitor, section, nameof( SessionLifetime ), Default.SessionLifetime, ref success );
         var critical = ReadTimeSpan( monitor, section, nameof( CriticalLifetime ), Default.CriticalLifetime, ref success );
         var token = ReadTimeSpan( monitor, section, nameof( TokenLifetime ), Default.TokenLifetime, ref success );
-        var oidc = OidcSchemeOptions.Read( monitor, section.TryGetSection( "Oidc" ) );
-        if( oidc == null ) success = false;
+        foreach( var s in section.GetChildren() )
+        {
+            if( s.GetChildren().Any() && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase ) )
+            {
+                monitor.Error( $"The '{s.Path}' section belongs to no installed scheme family (is a package missing?). Installed: '{schemeKeys.Concatenate( "', '" )}'." );
+                success = false;
+            }
+        }
         if( !success ) return null;
         if( critical > session || token > session )
         {
             monitor.Error( $"Invalid '{section.Path}': the {nameof( CriticalLifetime )} ({critical}) and the {nameof( TokenLifetime )} ({token}) cannot exceed the {nameof( SessionLifetime )} ({session})." );
             return null;
         }
-        return new AuthCenterOptions( session, critical, token, oidc.GetValueOrDefault() );
+        return new AuthCenterOptions( session, critical, token );
     }
 
     static TimeSpan ReadTimeSpan( IActivityMonitor monitor, ImmutableConfigurationSection section, string key, TimeSpan defaultValue, ref bool success )

@@ -60,6 +60,8 @@ public class RelayTests
                                          typeof( IStartLoginCommand ),
                                          typeof( IRemoteLoginCallbackCommand ),
                                          typeof( AuthCenterRemoteLoginHandlers ),
+                                         typeof( Oidc.AuthCenterOidcFeatureDriver ),
+                                         typeof( Oidc.AuthCenterOidcConfiguration ),
                                          typeof( NormalizedCultureInfoAmbientServiceDefault ),
                                          typeof( TranslationService ),
                                          typeof( NormalizedCultureInfo ),

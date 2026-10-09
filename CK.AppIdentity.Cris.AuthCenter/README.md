@@ -125,7 +125,7 @@ They carry nothing: they act on **the current session**, the one whose proof the
 | `ILogoutSessionCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
 | `IImpersonateCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. |
 | `IClearImpersonationCommand` | Always possible: it can only lower the privileges. |
-| `IGetLoginSchemesQCommand` | The provider names of the login providers ("Oidc" appears as its configured `Oidc.<Suffix>` schemes). Not a session command. |
+| `IGetLoginSchemesQCommand` | The provider names of the login providers; the provider of a scheme family appears as the schemes of its family ("Oidc" as its configured `Oidc.<Suffix>` schemes). Not a session command. |
 
 **A replayed secret revokes the session.** The secrets rotate at each refresh, so a refresh secret is used once: the
 right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The
@@ -136,54 +136,42 @@ background, never on the agent loop. No setting: every save writes the session f
 than `SessionLifetime` after it, so the files written before "now - SessionLifetime" are the candidates, and their
 end is checked before they are deleted. An expired session that is presented is also deleted at once.
 
-### OpenID Connect ([`AuthCenterOidc`](AuthCenterOidc.cs), [`AuthCenterOidcHandlers`](AuthCenterOidcHandlers.cs))
+### Scheme families ([`IAuthCenterScheme`](IAuthCenterScheme.cs))
 
-The remote logins (authorization code flow with PKCE). The local Authentication Center alone holds the client
-secrets: a front relays the start of a login and the callback, like any session command.
+This package knows no login technology beyond the direct Basic and Weak commands (temporarily, see above): each family
+of schemes is a package of its own ("Package First": a simple application references little), for instance
+CK.AppIdentity.Cris.AuthCenter.Oidc for the "Oidc.&lt;Suffix&gt;" schemes.
 
-```jsonc
-"AuthCenter": {
-  "Oidc": {
-    "Google": {                                   // The scheme is "Oidc.Google".
-      "Authority": "https://accounts.google.com", // https (http only on a loopback address).
-      "Issuer": "...",                            // Optional: defaults to the Authority.
-      "ClientId": "...",
-      "ClientSecret": "...",
-      "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
-      "Scopes": "openid email",                   // "openid" is always included.
-      "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ]
-    }
-  }
-}
-```
+- **A family is a feature of the local party** of its Authentication Center (`LocalAuthCenter.SchemeFamilies`,
+  `FindSchemeFamily`): one instance per local Authentication Center (the root and every tenant), added by the family's
+  own feature driver, that depends on the `AuthCenterFeatureDriver`.
+- **It has its own configuration sub-section** (`"AuthCenter:Oidc"`, read with `LocalAuthCenter.GetSchemeSettings`). Its
+  package declares the key with an [`IAuthCenterSchemeConfiguration`](IAuthCenterSchemeConfiguration.cs): **a sub-section
+  that no installed package declares is a configuration error** (a configured family that silently does nothing is a
+  misconfiguration).
+- **It drives a login provider** (`ProviderName`): the scheme listing shows the family's `Schemes` instead of the
+  provider name.
+- **The account creation is the family's decision** (`AllowsAccountCreation`): the opener calls the optional
+  `IAutoCreateAccountService` only for a scheme whose family allows it. Fail closed: a scheme without family (Basic,
+  Weak) never creates an account, and no family does by default.
 
-1. **`IStartLoginCommand`** (scheme "Oidc.Google"): the endpoint must be able to receive remote logins and its
-   `RemoteLoginCallbackUrl` must be one of the `CallbackUrls`; the `ReturnUrl` must be a relative path. A **pending login**
-   (state, nonce, PKCE verifier, callback, the hash of the endpoint's correlation secret) is kept in memory for 10 minutes
-   (at most 10,000 of them) and the result is the authorization URL.
-2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use). The
-   correlation presented by the endpoint must be the one of the start (**login CSRF**: only the caller that started a
-   login can complete it), then the code is redeemed (client secret + PKCE verifier) at the token endpoint (see the client authentication below) and the identity token is
-   validated: signature (the provider's keys, read again once on an unknown key), issuer, audience, lifetime, then the
-   protocol rules of `OpenIdConnectProtocolValidator` (nonce, `at_hash`, required claims). The messages are
-   `OpenIdConnectMessage`: the protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET handler, that
-   cannot be used here: it is bound to an HTTP request, the AuthCenter receives Cris commands).
-3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
-   `Sub` (the payload of CK.DB.User.UserOidc for instance). The session is opened like any login.
+### Remote logins ([`AuthCenterRemoteLoginHandlers`](AuthCenterRemoteLoginHandlers.cs), [`IAuthCenterRemoteScheme`](IAuthCenterRemoteScheme.cs))
 
-**The client authentication at the token endpoint** is `client_secret_basic` by default, the default of the
-specification: an HTTP Basic `Authorization` header, whose client id and secret are form-url-encoded before being joined
-(RFC 6749 section 2.3.1: a `:` in the id or the secret stays unambiguous). Without `TokenEndpointAuthMethod`, the
-`token_endpoint_auth_methods_supported` of the discovery document decides: `client_secret_basic` when it is absent or
-announces it, `client_secret_post` (the secret in the body) only when it announces it and not the basic one. A provider
-that announces neither (only `private_key_jwt`, `tls_client_auth`...) is refused at the start of the login: the user is
-not sent to it. One method per request, the secret is never sent twice.
+The generic `IStartLoginCommand` and `IRemoteLoginCallbackCommand` are handled here, whatever the remote family: a Cris
+command has one handler, two remote families cannot both claim them. The local Authentication Center keeps the
+**pending remote logins** ([`AuthCenterPendingStore`](AuthCenterPendingStore.cs): in memory, one use, 10 minutes, at
+most 10,000) and the family only runs its protocol.
 
-**One issuer per scheme:** `sub` is unique per issuer only and the identity of an actor is (scheme, sub). The issuer
-announced by the provider and the `iss` of the tokens must be exactly the configured one: multi-tenant endpoints (whose
-issuer varies) are not supported. **No automatic account creation or binding:** a login succeeds only for an actor
-already bound to the identity (unless the application registers an `IAutoCreateAccountService`). The `Code` of the
-callback is `[Sensitive]`: it is encrypted in place when relayed.
+1. **`IStartLoginCommand`**: the scheme must belong to a remote family, the endpoint must be able to receive remote
+   logins with a callback that the family allows for the scheme, the `ReturnUrl` must be a relative path. The core chooses
+   the state, the family returns the URL and its private data, and the pending login keeps them with the scheme, the
+   callback, the hash of the endpoint's correlation secret, `RememberMe` and an immutable copy of the `UserData`.
+2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use), its
+   expiry is checked, and the correlation presented by the endpoint must be the one of the start (**login CSRF**: only the
+   caller that started a login can complete it). The family completes the login with the payload of its login provider,
+   and the session is opened with the **user data of the start**: the callback never carries them.
+
+The `Code` of the callback is `[Sensitive]`: it is encrypted in place when relayed.
 
 ## The relay to a remote Authentication Center
 

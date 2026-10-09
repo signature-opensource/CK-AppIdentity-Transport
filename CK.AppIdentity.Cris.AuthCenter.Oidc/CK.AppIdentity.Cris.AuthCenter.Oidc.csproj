@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The OpenID Connect logins of the Authentication Center: the "Oidc.&lt;Suffix&gt;" schemes (authorization code flow with PKCE, the code exchanged by the Authentication Center alone).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter\CK.AppIdentity.Cris.AuthCenter.csproj" />
+  </ItemGroup>
+</Project>

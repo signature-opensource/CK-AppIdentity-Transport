@@ -227,7 +227,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
     public static async Task<AuthCenterApp> StartAsync( Action<MutableConfigurationSection>? configuration = null,
                                                         bool allowImpersonation = false,
-                                                        bool recordLogins = false )
+                                                        bool recordLogins = false,
+                                                        bool withOidc = true )
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
@@ -272,6 +273,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( IActorInfoPoco ) );
         if( allowImpersonation ) engine.FirstBinPath.Types.Add( typeof( AllowImpersonation ) );
         if( recordLogins ) engine.FirstBinPath.Types.Add( typeof( RecordingLoginValidator ) );
+        // The OpenID Connect scheme family (its package): without it, the AuthCenter core has no remote scheme.
+        if( withOidc ) engine.FirstBinPath.Types.Add( typeof( Oidc.AuthCenterOidcFeatureDriver ), typeof( Oidc.AuthCenterOidcConfiguration ) );
         var r = await engine.RunSuccessfullyAsync();
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ?? LocalAuthCenter ).ShouldNotBeNull();
         var services = r.CreateAutomaticServices( configureServices: services =>

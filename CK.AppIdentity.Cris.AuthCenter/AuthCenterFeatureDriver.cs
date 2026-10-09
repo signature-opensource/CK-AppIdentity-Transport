@@ -45,10 +45,16 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="keys">
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
-    public AuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys )
+    /// <param name="schemeConfigurations">The configuration sub-sections declared by the installed scheme families.</param>
+    public AuthCenterFeatureDriver( ApplicationIdentityService s,
+                                    KeyManagementFeatureDriver keys,
+                                    IEnumerable<IAuthCenterSchemeConfiguration> schemeConfigurations )
         : base( s, isAllowedByDefault: false )
     {
+        _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
     }
+
+    readonly string[] _schemeKeys;
 
     /// <inheritdoc />
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
@@ -150,9 +156,9 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         LocalAuthCenter? localCenter = null;
         if( authCenter == local )
         {
-            var options = AuthCenterOptions.Read( monitor, settings );
+            var options = AuthCenterOptions.Read( monitor, settings, _schemeKeys );
             if( options == null ) return false;
-            localCenter = new LocalAuthCenter( monitor, local, options );
+            localCenter = new LocalAuthCenter( monitor, local, options, settings );
         }
         else if( settings != null )
         {

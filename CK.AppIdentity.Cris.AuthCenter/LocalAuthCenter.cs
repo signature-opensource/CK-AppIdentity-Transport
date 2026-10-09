@@ -20,16 +20,26 @@ public sealed class LocalAuthCenter
     readonly AuthCenterEncryptionKeys _encryptionKeys;
     readonly AuthCenterPendingStore<PendingRemoteLogin> _pendingRemoteLogins;
 
-    internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options )
+    readonly ImmutableConfigurationSection? _settings;
+
+    internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options, ImmutableConfigurationSection? settings )
     {
         _party = party;
         _options = options;
+        _settings = settings;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _encryptionKeys = new AuthCenterEncryptionKeys( monitor, party );
         _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
-        party.AddFeature( new AuthCenterOidc( options.OidcSchemes ) );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
+
+    /// <summary>
+    /// Gets the configuration sub-section of a scheme family ("AuthCenter:Oidc" for "Oidc"): the families read their own
+    /// settings. The key must be declared by an <see cref="IAuthCenterSchemeConfiguration"/>.
+    /// </summary>
+    /// <param name="key">The family's key ("Oidc").</param>
+    /// <returns>The section or null when it is not configured.</returns>
+    public ImmutableConfigurationSection? GetSchemeSettings( string key ) => _settings?.TryGetSection( key );
 
     /// <summary>
     /// The lifetime of a pending remote login: 10 minutes.

@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace CK.AppIdentity.Cris.AuthCenter;
+namespace CK.AppIdentity.Cris.AuthCenter.Oidc;
 
 /// <summary>
 /// The settings of an OpenID Connect scheme of a local Authentication Center, read from its "AuthCenter:Oidc:&lt;Suffix&gt;"

@@ -18,7 +18,7 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 
-namespace CK.AppIdentity.Cris.AuthCenter;
+namespace CK.AppIdentity.Cris.AuthCenter.Oidc;
 
 /// <summary>
 /// The OpenID Connect client of a <see cref="LocalAuthCenter"/> (authorization code flow with PKCE): the
