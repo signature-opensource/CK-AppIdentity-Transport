@@ -54,11 +54,11 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
         if( center?.Local == null || center.Owner != caller.Owner )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' is not a front of an AuthCenter here: its relayed '{inner.CrisPocoModel.PocoName}' is refused." );
-            return Result( pocos, Failure( monitor, inner, "Not a front of this AuthCenter.", "Authentication.RelayNotAllowed" ) );
+            return Result( pocos, Failure( monitor, pocos, inner, "Not a front of this AuthCenter.", "Authentication.RelayNotAllowed" ) );
         }
         if( inner.CrisPocoModel.HasSensitiveData && !DecryptSensitiveFields( monitor, center, caller, inner ) )
         {
-            return Result( pocos, Failure( monitor, inner, "The sensitive fields must be encrypted for the AuthCenter.", "Authentication.SensitiveNotEncrypted" ) );
+            return Result( pocos, Failure( monitor, pocos, inner, "The sensitive fields must be encrypted for the AuthCenter.", "Authentication.SensitiveNotEncrypted" ) );
         }
         var authentication = AuthenticationInfo.None;
         if( command.Token != null && await center.ReadTokenAsync( monitor, command.Token, DateTime.UtcNow ).ConfigureAwait( false ) is { } read )
@@ -73,7 +73,7 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
         if( !validation.Success )
         {
             var text = validation.ValidationMessages.Where( m => m.Level == UserMessageLevel.Error ).Select( m => m.Text ).FirstOrDefault() ?? "Invalid command.";
-            result = Failure( monitor, inner, text, "Authentication.InvalidRelayedCommand" );
+            result = Failure( monitor, pocos, inner, text, "Authentication.InvalidRelayedCommand" );
         }
         else
         {
@@ -138,6 +138,13 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
 
     static IRelaySessionResult Result( PocoDirectory pocos, object? result ) => pocos.Create<IRelaySessionResult>( r => r.Result = result );
 
-    static object? Failure( IActivityMonitor monitor, ICommandAuthenticationSession command, string text, string resName )
-        => command is ICommand<ISessionResult> c ? AuthCenterResults.Failure( monitor, c, text, resName ) : null;
+    // A refused session command: a failed ISessionResult, nothing for a logout (it has no result), an ICrisResultError
+    // with the message for the other ones (the RedirectedUrl of a start login, the options of a passkey ceremony...).
+    static object? Failure( IActivityMonitor monitor, PocoDirectory pocos, ICommandAuthenticationSession command, string text, string resName )
+    {
+        if( command is ICommand<ISessionResult> c ) return AuthCenterResults.Failure( monitor, c, text, resName );
+        monitor.Warn( $"Relayed session command '{command.CrisPocoModel.PocoName}' refused: {text}" );
+        if( command is ILogoutSessionCommand ) return null;
+        return pocos.Create<ICrisResultError>( e => e.Errors.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) ) );
+    }
 }

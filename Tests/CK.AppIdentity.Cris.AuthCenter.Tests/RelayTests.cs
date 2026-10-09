@@ -4,6 +4,7 @@ using CK.Cris;
 using CK.IO.AuthCenter;
 using CK.IO.Authentication;
 using CK.IO.Authentication.Basic;
+using CK.IO.Authentication.Passkey;
 using CK.IO.Authentication.Weak;
 using CK.Testing.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
@@ -118,7 +119,13 @@ public class RelayTests
 
     internal static Task<Pair> StartPairAsync() => StartAsync();
 
-    static async Task<Pair> StartAsync( bool frontIsAllowed = true, Action<MutableConfigurationSection>? centerSettings = null )
+    static readonly Type[] _passkeyCommands = [typeof( IStartPasskeyLoginCommand ),
+                                               typeof( IPasskeyLoginCommand ),
+                                               typeof( IStartPasskeyRegistrationCommand ),
+                                               typeof( IPasskeyRegistrationCommand ),
+                                               typeof( IPasskeyRegistrationResult )];
+
+    static async Task<Pair> StartAsync( bool frontIsAllowed = true, Action<MutableConfigurationSection>? centerSettings = null, bool passkeys = false )
     {
         // The front has no login provider: its AuthCenter is its remote "$Listener".
         var front = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
@@ -127,7 +134,13 @@ public class RelayTests
             c["Parties:0:AuthCenter"] = "true";
             // Not RunningApplication.Port: it is the one of CK.AppIdentity.Cris.Tests, that may run concurrently.
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-        }, FrontServices, _authTypes );
+        }, FrontServices, passkeys ? [.. _authTypes, .. _passkeyCommands] : _authTypes );
+        Type[] centerTypes = [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider )];
+        if( passkeys )
+        {
+            centerTypes = [.. centerTypes, .. _passkeyCommands, typeof( Passkey.AuthCenterPasskeyFeatureDriver ), typeof( Passkey.AuthCenterPasskeyConfiguration ),
+                           typeof( Passkey.AuthCenterPasskeyHandlers ), typeof( AuthCenterApp.InMemoryPasskeyStore ), typeof( AuthCenterApp.FakePasskeyLoginProvider )];
+        }
         // The AuthCenter knows its front: the "$Sender" remote has the AuthCenter feature (unless it is disallowed).
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
@@ -135,8 +148,42 @@ public class RelayTests
             c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             if( centerSettings != null ) centerSettings( c ); else c["AuthCenter"] = "true";
             if( !frontIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
-        }, null, [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider )] );
+        }, null, centerTypes );
         return new Pair { Front = front, Center = center };
+    }
+
+    [Test]
+    public async Task a_passkey_registration_and_login_are_relayed_with_the_front_origin_Async()
+    {
+        await using var p = await StartAsync( passkeys: true, centerSettings: c =>
+        {
+            c["AuthCenter:Passkey:RpId"] = "example.com";
+            c["AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
+        } );
+        using var authenticator = new SoftAuthenticator();
+
+        // Albert logs in (Critical) and registers a passkey: the AuthCenter reads the relayed token and the front's origin.
+        (await p.SendAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        // The registration commands are ICommandAuthCritical: a client sets their ActorId (the ambient value).
+        var options = (await p.RelayAsync( pocos => pocos.Create<IStartPasskeyRegistrationCommand>( c => c.ActorId = 3712 ) )).ShouldBeOfType<string>();
+        var registered = (await p.RelayAsync( pocos => pocos.Create<IPasskeyRegistrationCommand>( c => { c.ActorId = 3712; c.Response = authenticator.Create( options ); } ) ))
+                            .ShouldBeAssignableTo<IPasskeyRegistrationResult>().ShouldNotBeNull();
+        registered.Success.ShouldBeTrue();
+
+        // A passkey login through the front.
+        var loginOptions = (await p.RelayAsync( pocos => pocos.Create<IStartPasskeyLoginCommand>() )).ShouldBeOfType<string>();
+        var r = (await p.SendAsync( pocos => pocos.Create<IPasskeyLoginCommand>( c => c.Response = authenticator.Get( loginOptions ) ) )).ShouldBeAssignableTo<ISessionResult>().ShouldNotBeNull();
+        r.Success.ShouldBeTrue();
+        p.Browser.Current.ActualActor.ActorName.ShouldBe( "Albert" );
+
+        // A refused relayed command that has no session result carries its error (here: no ActorId).
+        (await p.RelayAsync( pocos => pocos.Create<IStartPasskeyRegistrationCommand>() )).ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull()
+            .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.InvalidRelayedCommand" );
+
+        // A front whose origin is not configured is refused by the AuthCenter.
+        p.Browser.WebOrigin = "https://other.example.com";
+        (await p.RelayAsync( pocos => pocos.Create<IStartPasskeyLoginCommand>() )).ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull()
+            .Errors.Select( e => e.Text ).ShouldContain( "The origin 'https://other.example.com' is not allowed for passkeys." );
     }
 
     [Test]

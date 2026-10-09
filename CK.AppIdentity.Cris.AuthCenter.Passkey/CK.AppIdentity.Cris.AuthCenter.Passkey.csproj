@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The passkey (WebAuthn) logins of the Authentication Center: the "Passkey" scheme, verified by the Authentication Center alone (Fido2NetLib).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="14.0.2-0.cris-auth.0.ci.3" />
+    <PackageReference Include="CK.IO.Authentication.Passkey" Version="2.0.2-0.cris-auth.0.ci.5" />
+    <PackageReference Include="Fido2" Version="4.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter\CK.AppIdentity.Cris.AuthCenter.csproj" />
+  </ItemGroup>
+</Project>

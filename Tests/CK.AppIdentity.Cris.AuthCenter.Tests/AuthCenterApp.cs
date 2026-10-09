@@ -3,6 +3,7 @@ using CK.Auth;
 using CK.Core;
 using CK.Cris;
 using CK.IO.Authentication;
+using CK.IO.Authentication.Passkey;
 using CK.IO.Authentication.Weak;
 using CK.Testing;
 using CK.Testing.AppIdentity.TransportLayer;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Shouldly;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -120,6 +122,77 @@ public sealed class AuthCenterApp : IAsyncDisposable
         {
             LastUserData = context.UserData;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// The passkey storage, in memory.
+    /// </summary>
+    public sealed class InMemoryPasskeyStore : IPasskeyStore
+    {
+        readonly Dictionary<string, PasskeyCredential> _credentials = new();
+        readonly Dictionary<int, byte[]> _handles = new();
+
+        public IReadOnlyCollection<PasskeyCredential> All => _credentials.Values;
+
+        static string Key( ReadOnlyMemory<byte> id ) => Convert.ToHexString( id.Span );
+
+        public ValueTask<ReadOnlyMemory<byte>> GetOrCreateUserHandleAsync( IActivityMonitor monitor, int actorId )
+        {
+            lock( _handles )
+            {
+                if( !_handles.TryGetValue( actorId, out var h ) ) _handles.Add( actorId, h = System.Security.Cryptography.RandomNumberGenerator.GetBytes( 32 ) );
+                return ValueTask.FromResult<ReadOnlyMemory<byte>>( h );
+            }
+        }
+
+        public ValueTask<PasskeyCredential?> FindAsync( IActivityMonitor monitor, ReadOnlyMemory<byte> credentialId )
+        {
+            lock( _credentials ) return ValueTask.FromResult( _credentials.GetValueOrDefault( Key( credentialId ) ) );
+        }
+
+        public ValueTask<IReadOnlyList<PasskeyCredential>> GetCredentialsAsync( IActivityMonitor monitor, int actorId )
+        {
+            lock( _credentials ) return ValueTask.FromResult<IReadOnlyList<PasskeyCredential>>( _credentials.Values.Where( c => c.ActorId == actorId ).ToList() );
+        }
+
+        public ValueTask<bool> CreateAsync( IActivityMonitor monitor, PasskeyCredential credential )
+        {
+            lock( _credentials ) return ValueTask.FromResult( _credentials.TryAdd( Key( credential.CredentialId ), credential ) );
+        }
+
+        // What the "Passkey" provider does on an actual login.
+        internal void Update( PasskeyLoginPayload p )
+        {
+            lock( _credentials )
+            {
+                var c = _credentials[Key( p.CredentialId )];
+                _credentials[Key( p.CredentialId )] = new PasskeyCredential( c.CredentialId, c.ActorId, c.UserHandle, c.PublicKey, p.SignCount, c.BackupEligible, p.BackupState, c.Aaguid, c.Transports, c.Name );
+            }
+        }
+    }
+
+    /// <summary>
+    /// The "Passkey" provider of the <see cref="InMemoryPasskeyStore"/>.
+    /// </summary>
+    public sealed class FakePasskeyLoginProvider : ILoginProvider
+    {
+        readonly InMemoryPasskeyStore _store;
+
+        public FakePasskeyLoginProvider( InMemoryPasskeyStore store ) => _store = store;
+
+        public IReadOnlyCollection<string> ProviderNames => [PasskeyLoginPayload.Scheme];
+
+        public object CreatePayload( string scheme ) => throw new ArgumentException( "No payload." );
+
+        public async ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
+        {
+            var p = (PasskeyLoginPayload)payload;
+            var c = await _store.FindAsync( monitor, p.CredentialId );
+            var a = c != null ? Find( c.ActorId ) : null;
+            if( a == null ) return ActorLoginResult.Failure( 6, "Unknown passkey." );
+            if( actualLogin ) _store.Update( p );
+            return ActorLoginResult.Success( a );
         }
     }
 
@@ -244,7 +317,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                                         bool allowImpersonation = false,
                                                         bool recordLogins = false,
                                                         bool withOidc = true,
-                                                        bool createAccounts = false )
+                                                        bool createAccounts = false,
+                                                        bool withPasskeys = false )
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
@@ -290,6 +364,20 @@ public sealed class AuthCenterApp : IAsyncDisposable
         if( allowImpersonation ) engine.FirstBinPath.Types.Add( typeof( AllowImpersonation ) );
         if( recordLogins ) engine.FirstBinPath.Types.Add( typeof( RecordingLoginValidator ) );
         if( createAccounts ) engine.FirstBinPath.Types.Add( typeof( FakeAutoCreateAccount ) );
+        // The passkey scheme family (its package), the in-memory store and its "Passkey" provider.
+        if( withPasskeys )
+        {
+            engine.FirstBinPath.Types.Add( typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
+                                           typeof( Passkey.AuthCenterPasskeyConfiguration ),
+                                           typeof( Passkey.AuthCenterPasskeyHandlers ),
+                                           typeof( InMemoryPasskeyStore ),
+                                           typeof( FakePasskeyLoginProvider ),
+                                           typeof( IStartPasskeyLoginCommand ),
+                                           typeof( IPasskeyLoginCommand ),
+                                           typeof( IStartPasskeyRegistrationCommand ),
+                                           typeof( IPasskeyRegistrationCommand ),
+                                           typeof( IPasskeyRegistrationResult ) );
+        }
         // The OpenID Connect scheme family (its package): without it, the AuthCenter core has no remote scheme.
         if( withOidc ) engine.FirstBinPath.Types.Add( typeof( Oidc.AuthCenterOidcFeatureDriver ), typeof( Oidc.AuthCenterOidcConfiguration ) );
         var r = await engine.RunSuccessfullyAsync();

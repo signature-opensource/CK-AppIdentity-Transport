@@ -83,6 +83,32 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         return (new Current( center.Local, session ), null, null);
     }
 
+    /// <summary>
+    /// Gets the current session when its authentication is at the <see cref="AuthLevel.Critical"/> level and not
+    /// impersonated: what an operation that adds a lasting access to the account requires (the registration of a passkey
+    /// for instance). The proof presented by the endpoint must match the session (a mismatch revokes it).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <returns>The session, or the error and its resource name.</returns>
+    public async ValueTask<(AuthCenterSession? Session, string? Error, string? ErrorId)> GetCriticalSessionAsync( IActivityMonitor monitor )
+    {
+        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true ).ConfigureAwait( false );
+        if( c == null ) return (null, error, resName);
+        if( _current.UnsafeActualActor.ActorId != c.Value.Session.ActualActorId )
+        {
+            return (null, "The authentication doesn't match the session.", "Authentication.InvalidSession");
+        }
+        if( _current.IsImpersonated )
+        {
+            return (null, "This is refused while impersonating.", "Authentication.Impersonated");
+        }
+        if( _current.ActualActor.Level != AuthLevel.Critical )
+        {
+            return (null, "This requires the Critical level.", "Authentication.CriticalLevelRequired");
+        }
+        return (c.Value.Session, null, null);
+    }
+
     // Rotates the endpoint secrets, saves the session (with its actor and its end) and returns the new token.
     async ValueTask<ISessionResult> IssueAsync<T>( IActivityMonitor monitor, T command, Current c, int actorId, DateTime expires, AuthenticationInfo info, DateTime utcNow )
         where T : ICommand<ISessionResult>
