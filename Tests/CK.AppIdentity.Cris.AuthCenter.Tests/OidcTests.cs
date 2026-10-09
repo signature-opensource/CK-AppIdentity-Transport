@@ -13,7 +13,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// The OpenID Connect logins of a local AuthCenter (<see cref="AuthCenterOidc"/>, <see cref="AuthCenterOidcHandlers"/>)
+/// The OpenID Connect logins of a local AuthCenter (<see cref="AuthCenterOidc"/>, <see cref="AuthCenterRemoteLoginHandlers"/>)
 /// against the <see cref="FakeIdentityProvider"/>.
 /// </summary>
 [TestFixture]
@@ -70,7 +70,7 @@ public class OidcTests
         start.Url.ShouldContain( "scope=openid%20profile" );
         start.Url.ShouldContain( "redirect_uri=" + Uri.EscapeDataString( Callback ) );
         app.Caller.RemoteLoginCorrelation.ShouldNotBeNull( "The endpoint prepared the correlation." );
-        app.Center.Local.ShouldNotBeNull().Oidc.PendingLoginCount.ShouldBe( 1 );
+        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 1 );
 
         var (redirect, code, state) = idp.Authorize( start.Url, "albert-sub" );
         redirect.ShouldBe( Callback );
@@ -83,13 +83,32 @@ public class OidcTests
         var payload = AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull();
         payload.SchemeSuffix.ShouldBe( "Test" );
         payload.Sub.ShouldBe( "albert-sub" );
-        app.Center.Local.Oidc.PendingLoginCount.ShouldBe( 0, "The pending login is consumed." );
+        app.Center.Local.PendingRemoteLogins.Count.ShouldBe( 0, "The pending login is consumed." );
 
         // A replayed callback finds no pending login.
         var replay = await CallbackAsync( app, state, code );
         replay.Success.ShouldBeFalse();
         replay.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RemoteLoginExpired" );
         idp.RedeemCount.ShouldBe( 1 );
+    }
+
+    [Test]
+    public async Task the_user_data_of_the_start_reach_the_login_context_of_the_callback_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ), recordLogins: true );
+
+        var start = (RedirectedUrl)(await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c =>
+        {
+            c.Scheme = "Oidc.Test";
+            c.InlineMode = true;
+            c.UserData.Add( "InvitationToken", "T" );
+        } ) )).ShouldNotBeNull();
+        var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
+
+        AuthCenterApp.RecordingLoginValidator.LastUserData = null;
+        (await CallbackAsync( app, state, code )).Success.ShouldBeTrue();
+        AuthCenterApp.RecordingLoginValidator.LastUserData.ShouldNotBeNull()["InvitationToken"].ShouldBe( "T", "Kept by the AuthCenter: the callback doesn't carry them." );
     }
 
     [Test]
@@ -172,7 +191,7 @@ public class OidcTests
         app.Caller.RemoteLoginCallbackUrl = null;
         Errors( await StartAsync( app ) ).ShouldContain( "This endpoint cannot receive remote logins." );
 
-        app.Center.Local.ShouldNotBeNull().Oidc.PendingLoginCount.ShouldBe( 0 );
+        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 0 );
     }
 
     [Test]
@@ -281,6 +300,6 @@ public class OidcTests
             (await StartAsync( app )).ShouldBeAssignableTo<ICrisResultError>();
             texts.ShouldContain( t => t.Contains( "accepts neither 'client_secret_basic' nor 'client_secret_post'" ) );
         }
-        app.Center.Local.ShouldNotBeNull().Oidc.PendingLoginCount.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
+        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
     }
 }

@@ -59,7 +59,7 @@ public class RelayTests
                                          typeof( IAuthCenterEncryptionKey ),
                                          typeof( IStartLoginCommand ),
                                          typeof( IRemoteLoginCallbackCommand ),
-                                         typeof( AuthCenterOidcHandlers ),
+                                         typeof( AuthCenterRemoteLoginHandlers ),
                                          typeof( NormalizedCultureInfoAmbientServiceDefault ),
                                          typeof( TranslationService ),
                                          typeof( NormalizedCultureInfo ),
@@ -189,7 +189,7 @@ public class RelayTests
         // The front relays the start with its callback and the hash of the correlation it prepared.
         var start = (RedirectedUrl)(await p.RelayAsync( pocos => pocos.Create<IStartLoginCommand>( c => { c.Scheme = "Oidc.Test"; c.ReturnUrl = "/"; } ) )).ShouldNotBeNull();
         p.Browser.RemoteLoginCorrelation.ShouldNotBeNull();
-        p.LocalCenter.Oidc.PendingLoginCount.ShouldBe( 1 );
+        p.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 1 );
 
         // The provider redirects the browser to the front, that relays the callback: the code is encrypted for the AuthCenter.
         var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );

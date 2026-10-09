@@ -250,7 +250,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( FakeWeakLoginProvider ),
                                        typeof( AuthCenterWeakLoginHandler ),
                                        typeof( FakeOidcLoginProvider ),
-                                       typeof( AuthCenterOidcHandlers ),
+                                       typeof( AuthCenterRemoteLoginHandlers ),
                                        // The handling validators (UserMessageCollector) need the current culture.
                                        typeof( NormalizedCultureInfoAmbientServiceDefault ),
                                        typeof( TranslationService ),

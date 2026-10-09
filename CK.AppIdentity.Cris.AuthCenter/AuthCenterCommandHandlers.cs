@@ -10,8 +10,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
 /// Handles the session commands that are not logins (refresh, logout, impersonation) with the
-/// <see cref="AuthCenterSessionService"/>, and the <see cref="IGetLoginSchemesQCommand"/> (the "Oidc" provider appears as its
-/// configured "Oidc.&lt;Suffix&gt;" schemes).
+/// <see cref="AuthCenterSessionService"/>, and the <see cref="IGetLoginSchemesQCommand"/> (the provider of a scheme family
+/// appears as the schemes of its <see cref="IAuthCenterScheme"/>: "Oidc" as its configured "Oidc.&lt;Suffix&gt;" schemes).
 /// The logins are handled by the packages that implement the authentication providers (except, temporarily, the Basic
 /// and Weak ones: see <see cref="AuthCenterBasicLoginHandler"/> and <see cref="AuthCenterWeakLoginHandler"/>).
 /// </summary>
@@ -71,10 +71,16 @@ public sealed class AuthCenterCommandHandlers : ISingletonAutoService
             return await channel.SendCommand( monitor, command ).WithResult<IList<string>>().Result.WaitAsync( AuthCenterRelay.Timeout ).ConfigureAwait( false );
         }
         var names = _providers.SelectMany( p => p.ProviderNames ).Distinct( StringComparer.OrdinalIgnoreCase ).ToList();
-        // The "Oidc" provider is usable through its configured schemes only.
-        if( names.RemoveAll( n => string.Equals( n, "Oidc", StringComparison.OrdinalIgnoreCase ) ) > 0 && center?.Local != null )
+        // The provider of a scheme family is usable through the schemes of its family only.
+        if( center?.Local != null )
         {
-            names.AddRange( center.Local.Options.OidcSchemes.Select( o => o.Scheme ) );
+            foreach( var family in center.Local.SchemeFamilies )
+            {
+                if( names.RemoveAll( n => string.Equals( n, family.ProviderName, StringComparison.OrdinalIgnoreCase ) ) > 0 )
+                {
+                    names.AddRange( family.Schemes );
+                }
+            }
         }
         return names.Order( StringComparer.OrdinalIgnoreCase ).ToList();
     }

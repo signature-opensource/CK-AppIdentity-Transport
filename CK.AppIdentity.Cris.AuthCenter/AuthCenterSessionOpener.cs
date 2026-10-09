@@ -19,7 +19,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <para>
 /// The login sequence is: the <see cref="ILoginProvider"/> of the scheme (only a check when there are
 /// <see cref="ILoginValidator"/>), the validators, the actual login. An unregistered user can be created
-/// (<see cref="IAutoCreateAccountService"/>, nobody is logged in) or bound (<see cref="IAutoBindingAccountService"/>,
+/// (<see cref="IAutoCreateAccountService"/>, nobody is logged in, only for a scheme whose <see cref="IAuthCenterScheme"/>
+/// family allows it: <see cref="IAuthCenterScheme.AllowsAccountCreation"/>) or bound (<see cref="IAutoBindingAccountService"/>,
 /// somebody is logged in). On success, the session is stored, the endpoint issues its secrets and the result carries
 /// the signed token.
 /// </para>
@@ -93,7 +94,9 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
                         ? d.UserData.ToImmutableDictionary( kv => kv.Key, kv => (string?)kv.Value )
                         : null;
         var context = new LoginContext( scheme, payload, _initial, userData );
-        var r = await LoginAsync( monitor, provider, context ).ConfigureAwait( false );
+        // An account can be created only for a scheme whose family allows it (fail closed: Basic and Weak never do).
+        bool allowsAccountCreation = center.Local.FindSchemeFamily( scheme )?.AllowsAccountCreation( scheme ) is true;
+        var r = await LoginAsync( monitor, provider, context, allowsAccountCreation ).ConfigureAwait( false );
         if( context.HasError )
         {
             return Failure( monitor, command, context.ErrorText ?? context.ErrorId!, context.ErrorId! );
@@ -105,7 +108,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         return await OpenAsync( monitor, command, center.Local, r.Actor!, rememberMe ).ConfigureAwait( false );
     }
 
-    async ValueTask<ActorLoginResult?> LoginAsync( IActivityMonitor monitor, ILoginProvider provider, LoginContext context )
+    async ValueTask<ActorLoginResult?> LoginAsync( IActivityMonitor monitor, ILoginProvider provider, LoginContext context, bool allowsAccountCreation )
     {
         ActorLoginResult r;
         if( _validators.Any() )
@@ -126,9 +129,11 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
             r = await provider.LoginAsync( monitor, context.Scheme, context.Payload, actualLogin: true ).ConfigureAwait( false );
         }
         if( r.IsSuccess || !r.IsUnregisteredUser ) return r;
-        // An unregistered user: created when nobody is logged in, bound to the current one otherwise.
+        // An unregistered user: created when nobody is logged in (and the scheme allows it), bound to the current one otherwise.
         ActorLoginResult? fixedResult = _initial.UnsafeActualActor.IsAnonymous
-                                        ? await (_services.GetService<IAutoCreateAccountService>()?.CreateAccountAndLoginAsync( monitor, context ) ?? default).ConfigureAwait( false )
+                                        ? allowsAccountCreation
+                                            ? await (_services.GetService<IAutoCreateAccountService>()?.CreateAccountAndLoginAsync( monitor, context ) ?? default).ConfigureAwait( false )
+                                            : null
                                         : await (_services.GetService<IAutoBindingAccountService>()?.BindAccountAsync( monitor, context ) ?? default).ConfigureAwait( false );
         return fixedResult ?? r;
     }

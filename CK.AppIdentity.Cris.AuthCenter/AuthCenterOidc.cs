@@ -7,10 +7,12 @@ using System;
 using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
@@ -19,173 +21,122 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The OpenID Connect client of a <see cref="LocalAuthCenter"/> (authorization code flow with PKCE). It alone holds
-/// the client secrets: the fronts only relay the start of a login and the callback.
+/// The OpenID Connect client of a <see cref="LocalAuthCenter"/> (authorization code flow with PKCE): the
+/// <see cref="IAuthCenterRemoteScheme"/> family of the "Oidc.&lt;Suffix&gt;" schemes. It alone holds the client secrets:
+/// the fronts only relay the start of a login and the callback.
 /// <list type="number">
 ///   <item>
-///   <see cref="StartAsync"/> creates a <b>pending login</b> (state, nonce, PKCE verifier, the callback URL and the hash
-///   of the correlation secret of the endpoint) and returns the authorization URL.
+///   <see cref="StartAsync"/> generates the nonce and the PKCE verifier (kept with the pending login by the core) and
+///   returns the authorization URL.
 ///   </item>
 ///   <item>
-///   <see cref="CompleteAsync"/> consumes the pending login (one use), checks the correlation and the expiration,
-///   exchanges the code and validates the identity token (signature, issuer, audience, lifetime, nonce).
+///   <see cref="CompleteAsync"/> exchanges the code and validates the identity token (signature, issuer, audience,
+///   lifetime, nonce), then fills the payload of the "Oidc" <see cref="ILoginProvider"/>: its writable string
+///   properties <c>SchemeSuffix</c> and <c>Sub</c> (the payload of CK.DB.User.UserOidc for instance).
 ///   </item>
 /// </list>
 /// The protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET OpenID Connect handler): the messages
 /// (<see cref="OpenIdConnectMessage"/>), the discovery and the keys (<see cref="ConfigurationManager{T}"/>), the token validation
 /// (<see cref="JsonWebTokenHandler"/>) and the protocol rules (<see cref="OpenIdConnectProtocolValidator"/>: nonce, at_hash,
-/// required claims). What is specific here is the pending login (state, PKCE verifier, correlation) and the HTTP call to the
-/// token endpoint: the ASP.NET handler is bound to an HTTP request, the AuthCenter receives Cris commands.
-/// The pending logins live in memory (a restart cancels the logins in progress) for <see cref="PendingLoginLifetime"/>,
-/// and there are at most <see cref="MaxPendingLogins"/> of them.
+/// required claims). What is specific here is the HTTP call to the token endpoint: the ASP.NET handler is bound to an HTTP
+/// request, the AuthCenter receives Cris commands.
 /// </summary>
-public sealed class AuthCenterOidc
+public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
 {
     /// <summary>
-    /// The lifetime of a pending login: 10 minutes.
+    /// The "Oidc" provider name.
     /// </summary>
-    public static readonly TimeSpan PendingLoginLifetime = TimeSpan.FromMinutes( 10 );
+    public const string OidcProviderName = "Oidc";
 
-    /// <summary>
-    /// The maximal number of pending logins: 10,000. Starting a login is anonymous: this bounds the memory.
-    /// </summary>
-    public const int MaxPendingLogins = 10_000;
-
+    readonly ImmutableArray<OidcSchemeOptions> _schemes;
     readonly HttpClient _http;
     readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _configurations;
-    readonly ConcurrentDictionary<string, PendingLogin> _pending;
     readonly OpenIdConnectProtocolValidator _validator;
 
-    sealed record PendingLogin( OidcSchemeOptions Scheme,
-                                string CallbackUrl,
-                                string CorrelationHash,
-                                string Nonce,
-                                string CodeVerifier,
-                                bool RememberMe,
-                                DateTime Expires );
+    // The private data of a pending login.
+    sealed record PendingData( OidcSchemeOptions Scheme, string Nonce, string CodeVerifier );
 
-    /// <summary>
-    /// The result of a <see cref="CompleteAsync"/>: the scheme and the subject on success, the error otherwise.
-    /// </summary>
-    /// <param name="Scheme">The scheme of the login (null when the pending login cannot be found).</param>
-    /// <param name="Sub">The subject: the identifier of the user at the provider. Null on error.</param>
-    /// <param name="RememberMe">Whether the session must be remembered.</param>
-    /// <param name="Error">The error text. Null on success.</param>
-    /// <param name="ErrorId">The error resource name. Null on success.</param>
-    public readonly record struct Completion( OidcSchemeOptions? Scheme, string? Sub, bool RememberMe, string? Error, string? ErrorId )
+    internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes )
     {
-        /// <summary>
-        /// Gets whether the login succeeded.
-        /// </summary>
-        public bool Success => Error == null;
-    }
-
-    internal AuthCenterOidc()
-    {
+        _schemes = schemes;
         _http = new HttpClient() { Timeout = TimeSpan.FromSeconds( 30 ) };
         _configurations = new ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>>( StringComparer.OrdinalIgnoreCase );
-        _pending = new ConcurrentDictionary<string, PendingLogin>( StringComparer.Ordinal );
-        // The state is checked by the pending logins (one use). The nonce lives as long as a pending login.
-        _validator = new OpenIdConnectProtocolValidator { RequireStateValidation = false, NonceLifetime = PendingLoginLifetime };
+        // The state is checked by the core (the pending logins). The nonce lives as long as a pending login.
+        _validator = new OpenIdConnectProtocolValidator { RequireStateValidation = false, NonceLifetime = LocalAuthCenter.PendingRemoteLoginLifetime };
     }
 
     /// <summary>
-    /// Gets the number of pending logins.
+    /// Gets the configured OpenID Connect schemes ("Oidc:&lt;Suffix&gt;" sections).
     /// </summary>
-    public int PendingLoginCount => _pending.Count;
+    public ImmutableArray<OidcSchemeOptions> SchemeOptions => _schemes;
 
     /// <summary>
-    /// Starts a login: creates the pending login and returns the authorization URL to which the caller must navigate.
+    /// Finds the options of a scheme.
     /// </summary>
-    /// <param name="monitor">The monitor to use.</param>
-    /// <param name="scheme">The scheme.</param>
-    /// <param name="callbackUrl">The callback URL of the endpoint: it must be one of the <see cref="OidcSchemeOptions.CallbackUrls"/>.</param>
-    /// <param name="correlationHash">The hash of the correlation secret of the endpoint.</param>
-    /// <param name="rememberMe">Whether the session will be remembered.</param>
-    /// <param name="utcNow">The current time.</param>
-    /// <returns>The authorization URL, or the error.</returns>
-    public async Task<(string? Url, string? Error)> StartAsync( IActivityMonitor monitor,
-                                                                OidcSchemeOptions scheme,
-                                                                string callbackUrl,
-                                                                string correlationHash,
-                                                                bool rememberMe,
-                                                                DateTime utcNow )
+    /// <param name="scheme">The scheme ("Oidc.Google" for instance).</param>
+    /// <returns>The options or null.</returns>
+    public OidcSchemeOptions? FindScheme( string scheme ) => _schemes.FirstOrDefault( o => string.Equals( o.Scheme, scheme, StringComparison.OrdinalIgnoreCase ) );
+
+    /// <inheritdoc />
+    public string ProviderName => OidcProviderName;
+
+    /// <inheritdoc />
+    public IEnumerable<string> Schemes => _schemes.Select( o => o.Scheme );
+
+    /// <inheritdoc />
+    public bool AllowsAccountCreation( string scheme ) => false;
+
+    /// <inheritdoc />
+    public bool IsAllowedCallback( string scheme, string callbackUrl )
     {
-        Throw.CheckNotNullArgument( scheme );
-        Throw.CheckNotNullOrEmptyArgument( correlationHash );
-        if( !scheme.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) )
+        return FindScheme( scheme )?.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) is true;
+    }
+
+    /// <inheritdoc />
+    public async Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl )
+    {
+        var options = FindScheme( scheme );
+        if( options == null || !options.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) )
         {
-            return (null, $"The callback '{callbackUrl}' is not allowed for the scheme '{scheme.Scheme}'.");
+            return new RemoteLoginStart( null, null, $"The callback '{callbackUrl}' is not allowed for the scheme '{scheme}'." );
         }
-        PurgeExpired( utcNow );
-        if( _pending.Count >= MaxPendingLogins )
+        var configuration = await GetConfigurationAsync( monitor, options ).ConfigureAwait( false );
+        if( configuration == null ) return new RemoteLoginStart( null, null, $"The provider of the scheme '{options.Scheme}' is not available." );
+        if( GetTokenEndpointAuthMethod( monitor, options, configuration ) == null )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Too many pending logins ({_pending.Count}): '{scheme.Scheme}' login refused." );
-            return (null, "Too many logins in progress. Please retry later.");
-        }
-        var configuration = await GetConfigurationAsync( monitor, scheme ).ConfigureAwait( false );
-        if( configuration == null ) return (null, $"The provider of the scheme '{scheme.Scheme}' is not available.");
-        if( GetTokenEndpointAuthMethod( monitor, scheme, configuration ) == null )
-        {
-            return (null, $"The provider of the scheme '{scheme.Scheme}' does not accept a client secret.");
+            return new RemoteLoginStart( null, null, $"The provider of the scheme '{options.Scheme}' does not accept a client secret." );
         }
 
-        var state = NewRandom();
         // The nonce of the protocol validator (it holds its creation time: its lifetime is checked).
         var nonce = _validator.GenerateNonce();
-        var verifier = NewRandom();
+        var verifier = Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 32 ) );
         var challenge = Base64Url.EncodeToString( SHA256.HashData( Encoding.ASCII.GetBytes( verifier ) ) );
-        _pending[state] = new PendingLogin( scheme, callbackUrl, correlationHash, nonce, verifier, rememberMe, utcNow + PendingLoginLifetime );
 
         var request = new OpenIdConnectMessage
         {
             IssuerAddress = configuration.AuthorizationEndpoint,
-            ClientId = scheme.ClientId,
+            ClientId = options.ClientId,
             RedirectUri = callbackUrl,
             ResponseType = OpenIdConnectResponseType.Code,
-            Scope = scheme.Scopes,
+            Scope = options.Scopes,
             State = state,
             Nonce = nonce
         };
         request.SetParameter( "code_challenge", challenge );
         request.SetParameter( "code_challenge_method", "S256" );
         var url = request.CreateAuthenticationRequestUrl();
-        monitor.Info( $"'{scheme.Scheme}' login started." );
-        return (url, null);
+        monitor.Info( $"'{options.Scheme}' login started." );
+        return new RemoteLoginStart( url, new PendingData( options, nonce, verifier ), null );
     }
 
-    /// <summary>
-    /// Completes a login: consumes the pending login, checks the correlation, exchanges the code and validates the
-    /// identity token.
-    /// </summary>
-    /// <param name="monitor">The monitor to use.</param>
-    /// <param name="state">The state sent back by the provider.</param>
-    /// <param name="code">The authorization code.</param>
-    /// <param name="error">The error sent back by the provider, if any.</param>
-    /// <param name="presentedCorrelationHash">The hash of the correlation secret presented by the caller.</param>
-    /// <param name="utcNow">The current time.</param>
-    /// <returns>The completion.</returns>
-    public async Task<Completion> CompleteAsync( IActivityMonitor monitor,
-                                                 string state,
-                                                 string code,
-                                                 string? error,
-                                                 string? presentedCorrelationHash,
-                                                 DateTime utcNow )
+    /// <inheritdoc />
+    public async Task<RemoteLoginCompletion> CompleteAsync( IActivityMonitor monitor,
+                                                            PendingRemoteLogin pending,
+                                                            string? code,
+                                                            string? error,
+                                                            ILoginProvider provider )
     {
-        if( string.IsNullOrEmpty( state ) || !_pending.TryRemove( state, out var p ) )
-        {
-            return Failure( monitor, null, "This login is unknown or has expired.", "Authentication.RemoteLoginExpired" );
-        }
-        if( p.Expires < utcNow )
-        {
-            return Failure( monitor, p.Scheme, "This login has expired.", "Authentication.RemoteLoginExpired" );
-        }
-        if( presentedCorrelationHash == null
-            || !CryptographicOperations.FixedTimeEquals( Encoding.ASCII.GetBytes( presentedCorrelationHash ), Encoding.ASCII.GetBytes( p.CorrelationHash ) ) )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{p.Scheme.Scheme}' login completed by a caller that didn't start it." );
-            return Failure( monitor, p.Scheme, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );
-        }
+        var p = (PendingData)pending.SchemeData!;
         if( error != null )
         {
             return Failure( monitor, p.Scheme, $"The provider refused the login ({error}).", "Authentication.RemoteLoginRefused" );
@@ -199,7 +150,7 @@ public sealed class AuthCenterOidc
         {
             return Failure( monitor, p.Scheme, $"The provider of the scheme '{p.Scheme.Scheme}' is not available.", "Authentication.RemoteLoginFailed" );
         }
-        var tokenResponse = await RedeemCodeAsync( monitor, configuration, p, code ).ConfigureAwait( false );
+        var tokenResponse = await RedeemCodeAsync( monitor, configuration, p, pending.CallbackUrl, code ).ConfigureAwait( false );
         if( tokenResponse == null )
         {
             return Failure( monitor, p.Scheme, "The authorization code cannot be redeemed.", "Authentication.RemoteLoginFailed" );
@@ -209,17 +160,30 @@ public sealed class AuthCenterOidc
         {
             return Failure( monitor, p.Scheme, "The identity token is invalid.", "Authentication.RemoteLoginFailed" );
         }
+        var payload = provider.CreatePayload( p.Scheme.Scheme );
+        if( !TrySet( payload, "SchemeSuffix", p.Scheme.Suffix ) || !TrySet( payload, "Sub", sub ) )
+        {
+            return Failure( monitor, p.Scheme, $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable SchemeSuffix and Sub.", "Authentication.InvalidPayload" );
+        }
         monitor.Info( $"'{p.Scheme.Scheme}' login completed." );
-        return new Completion( p.Scheme, sub, p.RememberMe, null, null );
+        return new RemoteLoginCompletion( payload, null, null );
     }
 
-    static Completion Failure( IActivityMonitor monitor, OidcSchemeOptions? scheme, string text, string resName )
+    static RemoteLoginCompletion Failure( IActivityMonitor monitor, OidcSchemeOptions scheme, string text, string resName )
     {
-        monitor.Warn( $"Remote login{(scheme != null ? $" '{scheme.Scheme}'" : "")} failed: {text}" );
-        return new Completion( scheme, null, false, text, resName );
+        monitor.Warn( $"Remote login '{scheme.Scheme}' failed: {text}" );
+        return RemoteLoginCompletion.Failure( text, resName );
     }
 
-    async Task<OpenIdConnectMessage?> RedeemCodeAsync( IActivityMonitor monitor, OpenIdConnectConfiguration configuration, PendingLogin p, string code )
+    static bool TrySet( object payload, string name, string value )
+    {
+        var p = payload.GetType().GetProperty( name, BindingFlags.Public | BindingFlags.Instance );
+        if( p == null || p.PropertyType != typeof( string ) || !p.CanWrite ) return false;
+        p.SetValue( payload, value );
+        return true;
+    }
+
+    async Task<OpenIdConnectMessage?> RedeemCodeAsync( IActivityMonitor monitor, OpenIdConnectConfiguration configuration, PendingData p, string callbackUrl, string code )
     {
         try
         {
@@ -229,7 +193,7 @@ public sealed class AuthCenterOidc
             {
                 GrantType = OpenIdConnectGrantTypes.AuthorizationCode,
                 Code = code,
-                RedirectUri = p.CallbackUrl,
+                RedirectUri = callbackUrl,
             };
             request.SetParameter( "code_verifier", p.CodeVerifier );
             using var httpRequest = new HttpRequestMessage( HttpMethod.Post, configuration.TokenEndpoint );
@@ -271,7 +235,7 @@ public sealed class AuthCenterOidc
 
     // The token: its signature, issuer, audience and lifetime (JsonWebTokenHandler). Then the protocol rules
     // (OpenIdConnectProtocolValidator): the required claims, the nonce, the at_hash when there is an access token.
-    async Task<string?> ValidateTokenResponseAsync( IActivityMonitor monitor, PendingLogin p, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse )
+    async Task<string?> ValidateTokenResponseAsync( IActivityMonitor monitor, PendingData p, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse )
     {
         var idToken = tokenResponse.IdToken;
         var handler = new JsonWebTokenHandler();
@@ -357,14 +321,4 @@ public sealed class AuthCenterOidc
             return null;
         }
     }
-
-    void PurgeExpired( DateTime utcNow )
-    {
-        foreach( var (state, p) in _pending )
-        {
-            if( p.Expires < utcNow ) _pending.TryRemove( state, out _ );
-        }
-    }
-
-    static string NewRandom() => Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 32 ) );
 }

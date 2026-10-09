@@ -1,6 +1,8 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,7 +18,7 @@ public sealed class LocalAuthCenter
     readonly AuthCenterOptions _options;
     readonly AuthCenterSessionStore _sessions;
     readonly AuthCenterEncryptionKeys _encryptionKeys;
-    readonly AuthCenterOidc _oidc;
+    readonly AuthCenterPendingStore<PendingRemoteLogin> _pendingRemoteLogins;
 
     internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options )
     {
@@ -24,9 +26,20 @@ public sealed class LocalAuthCenter
         _options = options;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _encryptionKeys = new AuthCenterEncryptionKeys( monitor, party );
-        _oidc = new AuthCenterOidc();
+        _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
+        party.AddFeature( new AuthCenterOidc( options.OidcSchemes ) );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
+
+    /// <summary>
+    /// The lifetime of a pending remote login: 10 minutes.
+    /// </summary>
+    public static readonly TimeSpan PendingRemoteLoginLifetime = TimeSpan.FromMinutes( 10 );
+
+    /// <summary>
+    /// The maximal number of pending remote logins: 10,000. Starting a login is anonymous: this bounds the memory.
+    /// </summary>
+    public const int MaxPendingRemoteLogins = 10_000;
 
     /// <summary>
     /// The period of the purge of the expired sessions: 1 hour.
@@ -84,9 +97,24 @@ public sealed class LocalAuthCenter
     public AuthCenterSessionStore Sessions => _sessions;
 
     /// <summary>
-    /// Gets the OpenID Connect client (see <see cref="AuthCenterOptions.OidcSchemes"/>).
+    /// Gets the remote logins that have started and wait for their callback, under their state.
     /// </summary>
-    public AuthCenterOidc Oidc => _oidc;
+    public AuthCenterPendingStore<PendingRemoteLogin> PendingRemoteLogins => _pendingRemoteLogins;
+
+    /// <summary>
+    /// Gets the scheme families of this Authentication Center (the <see cref="IAuthCenterScheme"/> features of its party).
+    /// </summary>
+    public IEnumerable<IAuthCenterScheme> SchemeFamilies => _party.Features.OfType<IAuthCenterScheme>();
+
+    /// <summary>
+    /// Finds the family of a scheme.
+    /// </summary>
+    /// <param name="scheme">The scheme ("Oidc.Google" for instance).</param>
+    /// <returns>The family or null if no family makes this scheme available.</returns>
+    public IAuthCenterScheme? FindSchemeFamily( string scheme )
+    {
+        return SchemeFamilies.FirstOrDefault( f => f.Schemes.Contains( scheme, StringComparer.OrdinalIgnoreCase ) );
+    }
 
     /// <summary>
     /// Creates a signed token for a session. It expires after <see cref="AuthCenterOptions.TokenLifetime"/>, or with
