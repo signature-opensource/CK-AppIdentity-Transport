@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="CK.Poco.Exc.Json" Version="35.0.2-0.cris-auth.0.ci.2" />
-    <PackageReference Include="CK.Cris.BackgroundExecutor" Version="2.0.2-0.cris-auth.0.ci.4" />
+    <PackageReference Include="CK.Cris.BackgroundExecutor" Version="2.0.2-0.cris-auth.0.ci.6" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />

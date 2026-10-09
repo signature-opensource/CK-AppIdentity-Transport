@@ -97,4 +97,6 @@ sealed class RelayedEndpoint : IAuthenticationSessionEndpoint
                                           ?? Throw.InvalidOperationException<string>( "The front did not prepare the remote login correlation." );
 
     public string? PresentedRemoteLoginHash => _command.PresentedRemoteLoginHash;
+
+    public string? WebOrigin => _command.WebOrigin;
 }

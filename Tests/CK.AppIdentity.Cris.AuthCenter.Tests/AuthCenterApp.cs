@@ -108,6 +108,20 @@ public sealed class AuthCenterApp : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// A login validator that accepts everything and records the user data of the last login.
+    /// </summary>
+    public sealed class RecordingLoginValidator : ILoginValidator
+    {
+        public static IReadOnlyDictionary<string, string?>? LastUserData;
+
+        public ValueTask ValidateLoginAsync( IActivityMonitor monitor, ActorInfo loggedInActor, LoginContext context )
+        {
+            LastUserData = context.UserData;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     public sealed class AllowImpersonation : IImpersonationService
     {
         public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, int actorId ) => ValueTask.FromResult( Find( actorId ) );
@@ -134,6 +148,11 @@ public sealed class AuthCenterApp : IAsyncDisposable
         /// The callback URL of this browser's endpoint for the remote logins (null: it cannot receive them).
         /// </summary>
         public string? RemoteLoginCallbackUrl { get; set; } = "https://front.example.com/.auth/oidc/callback";
+
+        /// <summary>
+        /// The origin of the web page that sends the commands (null: not a web endpoint).
+        /// </summary>
+        public string? WebOrigin { get; set; } = "https://front.example.com";
 
         /// <summary>
         /// The hash of the remote login correlation secret (the "cookie" of a starting remote login).
@@ -186,6 +205,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
         public string PrepareRemoteLogin() => _browser.PrepareRemoteLogin();
 
         public string? PresentedRemoteLoginHash => _browser.RemoteLoginCorrelation;
+
+        public string? WebOrigin => _browser.WebOrigin;
     }
 
     public required AutomaticServices Services { get; init; }
@@ -204,7 +225,9 @@ public sealed class AuthCenterApp : IAsyncDisposable
         c["Parties:0:AuthCenter"] = "true";
     }
 
-    public static async Task<AuthCenterApp> StartAsync( Action<MutableConfigurationSection>? configuration = null, bool allowImpersonation = false )
+    public static async Task<AuthCenterApp> StartAsync( Action<MutableConfigurationSection>? configuration = null,
+                                                        bool allowImpersonation = false,
+                                                        bool recordLogins = false )
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
@@ -248,6 +271,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( IAuthenticationInfoPoco ),
                                        typeof( IActorInfoPoco ) );
         if( allowImpersonation ) engine.FirstBinPath.Types.Add( typeof( AllowImpersonation ) );
+        if( recordLogins ) engine.FirstBinPath.Types.Add( typeof( RecordingLoginValidator ) );
         var r = await engine.RunSuccessfullyAsync();
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ?? LocalAuthCenter ).ShouldNotBeNull();
         var services = r.CreateAutomaticServices( configureServices: services =>

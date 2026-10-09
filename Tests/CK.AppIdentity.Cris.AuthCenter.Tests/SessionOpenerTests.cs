@@ -61,6 +61,25 @@ public class SessionOpenerTests
     }
 
     [Test]
+    public async Task the_user_data_of_the_login_command_reach_the_login_context_Async()
+    {
+        await using var app = await AuthCenterApp.StartAsync( recordLogins: true );
+
+        AuthCenterApp.RecordingLoginValidator.LastUserData = null;
+        var r = await app.ExecuteSessionAsync( p => p.Create<CK.IO.Authentication.Weak.IWeakLoginCommand>( c =>
+        {
+            c.WeakActorName = "Operator";
+            c.UserData.Add( "InvitationToken", "T" );
+        } ) );
+        r.Success.ShouldBeTrue();
+        AuthCenterApp.RecordingLoginValidator.LastUserData.ShouldNotBeNull()["InvitationToken"].ShouldBe( "T" );
+
+        // No user data: empty, never null.
+        await app.LoginAsync( "Operator" );
+        AuthCenterApp.RecordingLoginValidator.LastUserData.ShouldNotBeNull().ShouldBeEmpty();
+    }
+
+    [Test]
     public async Task a_failed_login_opens_nothing_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();

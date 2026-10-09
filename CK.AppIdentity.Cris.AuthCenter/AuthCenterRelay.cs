@@ -81,6 +81,7 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay
             c.RemoteLoginCallbackUrl = callbackUrl;
             c.RemoteLoginCorrelationHash = correlation;
             c.PresentedRemoteLoginHash = _endpoint.PresentedRemoteLoginHash;
+            c.WebOrigin = _endpoint.WebOrigin;
         } );
         IRelaySessionResult r;
         try

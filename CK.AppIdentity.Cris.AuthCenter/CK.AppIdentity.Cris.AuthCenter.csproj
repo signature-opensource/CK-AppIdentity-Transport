@@ -7,10 +7,10 @@
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="2.0.2-0.cris-auth.0.ci.4" />
+    <PackageReference Include="CK.Cris.Authentication" Version="2.0.2-0.cris-auth.0.ci.6" />
     <!-- For the Basic and Weak login handlers (AuthCenterLoginHandlers.cs): temporary, until the old stack is retired. -->
-    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.2-0.cris-auth.0.ci.3" />
-    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.2-0.cris-auth.0.ci.3" />
+    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.2-0.cris-auth.0.ci.5" />
+    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.2-0.cris-auth.0.ci.5" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
   </ItemGroup>
   <ItemGroup>

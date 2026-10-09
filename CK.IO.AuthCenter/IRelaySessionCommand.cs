@@ -61,4 +61,10 @@ public interface IRelaySessionCommand : ICommand<IRelaySessionResult>
     /// Gets or sets the hash of the correlation secret presented to the front (when a remote login completes).
     /// </summary>
     string? PresentedRemoteLoginHash { get; set; }
+
+    /// <summary>
+    /// Gets or sets the origin of the web page that sent the command to the front, as checked by the front's endpoint.
+    /// Null when the front's endpoint serves no web page. The Authentication Center only accepts the configured origins.
+    /// </summary>
+    string? WebOrigin { get; set; }
 }

@@ -5,6 +5,7 @@ using CK.IO.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Buffers.Text;
@@ -61,7 +62,8 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
                                                                 T command,
                                                                 string scheme,
                                                                 object payload,
-                                                                bool rememberMe = false )
+                                                                bool rememberMe = false,
+                                                                IReadOnlyDictionary<string, string?>? userData = null )
         where T : ICommand<ISessionResult>, ICommandAuthenticationSession
     {
         Throw.CheckNotNullArgument( command );
@@ -86,7 +88,11 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
             return Failure( monitor, command, $"Unknown login scheme '{scheme}'.", "Authentication.UnknownScheme" );
         }
 
-        var context = new LoginContext( scheme, payload, _initial );
+        // The user data of the command, unless the caller gives them (the remote login callback: the data of its start).
+        userData ??= command is ICommandLoginUserData d && d.UserData.Count > 0
+                        ? d.UserData.ToImmutableDictionary( kv => kv.Key, kv => (string?)kv.Value )
+                        : null;
+        var context = new LoginContext( scheme, payload, _initial, userData );
         var r = await LoginAsync( monitor, provider, context ).ConfigureAwait( false );
         if( context.HasError )
         {
