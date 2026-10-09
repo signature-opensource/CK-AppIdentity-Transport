@@ -83,6 +83,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
     {
         public string SchemeSuffix { get; set; } = "";
         public string Sub { get; set; } = "";
+        public string Claims { get; set; } = "";
     }
 
     /// <summary>
@@ -119,6 +120,20 @@ public sealed class AuthCenterApp : IAsyncDisposable
         {
             LastUserData = context.UserData;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Creates the account "Created" (77) for any unregistered identity, and counts its calls.
+    /// </summary>
+    public sealed class FakeAutoCreateAccount : IAutoCreateAccountService
+    {
+        public static int CallCount;
+
+        public ValueTask<ActorLoginResult?> CreateAccountAndLoginAsync( IActivityMonitor monitor, LoginContext context )
+        {
+            ++CallCount;
+            return ValueTask.FromResult<ActorLoginResult?>( ActorLoginResult.Success( new ActorInfo( 77, "Created", AuthLevel.Critical ) ) );
         }
     }
 
@@ -228,7 +243,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
     public static async Task<AuthCenterApp> StartAsync( Action<MutableConfigurationSection>? configuration = null,
                                                         bool allowImpersonation = false,
                                                         bool recordLogins = false,
-                                                        bool withOidc = true )
+                                                        bool withOidc = true,
+                                                        bool createAccounts = false )
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
@@ -273,6 +289,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( IActorInfoPoco ) );
         if( allowImpersonation ) engine.FirstBinPath.Types.Add( typeof( AllowImpersonation ) );
         if( recordLogins ) engine.FirstBinPath.Types.Add( typeof( RecordingLoginValidator ) );
+        if( createAccounts ) engine.FirstBinPath.Types.Add( typeof( FakeAutoCreateAccount ) );
         // The OpenID Connect scheme family (its package): without it, the AuthCenter core has no remote scheme.
         if( withOidc ) engine.FirstBinPath.Types.Add( typeof( Oidc.AuthCenterOidcFeatureDriver ), typeof( Oidc.AuthCenterOidcConfiguration ) );
         var r = await engine.RunSuccessfullyAsync();

@@ -18,7 +18,10 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
       "ClientSecret": "...",
       "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
       "Scopes": "openid email",                   // "openid" is always included.
-      "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ]
+      "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ],
+      "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
+      "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
+      "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
     }
   }
 }
@@ -44,7 +47,22 @@ pending logins, this package runs the protocol.
    ASP.NET handler, that cannot be used here: it is bound to an HTTP request, the Authentication Center receives Cris
    commands).
 3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
-   `Sub` (the payload of CK.DB.User.UserOidc for instance). The session is opened like any login.
+   `Sub` (the payload of CK.DB.User.UserOidc for instance), and gets the claims in its `Claims` string property when it
+   has one. The session is opened like any login.
+
+## The claims
+
+The claims are kept **as received**, as one JSON object (objects, booleans and numbers stay what they are): the
+projections to structured data belong to other packages.
+
+- They are the claims of the validated identity token, completed by the UserInfo endpoint when
+  `GetClaimsFromUserInfoEndpoint` is true (an explicit extra HTTP call per login, with the access token, used once and not
+  kept). The UserInfo `sub` must be the identity token's, otherwise the login fails. On a conflict, the identity token wins:
+  it is signed, UserInfo is not. A signed or encrypted UserInfo response (`application/jwt`) is not supported.
+- The protocol claims (`AuthCenterOidc.ProtocolClaims`: `iss`, `aud`, `exp`, `iat`, `nbf`, `nonce`, `at_hash`, `c_hash`,
+  `auth_time`, `azp`, `sid`, `amr`, `acr`) and `sub` (the identity itself) are never kept, nor the `ExcludedClaims` (exact
+  names, no default list: the configured `Scopes` already limit what the provider sends).
+- **They hold personal data** (address, phone, birth date...) as soon as the scopes request them.
 
 **The client authentication at the token endpoint** is `client_secret_basic` by default, the default of the
 specification: an HTTP Basic `Authorization` header, whose client id and secret are form-url-encoded before being joined
@@ -58,5 +76,8 @@ not sent to it. One method per request, the secret is never sent twice.
 announced by the provider and the `iss` of the tokens must be exactly the configured one: multi-tenant endpoints (whose
 issuer varies) are not supported.
 
-**No automatic account creation or binding:** a login succeeds only for an actor already bound to the identity. The
-family allows no account creation (yet: a per-scheme `AllowAccountCreation` setting is designed).
+**No automatic binding, account creation on demand:** a login succeeds for an actor already bound to the identity. An
+unbound identity creates an account only when its scheme has `AllowAccountCreation` (false by default) **and** the
+application registers an `IAutoCreateAccountService`, that keeps its own conditions (an invitation in the `UserData`, a
+domain...): the two checks add up. The service receives the payload, with the claims, to name the account. A binding on
+the `email` claim is the classic account takeover path: it is not done.

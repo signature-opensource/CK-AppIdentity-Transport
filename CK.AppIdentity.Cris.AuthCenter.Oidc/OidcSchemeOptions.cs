@@ -25,7 +25,10 @@ public sealed partial class OidcSchemeOptions
                        string clientSecret,
                        string? tokenEndpointAuthMethod,
                        string scopes,
-                       ImmutableArray<string> callbackUrls )
+                       ImmutableArray<string> callbackUrls,
+                       bool getClaimsFromUserInfoEndpoint,
+                       ImmutableArray<string> excludedClaims,
+                       bool allowAccountCreation )
     {
         Suffix = suffix;
         Authority = authority;
@@ -35,6 +38,9 @@ public sealed partial class OidcSchemeOptions
         TokenEndpointAuthMethod = tokenEndpointAuthMethod;
         Scopes = scopes;
         CallbackUrls = callbackUrls;
+        GetClaimsFromUserInfoEndpoint = getClaimsFromUserInfoEndpoint;
+        ExcludedClaims = excludedClaims;
+        AllowAccountCreation = allowAccountCreation;
     }
 
     /// <summary>
@@ -99,6 +105,25 @@ public sealed partial class OidcSchemeOptions
     /// </summary>
     public ImmutableArray<string> CallbackUrls { get; }
 
+    /// <summary>
+    /// Gets whether the claims are completed by the UserInfo endpoint of the provider, with the access token, after the
+    /// code exchange (an explicit extra HTTP call per login). Some providers send the profile, email and phone claims
+    /// from this endpoint only. The UserInfo <c>sub</c> must be the one of the identity token. Defaults to false.
+    /// </summary>
+    public bool GetClaimsFromUserInfoEndpoint { get; }
+
+    /// <summary>
+    /// Gets the claims that the application must not keep (exact names: personal data it doesn't want, large claims
+    /// like Entra's "groups"). The protocol claims and "sub" are never kept. Empty by default.
+    /// </summary>
+    public ImmutableArray<string> ExcludedClaims { get; }
+
+    /// <summary>
+    /// Gets whether an identity bound to no actor may create an account (through the application's
+    /// <see cref="IAutoCreateAccountService"/>, that keeps its own conditions). Defaults to false.
+    /// </summary>
+    public bool AllowAccountCreation { get; }
+
     [GeneratedRegex( "^[A-Za-z0-9]+$" )]
     private static partial Regex SuffixRegex();
 
@@ -157,8 +182,30 @@ public sealed partial class OidcSchemeOptions
                 Error( $"callback URL '{c}' must be an absolute https URL (http only on a loopback address) without query nor fragment." );
             }
         }
+        var userInfo = ReadBool( s, nameof( GetClaimsFromUserInfoEndpoint ), Error );
+        var excluded = ReadStrings( s.TryGetSection( nameof( ExcludedClaims ) ) );
+        var allowAccountCreation = ReadBool( s, nameof( AllowAccountCreation ), Error );
         if( !success ) return null;
-        return new OidcSchemeOptions( suffix, authority!, issuer!, clientId!, clientSecret!, authMethod, string.Join( ' ', scopes ), callbacks.ToImmutableArray() );
+        return new OidcSchemeOptions( suffix,
+                                      authority!,
+                                      issuer!,
+                                      clientId!,
+                                      clientSecret!,
+                                      authMethod,
+                                      string.Join( ' ', scopes ),
+                                      callbacks.ToImmutableArray(),
+                                      userInfo,
+                                      excluded.ToImmutableArray(),
+                                      allowAccountCreation );
+    }
+
+    static bool ReadBool( ImmutableConfigurationSection s, string key, Action<string> error )
+    {
+        var v = s[key];
+        if( v == null ) return false;
+        if( bool.TryParse( v, out var b ) ) return b;
+        error( $"'{key}' must be true or false." );
+        return false;
     }
 
     // A list ("CallbackUrls:0", "CallbackUrls:1"...) or a comma separated value.

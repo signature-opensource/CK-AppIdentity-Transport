@@ -15,6 +15,8 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.IdentityModel.Tokens.Jwt;
 using System.Threading.Tasks;
 
@@ -84,7 +86,13 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     public IEnumerable<string> Schemes => _schemes.Select( o => o.Scheme );
 
     /// <inheritdoc />
-    public bool AllowsAccountCreation( string scheme ) => false;
+    public bool AllowsAccountCreation( string scheme ) => FindScheme( scheme )?.AllowAccountCreation is true;
+
+    /// <summary>
+    /// The claims that are never kept: the protocol claims (Microsoft's defaults) and "sub" (the identity itself).
+    /// </summary>
+    public static readonly ImmutableHashSet<string> ProtocolClaims = ImmutableHashSet.Create( StringComparer.Ordinal,
+        "iss", "aud", "exp", "iat", "nbf", "nonce", "at_hash", "c_hash", "auth_time", "azp", "sid", "amr", "acr", "sub" );
 
     /// <inheritdoc />
     public bool IsAllowedCallback( string scheme, string callbackUrl )
@@ -160,13 +168,92 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         {
             return Failure( monitor, p.Scheme, "The identity token is invalid.", "Authentication.RemoteLoginFailed" );
         }
+        var claims = await GetClaimsAsync( monitor, p.Scheme, configuration, tokenResponse, sub ).ConfigureAwait( false );
+        if( claims == null )
+        {
+            return Failure( monitor, p.Scheme, "The claims of the provider cannot be read.", "Authentication.RemoteLoginFailed" );
+        }
         var payload = provider.CreatePayload( p.Scheme.Scheme );
         if( !TrySet( payload, "SchemeSuffix", p.Scheme.Suffix ) || !TrySet( payload, "Sub", sub ) )
         {
             return Failure( monitor, p.Scheme, $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable SchemeSuffix and Sub.", "Authentication.InvalidPayload" );
         }
+        // The claims are kept when the provider's payload can hold them.
+        if( !TrySet( payload, "Claims", claims ) )
+        {
+            monitor.Trace( $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable Claims: they are not kept." );
+        }
         monitor.Info( $"'{p.Scheme.Scheme}' login completed." );
         return new RemoteLoginCompletion( payload, null, null );
+    }
+
+    // The claims of the validated identity token, completed by the UserInfo endpoint when configured (its "sub" must be
+    // the identity token's), without the protocol claims nor the excluded ones, as a JSON object (the values as received).
+    // On a conflict, the identity token wins: it is signed, UserInfo is not (it comes over TLS).
+    async Task<string?> GetClaimsAsync( IActivityMonitor monitor, OidcSchemeOptions scheme, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse, string sub )
+    {
+        var claims = new JsonObject();
+        if( scheme.GetClaimsFromUserInfoEndpoint )
+        {
+            var userInfo = await GetUserInfoAsync( monitor, scheme, configuration, tokenResponse.AccessToken ).ConfigureAwait( false );
+            if( userInfo == null ) return null;
+            if( userInfo["sub"] is not JsonValue v || v.GetValueKind() != JsonValueKind.String || v.GetValue<string>() != sub )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The UserInfo of a '{scheme.Scheme}' login is not about the subject of the identity token." );
+                return null;
+            }
+            CopyClaims( scheme, userInfo, claims );
+        }
+        var idToken = new JsonWebToken( tokenResponse.IdToken );
+        if( JsonNode.Parse( Base64Url.DecodeFromChars( idToken.EncodedPayload ) ) is not JsonObject idClaims ) return null;
+        CopyClaims( scheme, idClaims, claims );
+        return claims.ToJsonString();
+    }
+
+    static void CopyClaims( OidcSchemeOptions scheme, JsonObject source, JsonObject target )
+    {
+        foreach( var (name, value) in source )
+        {
+            if( ProtocolClaims.Contains( name ) || scheme.ExcludedClaims.Contains( name, StringComparer.Ordinal ) ) continue;
+            target[name] = value?.DeepClone();
+        }
+    }
+
+    async Task<JsonObject?> GetUserInfoAsync( IActivityMonitor monitor, OidcSchemeOptions scheme, OpenIdConnectConfiguration configuration, string? accessToken )
+    {
+        if( string.IsNullOrEmpty( configuration.UserInfoEndpoint ) )
+        {
+            monitor.Error( $"The provider of '{scheme.Scheme}' announces no UserInfo endpoint (GetClaimsFromUserInfoEndpoint is true)." );
+            return null;
+        }
+        if( string.IsNullOrEmpty( accessToken ) )
+        {
+            monitor.Warn( $"The token endpoint of '{scheme.Scheme}' returned no access token: UserInfo cannot be called." );
+            return null;
+        }
+        try
+        {
+            using var request = new HttpRequestMessage( HttpMethod.Get, configuration.UserInfoEndpoint );
+            request.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", accessToken );
+            using var response = await _http.SendAsync( request ).ConfigureAwait( false );
+            if( !response.IsSuccessStatusCode )
+            {
+                monitor.Warn( $"UserInfo endpoint of '{scheme.Scheme}' answered {(int)response.StatusCode}." );
+                return null;
+            }
+            if( response.Content.Headers.ContentType?.MediaType != "application/json" )
+            {
+                // A signed or encrypted UserInfo response (application/jwt) is not supported.
+                monitor.Warn( $"UserInfo endpoint of '{scheme.Scheme}' answered '{response.Content.Headers.ContentType?.MediaType}': application/json is expected." );
+                return null;
+            }
+            return JsonNode.Parse( await response.Content.ReadAsStringAsync().ConfigureAwait( false ) ) as JsonObject;
+        }
+        catch( Exception ex )
+        {
+            monitor.Error( $"While reading the UserInfo of a '{scheme.Scheme}' login.", ex );
+            return null;
+        }
     }
 
     static RemoteLoginCompletion Failure( IActivityMonitor monitor, OidcSchemeOptions scheme, string text, string resName )

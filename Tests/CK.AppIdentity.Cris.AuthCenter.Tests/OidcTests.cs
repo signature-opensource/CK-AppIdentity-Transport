@@ -125,6 +125,76 @@ public class OidcTests
         app.Caller.Issued.ShouldBeEmpty();
     }
 
+    static async Task<ISessionResult> LoginAsync( AuthCenterApp app, FakeIdentityProvider idp, string sub )
+    {
+        var start = (RedirectedUrl)(await StartAsync( app )).ShouldNotBeNull();
+        var (_, code, state) = idp.Authorize( start.Url, sub );
+        return await CallbackAsync( app, state, code );
+    }
+
+    [Test]
+    public async Task the_claims_are_kept_as_received_without_the_protocol_ones_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        idp.IdTokenClaims["name"] = "Albert Einstein";
+        idp.IdTokenClaims["email_verified"] = true;
+        idp.IdTokenClaims["address"] = new Dictionary<string, object> { ["country"] = "CH" };
+        idp.IdTokenClaims["groups"] = new[] { "physics", "patents" };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:ExcludedClaims:0"] = "groups" ) );
+
+        (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
+        var claims = System.Text.Json.Nodes.JsonNode.Parse( AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull().Claims )!.AsObject();
+        claims["name"]!.GetValue<string>().ShouldBe( "Albert Einstein" );
+        claims["email_verified"]!.GetValue<bool>().ShouldBeTrue( "A boolean stays a boolean." );
+        claims["address"]!["country"]!.GetValue<string>().ShouldBe( "CH", "An object stays an object." );
+        claims.ContainsKey( "groups" ).ShouldBeFalse( "Excluded by the configuration." );
+        foreach( var p in AuthCenterOidc.ProtocolClaims )
+        {
+            claims.ContainsKey( p ).ShouldBeFalse( $"'{p}' is a protocol claim (or the identity)." );
+        }
+        idp.UserInfoCount.ShouldBe( 0, "UserInfo is not called by default." );
+    }
+
+    [Test]
+    public async Task UserInfo_completes_the_claims_and_must_be_about_the_same_subject_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        idp.IdTokenClaims["name"] = "From the identity token";
+        idp.UserInfoClaims = new Dictionary<string, object> { ["name"] = "From UserInfo", ["email"] = "albert@example.com" };
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:GetClaimsFromUserInfoEndpoint"] = "true" ) );
+
+        (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
+        idp.UserInfoCount.ShouldBe( 1 );
+        var claims = System.Text.Json.Nodes.JsonNode.Parse( AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull().Claims )!.AsObject();
+        claims["email"]!.GetValue<string>().ShouldBe( "albert@example.com" );
+        claims["name"]!.GetValue<string>().ShouldBe( "From the identity token", "On a conflict, the signed identity token wins." );
+
+        // A UserInfo about another subject fails the login.
+        idp.UserInfoSub = "someone-else";
+        var r = await LoginAsync( app, idp, "albert-sub" );
+        r.Success.ShouldBeFalse();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RemoteLoginFailed" );
+    }
+
+    [Test]
+    public async Task an_account_is_created_only_when_the_scheme_allows_it_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        AuthCenterApp.FakeAutoCreateAccount.CallCount = 0;
+        await using( var app = await AuthCenterApp.StartAsync( Configuration( idp ), createAccounts: true ) )
+        {
+            (await LoginAsync( app, idp, "unknown-sub" )).Success.ShouldBeFalse();
+            AuthCenterApp.FakeAutoCreateAccount.CallCount.ShouldBe( 0, "AllowAccountCreation is false by default: the service is not even called." );
+        }
+        await using( var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:AllowAccountCreation"] = "true" ), createAccounts: true ) )
+        {
+            var r = await LoginAsync( app, idp, "unknown-sub" );
+            r.Success.ShouldBeTrue();
+            r.Info.UnsafeActor.ActorName.ShouldBe( "Created" );
+            AuthCenterApp.FakeAutoCreateAccount.CallCount.ShouldBe( 1 );
+        }
+    }
+
     [Test]
     public async Task a_login_can_only_be_completed_by_the_caller_that_started_it_Async()
     {
