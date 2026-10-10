@@ -58,7 +58,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
     }
 
     /// <summary>
-    /// A "Basic" provider (its payload is a BasicLoginPayload): Albert's password is "secret". It records the password it receives.
+    /// A "Basic" provider (its payload is the IBasicLoginCommand): Albert's password is "secret". It records the password it receives.
     /// </summary>
     public sealed class FakeBasicLoginProvider : ILoginProvider
     {
@@ -70,7 +70,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
         {
-            var cmd = (BasicLoginPayload)payload;
+            var cmd = (CK.IO.Authentication.Basic.IBasicLoginCommand)payload;
             LastPassword = cmd.Password;
             return ValueTask.FromResult( cmd.UserName == "Albert" && cmd.Password == "secret"
                                             ? ActorLoginResult.Success( Albert )

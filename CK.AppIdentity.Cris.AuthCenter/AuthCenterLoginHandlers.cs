@@ -16,8 +16,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 // knowing the Basic and Weak commands).
 
 /// <summary>
-/// Handles the <see cref="IBasicLoginCommand"/>: the session is opened with a <see cref="BasicLoginPayload"/> by the
-/// "Basic" <see cref="ILoginProvider"/> (CK.DB.User.UserPassword for instance).
+/// Handles the <see cref="IBasicLoginCommand"/>: its payload is the command itself, for the "Basic"
+/// <see cref="ILoginProvider"/> (CK.DB.User.UserPassword for instance).
 /// <para>
 /// This handler is here until the old authentication stack is retired: it then moves to CK.DB.User.UserPassword.
 /// </para>
@@ -34,7 +34,8 @@ public sealed class AuthCenterBasicLoginHandler : ISingletonAutoService
     [CommandHandler]
     public ValueTask<ISessionResult> HandleAsync( IActivityMonitor monitor, IBasicLoginCommand cmd, IAuthenticationSessionOpener opener )
     {
-        return opener.OpenSessionAsync( monitor, cmd, BasicLoginPayload.Scheme, new BasicLoginPayload( cmd.UserName, cmd.Password ), cmd.RememberMe );
+        // The payload of the "Basic" provider is the command itself (like the "Weak" one).
+        return opener.OpenSessionAsync( monitor, cmd, "Basic", cmd, cmd.RememberMe );
     }
 }
 

@@ -107,8 +107,8 @@ A package that implements an authentication provider handles its login commands,
 CK.DB.User.UserPassword and CK.DB.Actor.WeakActor. But these packages are also used by the old authentication stack, and
 a handler needs CK.Cris.Authentication, which defines the same `CK.Auth.CrisAuthenticationService` as the old CK.Cris.Auth
 (CS0433 in the generated code of an old-stack application). **When the old stack is retired, these handlers go back to
-their DB packages.** The Basic handler opens the session with a `BasicLoginPayload`; the Weak one uses the command as
-the payload and never remembers the session. The `IWeakZoneLoginCommand` handler is in CK.DB.Zone.WeakActor.
+their DB packages.** Both use the command as the payload (the "Basic" login provider is CK.DB.User.UserPassword's);
+the Weak one never remembers the session. The `IWeakZoneLoginCommand` handler is in CK.DB.Zone.WeakActor.
 
 A session command that reaches the opener while the Authentication Center is remote fails closed: it is never
 executed locally (the relay happens before, see below).
