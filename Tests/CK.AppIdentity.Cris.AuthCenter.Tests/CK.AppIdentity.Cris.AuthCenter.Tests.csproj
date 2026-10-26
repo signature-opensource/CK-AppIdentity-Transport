@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.2-0.cris-auth.0.ci.12" />
-    <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.2-0.cris-auth.0.ci.2" />
+    <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.2-0.cris-auth.0.ci.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="CK.Testing.NUnit" Version="17.0.2-0.cris-auth.0.ci.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
