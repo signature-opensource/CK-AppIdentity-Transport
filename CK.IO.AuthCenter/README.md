@@ -1,7 +1,8 @@
 # CK.IO.AuthCenter
 
-The relay protocol between the fronts and their remote Authentication Center (see
-[CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md)):
+The relay protocol between the fronts and their remote Authentication Center. It is used by
+[CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md) and its two sides, which describe what the
+fronts and the Authentication Center do with it:
 
 - [`IRelaySessionCommand`](IRelaySessionCommand.cs): the relayed session command, the bearer token and the session proof
   presented to the front, and the hashes of the secrets the front prepared (the secrets never leave the front). For the

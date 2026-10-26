@@ -84,11 +84,13 @@ end is checked before they are deleted. An expired session that is presented is 
 ## Scheme families ([`IAuthCenterScheme`](IAuthCenterScheme.cs))
 
 This package knows no login technology beyond the direct Basic and Weak commands (temporarily, see above): each family
-of schemes is a package of its own ("Package First": a simple application references little):
-[CK.AppIdentity.Cris.AuthCenter.Oidc](../CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) for the "Oidc.&lt;Suffix&gt;"
-schemes, [CK.AppIdentity.Cris.AuthCenter.Passkey](../CK.AppIdentity.Cris.AuthCenter.Passkey/README.md) for the "Passkey" one.
-`AuthCenterResults` and `AuthCenterSessionService.GetCriticalSessionAsync` (a Critical, not impersonated session) are
-public for the families that handle their own commands.
+of schemes is a package of its own ("Package First": a simple application references little). For concrete families
+built on this package, see [CK.AppIdentity.Cris.AuthCenter.Oidc](../CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) for
+the "Oidc.&lt;Suffix&gt;" schemes and [CK.AppIdentity.Cris.AuthCenter.Passkey](../CK.AppIdentity.Cris.AuthCenter.Passkey/README.md)
+for the "Passkey" one.
+`AuthCenterSessionService.GetCriticalSessionAsync` (a Critical, not impersonated session) is public for the families that
+handle their own commands, and so is `AuthCenterResults`, from the core
+[CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md).
 
 - **A family is a feature of the local party** of its Authentication Center (`LocalAuthCenter.SchemeFamilies`,
   `FindSchemeFamily`): one instance per local Authentication Center (the root and every tenant), added by the family's

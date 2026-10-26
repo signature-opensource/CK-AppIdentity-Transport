@@ -4,7 +4,7 @@ The passkey (WebAuthn) logins of the Authentication Center ([CK.AppIdentity.Cris
 the "Passkey" scheme. The Authentication Center alone runs the protocol and verifies, with
 [Fido2NetLib](https://github.com/passwordless-lib/fido2-net-lib): the browser's response is signed by the user's
 authenticator over a challenge chosen here, so a front can relay it but cannot forge nor replay it. The passkeys are kept by
-an `IPasskeyStore` ([CK.AuthenticationInfo.Passkey](../../CK-Auth-Abstractions/CK.AuthenticationInfo.Passkey/README.md)),
+an `IPasskeyStore` ([CK.AuthenticationInfo.Passkey](https://github.com/signature-opensource/CK-Auth-Abstractions/blob/stable/CK.AuthenticationInfo.Passkey/README.md)),
 implemented by a storage package; the commands are in CK.IO.Authentication.Passkey.
 
 An application that doesn't use passkeys doesn't reference this package (nor Fido2NetLib and its NSec/libsodium dependency).

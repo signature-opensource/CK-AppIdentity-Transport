@@ -1,6 +1,7 @@
 # Mutual TLS transport (`mtls:`)
 
-The Zero Protocol inside a mutually authenticated TLS channel. Payloads are unreadable on the wire,
+The Zero Protocol of [CK.AppIdentity.TransportLayer](../CK.AppIdentity.TransportLayer/README.md) inside a
+mutually authenticated TLS channel. Payloads are unreadable on the wire,
 which is the whole point — and why this is a separate transport rather than a replacement for `tcp:`,
 where readable packets are a deliberate operational requirement.
 
@@ -44,7 +45,8 @@ would carry no information; the handshake accepts any well-formed certificate on
 sounds alarming, read the next paragraph before concluding anything.
 
 **The binding is an attestation inside the signed handshake.** Each side states the SHA-256 of the
-certificate it presented, inside the Zero Protocol transcript it signs with its identity key, and each
+certificate it presented, inside the Zero Protocol transcript it signs (with the operational credential
+its identity key issued), and each
 checks that statement against what TLS actually handed it. Anything terminating TLS between two peers
 has to present a certificate of its own, and cannot make either peer sign a statement about a
 certificate that peer never held. It may forward the signed bytes unchanged — that is exactly what
@@ -66,9 +68,11 @@ resolves to one party while claiming to be another is refused.
 
 Because the credential is derived, its key matches no pinned identity; what names the party is the
 **signature** on it. `IdentityIssuance` verifies that signature against the bare pinned
-SubjectPublicKeyInfo — net8.0 offers no supported way to do this, so it reads the certificate's own
-`SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }` encoding and checks the signature
-directly. It is not a chain validator and does not pretend to be one; see its documentation.
+SubjectPublicKeyInfo. .NET chain building validates a certificate against an issuer *certificate*, not
+against a bare key, so the check (`DerivedCertificateVerifier`, in CK.AppIdentity.KeyManagement) reads
+the certificate's own `SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }` encoding and
+checks the signature directly. It is not a chain validator and does not pretend to be one; see its
+documentation.
 
 A party whose identity is not trusted yet resolves to nothing. That is normal, not a rejection: with
 no pinned key there is nothing to check a signature against, so first contact takes the same path a

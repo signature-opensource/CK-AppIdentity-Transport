@@ -2,7 +2,7 @@
 
 The `AuthCenter` feature identifies a Party that centralizes authentication of parties and users
 for the application level Cris commands. Only one such (opt-in) feature can exist per `ILocalParty` (that is
-the root `IApplicationIdentityService` singleton or one of its `ITenantDomain`).
+the root `IApplicationIdentityService` singleton or one of its `ITenantDomainParty`).
 
 Everything related to authentication lives here, not in CK.AppIdentity.Cris: a Cris channel works without any
 authentication concern.
@@ -10,7 +10,8 @@ authentication concern.
 ## The two sides
 
 The Authentication Center is a singleton within its domain: one party implements it, the other ones use it. The feature
-is split accordingly, and **an application has one role**, given by the package it references:
+is split accordingly, and **an application has one role**, given by the package it references. The two sides are
+implemented in packages that depend on this one:
 
 | Package | Role | Feature added to each local party |
 |---|---|---|
@@ -23,9 +24,6 @@ role is checked at setup: an AuthCenter application whose local party designates
 designates itself, fails to start. The role is chosen by the installed packages (the DI composition), never by a runtime
 check: a front has no session handler at all. The Local and Remote packages cannot be both referenced (see the
 CK.AppIdentity feature drivers).
-
-> Later, when the endpoints are subordinated to their local party (an engine evolution), the role will be chosen per
-> local party instead of per application.
 
 ## Configuration
 
