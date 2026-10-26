@@ -53,7 +53,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     // local AuthCenter or no presented session: GetCurrentAsync then fails.
     async ValueTask<IDisposable?> LockAsync()
     {
-        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>()?.Local;
+        var center = _localParty.LocalParty.GetFeature<LocalAuthCenter>();
         var key = _endpoint.PresentedProof?.SessionKey;
         return center == null || key == null ? null : await center.Sessions.LockAsync( key ).ConfigureAwait( false );
     }
@@ -64,23 +64,19 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     // are refused without revoking the session: not a theft signal in the window, but not a usable proof either.
     async ValueTask<(Current? Current, string? Error, string? ResName)> GetCurrentAsync( IActivityMonitor monitor, bool revokeOnMismatch, bool acceptPrevious )
     {
-        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>();
+        var center = _localParty.LocalParty.GetFeature<LocalAuthCenter>();
         if( center == null ) return (null, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter");
-        if( center.Local == null )
-        {
-            return (null, $"The AuthCenter of '{_localParty.LocalParty}' is the remote '{center.AuthCenter}': this cannot be done here.", "Authentication.RemoteAuthCenter");
-        }
         var proof = _endpoint.PresentedProof;
         if( proof == null ) return (null, "No session.", "Authentication.NoSession");
         if( !AuthCenterSession.TryParseSessionKey( proof.SessionKey, out var actualActorId, out var sessionId ) )
         {
             return (null, "Invalid session.", "Authentication.InvalidSession");
         }
-        var store = center.Local.Sessions;
+        var store = center.Sessions;
         var session = await store.TryReadAsync( monitor, actualActorId, sessionId ).ConfigureAwait( false );
         if( session == null ) return (null, "Invalid session.", "Authentication.InvalidSession");
         bool fromPrevious = false;
-        if( !session.Matches( proof ) && session.MatchesPrevious( proof, DateTime.UtcNow, center.Local.Options.RefreshGraceWindow ) )
+        if( !session.Matches( proof ) && session.MatchesPrevious( proof, DateTime.UtcNow, center.Options.RefreshGraceWindow ) )
         {
             if( !acceptPrevious ) return (null, "Invalid session.", "Authentication.InvalidSession");
             monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"The previous secrets of the session of actor #{actualActorId} are used (the answer of its last rotation may have been lost): accepted once." );
@@ -100,7 +96,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
             store.TryDelete( monitor, actualActorId, sessionId );
             return (null, "The session expired.", "Authentication.SessionExpired");
         }
-        return (new Current( center.Local, session, fromPrevious ), null, null);
+        return (new Current( center, session, fromPrevious ), null, null);
     }
 
     /// <summary>

@@ -23,7 +23,7 @@ public class RefreshGraceTests
     static async Task<AuthCenterSession?> ReadSessionAsync( AuthCenterApp app, string sessionKey )
     {
         AuthCenterSession.TryParseSessionKey( sessionKey, out var actorId, out var sessionId ).ShouldBeTrue();
-        return await app.Center.Local.ShouldNotBeNull().Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId );
+        return await app.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId );
     }
 
     // Logs in Albert and refreshes: returns the secrets of the login (now the previous ones) and the current ones.
@@ -39,7 +39,7 @@ public class RefreshGraceTests
     public async Task the_grace_window_is_1_minute_by_default_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
-        app.Center.Local.ShouldNotBeNull().Options.RefreshGraceWindow.ShouldBe( TimeSpan.FromMinutes( 1 ) );
+        app.LocalCenter.Options.RefreshGraceWindow.ShouldBe( TimeSpan.FromMinutes( 1 ) );
         AuthCenterOptions.MaxRefreshGraceWindow.ShouldBe( TimeSpan.FromMinutes( 5 ) );
     }
 
@@ -126,7 +126,7 @@ public class RefreshGraceTests
     public async Task a_version_1_session_file_has_no_previous_secrets_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
-        var store = app.Center.Local.ShouldNotBeNull().Sessions;
+        var store = app.LocalCenter.Sessions;
         var sessionId = AuthCenterSession.NewSessionId();
         var folder = app.Identity.LocalFileStore.FolderPath.Combine( "AuthCenter/Sessions/1004" );
         Directory.CreateDirectory( folder );
@@ -153,7 +153,7 @@ public class RefreshGraceTests
     public async Task the_operations_on_a_session_are_serialized_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
-        var store = app.Center.Local.ShouldNotBeNull().Sessions;
+        var store = app.LocalCenter.Sessions;
         var first = await store.LockAsync( "1.session" );
         var second = store.LockAsync( "1.session" ).AsTask();
         var other = store.LockAsync( "2.session" ).AsTask();

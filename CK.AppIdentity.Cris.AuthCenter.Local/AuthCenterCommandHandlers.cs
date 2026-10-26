@@ -58,23 +58,17 @@ public sealed class AuthCenterCommandHandlers : ISingletonAutoService
 
     /// <summary>
     /// Handles the <see cref="IGetLoginSchemesQCommand"/>: the provider names of the login providers of the AuthCenter.
-    /// It is an <c>ICommandAuthCenter</c>: a front's endpoint relays it to its remote AuthCenter (that may be the only one
-    /// with providers). Reaching this handler on a front means that its endpoint didn't relay it: no scheme.
+    /// It is an <c>ICommandAuthCenter</c>: a front's endpoint relays it to its remote AuthCenter.
     /// </summary>
     [CommandHandler]
     public IList<string> Handle( IActivityMonitor monitor, IGetLoginSchemesQCommand command, CurrentLocalParty localParty )
     {
-        var center = localParty.LocalParty.GetFeature<CrisAuthCenter>();
-        if( center != null && !center.IsLocal )
-        {
-            monitor.Warn( $"IGetLoginSchemesQCommand reached '{localParty.LocalParty}' whose AuthCenter is the remote '{center.AuthCenter}': it should have been relayed." );
-            return [];
-        }
+        var center = localParty.LocalParty.GetFeature<LocalAuthCenter>();
         var names = _providers.SelectMany( p => p.ProviderNames ).Distinct( StringComparer.OrdinalIgnoreCase ).ToList();
         // The provider of a scheme family is usable through the schemes of its family only.
-        if( center?.Local != null )
+        if( center != null )
         {
-            foreach( var family in center.Local.SchemeFamilies )
+            foreach( var family in center.SchemeFamilies )
             {
                 if( names.RemoveAll( n => string.Equals( n, family.ProviderName, StringComparison.OrdinalIgnoreCase ) ) > 0 )
                 {

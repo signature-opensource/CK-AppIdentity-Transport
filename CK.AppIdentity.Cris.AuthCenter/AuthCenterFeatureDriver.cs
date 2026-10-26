@@ -30,6 +30,12 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 ///   <item>The Authentication Center must have the "KeyManagement" feature: its keys verify the tokens.</item>
 /// </list>
 /// </para>
+/// <para>
+/// This driver is the core shared by the two sides of the feature: the <c>LocalAuthCenterFeatureDriver</c>
+/// (CK.AppIdentity.Cris.AuthCenter.Local: this application is the Authentication Center of its local parties) and the
+/// <c>RemoteAuthCenterFeatureDriver</c> (CK.AppIdentity.Cris.AuthCenter.Remote: this application is a front of a remote
+/// one). An application has one role: it references one of them.
+/// </para>
 /// </summary>
 public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
@@ -45,16 +51,10 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="keys">
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
-    /// <param name="schemeConfigurations">The configuration sub-sections declared by the installed scheme families.</param>
-    public AuthCenterFeatureDriver( ApplicationIdentityService s,
-                                    KeyManagementFeatureDriver keys,
-                                    IEnumerable<IAuthCenterSchemeConfiguration> schemeConfigurations )
+    public AuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys )
         : base( s, isAllowedByDefault: false )
     {
-        _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
     }
-
-    readonly string[] _schemeKeys;
 
     /// <inheritdoc />
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
@@ -92,7 +92,6 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
         // A destroyed tenant domain takes its AuthCenter (and all its remotes) with it.
-        if( party is ILocalParty local ) local.GetFeature<CrisAuthCenter>()?.Local?.OnTeardown();
         // A destroyed remote that is the AuthCenter of a living local party is an issue.
         if( party is IRemoteParty remote
             && remote.Owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter f
@@ -104,14 +103,7 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
     }
 
     /// <inheritdoc />
-    protected override Task TeardownAsync( FeatureLifetimeContext context )
-    {
-        foreach( var local in context.GetAllLocals() )
-        {
-            local.GetFeature<CrisAuthCenter>()?.Local?.OnTeardown();
-        }
-        return Task.CompletedTask;
-    }
+    protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
 
     bool PlugLocal( IActivityMonitor monitor, ILocalParty local )
     {
@@ -150,21 +142,14 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
             monitor.Error( $"'{authCenter}' cannot be the AuthCenter of '{local}': it has no 'KeyManagement' feature (its keys verify the tokens)." );
             return false;
         }
-        // The settings are the ones of a local AuthCenter: a remote one has its own.
-        var settings = authCenter.Configuration.Configuration.TryGetSection( ConfigurationKey );
-        if( settings != null && !settings.GetChildren().Any() ) settings = null;
-        LocalAuthCenter? localCenter = null;
-        if( authCenter == local )
-        {
-            var options = AuthCenterOptions.Read( monitor, settings, _schemeKeys );
-            if( options == null ) return false;
-            localCenter = new LocalAuthCenter( monitor, local, options, settings );
-        }
-        else if( settings != null )
+        // The settings are the ones of a local AuthCenter (read by the LocalAuthCenterFeatureDriver): a remote one has its own.
+        if( authCenter != local
+            && authCenter.Configuration.Configuration.TryGetSection( ConfigurationKey ) is { } settings
+            && settings.GetChildren().Any() )
         {
             monitor.Warn( $"The '{settings.Path}' settings are ignored: '{authCenter}' is a remote AuthCenter (its settings are its own)." );
         }
-        var f = new CrisAuthCenter( local, authCenter, localCenter );
+        var f = new CrisAuthCenter( local, authCenter );
         local.AddFeature( f );
         foreach( var r in local.Remotes )
         {

@@ -1,6 +1,6 @@
 # CK.AppIdentity.Cris.AuthCenter.Passkey
 
-The passkey (WebAuthn) logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md)):
+The passkey (WebAuthn) logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md): only an AuthCenter application references it; a front only needs the commands):
 the "Passkey" scheme. The Authentication Center alone runs the protocol and verifies, with
 [Fido2NetLib](https://github.com/passwordless-lib/fido2-net-lib): the browser's response is signed by the user's
 authenticator over a challenge chosen here, so a front can relay it but cannot forge nor replay it. The passkeys are kept by
@@ -45,7 +45,8 @@ provider name.
   a stolen session or by an impersonator would be a lasting access to the account), and completed by **the session that
   started it**. Discoverable credentials (`residentKey: "required"`), ES256 and RS256, attestation `none` (the AAGUID is
   declared, not attested: display only). A credential identifier that is already stored (for any actor) is refused.
-- **The responses** are limited to 16 KB when they enter the System. Nothing in them is secret (a signature over a one use
+- **The responses** are limited to 16 KB when they enter the System (the incoming validators are in
+  CK.IO.Authentication.Passkey: a front that relays them refuses them too). Nothing in them is secret (a signature over a one use
   challenge, a public key).
 
 On success, the session is opened with a `PasskeyLoginPayload` (the verified credential identifier, counter and backup

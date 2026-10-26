@@ -27,52 +27,13 @@ namespace CK.AppIdentity.Cris.AuthCenter.Passkey;
 public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
 {
     /// <summary>
-    /// The maximal length of a browser response: 16 KB.
-    /// </summary>
-    public const int MaxResponseLength = 16 * 1024;
-
-    /// <summary>
-    /// The maximal length of a passkey name: 128.
-    /// </summary>
-    public const int MaxNameLength = 128;
-
-    /// <summary>
     /// The name of a registered passkey when the command gives none.
     /// </summary>
     public const string DefaultName = "Passkey";
 
     #region Validation
-    /// <summary>
-    /// Limits the size of a login response when it enters the System.
-    /// </summary>
-    [IncomingValidator]
-    public void ValidateResponse( UserMessageCollector c, IPasskeyLoginCommand command ) => ValidateResponse( c, command.Response );
-
-    /// <summary>
-    /// Limits the size of a registration response when it enters the System.
-    /// </summary>
-    [IncomingValidator]
-    public void ValidateResponse( UserMessageCollector c, IPasskeyRegistrationCommand command ) => ValidateResponse( c, command.Response );
-
-    /// <summary>
-    /// Checks the name of a new passkey when it enters the System.
-    /// </summary>
-    [IncomingValidator]
-    public void ValidateName( UserMessageCollector c, IStartPasskeyRegistrationCommand command )
-    {
-        if( command.Name != null && (string.IsNullOrWhiteSpace( command.Name ) || command.Name.Length > MaxNameLength) )
-        {
-            c.Error( $"The passkey name must not be blank and must have at most {MaxNameLength} characters.", "Authentication.InvalidPasskeyName" );
-        }
-    }
-
-    static void ValidateResponse( UserMessageCollector c, string response )
-    {
-        if( string.IsNullOrEmpty( response ) || response.Length > MaxResponseLength )
-        {
-            c.Error( $"The passkey response must not be empty and must have at most {MaxResponseLength} characters.", "Authentication.InvalidPasskeyResponse" );
-        }
-    }
+    // The incoming validation of the passkey commands (response size, name) is in CK.IO.Authentication.Passkey: a front
+    // that relays them runs it too.
 
     /// <summary>
     /// Checks that passkeys are available and that the endpoint's origin is accepted.
@@ -127,7 +88,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
 
     static AuthCenterPasskey? FindFamily( CurrentLocalParty localParty )
     {
-        return localParty.LocalParty.GetFeature<CrisAuthCenter>()?.Local != null
+        return localParty.LocalParty.GetFeature<LocalAuthCenter>() != null
                && localParty.LocalParty.GetFeature<AuthCenterPasskey>() is { IsAvailable: true } f
                 ? f
                 : null;

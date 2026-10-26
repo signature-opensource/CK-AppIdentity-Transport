@@ -66,7 +66,7 @@ public class EncryptionKeysTests
         await using( var app = await AuthCenterApp.StartAsync() )
         {
             folder = app.Identity.LocalFileStore.FolderPath.Combine( "AuthCenter/EncryptionKeys" );
-            var local = app.Center.Local.ShouldNotBeNull();
+            var local = app.LocalCenter;
             var signer = app.Identity.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>();
             var keys = local.EncryptionKeys;
             first = keys.GetPublished( TestHelper.Monitor, signer, utcNow ).PublicKey;
@@ -83,7 +83,7 @@ public class EncryptionKeysTests
         // The keys are persisted (protected) in the local file store.
         await using( var app = await AuthCenterApp.StartAsync() )
         {
-            app.Center.Local.ShouldNotBeNull().EncryptionKeys.Find( Id( first ), utcNow ).ShouldNotBeNull();
+            app.LocalCenter.EncryptionKeys.Find( Id( first ), utcNow ).ShouldNotBeNull();
         }
         // These keys are in the future: the other tests must not use them.
         System.IO.Directory.Delete( folder, recursive: true );

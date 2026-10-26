@@ -18,7 +18,8 @@ namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 [TestFixture]
 public class AuthCenterFeatureTests
 {
-    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, bool withOidc = false )
+    // Without local or remote, only the core driver: the designation of the AuthCenters.
+    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, bool withOidc = false, bool local = false, bool remote = false )
     {
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ).ShouldNotBeNull();
         var services = new ServiceCollection();
@@ -31,6 +32,16 @@ public class AuthCenterFeatureTests
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
         services.AddSingleton<AuthCenterFeatureDriver>();
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<AuthCenterFeatureDriver>() );
+        if( local || withOidc )
+        {
+            services.AddSingleton<LocalAuthCenterFeatureDriver>();
+            services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<LocalAuthCenterFeatureDriver>() );
+        }
+        if( remote )
+        {
+            services.AddSingleton<RemoteAuthCenterFeatureDriver>();
+            services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<RemoteAuthCenterFeatureDriver>() );
+        }
         if( withOidc )
         {
             services.AddSingleton<IAuthCenterSchemeConfiguration, Oidc.AuthCenterOidcConfiguration>();
@@ -65,10 +76,10 @@ public class AuthCenterFeatureTests
         Assert.Fail( $"Log containing '{fragment}' not found in:{Environment.NewLine}{string.Join( Environment.NewLine, all )}" );
     }
 
-    static async Task StartMustFailAsync( string expectedError, Action<MutableConfigurationSection> configuration )
+    static async Task StartMustFailAsync( string expectedError, Action<MutableConfigurationSection> configuration, bool local = false, bool remote = false )
     {
         using var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
-        await Should.ThrowAsync<Exception>( () => StartAsync( configuration ) );
+        await Should.ThrowAsync<Exception>( () => StartAsync( configuration, local: local, remote: remote ) );
         await ShouldLogAsync( logs, expectedError );
     }
 
@@ -86,7 +97,6 @@ public class AuthCenterFeatureTests
             c["Parties:2:DisallowFeatures"] = "AuthCenter";
         } );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
-        f.IsLocal.ShouldBeTrue();
         f.IsAvailable.ShouldBeTrue();
         f.Owner.ShouldBeSameAs( s );
         f.AuthCenter.ShouldBeSameAs( s );
@@ -133,7 +143,6 @@ public class AuthCenterFeatureTests
         } );
         var center = s.Remotes.Single( r => r.PartyName == "$Center" );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
-        f.IsLocal.ShouldBeFalse();
         f.AuthCenter.ShouldBeSameAs( center );
         center.GetFeature<CrisAuthCenter>().ShouldBeSameAs( f );
         s.Remotes.Single( r => r.PartyName == "$Other" ).GetFeature<CrisAuthCenter>().ShouldBeSameAs( f );
@@ -154,7 +163,7 @@ public class AuthCenterFeatureTests
             c["Parties:1:FullName"] = "Opal/$Opal";
             c["Parties:1:Parties:0:PartyName"] = "OpalBox";
         } );
-        s.GetFeature<CrisAuthCenter>().ShouldNotBeNull().IsLocal.ShouldBeTrue();
+        s.GetFeature<CrisAuthCenter>().ShouldNotBeNull().AuthCenter.ShouldBeSameAs( s );
 
         var acme = s.TenantDomains.Single( d => d.PartyName == "$Acme" );
         var acmeCenter = acme.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
@@ -271,6 +280,50 @@ public class AuthCenterFeatureTests
         f.IsAvailable.ShouldBeTrue();
     }
 
+    [Test]
+    public async Task an_application_is_the_AuthCenter_or_a_front_not_both_Async()
+    {
+        // The core alone designates the AuthCenters: here the root is its own one, Acme uses a remote.
+        static void Mixed( MutableConfigurationSection c )
+        {
+            c["FullName"] = "D/$SaaS";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter"] = "true";
+            c["Parties:0:FullName"] = "Acme/$Acme";
+            c["Parties:0:Parties:0:PartyName"] = "AcmeCenter";
+            c["Parties:0:Parties:0:AuthCenter"] = "true";
+        }
+        await using( var s = await StartAsync( Mixed ) )
+        {
+            s.GetFeature<LocalAuthCenter>().ShouldBeNull();
+            s.GetFeature<RemoteAuthCenter>().ShouldBeNull();
+        }
+        // An AuthCenter application cannot have a remote AuthCenter, a front cannot be its own AuthCenter.
+        await StartMustFailAsync( "' but this application is an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local)", Mixed, local: true );
+        await StartMustFailAsync( "is its own AuthCenter but this application is a front of a remote AuthCenter", Mixed, remote: true );
+
+        // Each side adds its feature.
+        await using( var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter"] = "true";
+        }, local: true ) )
+        {
+            s.GetRequiredFeature<LocalAuthCenter>().Center.ShouldBeSameAs( s.GetRequiredFeature<CrisAuthCenter>() );
+        }
+        await using( var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$Front";
+            c["AllowFeatures"] = "AuthCenter";
+            c["Parties:0:PartyName"] = "Center";
+            c["Parties:0:AuthCenter"] = "true";
+        }, remote: true ) )
+        {
+            s.GetRequiredFeature<RemoteAuthCenter>().Center.AuthCenter.PartyName.ShouldBe( "$Center" );
+        }
+    }
+
     static void OidcScheme( MutableConfigurationSection c, string prefix = "" )
     {
         c[$"{prefix}AuthCenter:Oidc:Test:Authority"] = "https://idp.example.com";
@@ -289,7 +342,7 @@ public class AuthCenterFeatureTests
             c["FullName"] = "D/$App";
             c["AllowFeatures"] = "AuthCenter";
             OidcScheme( c );
-        } );
+        }, local: true );
 
         // With the package, the family is a feature of the local party.
         await using var s = await StartAsync( c =>
@@ -298,7 +351,7 @@ public class AuthCenterFeatureTests
             c["AllowFeatures"] = "AuthCenter";
             OidcScheme( c );
         }, withOidc: true );
-        var center = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull();
+        var center = s.GetRequiredFeature<LocalAuthCenter>();
         center.SchemeFamilies.ShouldHaveSingleItem().Schemes.ShouldBe( ["Oidc.Test"] );
         center.FindSchemeFamily( "oidc.test" ).ShouldBeOfType<Oidc.AuthCenterOidc>();
     }
@@ -312,7 +365,7 @@ public class AuthCenterFeatureTests
             c["AllowFeatures"] = "AuthCenter";
             c["AuthCenter"] = "true";
         }, withOidc: true );
-        var family = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+        var family = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         family.ProviderName.ShouldBe( "Oidc" );
         family.Schemes.ShouldBeEmpty( "It still hides the 'Oidc' provider name in the scheme listing." );
     }
@@ -326,7 +379,7 @@ public class AuthCenterFeatureTests
             c["AllowFeatures"] = "AuthCenter";
             OidcScheme( c );
         }, withOidc: true );
-        var rootFamily = s.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+        var rootFamily = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
 
         var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
         {
@@ -339,7 +392,7 @@ public class AuthCenterFeatureTests
             c["AuthCenter:Oidc:Other:Scopes"] = "openid";
             c["AuthCenter:Oidc:Other:CallbackUrls:0"] = "https://acme.example.com/.auth/oidc/callback";
         } );
-        var acmeFamily = acme.ShouldNotBeNull().GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull().SchemeFamilies.ShouldHaveSingleItem();
+        var acmeFamily = acme.ShouldNotBeNull().GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         acmeFamily.ShouldNotBeSameAs( rootFamily );
         acmeFamily.Schemes.ShouldBe( ["Oidc.Test", "Oidc.Other"], ignoreOrder: true );
     }

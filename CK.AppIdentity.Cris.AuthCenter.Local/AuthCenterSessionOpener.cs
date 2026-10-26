@@ -15,7 +15,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
 /// Implements the <see cref="IAuthenticationSessionOpener"/> of a local Authentication Center: the
-/// <see cref="CrisAuthCenter"/> of the <see cref="CurrentLocalParty"/> must be <see cref="CrisAuthCenter.IsLocal"/>.
+/// <see cref="CurrentLocalParty"/> must have its <see cref="LocalAuthCenter"/>.
 /// <para>
 /// The login sequence is: the <see cref="ILoginProvider"/> of the scheme (only a check when there are
 /// <see cref="ILoginValidator"/>), the validators, the actual login. An unregistered user can be created
@@ -71,16 +71,10 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         Throw.CheckNotNullOrWhiteSpaceArgument( scheme );
         Throw.CheckNotNullArgument( payload );
 
-        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>();
+        var center = _localParty.LocalParty.GetFeature<LocalAuthCenter>();
         if( center == null )
         {
             return Failure( monitor, command, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter" );
-        }
-        // The relay to a remote AuthCenter happens at the endpoint, before the handlers: a session command
-        // that reaches this point with a remote AuthCenter must not be executed here.
-        if( center.Local == null )
-        {
-            return Failure( monitor, command, $"The AuthCenter of '{_localParty.LocalParty}' is the remote '{center.AuthCenter}': the login cannot be done here.", "Authentication.RemoteAuthCenter" );
         }
         var providerName = LoginScheme.GetProviderName( scheme );
         var provider = _providers.FirstOrDefault( p => p.ProviderNames.Contains( providerName, StringComparer.OrdinalIgnoreCase ) );
@@ -95,7 +89,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
                         : null;
         var context = new LoginContext( scheme, payload, _initial, userData );
         // An account can be created only for a scheme whose family allows it (fail closed: Basic and Weak never do).
-        bool allowsAccountCreation = center.Local.FindSchemeFamily( scheme )?.AllowsAccountCreation( scheme ) is true;
+        bool allowsAccountCreation = center.FindSchemeFamily( scheme )?.AllowsAccountCreation( scheme ) is true;
         var r = await LoginAsync( monitor, provider, context, allowsAccountCreation ).ConfigureAwait( false );
         if( context.HasError )
         {
@@ -105,7 +99,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         {
             return Failure( monitor, command, r?.FailureReason ?? "Login failed.", "Authentication.LoginFailed" );
         }
-        return await OpenAsync( monitor, command, center.Local, r.Actor!, rememberMe ).ConfigureAwait( false );
+        return await OpenAsync( monitor, command, center, r.Actor!, rememberMe ).ConfigureAwait( false );
     }
 
     async ValueTask<ActorLoginResult?> LoginAsync( IActivityMonitor monitor, ILoginProvider provider, LoginContext context, bool allowsAccountCreation )

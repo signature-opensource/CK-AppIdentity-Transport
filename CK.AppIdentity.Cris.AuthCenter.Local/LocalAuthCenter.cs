@@ -9,11 +9,12 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The part of a <see cref="CrisAuthCenter"/> that exists only when this application is the Authentication Center
-/// of its local party (see <see cref="CrisAuthCenter.Local"/>): its settings, its sessions and the signing of its tokens.
+/// The feature of a local party that is its own Authentication Center: its settings, its sessions and the signing of its
+/// tokens. Added by the <see cref="LocalAuthCenterFeatureDriver"/>.
 /// </summary>
 public sealed class LocalAuthCenter
 {
+    readonly CrisAuthCenter _center;
     readonly ILocalParty _party;
     readonly AuthCenterOptions _options;
     readonly AuthCenterSessionStore _sessions;
@@ -22,9 +23,11 @@ public sealed class LocalAuthCenter
 
     readonly ImmutableConfigurationSection? _settings;
 
-    internal LocalAuthCenter( IActivityMonitor monitor, ILocalParty party, AuthCenterOptions options, ImmutableConfigurationSection? settings )
+    internal LocalAuthCenter( IActivityMonitor monitor, CrisAuthCenter center, AuthCenterOptions options, ImmutableConfigurationSection? settings )
     {
-        _party = party;
+        Throw.DebugAssert( center.AuthCenter == center.Owner );
+        _center = center;
+        var party = _party = center.Owner;
         _options = options;
         _settings = settings;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
@@ -90,6 +93,11 @@ public sealed class LocalAuthCenter
     internal AuthCenterEncryptionKeys EncryptionKeys => _encryptionKeys;
 
     internal void OnTeardown() => _party.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
+
+    /// <summary>
+    /// Gets the shared <see cref="CrisAuthCenter"/> feature (its <see cref="CrisAuthCenter.AuthCenter"/> is the <see cref="Party"/>).
+    /// </summary>
+    public CrisAuthCenter Center => _center;
 
     /// <summary>
     /// Gets the local party that is the Authentication Center.

@@ -10,6 +10,6 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter\CK.AppIdentity.Cris.AuthCenter.csproj" />
+    <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter.Local\CK.AppIdentity.Cris.AuthCenter.Local.csproj" />
   </ItemGroup>
 </Project>

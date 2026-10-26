@@ -20,7 +20,7 @@ public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureD
     /// <param name="s">The application identity service.</param>
     /// <param name="authCenter">The AuthCenter feature driver (it must be set up before this one).</param>
     /// <param name="services">The services: the passkeys are available only with an <see cref="IPasskeyStore"/>.</param>
-    public AuthCenterPasskeyFeatureDriver( ApplicationIdentityService s, AuthCenterFeatureDriver authCenter, IServiceProvider services )
+    public AuthCenterPasskeyFeatureDriver( ApplicationIdentityService s, LocalAuthCenterFeatureDriver authCenter, IServiceProvider services )
         : base( s, isAllowedByDefault: true )
     {
         _hasStore = services.GetService<IPasskeyStore>() != null;
@@ -51,7 +51,7 @@ public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureD
 
     bool Plug( IActivityMonitor monitor, ILocalParty local )
     {
-        var center = local.GetFeature<CrisAuthCenter>()?.Local;
+        var center = local.GetFeature<LocalAuthCenter>();
         if( center == null ) return true;
         AuthCenterPasskeyOptions? options = null;
         if( center.GetSchemeSettings( AuthCenterPasskeyConfiguration.Key ) is { } section )

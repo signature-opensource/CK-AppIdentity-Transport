@@ -1,6 +1,6 @@
 # CK.AppIdentity.Cris.AuthCenter.Oidc
 
-The OpenID Connect logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md)):
+The OpenID Connect logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md): only an AuthCenter application references it; a front only needs the commands):
 the "Oidc.&lt;Suffix&gt;" schemes, with the authorization code flow and PKCE. The local Authentication Center alone holds the
 client secrets: a front relays the start of a login and the callback, like any session command.
 

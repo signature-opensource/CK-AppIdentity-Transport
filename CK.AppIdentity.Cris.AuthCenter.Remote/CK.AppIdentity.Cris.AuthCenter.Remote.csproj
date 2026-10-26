@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>CK.AppIdentity.Cris.AuthCenter</RootNamespace>
+    <Description>The Remote side of the "AuthCenter" feature: this application is a front of a remote AuthCenter (it relays the session commands and the commands executed by the AuthCenter, with their sensitive fields encrypted for it).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter\CK.AppIdentity.Cris.AuthCenter.csproj" />
+  </ItemGroup>
+</Project>

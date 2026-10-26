@@ -27,6 +27,11 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 static class AuthCenterFieldEncryption
 {
     internal const string Prefix = "ckenc1:";
+
+    /// <summary>
+    /// The purpose of the signature of a published encryption key of the Authentication Center.
+    /// </summary>
+    internal const string EncryptionKeyPurpose = "CK.AuthCenter.EncryptionKey";
     internal const int KeyIdLength = 8;
 
     /// <summary>

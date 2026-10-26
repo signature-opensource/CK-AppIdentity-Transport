@@ -5,7 +5,7 @@ namespace CK.AppIdentity.Cris.AuthCenter.Oidc;
 
 /// <summary>
 /// Adds the <see cref="AuthCenterOidc"/> scheme family to every local Authentication Center, the dynamic tenants included,
-/// with the schemes of its "AuthCenter:Oidc" section (possibly none). It depends on the <see cref="AuthCenterFeatureDriver"/>:
+/// with the schemes of its "AuthCenter:Oidc" section (possibly none). It depends on the <see cref="LocalAuthCenterFeatureDriver"/>:
 /// the local Authentication Centers exist when it runs.
 /// </summary>
 public sealed class AuthCenterOidcFeatureDriver : ApplicationIdentityFeatureDriver
@@ -15,7 +15,7 @@ public sealed class AuthCenterOidcFeatureDriver : ApplicationIdentityFeatureDriv
     /// </summary>
     /// <param name="s">The application identity service.</param>
     /// <param name="authCenter">The AuthCenter feature driver (it must be set up before this one).</param>
-    public AuthCenterOidcFeatureDriver( ApplicationIdentityService s, AuthCenterFeatureDriver authCenter )
+    public AuthCenterOidcFeatureDriver( ApplicationIdentityService s, LocalAuthCenterFeatureDriver authCenter )
         : base( s, isAllowedByDefault: true )
     {
     }
@@ -45,7 +45,7 @@ public sealed class AuthCenterOidcFeatureDriver : ApplicationIdentityFeatureDriv
 
     static bool Plug( IActivityMonitor monitor, ILocalParty local )
     {
-        var center = local.GetFeature<CrisAuthCenter>()?.Local;
+        var center = local.GetFeature<LocalAuthCenter>();
         if( center == null ) return true;
         var schemes = OidcSchemeOptions.Read( monitor, center.GetSchemeSettings( AuthCenterOidcConfiguration.Key ) );
         if( schemes == null ) return false;

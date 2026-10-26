@@ -22,7 +22,7 @@ public class SessionCommandsTests
     {
         var key = app.Caller.Issued[^1].SessionKey;
         AuthCenterSession.TryParseSessionKey( key, out var actorId, out var sessionId ).ShouldBeTrue();
-        return await app.Center.Local.ShouldNotBeNull().Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId );
+        return await app.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId );
     }
 
     [Test]
@@ -162,7 +162,7 @@ public class SessionCommandsTests
     {
         // The configuration has no "AuthCenter:Oidc" section (it would be an error without the package).
         await using var app = await AuthCenterApp.StartAsync( withOidc: false );
-        app.Center.Local.ShouldNotBeNull().SchemeFamilies.ShouldBeEmpty();
+        app.LocalCenter.SchemeFamilies.ShouldBeEmpty();
         var start = await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) );
         start.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull().Errors.Select( e => e.Text ).ShouldContain( "Unknown login scheme 'Oidc.Test'." );
     }
@@ -175,7 +175,7 @@ public class SessionPurgeTests
     public async Task the_purge_deletes_the_expired_sessions_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
-        var local = app.Center.Local.ShouldNotBeNull();
+        var local = app.LocalCenter;
         var store = local.Sessions;
         var utcNow = System.DateTime.UtcNow;
         var lifetime = local.Options.SessionLifetime;

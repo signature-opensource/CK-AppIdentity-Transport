@@ -71,7 +71,7 @@ public class OidcTests
         start.Url.ShouldContain( "scope=openid%20profile" );
         start.Url.ShouldContain( "redirect_uri=" + Uri.EscapeDataString( Callback ) );
         app.Caller.RemoteLoginCorrelation.ShouldNotBeNull( "The endpoint prepared the correlation." );
-        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 1 );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 1 );
 
         var (redirect, code, state) = idp.Authorize( start.Url, "albert-sub" );
         redirect.ShouldBe( Callback );
@@ -84,7 +84,7 @@ public class OidcTests
         var payload = AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull();
         payload.SchemeSuffix.ShouldBe( "Test" );
         payload.Sub.ShouldBe( "albert-sub" );
-        app.Center.Local.PendingRemoteLogins.Count.ShouldBe( 0, "The pending login is consumed." );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0, "The pending login is consumed." );
 
         // A replayed callback finds no pending login.
         var replay = await CallbackAsync( app, state, code );
@@ -262,7 +262,7 @@ public class OidcTests
         app.Caller.RemoteLoginCallbackUrl = null;
         Errors( await StartAsync( app ) ).ShouldContain( "This endpoint cannot receive remote logins." );
 
-        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 0 );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
     }
 
     [Test]
@@ -371,6 +371,6 @@ public class OidcTests
             (await StartAsync( app )).ShouldBeAssignableTo<ICrisResultError>();
             texts.ShouldContain( t => t.Contains( "accepts neither 'client_secret_basic' nor 'client_secret_post'" ) );
         }
-        app.Center.Local.ShouldNotBeNull().PendingRemoteLogins.Count.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
     }
 }

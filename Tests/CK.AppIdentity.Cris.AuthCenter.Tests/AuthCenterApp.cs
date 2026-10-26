@@ -20,7 +20,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// An application whose root (and the "Acme" tenant) is a local AuthCenter, with fakes for the providers,
+/// An AuthCenter application (CK.AppIdentity.Cris.AuthCenter.Local): its root (and the "Acme" tenant) is a local AuthCenter, with fakes for the providers,
 /// the actors and the endpoint. The <see cref="Browser"/> plays the caller: it keeps what the endpoint issued
 /// (the cookies) and the current authentication (what a front reads from the bearer token).
 /// </summary>
@@ -301,6 +301,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
     public required ApplicationIdentityService Identity { get; init; }
     public Browser Caller => Services.Services.GetRequiredService<Browser>();
     public CrisAuthCenter Center => Identity.GetRequiredFeature<CrisAuthCenter>();
+    public LocalAuthCenter LocalCenter => Identity.GetRequiredFeature<LocalAuthCenter>();
 
     public ValueTask DisposeAsync() => Services.DisposeAsync();
 
@@ -327,6 +328,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( KeyManagementFeatureDriver ),
                                        typeof( DefaultCoreKeyStore ),
                                        typeof( AuthCenterFeatureDriver ),
+                                       typeof( LocalAuthCenterFeatureDriver ),
                                        typeof( IAuthenticationSessionOpener ),
                                        typeof( AuthCenterSessionOpener ),
                                        typeof( AuthCenterSessionService ),

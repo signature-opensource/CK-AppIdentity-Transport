@@ -25,7 +25,7 @@ sealed class AuthCenterEncryptionKeys
     /// <summary>
     /// The purpose of the signature of a published key.
     /// </summary>
-    internal const string Purpose = "CK.AuthCenter.EncryptionKey";
+    internal const string Purpose = AuthCenterFieldEncryption.EncryptionKeyPurpose;
 
     /// <summary>
     /// How long a key is published: 1 day.

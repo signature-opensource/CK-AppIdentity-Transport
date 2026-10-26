@@ -9,11 +9,12 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The front side of the relay: when the <see cref="CrisAuthCenter"/> of the <see cref="CurrentLocalParty"/> is remote,
-/// the session commands are sent to it over the Cris channel (<see cref="IRelaySessionCommand"/>) and what it issues or
-/// clears is applied to the <see cref="IAuthenticationSessionEndpoint"/>.
+/// The front side of the relay: the session commands are sent to the remote Authentication Center of the
+/// <see cref="CurrentLocalParty"/> (its <see cref="RemoteAuthCenter"/>) over the Cris channel (<see cref="IRelaySessionCommand"/>)
+/// and what it issues or clears is applied to the <see cref="IAuthenticationSessionEndpoint"/>.
 /// <para>
-/// It fails closed: an unavailable or unreachable Authentication Center is an error, the command is never executed here.
+/// It fails closed: a missing, unavailable or unreachable Authentication Center is an error, the command is never
+/// executed here.
 /// The [Sensitive] strings of a command are encrypted in place for the Authentication Center (see <see cref="AuthCenterFieldEncryption"/>).
 /// </para>
 /// <para>
@@ -47,25 +48,32 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
     }
 
     /// <inheritdoc />
-    public Task<object?>? TryRelay( IActivityMonitor monitor, ICommandAuthenticationSession command )
+    public Task<object?> RelayAsync( IActivityMonitor monitor, ICommandAuthenticationSession command )
     {
         Throw.CheckNotNullArgument( command );
-        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>();
-        if( center == null || center.IsLocal ) return null;
-        return RelayAsync( monitor, center, command );
+        var remote = _localParty.LocalParty.GetFeature<RemoteAuthCenter>();
+        if( remote == null )
+        {
+            return Task.FromResult( Failure( monitor, command, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter" ) );
+        }
+        return RelayAsync( monitor, remote, command );
     }
 
     /// <inheritdoc />
-    public Task<object?>? TryRelay( IActivityMonitor monitor, ICommandAuthCenter command )
+    public Task<object?> RelayAsync( IActivityMonitor monitor, ICommandAuthCenter command )
     {
         Throw.CheckNotNullArgument( command );
-        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>();
-        if( center == null || center.IsLocal ) return null;
-        return RelayAuthCenterCommandAsync( monitor, center, command );
+        var remote = _localParty.LocalParty.GetFeature<RemoteAuthCenter>();
+        if( remote == null )
+        {
+            return Task.FromResult<object?>( Error( monitor, command, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter" ) );
+        }
+        return RelayAuthCenterCommandAsync( monitor, remote, command );
     }
 
-    async Task<object?> RelayAuthCenterCommandAsync( IActivityMonitor monitor, CrisAuthCenter center, ICommandAuthCenter command )
+    async Task<object?> RelayAuthCenterCommandAsync( IActivityMonitor monitor, RemoteAuthCenter remote, ICommandAuthCenter command )
     {
+        var center = remote.Center;
         if( command is ICommandAuthenticationSession )
         {
             // A setup error (two routes): never relayed without its session secrets.
@@ -80,7 +88,7 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
         {
             return Error( monitor, command, $"The AuthCenter '{center.AuthCenter}' has no Cris channel.", "Authentication.AuthCenterUnreachable" );
         }
-        if( command.CrisPocoModel.HasSensitiveData && !await EncryptSensitiveFieldsAsync( monitor, center, channel, command ).ConfigureAwait( false ) )
+        if( command.CrisPocoModel.HasSensitiveData && !await EncryptSensitiveFieldsAsync( monitor, remote, channel, command ).ConfigureAwait( false ) )
         {
             return Error( monitor, command, $"The sensitive fields cannot be encrypted for the AuthCenter '{center.AuthCenter}'.", "Authentication.SensitiveEncryptionFailed" );
         }
@@ -108,8 +116,9 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
         return _pocos.Create<ICrisResultError>( e => e.Errors.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) ) );
     }
 
-    async Task<object?> RelayAsync( IActivityMonitor monitor, CrisAuthCenter center, ICommandAuthenticationSession command )
+    async Task<object?> RelayAsync( IActivityMonitor monitor, RemoteAuthCenter remote, ICommandAuthenticationSession command )
     {
+        var center = remote.Center;
         if( !center.IsAvailable )
         {
             return Failure( monitor, command, $"The AuthCenter '{center.AuthCenter}' of '{center.Owner}' is not available.", "Authentication.AuthCenterUnavailable" );
@@ -119,7 +128,7 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
         {
             return Failure( monitor, command, $"The AuthCenter '{center.AuthCenter}' has no Cris channel.", "Authentication.AuthCenterUnreachable" );
         }
-        if( command.CrisPocoModel.HasSensitiveData && !await EncryptSensitiveFieldsAsync( monitor, center, channel, command ).ConfigureAwait( false ) )
+        if( command.CrisPocoModel.HasSensitiveData && !await EncryptSensitiveFieldsAsync( monitor, remote, channel, command ).ConfigureAwait( false ) )
         {
             return Failure( monitor, command, $"The sensitive fields cannot be encrypted for the AuthCenter '{center.AuthCenter}'.", "Authentication.SensitiveEncryptionFailed" );
         }
@@ -167,15 +176,16 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
 
     // Replaces every [Sensitive] string of the command by its ciphertext for the AuthCenter. The command is consumed by the
     // relay: its clear values are not restored (it may still be queued for sending when the relay gives up).
-    async ValueTask<bool> EncryptSensitiveFieldsAsync( IActivityMonitor monitor, CrisAuthCenter center, CrisChannelFeature channel, ICrisPoco command )
+    async ValueTask<bool> EncryptSensitiveFieldsAsync( IActivityMonitor monitor, RemoteAuthCenter remote, CrisChannelFeature channel, ICrisPoco command )
     {
+        var center = remote.Center;
         var fields = AuthCenterFieldEncryption.GetSensitiveFields( command.GetType() );
         if( fields == null )
         {
             monitor.Warn( $"'{command.CrisPocoModel.PocoName}' has sensitive data that is not a string: it cannot be encrypted." );
             return false;
         }
-        var key = await center.GetEncryptionKeyAsync( monitor, channel, _pocos ).ConfigureAwait( false );
+        var key = await remote.GetEncryptionKeyAsync( monitor, channel, _pocos ).ConfigureAwait( false );
         if( key == null ) return false;
         var utcNow = DateTime.UtcNow;
         foreach( var f in fields )
@@ -189,7 +199,7 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
         return true;
     }
 
-    // The relay failed: nothing has been decided (the AuthCenter is unavailable or unreachable). This is an error result,
+    // The relay failed: nothing has been decided (the AuthCenter is missing, unavailable or unreachable). This is an error result,
     // never a failed ISessionResult (that is a decision of the AuthCenter: a client ends its session on a failed refresh,
     // and retries on an error). A failure of a command that has no result (logout) is a null result: the endpoint secrets
     // are cleared anyway.

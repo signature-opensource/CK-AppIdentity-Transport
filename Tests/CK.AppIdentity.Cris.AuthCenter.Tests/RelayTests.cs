@@ -25,22 +25,14 @@ namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 [TestFixture]
 public class RelayTests
 {
+    // The types of both applications: the commands, the core.
     static readonly Type[] _authTypes = [typeof( CurrentLocalParty ),
                                          typeof( CurrentLocalPartyDefaultProvider ),
                                          typeof( AuthCenterFeatureDriver ),
-                                         typeof( IAuthenticationSessionOpener ),
-                                         typeof( AuthCenterSessionOpener ),
-                                         typeof( AuthCenterSessionService ),
-                                         typeof( AuthCenterCommandHandlers ),
-                                         typeof( IAuthenticationSessionRelay ),
-                                         typeof( IAuthCenterCommandRelay ),
                                          typeof( IRelayAuthCenterCommand ),
                                          typeof( IRelayAuthCenterResult ),
                                          typeof( IWhoAmIAtTheAuthCenterCommand ),
                                          typeof( INotAuthCenterCommand ),
-                                         typeof( AuthCenterRelay ),
-                                         typeof( AuthCenterRelayHandler ),
-                                         typeof( AuthCenterRelayDIContainerDefinition ),
                                          typeof( IAuthenticationSessionEndpoint ),
                                          typeof( CrisAuthenticationService ),
                                          typeof( AuthenticationInfo ),
@@ -65,13 +57,28 @@ public class RelayTests
                                          typeof( IAuthCenterEncryptionKey ),
                                          typeof( IStartLoginCommand ),
                                          typeof( IRemoteLoginCallbackCommand ),
-                                         typeof( AuthCenterRemoteLoginHandlers ),
-                                         typeof( Oidc.AuthCenterOidcFeatureDriver ),
-                                         typeof( Oidc.AuthCenterOidcConfiguration ),
                                          typeof( NormalizedCultureInfoAmbientServiceDefault ),
                                          typeof( TranslationService ),
                                          typeof( NormalizedCultureInfo ),
                                          typeof( CurrentCultureInfo )];
+
+    // The front (CK.AppIdentity.Cris.AuthCenter.Remote).
+    static readonly Type[] _frontTypes = [typeof( RemoteAuthCenterFeatureDriver ),
+                                          typeof( IAuthenticationSessionRelay ),
+                                          typeof( IAuthCenterCommandRelay ),
+                                          typeof( AuthCenterRelay )];
+
+    // The AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local).
+    static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
+                                           typeof( IAuthenticationSessionOpener ),
+                                           typeof( AuthCenterSessionOpener ),
+                                           typeof( AuthCenterSessionService ),
+                                           typeof( AuthCenterCommandHandlers ),
+                                           typeof( AuthCenterRelayHandler ),
+                                           typeof( AuthCenterRelayDIContainerDefinition ),
+                                           typeof( AuthCenterRemoteLoginHandlers ),
+                                           typeof( Oidc.AuthCenterOidcFeatureDriver ),
+                                           typeof( Oidc.AuthCenterOidcConfiguration )];
 
     const int Port = 37145;
 
@@ -81,7 +88,7 @@ public class RelayTests
         public required RunningApplication Center { get; init; }
         public AuthCenterApp.Browser Browser => Front.Services.GetRequiredService<AuthCenterApp.Browser>();
         public CrisAuthCenter FrontCenter => Front.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>();
-        public LocalAuthCenter LocalCenter => Center.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull();
+        public LocalAuthCenter LocalCenter => Center.ApplicationIdentityService.GetRequiredFeature<LocalAuthCenter>();
 
         bool _centerStopped;
 
@@ -104,8 +111,7 @@ public class RelayTests
             await using var scope = Front.CreateAsyncScopeServices();
             var services = scope.ServiceProvider;
             var relay = services.GetRequiredService<IAuthenticationSessionRelay>();
-            var t = relay.TryRelay( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) ).ShouldNotBeNull( "The AuthCenter is remote." );
-            return await t;
+            return await relay.RelayAsync( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) );
         }
 
         // A request of the browser to the front: the command executed by the AuthCenter is relayed with the browser's proof.
@@ -114,8 +120,7 @@ public class RelayTests
             await using var scope = Front.CreateAsyncScopeServices();
             var services = scope.ServiceProvider;
             var relay = services.GetRequiredService<IAuthCenterCommandRelay>();
-            var t = relay.TryRelay( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) ).ShouldNotBeNull( "The AuthCenter is remote." );
-            return await t;
+            return await relay.RelayAsync( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) );
         }
 
         // Relays and, like a front, reads the token (with the safety net of ReadTokenAsync).
@@ -158,8 +163,8 @@ public class RelayTests
             c["Parties:0:AuthCenter"] = "true";
             // Not RunningApplication.Port: it is the one of CK.AppIdentity.Cris.Tests, that may run concurrently.
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-        }, FrontServices, passkeys ? [.. _authTypes, .. _passkeyCommands] : _authTypes );
-        Type[] centerTypes = [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider ), typeof( AuthCenterOnlyHandlers )];
+        }, FrontServices, passkeys ? [.. _authTypes, .. _frontTypes, .. _passkeyCommands] : [.. _authTypes, .. _frontTypes] );
+        Type[] centerTypes = [.. _authTypes, .. _centerTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider ), typeof( AuthCenterOnlyHandlers )];
         if( passkeys )
         {
             centerTypes = [.. centerTypes, .. _passkeyCommands, typeof( Passkey.AuthCenterPasskeyFeatureDriver ), typeof( Passkey.AuthCenterPasskeyConfiguration ),
@@ -214,7 +219,7 @@ public class RelayTests
     public async Task the_session_commands_are_relayed_to_the_remote_AuthCenter_Async()
     {
         await using var p = await StartAsync();
-        p.FrontCenter.IsLocal.ShouldBeFalse();
+        p.FrontCenter.AuthCenter.ShouldBeAssignableTo<IRemoteParty>();
 
         // Login: the front has no provider, the AuthCenter logs in, the front's endpoint uses its prepared secrets.
         var login = (ISessionResult)(await p.SendAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Operator" ) )).ShouldNotBeNull();
@@ -273,17 +278,6 @@ public class RelayTests
 
         // The AuthCenter lists the scheme to the front.
         (await p.RelayCommandAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<string>>().ShouldNotBeNull().ShouldContain( "Oidc.Test" );
-    }
-
-    [Test]
-    public async Task the_AuthCenter_executes_locally_Async()
-    {
-        await using var p = await StartAsync();
-        await using var scope = p.Center.CreateAsyncScopeServices();
-        // No IAuthenticationSessionEndpoint in the AuthCenter's root container: a local relay only needs the current local party.
-        var relay = ActivatorUtilities.CreateInstance<AuthCenterRelay>( scope.ServiceProvider, new CurrentLocalParty( p.Center.ApplicationIdentityService ), new AuthCenterApp.FakeEndpoint( new AuthCenterApp.Browser() ) );
-        relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IRefreshSessionCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
-        relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IGetLoginSchemesQCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
     }
 
     static ICrisResultError Refused( object? result ) => result.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull();

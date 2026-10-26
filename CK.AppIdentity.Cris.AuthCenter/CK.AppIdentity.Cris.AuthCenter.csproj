@@ -1,16 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain).</Description>
+    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain). This is the core shared by its two sides: the designation of the AuthCenter and the reading of its tokens. An application references CK.AppIdentity.Cris.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.Cris.AuthCenter.Remote (it is a front of a remote AuthCenter).</Description>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Local" />
+    <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Remote" />
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="2.0.2-0.cris-auth.0.ci.10" />
-    <!-- For the Basic and Weak login handlers (AuthCenterLoginHandlers.cs): temporary, until the old stack is retired. -->
-    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.2-0.cris-auth.0.ci.7" />
-    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.2-0.cris-auth.0.ci.7" />
+    <PackageReference Include="CK.Cris.Authentication" Version="2.0.2-0.cris-auth.0.ci.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />

@@ -20,7 +20,7 @@ public class SessionOpenerTests
     {
         await using var app = await AuthCenterApp.StartAsync();
         var center = app.Center;
-        center.Local.ShouldNotBeNull().Options.TokenLifetime.ShouldBe( TimeSpan.FromMinutes( 2 ) );
+        app.LocalCenter.Options.TokenLifetime.ShouldBe( TimeSpan.FromMinutes( 2 ) );
 
         var r = await app.LoginAsync( "Operator" );
         r.Success.ShouldBeTrue();
@@ -40,7 +40,7 @@ public class SessionOpenerTests
         info.Expires.ShouldNotBeNull().ShouldBeLessThanOrEqualTo( DateTime.UtcNow.AddMinutes( 2 ), "The authentication cannot outlive the token." );
 
         // The session is stored with the hashes of the endpoint secrets, the endpoint keeps the session key.
-        var session = (await center.Local.Sessions.TryReadAsync( TestHelper.Monitor, 42, sessionId )).ShouldNotBeNull();
+        var session = (await app.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, 42, sessionId )).ShouldNotBeNull();
         issued.SessionKey.ShouldBe( session.SessionKey );
         session.RefreshSecretHash.ShouldBe( "refresh-hash-1" );
         session.BindingSecretHash.ShouldBe( "binding-hash-1" );
@@ -91,23 +91,18 @@ public class SessionOpenerTests
     }
 
     [Test]
-    public async Task with_a_remote_AuthCenter_nothing_is_opened_here_Async()
+    public async Task an_AuthCenter_application_cannot_be_the_front_of_a_remote_AuthCenter_Async()
     {
-        await using var app = await AuthCenterApp.StartAsync( c =>
+        // An application has one role: with CK.AppIdentity.Cris.AuthCenter.Local, every AuthCenter is local.
+        using var logs = CK.Monitoring.GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
+        await Should.ThrowAsync<Exception>( () => AuthCenterApp.StartAsync( c =>
         {
             c["FullName"] = "D/$Front";
             c["AllowFeatures"] = "AuthCenter";
             c["Parties:0:PartyName"] = "Center";
             c["Parties:0:AuthCenter"] = "true";
-        } );
-        app.Center.Local.ShouldBeNull();
-        var r = await app.LoginAsync( "Operator" );
-
-        // The relay is done by the endpoint, before the handlers: a session command that reaches the opener fails closed.
-        r.Success.ShouldBeFalse();
-        r.Token.ShouldBeNull();
-        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RemoteAuthCenter" );
-        app.Caller.Issued.ShouldBeEmpty();
+        } ) );
+        await AuthCenterFeatureTests.ShouldLogAsync( logs, "an application has one role, a front references CK.AppIdentity.Cris.AuthCenter.Remote" );
     }
 
     [Test]
@@ -116,13 +111,13 @@ public class SessionOpenerTests
         await using var app = await AuthCenterApp.StartAsync();
         var root = app.Center;
         var acme = app.Identity.TenantDomains.Single().GetRequiredFeature<CrisAuthCenter>();
-        acme.IsLocal.ShouldBeTrue( "This application is the AuthCenter of the tenant too." );
+        app.Identity.TenantDomains.Single().GetFeature<LocalAuthCenter>().ShouldNotBeNull( "This application is the AuthCenter of the tenant too." );
 
         // An impersonation at Critical level: everything goes through the token.
         var utcNow = DateTime.UtcNow;
         var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Paula, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
         var sessionId = AuthCenterSession.NewSessionId();
-        var token = root.Local.ShouldNotBeNull().CreateToken( sessionId, "the-binding-hash", auth, utcNow );
+        var token = app.LocalCenter.CreateToken( sessionId, "the-binding-hash", auth, utcNow );
 
         var (info, readId, readBinding) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
         readBinding.ShouldBe( "the-binding-hash" );

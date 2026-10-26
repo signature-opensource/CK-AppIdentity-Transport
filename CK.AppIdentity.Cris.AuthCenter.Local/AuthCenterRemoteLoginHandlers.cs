@@ -28,7 +28,7 @@ public sealed class AuthCenterRemoteLoginHandlers : ISingletonAutoService
     [CommandHandlingValidator]
     public void Validate( UserMessageCollector c, IStartLoginCommand command, CurrentLocalParty localParty, IAuthenticationSessionEndpoint endpoint )
     {
-        var center = localParty.LocalParty.GetFeature<CrisAuthCenter>()?.Local;
+        var center = localParty.LocalParty.GetFeature<LocalAuthCenter>();
         if( center?.FindSchemeFamily( command.Scheme ) is not IAuthCenterRemoteScheme family )
         {
             c.Error( $"Unknown login scheme '{command.Scheme}'.", "Authentication.UnknownScheme" );
@@ -56,7 +56,7 @@ public sealed class AuthCenterRemoteLoginHandlers : ISingletonAutoService
     public async Task<RedirectedUrl> HandleAsync( IActivityMonitor monitor, IStartLoginCommand command, CurrentLocalParty localParty, IAuthenticationSessionEndpoint endpoint )
     {
         // The validator has checked the scheme and the callback.
-        var center = localParty.LocalParty.GetRequiredFeature<CrisAuthCenter>().Local!;
+        var center = localParty.LocalParty.GetRequiredFeature<LocalAuthCenter>();
         var family = (IAuthCenterRemoteScheme)center.FindSchemeFamily( command.Scheme )!;
         var callbackUrl = endpoint.RemoteLoginCallbackUrl!;
         var pendings = center.PendingRemoteLogins;
@@ -91,7 +91,7 @@ public sealed class AuthCenterRemoteLoginHandlers : ISingletonAutoService
                                                         IAuthenticationSessionOpener opener,
                                                         IEnumerable<ILoginProvider> providers )
     {
-        var center = localParty.LocalParty.GetFeature<CrisAuthCenter>()?.Local;
+        var center = localParty.LocalParty.GetFeature<LocalAuthCenter>();
         if( center == null )
         {
             return AuthCenterResults.Failure( monitor, command, $"'{localParty.LocalParty}' is not an AuthCenter.", "Authentication.NoAuthCenter" );

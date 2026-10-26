@@ -54,8 +54,8 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
             monitor.Warn( $"'{caller}' relayed a command that is not a session command." );
             return pocos.Create<IRelaySessionResult>();
         }
-        var center = caller.GetFeature<CrisAuthCenter>();
-        if( center?.Local == null || center.Owner != caller.Owner )
+        var center = GetLocal( caller );
+        if( center == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' is not a front of an AuthCenter here: its relayed '{inner.CrisPocoModel.PocoName}' is refused." );
             return Result( pocos, Failure( monitor, pocos, inner, "Not a front of this AuthCenter.", "Authentication.RelayNotAllowed" ) );
@@ -65,7 +65,7 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
             return Result( pocos, Failure( monitor, pocos, inner, "The sensitive fields must be encrypted for the AuthCenter.", "Authentication.SensitiveNotEncrypted" ) );
         }
         var authentication = AuthenticationInfo.None;
-        if( command.Token != null && await center.ReadTokenAsync( monitor, command.Token, DateTime.UtcNow ).ConfigureAwait( false ) is { } read )
+        if( command.Token != null && await center.Center.ReadTokenAsync( monitor, command.Token, DateTime.UtcNow ).ConfigureAwait( false ) is { } read )
         {
             authentication = read.Info;
         }
@@ -115,8 +115,8 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     [CommandHandler]
     public async Task<IRelayAuthCenterResult> HandleAsync( IActivityMonitor monitor, IRelayAuthCenterCommand command, IRemoteParty caller, PocoDirectory pocos )
     {
-        var center = caller.GetFeature<CrisAuthCenter>();
-        if( center?.Local == null || center.Owner != caller.Owner )
+        var center = GetLocal( caller );
+        if( center == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' is not a front of an AuthCenter here: its relayed '{command.Command?.CrisPocoModel.PocoName}' is refused." );
             return Relayed( pocos, Error( pocos, "Not a front of this AuthCenter.", "Authentication.RelayNotAllowed" ) );
@@ -152,12 +152,11 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     /// revocation deletes the session, an impersonation changes the actor). Anything else is the anonymous: the
     /// authentication parts of the command then fail its validation.
     /// </summary>
-    static async ValueTask<AuthenticationInfo> AuthenticateAsync( IActivityMonitor monitor, CrisAuthCenter center, IRelayAuthCenterCommand command )
+    static async ValueTask<AuthenticationInfo> AuthenticateAsync( IActivityMonitor monitor, LocalAuthCenter center, IRelayAuthCenterCommand command )
     {
-        Throw.DebugAssert( center.Local != null );
         if( command.Token == null ) return AuthenticationInfo.None;
         var utcNow = DateTime.UtcNow;
-        var read = await center.ReadTokenAsync( monitor, command.Token, utcNow ).ConfigureAwait( false );
+        var read = await center.Center.ReadTokenAsync( monitor, command.Token, utcNow ).ConfigureAwait( false );
         if( read == null )
         {
             monitor.Warn( "A relayed command presents an invalid token: it is anonymous." );
@@ -168,7 +167,7 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, "A relayed command presents a token without the binding secret of its session: it is anonymous." );
             return AuthenticationInfo.None;
         }
-        var session = await center.Local.Sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
+        var session = await center.Sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
         if( session == null
             || session.Expires <= utcNow
             || session.ActorId != read.Info.UnsafeActor.ActorId
@@ -190,12 +189,11 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     [CommandHandler]
     public IAuthCenterEncryptionKey Handle( IActivityMonitor monitor, IGetAuthCenterEncryptionKeyQCommand command, IRemoteParty caller, PocoDirectory pocos )
     {
-        var center = caller.GetFeature<CrisAuthCenter>();
-        if( center?.Local == null || center.Owner != caller.Owner )
+        var local = GetLocal( caller );
+        if( local == null )
         {
             Throw.InvalidOperationException( $"'{caller}' is not a front of an AuthCenter here." );
         }
-        var local = center.Local;
         var (publicKey, signature) = local.EncryptionKeys.GetPublished( monitor, local.Party.GetRequiredFeature<ILocalKeys>(), DateTime.UtcNow );
         return pocos.Create<IAuthCenterEncryptionKey>( k =>
         {
@@ -205,17 +203,25 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     }
 
     // Every [Sensitive] string must be encrypted for this AuthCenter (in this context): a clear value is refused.
-    static bool DecryptSensitiveFields( IActivityMonitor monitor, CrisAuthCenter center, IRemoteParty caller, ICrisPoco command )
+    // The local AuthCenter of a front: the caller is a remote of a local party that is its own AuthCenter, and it
+    // allows the feature (it then shares its CrisAuthCenter).
+    static LocalAuthCenter? GetLocal( IRemoteParty caller )
     {
-        Throw.DebugAssert( center.Local != null );
+        return caller.GetFeature<CrisAuthCenter>() is { } center && center.Owner == caller.Owner
+                ? caller.Owner.GetFeature<LocalAuthCenter>()
+                : null;
+    }
+
+    static bool DecryptSensitiveFields( IActivityMonitor monitor, LocalAuthCenter center, IRemoteParty caller, ICrisPoco command )
+    {
         var fields = AuthCenterFieldEncryption.GetSensitiveFields( command.GetType() );
         if( fields == null ) return false;
-        var keys = center.Local.EncryptionKeys;
+        var keys = center.EncryptionKeys;
         var utcNow = DateTime.UtcNow;
         foreach( var f in fields )
         {
             if( f.GetValue( command ) is not string value ) continue;
-            var context = AuthCenterFieldEncryption.GetContext( center.AuthCenter.FullName, caller.FullName, command.CrisPocoModel.PocoName, f.Name );
+            var context = AuthCenterFieldEncryption.GetContext( center.Party.FullName, caller.FullName, command.CrisPocoModel.PocoName, f.Name );
             if( !AuthCenterFieldEncryption.TryDecrypt( monitor, value, id => keys.Find( id, utcNow ), context, utcNow, out var clear ) )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' relayed '{command.CrisPocoModel.PocoName}' with a '{f.Name}' that cannot be decrypted." );
