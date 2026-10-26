@@ -23,7 +23,8 @@ public class BugTransportTests
         services.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<BugTransportTypeService>() );
     }
 
-    [CancelAfter( 5000 )]
+    // The guard of a test that waits for its retries: generous, a loaded machine (a parallel build) is slow.
+    [CancelAfter( 30000 )]
     [TestCase( BugTransportTypeService.BugType.TransportCreate,
         "While creating Transport to 'Test/$Other/#Dev' at 'BugTransportTypeService - TransportCreate'. Retrying in 1 seconds." )]
     [TestCase( BugTransportTypeService.BugType.TransportCreateInline,
@@ -56,7 +57,14 @@ public class BugTransportTests
         }, ConfigureFastClock, token: token );
         var senderTransport = s.Remotes.Single().GetRequiredFeature<TransportFeature>();
 
-        await Task.Delay( 1300, token );
+        // Waits for the third retry (instead of a fixed delay: on a loaded machine the retries can be late), then stops.
+        var third = error.Replace( "in 1", "in 3" );
+        do
+        {
+            await Task.Delay( 50, token );
+            logCollector.UpdateCachedEntries();
+        }
+        while( !logCollector.CachedTexts.Any( l => l.Contains( third ) ) );
         TestHelper.Monitor.Info( "Tests: Switching off the sender." );
         senderTransport.SwitchOff( "Ending test." );
         //await Task.Delay( 5000, token );
