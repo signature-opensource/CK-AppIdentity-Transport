@@ -83,10 +83,19 @@ public class RelayTests
         public CrisAuthCenter FrontCenter => Front.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>();
         public LocalAuthCenter LocalCenter => Center.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>().Local.ShouldNotBeNull();
 
+        bool _centerStopped;
+
+        // Stops the AuthCenter: the front cannot reach it anymore.
+        public async Task StopCenterAsync()
+        {
+            _centerStopped = true;
+            await Center.DisposeAsync();
+        }
+
         public async ValueTask DisposeAsync()
         {
             await Front.DisposeAsync();
-            await Center.DisposeAsync();
+            if( !_centerStopped ) await Center.DisposeAsync();
         }
 
         // A request of the browser to the front: the session command is relayed.
@@ -336,6 +345,19 @@ public class RelayTests
             .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
         Refused( await RawRelayAsync( pocos.Create<IRefreshSessionCommand>() ) )
             .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
+    }
+
+    [Test]
+    public async Task an_unreachable_AuthCenter_is_an_error_not_a_failed_session_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.SendAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Operator" ) )).ShouldBeAssignableTo<ISessionResult>().ShouldNotBeNull().Success.ShouldBeTrue();
+        var cookies = p.Browser.Cookies.ShouldNotBeNull();
+        await p.StopCenterAsync();
+        // Nothing has been decided: an error (a client retries), never a failed ISessionResult (a client ends its session).
+        var r = await p.RelayAsync( pocos => pocos.Create<IRefreshSessionCommand>() );
+        r.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull().Errors.ShouldHaveSingleItem().ResName.ShouldStartWith( "Authentication.AuthCenterUn" );
+        p.Browser.Cookies.ShouldBe( cookies, "The endpoint keeps its secrets." );
     }
 
     [Test]

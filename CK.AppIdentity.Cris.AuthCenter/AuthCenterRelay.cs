@@ -189,11 +189,12 @@ public sealed class AuthCenterRelay : IAuthenticationSessionRelay, IAuthCenterCo
         return true;
     }
 
-    // A failure of a command that has no result (logout) is a null result: the endpoint secrets are cleared anyway.
-    // A command with another result (the RedirectedUrl of a start login) fails with an error.
+    // The relay failed: nothing has been decided (the AuthCenter is unavailable or unreachable). This is an error result,
+    // never a failed ISessionResult (that is a decision of the AuthCenter: a client ends its session on a failed refresh,
+    // and retries on an error). A failure of a command that has no result (logout) is a null result: the endpoint secrets
+    // are cleared anyway.
     object? Failure( IActivityMonitor monitor, ICommandAuthenticationSession command, string text, string resName )
     {
-        if( command is ICommand<ISessionResult> c ) return AuthCenterResults.Failure( monitor, c, text, resName );
         monitor.Warn( $"Session command '{command.CrisPocoModel.PocoName}' not relayed: {text}" );
         if( command is ILogoutSessionCommand )
         {
