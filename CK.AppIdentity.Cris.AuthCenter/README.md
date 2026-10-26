@@ -197,7 +197,25 @@ no login provider at all. The protocol is in [CK.IO.AuthCenter](../CK.IO.AuthCen
   the session endpoint is the relayed one (it presents what the front presented, its `Issue` uses the front's prepared
   hashes), the current local party is the Authentication Center, the caller is the front.
 
-`IGetLoginSchemesQCommand` is not a session command: a front simply asks its Authentication Center.
+### The commands executed by the Authentication Center
+
+The `ICommandAuthCenter` commands (CK.IO.Auth) are what a login point serves: the actor's self-service on its own login
+methods (its passkeys, its password) and the login schemes (`IGetLoginSchemesQCommand`). Never the administration: an
+Authentication Center is a login point, not an administration point. A front's endpoint calls
+`IAuthCenterCommandRelay.TryRelay` (CK.Cris.Authentication) **after** its incoming validation, and `AuthCenterRelay`
+sends an `IRelayAuthCenterCommand`: the command (its [Sensitive] strings encrypted), the presented bearer token and the
+hash of the presented binding secret. It fails closed like the session relay.
+
+The Authentication Center ([`AuthCenterRelayHandler`](AuthCenterRelayHandler.cs)) never trusts the front for the identity:
+- only its fronts can relay, and **only the `ICommandAuthCenter` commands** are executed (never a session command: they
+  have their own relay). Anything else is refused and logged `SecurityCritical`;
+- the identity is established again: the token is read with its keys, it must be presented with the binding secret of its
+  session, and **its session must be alive and still the token's one** (same binding, same actor). A logout, a
+  revocation or an impersonation takes effect at once for these commands, not after the token's lifetime. Anything else
+  is the anonymous: the authentication parts of the command then fail its validation;
+- the command is validated as an incoming command and executed in the relay endpoint, without session endpoint.
+
+So a compromised front can act only for the callers that use it, while their sessions live.
 
 **The tokens of a remote Authentication Center** are verified by the front with the pinned keys of the Authentication
 Center. Their audience is the Authentication Center party. After a key rotation, the Authentication Center pushes its new

@@ -1,4 +1,5 @@
 using CK.AppIdentity.KeyManagement;
+using CK.Auth;
 using CK.Core;
 using CK.Cris;
 using CK.IO.AuthCenter;
@@ -6,12 +7,15 @@ using CK.IO.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The Authentication Center side of the relay: executes the session commands relayed by its fronts.
+/// The Authentication Center side of the relay: executes the session commands and the <see cref="ICommandAuthCenter"/>
+/// commands relayed by its fronts.
 /// <para>
 /// Only a remote of the Authentication Center that has its "AuthCenter" feature (it is a front of this Authentication
 /// Center) can relay. The relayed command is validated as an incoming command and executed in the
@@ -97,6 +101,92 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     /// <param name="caller">The front that sent it.</param>
     /// <param name="pocos">The poco directory.</param>
     /// <returns>The signed public key.</returns>
+    /// <summary>
+    /// Handles a command executed by the Authentication Center that a front relays (<see cref="IRelayAuthCenterCommand"/>).
+    /// Only the <see cref="ICommandAuthCenter"/> commands are accepted (never a session command: they have their own
+    /// relay), from a front of this Authentication Center. The identity is established again from the caller's proof
+    /// (see <see cref="AuthenticateAsync"/>), then the command is validated and executed.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="command">The relay command.</param>
+    /// <param name="caller">The front.</param>
+    /// <param name="pocos">The poco directory.</param>
+    /// <returns>The result of the relayed command.</returns>
+    [CommandHandler]
+    public async Task<IRelayAuthCenterResult> HandleAsync( IActivityMonitor monitor, IRelayAuthCenterCommand command, IRemoteParty caller, PocoDirectory pocos )
+    {
+        var center = caller.GetFeature<CrisAuthCenter>();
+        if( center?.Local == null || center.Owner != caller.Owner )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' is not a front of an AuthCenter here: its relayed '{command.Command?.CrisPocoModel.PocoName}' is refused." );
+            return Relayed( pocos, Error( pocos, "Not a front of this AuthCenter.", "Authentication.RelayNotAllowed" ) );
+        }
+        var inner = command.Command;
+        if( inner is not ICommandAuthCenter || inner is ICommandAuthenticationSession )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' relayed '{inner?.CrisPocoModel.PocoName}': only the ICommandAuthCenter commands are executed for a front." );
+            return Relayed( pocos, Error( pocos, "This command is not executed by the AuthCenter.", "Authentication.RelayNotAllowed" ) );
+        }
+        if( inner.CrisPocoModel.HasSensitiveData && !DecryptSensitiveFields( monitor, center, caller, inner ) )
+        {
+            return Relayed( pocos, Error( pocos, "The sensitive fields must be encrypted for the AuthCenter.", "Authentication.SensitiveNotEncrypted" ) );
+        }
+        var authentication = await AuthenticateAsync( monitor, center, command ).ConfigureAwait( false );
+        await using var scope = _container.GetContainer().CreateAsyncScope( new AuthCenterRelayDIContainerDefinition.Data( monitor, caller, authentication, null ) );
+        var services = scope.ServiceProvider;
+        var validation = await services.GetRequiredService<RawCrisReceiver>().IncomingValidateAsync( monitor, services, inner ).ConfigureAwait( false );
+        if( !validation.Success )
+        {
+            var errors = validation.ValidationMessages.Where( m => m.Level == UserMessageLevel.Error ).ToList();
+            if( errors.Count == 0 ) errors.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, "Invalid command.", "Authentication.InvalidRelayedCommand" ) );
+            return Relayed( pocos, pocos.Create<ICrisResultError>( e => { foreach( var m in errors ) e.Errors.Add( m ); } ) );
+        }
+        var executed = await services.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( services, inner ).ConfigureAwait( false );
+        return Relayed( pocos, executed.Result );
+    }
+
+    /// <summary>
+    /// Establishes the identity of a relayed <see cref="ICommandAuthCenter"/> from the caller's proof, never from the
+    /// front: a token of this Authentication Center, presented with the binding secret of its session, whose session is
+    /// alive and is still the token's one (same binding and same actor: a refresh rotates the binding, a logout or a
+    /// revocation deletes the session, an impersonation changes the actor). Anything else is the anonymous: the
+    /// authentication parts of the command then fail its validation.
+    /// </summary>
+    static async ValueTask<AuthenticationInfo> AuthenticateAsync( IActivityMonitor monitor, CrisAuthCenter center, IRelayAuthCenterCommand command )
+    {
+        Throw.DebugAssert( center.Local != null );
+        if( command.Token == null ) return AuthenticationInfo.None;
+        var utcNow = DateTime.UtcNow;
+        var read = await center.ReadTokenAsync( monitor, command.Token, utcNow ).ConfigureAwait( false );
+        if( read == null )
+        {
+            monitor.Warn( "A relayed command presents an invalid token: it is anonymous." );
+            return AuthenticationInfo.None;
+        }
+        if( command.PresentedBindingSecretHash == null || !FixedTimeEquals( command.PresentedBindingSecretHash, read.BindingSecretHash ) )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, "A relayed command presents a token without the binding secret of its session: it is anonymous." );
+            return AuthenticationInfo.None;
+        }
+        var session = await center.Local.Sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
+        if( session == null
+            || session.Expires <= utcNow
+            || session.ActorId != read.Info.UnsafeActor.ActorId
+            || !FixedTimeEquals( session.BindingSecretHash, read.BindingSecretHash ) )
+        {
+            monitor.Warn( "A relayed command presents the token of a session that ended or changed: it is anonymous." );
+            return AuthenticationInfo.None;
+        }
+        return read.Info;
+    }
+
+    static bool FixedTimeEquals( string a, string b ) => CryptographicOperations.FixedTimeEquals( Encoding.ASCII.GetBytes( a ), Encoding.ASCII.GetBytes( b ) );
+
+    static IRelayAuthCenterResult Relayed( PocoDirectory pocos, object? result ) => pocos.Create<IRelayAuthCenterResult>( r => r.Result = result );
+
+    static ICrisResultError Error( PocoDirectory pocos, string text, string resName )
+        => pocos.Create<ICrisResultError>( e => e.Errors.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) ) );
+
     [CommandHandler]
     public IAuthCenterEncryptionKey Handle( IActivityMonitor monitor, IGetAuthCenterEncryptionKeyQCommand command, IRemoteParty caller, PocoDirectory pocos )
     {
@@ -115,7 +205,7 @@ public sealed class AuthCenterRelayHandler : ISingletonAutoService
     }
 
     // Every [Sensitive] string must be encrypted for this AuthCenter (in this context): a clear value is refused.
-    static bool DecryptSensitiveFields( IActivityMonitor monitor, CrisAuthCenter center, IRemoteParty caller, ICommandAuthenticationSession command )
+    static bool DecryptSensitiveFields( IActivityMonitor monitor, CrisAuthCenter center, IRemoteParty caller, ICrisPoco command )
     {
         Throw.DebugAssert( center.Local != null );
         var fields = AuthCenterFieldEncryption.GetSensitiveFields( command.GetType() );

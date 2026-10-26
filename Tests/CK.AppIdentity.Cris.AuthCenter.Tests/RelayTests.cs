@@ -33,6 +33,11 @@ public class RelayTests
                                          typeof( AuthCenterSessionService ),
                                          typeof( AuthCenterCommandHandlers ),
                                          typeof( IAuthenticationSessionRelay ),
+                                         typeof( IAuthCenterCommandRelay ),
+                                         typeof( IRelayAuthCenterCommand ),
+                                         typeof( IRelayAuthCenterResult ),
+                                         typeof( IWhoAmIAtTheAuthCenterCommand ),
+                                         typeof( INotAuthCenterCommand ),
                                          typeof( AuthCenterRelay ),
                                          typeof( AuthCenterRelayHandler ),
                                          typeof( AuthCenterRelayDIContainerDefinition ),
@@ -94,6 +99,16 @@ public class RelayTests
             return await t;
         }
 
+        // A request of the browser to the front: the command executed by the AuthCenter is relayed with the browser's proof.
+        public async Task<object?> RelayCommandAsync( Func<PocoDirectory, ICommandAuthCenter> create )
+        {
+            await using var scope = Front.CreateAsyncScopeServices();
+            var services = scope.ServiceProvider;
+            var relay = services.GetRequiredService<IAuthCenterCommandRelay>();
+            var t = relay.TryRelay( TestHelper.Monitor, create( services.GetRequiredService<PocoDirectory>() ) ).ShouldNotBeNull( "The AuthCenter is remote." );
+            return await t;
+        }
+
         // Relays and, like a front, reads the token (with the safety net of ReadTokenAsync).
         public async Task<object?> SendAsync( Func<PocoDirectory, ICommandAuthenticationSession> create )
         {
@@ -135,7 +150,7 @@ public class RelayTests
             // Not RunningApplication.Port: it is the one of CK.AppIdentity.Cris.Tests, that may run concurrently.
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, FrontServices, passkeys ? [.. _authTypes, .. _passkeyCommands] : _authTypes );
-        Type[] centerTypes = [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider )];
+        Type[] centerTypes = [.. _authTypes, typeof( AuthCenterApp.FakeWeakLoginProvider ), typeof( AuthCenterWeakLoginHandler ), typeof( AuthCenterApp.FakeBasicLoginProvider ), typeof( AuthCenterBasicLoginHandler ), typeof( AuthCenterApp.FakeOidcLoginProvider ), typeof( AuthCenterOnlyHandlers )];
         if( passkeys )
         {
             centerTypes = [.. centerTypes, .. _passkeyCommands, typeof( Passkey.AuthCenterPasskeyFeatureDriver ), typeof( Passkey.AuthCenterPasskeyConfiguration ),
@@ -208,12 +223,8 @@ public class RelayTests
         (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldNotBeNull().Matches( p.Browser.Cookies! ).ShouldBeTrue();
 
         // The login schemes are the AuthCenter's ones.
-        await using( var scope = p.Front.CreateAsyncScopeServices() )
-        {
-            var s = scope.ServiceProvider;
-            var schemes = (await s.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( s, s.GetRequiredService<PocoDirectory>().Create<IGetLoginSchemesQCommand>() )).Result;
-            schemes.ShouldBeAssignableTo<IList<string>>().ShouldBe( ["Basic", "Weak"] );
-        }
+        // (an ICommandAuthCenter: relayed by the front's endpoint).
+        (await p.RelayCommandAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<string>>().ShouldBe( ["Basic", "Weak"] );
 
         // Logout: the session is deleted by the AuthCenter, the front's endpoint is cleared.
         (await p.SendAsync( pocos => pocos.Create<ILogoutSessionCommand>() )).ShouldBeNull();
@@ -252,12 +263,7 @@ public class RelayTests
         (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldNotBeNull().Matches( cookies ).ShouldBeTrue();
 
         // The AuthCenter lists the scheme to the front.
-        await using( var scope = p.Front.CreateAsyncScopeServices() )
-        {
-            var s = scope.ServiceProvider;
-            var schemes = (await s.GetRequiredService<RawCrisExecutor>().RawExecuteAsync( s, s.GetRequiredService<PocoDirectory>().Create<IGetLoginSchemesQCommand>() )).Result;
-            schemes.ShouldBeAssignableTo<IList<string>>().ShouldNotBeNull().ShouldContain( "Oidc.Test" );
-        }
+        (await p.RelayCommandAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<string>>().ShouldNotBeNull().ShouldContain( "Oidc.Test" );
     }
 
     [Test]
@@ -268,6 +274,76 @@ public class RelayTests
         // No IAuthenticationSessionEndpoint in the AuthCenter's root container: a local relay only needs the current local party.
         var relay = ActivatorUtilities.CreateInstance<AuthCenterRelay>( scope.ServiceProvider, new CurrentLocalParty( p.Center.ApplicationIdentityService ), new AuthCenterApp.FakeEndpoint( new AuthCenterApp.Browser() ) );
         relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IRefreshSessionCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
+        relay.TryRelay( TestHelper.Monitor, p.Center.PocoDirectory.Create<IGetLoginSchemesQCommand>() ).ShouldBeNull( "The AuthCenter is local: executed here." );
+    }
+
+    static ICrisResultError Refused( object? result ) => result.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull();
+
+    [Test]
+    public async Task an_AuthCenter_command_is_relayed_with_the_caller_proof_Async()
+    {
+        await using var p = await StartAsync();
+        // The anonymous is refused by the validation at the AuthCenter (the command is ICommandAuthNormal).
+        Refused( await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = 3712 ) ) );
+
+        (await p.SendAsync( pocos => pocos.Create<IBasicLoginCommand>( c => { c.UserName = "Albert"; c.Password = "secret"; } ) ))
+            .ShouldBeAssignableTo<ISessionResult>().ShouldNotBeNull().Success.ShouldBeTrue();
+        var albertId = p.Browser.Current.UnsafeActor.ActorId;
+        (await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId ) )).ShouldBe( "Albert at the AuthCenter" );
+
+        // The identity comes from the token, never from the front: another actor identifier is refused.
+        Refused( await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId + 1 ) ) );
+
+        // The token without the binding secret of its session is anonymous.
+        var cookies = p.Browser.Cookies.ShouldNotBeNull();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        p.Browser.Cookies = new AuthenticationSessionProof( cookies.SessionKey, cookies.RefreshSecretHash, "not-the-binding" );
+        Refused( await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId ) ) );
+        p.Browser.Cookies = cookies;
+        (await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId ) )).ShouldBe( "Albert at the AuthCenter" );
+
+        // After the logout, the token is still valid (its lifetime) but its session is gone: anonymous at once.
+        (await p.SendAsync( pocos => pocos.Create<ILogoutSessionCommand>() )).ShouldBeNull();
+        p.Browser.Cookies = cookies;
+        p.Browser.Token = token;
+        Refused( await p.RelayCommandAsync( pocos => pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId ) ) );
+    }
+
+    [Test]
+    public async Task the_AuthCenter_executes_only_its_commands_for_a_front_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.SendAsync( pocos => pocos.Create<IBasicLoginCommand>( c => { c.UserName = "Albert"; c.Password = "secret"; } ) ))
+            .ShouldBeAssignableTo<ISessionResult>().ShouldNotBeNull().Success.ShouldBeTrue();
+        var albertId = p.Browser.Current.UnsafeActor.ActorId;
+        var pocos = p.Front.PocoDirectory;
+
+        // A (compromised) front sends the relay command itself, with the browser's valid proof.
+        async Task<object?> RawRelayAsync( IAbstractCommand inner )
+        {
+            var relayed = pocos.Create<IRelayAuthCenterCommand>( r =>
+            {
+                r.Command = inner;
+                r.Token = p.Browser.Token;
+                r.PresentedBindingSecretHash = p.Browser.Cookies?.BindingSecretHash;
+            } );
+            var r = await p.Front.CrisChannel.SendCommand( TestHelper.Monitor, relayed ).WithResult<IRelayAuthCenterResult>().Result.WaitAsync( TimeSpan.FromSeconds( 30 ) );
+            return r.Result;
+        }
+        (await RawRelayAsync( pocos.Create<IWhoAmIAtTheAuthCenterCommand>( c => c.ActorId = albertId ) )).ShouldBe( "Albert at the AuthCenter" );
+        // Only the ICommandAuthCenter commands are executed, never a session command.
+        Refused( await RawRelayAsync( pocos.Create<INotAuthCenterCommand>( c => c.ActorId = albertId ) ) )
+            .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
+        Refused( await RawRelayAsync( pocos.Create<IRefreshSessionCommand>() ) )
+            .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
+    }
+
+    [Test]
+    public async Task only_a_front_of_the_AuthCenter_can_relay_an_AuthCenter_command_Async()
+    {
+        await using var p = await StartAsync( frontIsAllowed: false );
+        Refused( await p.RelayCommandAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() ) )
+            .Errors.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RelayNotAllowed" );
     }
 
     [Test]

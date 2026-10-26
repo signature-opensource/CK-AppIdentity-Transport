@@ -9,6 +9,11 @@ The relay protocol between the fronts and their remote Authentication Center (se
   and the one it presents when the login completes.
 - [`IRelaySessionResult`](IRelaySessionResult.cs): the result of the relayed command and what the front's endpoint must
   apply (a session issued with the prepared secrets, or cleared).
+- [`IRelayAuthCenterCommand`](IRelayAuthCenterCommand.cs): a relayed command executed by the Authentication Center
+  (`ICommandAuthCenter`: the actor's self-service on its own login methods, the login schemes), with the bearer token
+  and the hash of the binding secret presented to the front. The Authentication Center accepts only these commands and
+  establishes the identity again from the token, its live session and its binding.
+  [`IRelayAuthCenterResult`](IRelayAuthCenterResult.cs) carries the command's result.
 - [`IGetAuthCenterEncryptionKeyQCommand`](IGetAuthCenterEncryptionKeyQCommand.cs) and
   [`IAuthCenterEncryptionKey`](IAuthCenterEncryptionKey.cs): the current public encryption key of the Authentication Center,
   signed by it. A front encrypts the sensitive fields of the session commands it relays with it.

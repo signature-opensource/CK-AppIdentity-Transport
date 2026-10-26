@@ -22,9 +22,10 @@ public abstract class AuthCenterRelayDIContainerDefinition : DIContainerDefiniti
         internal readonly IActivityMonitor _monitor;
         internal readonly IRemoteParty _caller;
         internal readonly AuthenticationInfo _authentication;
-        internal readonly RelayedEndpoint _endpoint;
+        // Null for a relayed ICommandAuthCenter: it is not a session command, it has no session endpoint.
+        internal readonly RelayedEndpoint? _endpoint;
 
-        internal Data( IActivityMonitor monitor, IRemoteParty caller, AuthenticationInfo authentication, RelayedEndpoint endpoint )
+        internal Data( IActivityMonitor monitor, IRemoteParty caller, AuthenticationInfo authentication, RelayedEndpoint? endpoint )
         {
             _monitor = monitor;
             _caller = caller;
@@ -43,7 +44,7 @@ public abstract class AuthCenterRelayDIContainerDefinition : DIContainerDefiniti
         services.AddScoped( sp => scopeData( sp )._caller );
         services.AddScoped( sp => new CurrentLocalParty( scopeData( sp )._caller.Owner ) );
         services.AddScoped( sp => scopeData( sp )._authentication );
-        services.AddScoped<IAuthenticationSessionEndpoint>( sp => scopeData( sp )._endpoint );
+        services.AddScoped<IAuthenticationSessionEndpoint>( sp => scopeData( sp )._endpoint! );
     }
 }
 
