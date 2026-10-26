@@ -28,7 +28,12 @@ public class SessionCommandsTests
     [Test]
     public async Task refresh_rotates_the_secrets_and_a_replayed_secret_revokes_the_session_Async()
     {
-        await using var app = await AuthCenterApp.StartAsync();
+        // Without the grace window (the previous secrets are then a reuse at once): see RefreshGraceTests for the window.
+        await using var app = await AuthCenterApp.StartAsync( c =>
+        {
+            AuthCenterApp.LocalAuthCenter( c );
+            c["AuthCenter:RefreshGraceWindow"] = "0";
+        } );
         (await app.LoginAsync( "Albert" )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Critical );
         var firstCookies = app.Caller.Cookies.ShouldNotBeNull();
         var firstEnd = (await ReadSessionAsync( app )).ShouldNotBeNull().Expires;

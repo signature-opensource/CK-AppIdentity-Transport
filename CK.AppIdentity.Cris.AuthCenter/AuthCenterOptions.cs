@@ -18,13 +18,19 @@ public sealed class AuthCenterOptions
     /// <summary>
     /// The default options.
     /// </summary>
-    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ) );
+    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ), TimeSpan.FromMinutes( 5 ), TimeSpan.FromMinutes( 10 ), TimeSpan.FromMinutes( 1 ) );
 
-    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime )
+    /// <summary>
+    /// The maximal <see cref="RefreshGraceWindow"/>: 5 minutes.
+    /// </summary>
+    public static readonly TimeSpan MaxRefreshGraceWindow = TimeSpan.FromMinutes( 5 );
+
+    AuthCenterOptions( TimeSpan sessionLifetime, TimeSpan criticalLifetime, TimeSpan tokenLifetime, TimeSpan refreshGraceWindow )
     {
         SessionLifetime = sessionLifetime;
         CriticalLifetime = criticalLifetime;
         TokenLifetime = tokenLifetime;
+        RefreshGraceWindow = refreshGraceWindow;
     }
 
     /// <summary>
@@ -46,6 +52,18 @@ public sealed class AuthCenterOptions
     /// </summary>
     public TimeSpan TokenLifetime { get; }
 
+    /// <summary>
+    /// Gets the time during which the previous secrets of a session are still accepted, once, after a rotation (a refresh,
+    /// an impersonation): when the answer of a rotation is lost (a dropped connection, a front's relay that timed out while
+    /// the Authentication Center completed), the caller retries with its previous secrets instead of having its session
+    /// revoked. It must cover the relay timeout (30 seconds) and the client's first retries.
+    /// <para>
+    /// Defaults to 1 minute, at most <see cref="MaxRefreshGraceWindow"/>. <see cref="TimeSpan.Zero"/> disables it: the
+    /// previous secrets are then a reuse, the session is revoked.
+    /// </para>
+    /// </summary>
+    public TimeSpan RefreshGraceWindow { get; }
+
     internal static AuthCenterOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section, IReadOnlyCollection<string> schemeKeys )
     {
         if( section == null ) return Default;
@@ -53,6 +71,15 @@ public sealed class AuthCenterOptions
         var session = ReadTimeSpan( monitor, section, nameof( SessionLifetime ), Default.SessionLifetime, ref success );
         var critical = ReadTimeSpan( monitor, section, nameof( CriticalLifetime ), Default.CriticalLifetime, ref success );
         var token = ReadTimeSpan( monitor, section, nameof( TokenLifetime ), Default.TokenLifetime, ref success );
+        var grace = Default.RefreshGraceWindow;
+        if( section[nameof( RefreshGraceWindow )] is string g )
+        {
+            if( !TimeSpan.TryParse( g, out grace ) || grace < TimeSpan.Zero || grace > MaxRefreshGraceWindow )
+            {
+                monitor.Error( $"Invalid '{section.Path}:{nameof( RefreshGraceWindow )}' = '{g}': a time span between 0 (disabled) and {MaxRefreshGraceWindow} is expected." );
+                success = false;
+            }
+        }
         foreach( var s in section.GetChildren() )
         {
             if( s.GetChildren().Any() && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase ) )
@@ -67,7 +94,7 @@ public sealed class AuthCenterOptions
             monitor.Error( $"Invalid '{section.Path}': the {nameof( CriticalLifetime )} ({critical}) and the {nameof( TokenLifetime )} ({token}) cannot exceed the {nameof( SessionLifetime )} ({session})." );
             return null;
         }
-        return new AuthCenterOptions( session, critical, token );
+        return new AuthCenterOptions( session, critical, token, grace );
     }
 
     static TimeSpan ReadTimeSpan( IActivityMonitor monitor, ImmutableConfigurationSection section, string key, TimeSpan defaultValue, ref bool success )

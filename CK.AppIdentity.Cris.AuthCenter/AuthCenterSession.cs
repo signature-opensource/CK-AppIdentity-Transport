@@ -34,6 +34,22 @@ public sealed record AuthCenterSession( string SessionId,
     public const int SessionIdLength = 22;
 
     /// <summary>
+    /// Gets the hash of the previous refresh secret: the one replaced by the last rotation. Null when there is none, or
+    /// when it has been used (it is accepted once, see <see cref="MatchesPrevious"/>).
+    /// </summary>
+    public string? PreviousRefreshSecretHash { get; init; }
+
+    /// <summary>
+    /// Gets the hash of the previous binding secret (see <see cref="PreviousRefreshSecretHash"/>).
+    /// </summary>
+    public string? PreviousBindingSecretHash { get; init; }
+
+    /// <summary>
+    /// Gets the time of the last rotation of the secrets (Utc). <see cref="DateTime.MinValue"/> before the first one.
+    /// </summary>
+    public DateTime RotatedAt { get; init; }
+
+    /// <summary>
     /// Gets the session key that the endpoint keeps and presents back: "{ActualActorId}.{SessionId}".
     /// It is not a secret (the token holds the session identifier).
     /// </summary>
@@ -83,10 +99,49 @@ public sealed record AuthCenterSession( string SessionId,
         return proof.SessionKey == SessionKey
                && FixedTimeEquals( proof.RefreshSecretHash, RefreshSecretHash )
                && FixedTimeEquals( proof.BindingSecretHash, BindingSecretHash );
-
-        static bool FixedTimeEquals( string a, string b )
-            => CryptographicOperations.FixedTimeEquals( System.Text.Encoding.UTF8.GetBytes( a ), System.Text.Encoding.UTF8.GetBytes( b ) );
     }
+
+    /// <summary>
+    /// Checks that a presented proof matches the previous secrets of this session (the ones replaced by the last
+    /// rotation), still in their grace window and not used yet: the answer of the rotation may have been lost.
+    /// </summary>
+    /// <param name="proof">The presented proof.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <param name="graceWindow">The <see cref="AuthCenterOptions.RefreshGraceWindow"/>.</param>
+    /// <returns>True if the proof matches the previous secrets in their grace window.</returns>
+    public bool MatchesPrevious( CK.Auth.AuthenticationSessionProof proof, DateTime utcNow, TimeSpan graceWindow )
+    {
+        return PreviousRefreshSecretHash != null
+               && PreviousBindingSecretHash != null
+               && utcNow < RotatedAt + graceWindow
+               && proof.SessionKey == SessionKey
+               && FixedTimeEquals( proof.RefreshSecretHash, PreviousRefreshSecretHash )
+               && FixedTimeEquals( proof.BindingSecretHash, PreviousBindingSecretHash );
+    }
+
+    /// <summary>
+    /// Rotates the secrets: the new hashes become the current ones. The current ones become the previous ones, unless
+    /// the rotation is done <paramref name="fromPrevious"/>: the previous secrets are then used (cleared).
+    /// </summary>
+    /// <param name="refreshSecretHash">The hash of the new refresh secret.</param>
+    /// <param name="bindingSecretHash">The hash of the new binding secret.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <param name="fromPrevious">True when the caller presented the previous secrets (see <see cref="MatchesPrevious"/>).</param>
+    /// <returns>The rotated session.</returns>
+    public AuthCenterSession Rotate( string refreshSecretHash, string bindingSecretHash, DateTime utcNow, bool fromPrevious )
+    {
+        return this with
+        {
+            RefreshSecretHash = refreshSecretHash,
+            BindingSecretHash = bindingSecretHash,
+            PreviousRefreshSecretHash = fromPrevious ? null : RefreshSecretHash,
+            PreviousBindingSecretHash = fromPrevious ? null : BindingSecretHash,
+            RotatedAt = utcNow
+        };
+    }
+
+    static bool FixedTimeEquals( string a, string b )
+        => CryptographicOperations.FixedTimeEquals( System.Text.Encoding.UTF8.GetBytes( a ), System.Text.Encoding.UTF8.GetBytes( b ) );
 
     /// <summary>
     /// Creates a new random session identifier.

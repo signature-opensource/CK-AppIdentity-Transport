@@ -71,6 +71,7 @@ Read from the `"AuthCenter"` section of the local party (never inherited, static
 | `SessionLifetime` | 1 day | The `Expires` of a login. The session slides: each refresh moves its end `SessionLifetime` later. |
 | `CriticalLifetime` | 5 minutes | The `CriticalExpires` of a login at `Critical` level. |
 | `TokenLifetime` | 10 minutes | The lifetime of a token (at most the session's). |
+| `RefreshGraceWindow` | 1 minute | How long the previous secrets of a session are accepted, once, after a rotation (0 disables it, at most 5 minutes). See "Sessions". |
 
 ### Tokens ([`AuthCenterToken`](AuthCenterToken.cs))
 
@@ -94,6 +95,21 @@ The endpoints read the tokens through `IAuthenticationTokenReader` (CK.Cris.Auth
 The sessions are in the `LocalFileStore` of the local party: `AuthCenter/Sessions/{ActualActorId}/{SessionId}`, so all
 the sessions of an actor are in one folder. A session holds the **hashes** of the endpoint secrets, never the secrets.
 The session identifiers are random (16 bytes, base64url) and checked before being used as file names.
+
+**Rotation and reuse detection.** Every refresh, impersonation and end of impersonation rotates the secrets. A
+presented proof that matches neither the current secrets nor (below) the previous ones **revokes the session**: two
+parties hold the same cookies.
+
+**The grace window** (`RefreshGraceWindow`): the answer of a rotation can be lost (a dropped connection, a front's relay
+that timed out while the Authentication Center completed). The caller then still has the previous secrets. They are
+accepted **once**, within the window after the rotation, by the operations that rotate again (refresh, impersonation, end
+of impersonation) and by the logout; the rotation then clears them. An operation that doesn't rotate (the Critical-session
+check of a passkey registration) refuses them without revoking. If someone else used them (a thief within the window),
+the legitimate caller's secrets become orphaned and its next refresh revokes the session: the reuse detection is delayed,
+not lost. The session file keeps the previous hashes and the rotation time (version 2; a version 1 file has none).
+
+**One operation at a time per session:** reading the session, checking the proof, rotating and saving are serialized per
+session in the Authentication Center (`AuthCenterSessionStore.LockAsync`): two concurrent rotations cannot both match.
 
 ### Opening a session ([`AuthCenterSessionOpener`](AuthCenterSessionOpener.cs))
 

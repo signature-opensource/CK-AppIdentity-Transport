@@ -46,10 +46,23 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         _services = services;
     }
 
-    readonly record struct Current( LocalAuthCenter Center, AuthCenterSession Session );
+    // FromPrevious: the proof matched the previous secrets of the session (in their grace window).
+    readonly record struct Current( LocalAuthCenter Center, AuthCenterSession Session, bool FromPrevious );
+
+    // Serializes the operations on the presented session (see AuthCenterSessionStore.LockAsync). Null when there is no
+    // local AuthCenter or no presented session: GetCurrentAsync then fails.
+    async ValueTask<IDisposable?> LockAsync()
+    {
+        var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>()?.Local;
+        var key = _endpoint.PresentedProof?.SessionKey;
+        return center == null || key == null ? null : await center.Sessions.LockAsync( key ).ConfigureAwait( false );
+    }
 
     // Finds the local AuthCenter and the session of the presented proof.
-    async ValueTask<(Current? Current, string? Error, string? ResName)> GetCurrentAsync( IActivityMonitor monitor, bool revokeOnMismatch )
+    // The previous secrets of the session (in their grace window, see AuthCenterOptions.RefreshGraceWindow) are accepted
+    // when acceptPrevious is true: by the operations that rotate the secrets again (or end the session). Otherwise they
+    // are refused without revoking the session: not a theft signal in the window, but not a usable proof either.
+    async ValueTask<(Current? Current, string? Error, string? ResName)> GetCurrentAsync( IActivityMonitor monitor, bool revokeOnMismatch, bool acceptPrevious )
     {
         var center = _localParty.LocalParty.GetFeature<CrisAuthCenter>();
         if( center == null ) return (null, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter");
@@ -66,7 +79,14 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         var store = center.Local.Sessions;
         var session = await store.TryReadAsync( monitor, actualActorId, sessionId ).ConfigureAwait( false );
         if( session == null ) return (null, "Invalid session.", "Authentication.InvalidSession");
-        if( !session.Matches( proof ) )
+        bool fromPrevious = false;
+        if( !session.Matches( proof ) && session.MatchesPrevious( proof, DateTime.UtcNow, center.Local.Options.RefreshGraceWindow ) )
+        {
+            if( !acceptPrevious ) return (null, "Invalid session.", "Authentication.InvalidSession");
+            monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"The previous secrets of the session of actor #{actualActorId} are used (the answer of its last rotation may have been lost): accepted once." );
+            fromPrevious = true;
+        }
+        else if( !session.Matches( proof ) )
         {
             if( revokeOnMismatch )
             {
@@ -80,7 +100,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
             store.TryDelete( monitor, actualActorId, sessionId );
             return (null, "The session expired.", "Authentication.SessionExpired");
         }
-        return (new Current( center.Local, session ), null, null);
+        return (new Current( center.Local, session, fromPrevious ), null, null);
     }
 
     /// <summary>
@@ -92,7 +112,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// <returns>The session, or the error and its resource name.</returns>
     public async ValueTask<(AuthCenterSession? Session, string? Error, string? ErrorId)> GetCriticalSessionAsync( IActivityMonitor monitor )
     {
-        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true ).ConfigureAwait( false );
+        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: false ).ConfigureAwait( false );
         if( c == null ) return (null, error, resName);
         if( _current.UnsafeActualActor.ActorId != c.Value.Session.ActualActorId )
         {
@@ -109,13 +129,14 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         return (c.Value.Session, null, null);
     }
 
-    // Rotates the endpoint secrets, saves the session (with its actor and its end) and returns the new token.
+    // Rotates the endpoint secrets (the current ones become the previous ones, unless the previous ones were presented:
+    // they are then used), saves the session (with its actor and its end) and returns the new token.
     async ValueTask<ISessionResult> IssueAsync<T>( IActivityMonitor monitor, T command, Current c, int actorId, DateTime expires, AuthenticationInfo info, DateTime utcNow )
         where T : ICommand<ISessionResult>
     {
         var s = c.Session;
         var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, expires );
-        await c.Center.Sessions.SaveAsync( s with { ActorId = actorId, Expires = expires, RefreshSecretHash = proof.RefreshSecretHash, BindingSecretHash = proof.BindingSecretHash } )
+        await c.Center.Sessions.SaveAsync( s.Rotate( proof.RefreshSecretHash, proof.BindingSecretHash, utcNow, c.FromPrevious ) with { ActorId = actorId, Expires = expires } )
                                .ConfigureAwait( false );
         return AuthCenterResults.Success( command, info, c.Center.CreateToken( s.SessionId, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
     }
@@ -131,7 +152,8 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// <returns>The session result.</returns>
     public async ValueTask<ISessionResult> RefreshAsync( IActivityMonitor monitor, IRefreshSessionCommand command )
     {
-        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true ).ConfigureAwait( false );
+        using var sessionLock = await LockAsync().ConfigureAwait( false );
+        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
         if( c == null )
         {
             _endpoint.Clear();
@@ -165,7 +187,8 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// <returns>The awaitable.</returns>
     public async ValueTask LogoutAsync( IActivityMonitor monitor )
     {
-        var (c, _, _) = await GetCurrentAsync( monitor, revokeOnMismatch: false ).ConfigureAwait( false );
+        using var sessionLock = await LockAsync().ConfigureAwait( false );
+        var (c, _, _) = await GetCurrentAsync( monitor, revokeOnMismatch: false, acceptPrevious: true ).ConfigureAwait( false );
         if( c != null )
         {
             var s = c.Value.Session;
@@ -189,7 +212,8 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         {
             return AuthCenterResults.Failure( monitor, command, "Exactly one of TargetActorId or TargetActorName must be set.", "Authentication.InvalidImpersonation" );
         }
-        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true ).ConfigureAwait( false );
+        using var sessionLock = await LockAsync().ConfigureAwait( false );
+        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
         if( c == null ) return AuthCenterResults.Failure( monitor, command, error!, resName! );
         var actual = _current.UnsafeActualActor;
         if( actual.ActorId != c.Value.Session.ActualActorId || _current.ActualActor.Level != AuthLevel.Critical )
@@ -227,7 +251,8 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// <returns>The session result.</returns>
     public async ValueTask<ISessionResult> ClearImpersonationAsync( IActivityMonitor monitor, IClearImpersonationCommand command )
     {
-        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true ).ConfigureAwait( false );
+        using var sessionLock = await LockAsync().ConfigureAwait( false );
+        var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
         if( c == null ) return AuthCenterResults.Failure( monitor, command, error!, resName! );
         var actual = _current.UnsafeActualActor;
         if( actual.ActorId != c.Value.Session.ActualActorId )

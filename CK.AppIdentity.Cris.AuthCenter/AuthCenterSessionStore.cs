@@ -17,7 +17,9 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// </summary>
 public sealed class AuthCenterSessionStore
 {
-    const int _version = 1;
+    // Version 2: the previous secrets and the rotation time (a version 1 file has none).
+    const int _version = 2;
+    readonly System.Collections.Generic.Dictionary<string, SessionLock> _locks = new();
     readonly IFileStore _store;
     readonly NormalizedPath _root;
 
@@ -72,6 +74,12 @@ public sealed class AuthCenterSessionStore
             w.WriteString( "DeviceId", session.DeviceId );
             w.WriteString( "RefreshSecretHash", session.RefreshSecretHash );
             w.WriteString( "BindingSecretHash", session.BindingSecretHash );
+            if( session.PreviousRefreshSecretHash != null && session.PreviousBindingSecretHash != null )
+            {
+                w.WriteString( "PreviousRefreshSecretHash", session.PreviousRefreshSecretHash );
+                w.WriteString( "PreviousBindingSecretHash", session.PreviousBindingSecretHash );
+            }
+            w.WriteString( "RotatedAt", session.RotatedAt );
             w.WriteEndObject();
             await w.FlushAsync( c ).ConfigureAwait( false );
         }, cancel );
@@ -95,7 +103,7 @@ public sealed class AuthCenterSessionStore
             using var d = await JsonDocument.ParseAsync( stream, cancellationToken: cancel ).ConfigureAwait( false );
             var o = d.RootElement;
             var version = o.GetProperty( "Version" ).GetInt32();
-            if( version != _version ) Throw.CKException( $"Unknown session version {version}." );
+            if( version is < 1 or > _version ) Throw.CKException( $"Unknown session version {version}." );
             var s = new AuthCenterSession( o.GetProperty( "SessionId" ).GetString()!,
                                            o.GetProperty( "ActualActorId" ).GetInt32(),
                                            o.GetProperty( "ActorId" ).GetInt32(),
@@ -104,7 +112,12 @@ public sealed class AuthCenterSessionStore
                                            o.GetProperty( "RememberMe" ).GetBoolean(),
                                            o.GetProperty( "DeviceId" ).GetString()!,
                                            o.GetProperty( "RefreshSecretHash" ).GetString()!,
-                                           o.GetProperty( "BindingSecretHash" ).GetString()! );
+                                           o.GetProperty( "BindingSecretHash" ).GetString()! )
+            {
+                PreviousRefreshSecretHash = o.TryGetProperty( "PreviousRefreshSecretHash", out var pr ) ? pr.GetString() : null,
+                PreviousBindingSecretHash = o.TryGetProperty( "PreviousBindingSecretHash", out var pb ) ? pb.GetString() : null,
+                RotatedAt = o.TryGetProperty( "RotatedAt", out var r ) ? r.GetDateTime() : DateTime.MinValue
+            };
             if( s.SessionId != sessionId || s.ActualActorId != actualActorId ) Throw.CKException( "The session doesn't match its file." );
             return s;
         }
@@ -112,6 +125,48 @@ public sealed class AuthCenterSessionStore
         {
             monitor.Error( $"Unable to read the session '{path}'.", ex );
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Serializes the operations on a session in this process: reading it, checking the presented proof, rotating its
+    /// secrets and saving it must be atomic (two concurrent rotations would both match and the last write would win,
+    /// revoking the other caller at its next refresh). There is one Authentication Center party per store.
+    /// </summary>
+    /// <param name="sessionKey">The session key.</param>
+    /// <returns>The lock to dispose.</returns>
+    public async ValueTask<IDisposable> LockAsync( string sessionKey )
+    {
+        SessionLock? l;
+        lock( _locks )
+        {
+            if( !_locks.TryGetValue( sessionKey, out l ) ) _locks.Add( sessionKey, l = new SessionLock( this, sessionKey ) );
+            ++l.Count;
+        }
+        await l.Semaphore.WaitAsync().ConfigureAwait( false );
+        return l;
+    }
+
+    sealed class SessionLock : IDisposable
+    {
+        readonly AuthCenterSessionStore _store;
+        readonly string _key;
+        public readonly SemaphoreSlim Semaphore = new SemaphoreSlim( 1, 1 );
+        public int Count;
+
+        public SessionLock( AuthCenterSessionStore store, string key )
+        {
+            _store = store;
+            _key = key;
+        }
+
+        public void Dispose()
+        {
+            Semaphore.Release();
+            lock( _store._locks )
+            {
+                if( --Count == 0 ) _store._locks.Remove( _key );
+            }
         }
     }
 
