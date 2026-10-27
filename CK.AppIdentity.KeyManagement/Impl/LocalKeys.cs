@@ -543,7 +543,7 @@ sealed partial class LocalKeys : ILocalKeys
         {
             monitor.Error( ActivityMonitor.Tags.ToBeInvestigated,
                            $"The next identity key of '{local.FullName}' (#{head.Seq + 1}) is missing: this party can neither rotate nor be revoked. " +
-                           $"The current key keeps working. The only recovery is a new identity that every remote re-approves." );
+                           $"The current key keeps working. Recover with the recovery key (ILocalKeys.Recover): it rotates to a fresh key and commits to a new next one." );
             alerts.Raise( monitor, IdentityAlertKind.NextKeyLost, local.FullName, true, null, head.Seq + 1, head.NextCommit.Span, default );
             return null;
         }
@@ -643,10 +643,10 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     /// <summary>
-    /// Disposes the current identity key of this local party.
+    /// Disposes the current identity key and operational credential of this local party.
     /// <para>
     /// Known and accepted: a negotiation still in flight can be inside
-    /// <see cref="LocalIdentityKey.TrySignHash"/> on it when this runs, and will then throw
+    /// <see cref="OperationalCredential.TrySignHash"/> on the credential when this runs, and will then throw
     /// <see cref="ObjectDisposedException"/> into its back task, where it is caught and logged. This
     /// is reached only when the whole service is shutting down or the local party is being destroyed,
     /// so the connection that fails was about to be torn down anyway. Making it airtight means

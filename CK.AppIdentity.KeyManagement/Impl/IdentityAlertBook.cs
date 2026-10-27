@@ -215,16 +215,16 @@ sealed class IdentityAlertBook
     {
         IdentityAlertKind.IdentityTakenOver
             => "Someone rotated this identity, which requires its committed next key: the identity is lost to them. "
-               + "Recovery is a new identity that every remote re-approves.",
+               + "Take it back with the recovery key (ILocalKeys.Recover): the remotes that receive the recovery drop what they pinned since.",
         IdentityAlertKind.IdentityForked
             => "Someone wrote an event of this identity, which requires one of its committed keys: that key leaked. "
-               + "Recovery is a new identity that every remote re-approves.",
+               + "Take the identity back with the recovery key (ILocalKeys.Recover).",
         IdentityAlertKind.RemoteDuplicity
             => $"Two validly signed events exist at the same position of the log of '{subject}': its committed key leaked. "
                + "Its identity must be re-created and re-approved.",
         IdentityAlertKind.NextKeyLost
             => "This party can neither rotate nor be revoked. The current key keeps working. "
-               + "Recovery is a new identity that every remote re-approves.",
+               + "Recover with the recovery key (ILocalKeys.Recover): it rotates to a fresh key and commits to a new next one.",
         _ => "Its current key stays in use beyond its schedule."
     };
 }

@@ -336,7 +336,7 @@ static partial class ZeroProtocol // Negotiation
     }
 
     /// <summary>
-    /// Tries to send a TransportMessage of the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version
+    /// Tries to send the signed initial message built from the <see cref="TransportFeature.OutgoingInitialMessage"/> in a specific version
     /// and returns a random nonce on success.
     /// </summary>
     /// <param name="systemClock">The system clock to use.</param>
@@ -768,7 +768,7 @@ static partial class ZeroProtocol // Negotiation
         }
         // The statement is signed by whoever sent it, so it can now be held against what arrived.
         // This runs BEFORE IsTrustedAfterRead because that call is not a query: under AutoTrustKey it
-        // adopts the key it has just read and persists it as the .public file in the shared store.
+        // adopts the key it has just read and pins it as an Identity.{Seq}.trust file in the shared store.
         // Writing durable trust off a message we are about to reject as invalid is the wrong shape for
         // a security write, whoever it happens to benefit. The listener already does it in this order
         // (IncomingConnectionBackTask) and the two sides must agree on when trust may be persisted.

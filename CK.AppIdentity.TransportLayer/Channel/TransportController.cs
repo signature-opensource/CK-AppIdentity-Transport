@@ -403,7 +403,7 @@ sealed partial class TransportController
 
         if( m == IncomingMessage.Empty )
         {
-            // An empty message is not a real TransportMessage, it is the keep alive:
+            // An empty message is not a real message, it is the keep alive:
             // the other side worries about us because we did not send it any message for some time.
             // Let's reassure it. It is useless to use the high priority: if messages are being sent
             // we should not receive KeepAlive.

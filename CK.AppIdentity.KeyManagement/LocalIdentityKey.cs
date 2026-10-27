@@ -9,9 +9,9 @@ namespace CK.AppIdentity.KeyManagement;
 /// <summary>
 /// Identity key exposed by <see cref="ILocalKeys.Identities"/>.
 /// <para>
-/// This is the party's certificate authority. It signs message transcripts itself
-/// (<see cref="TrySignHash"/>) and issues the purpose-specific credentials anything else needs
-/// (<see cref="CreateDerivedCertificate"/>). Its private key is never exposed: a caller that needs a
+/// This is the party's certificate authority. It issues the purpose-specific credentials anything else needs
+/// (<see cref="CreateDerivedCertificate"/>), among them the <see cref="OperationalCredential"/> that signs the
+/// message transcripts: <see cref="TrySignHash"/> is not used for them. Its private key is never exposed: a caller that needs a
 /// key of its own asks for one to be issued.
 /// </para>
 /// </summary>
@@ -138,7 +138,7 @@ public sealed class LocalIdentityKey : IPublicKeyData
     /// </para>
     /// </summary>
     /// <param name="subject">
-    /// The subject of the new certificate. Defaults to <see cref="SubjectName"/>.
+    /// The subject of the new certificate. Defaults to <see cref="DerivedSubjectName"/>.
     /// </param>
     /// <param name="notAfter">
     /// UTC expiration, which must be inside this identity's own validity period. Defaults to

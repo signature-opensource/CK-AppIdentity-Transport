@@ -7,7 +7,7 @@ namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 /// <summary>
 /// Store surgery for adversarial tests.
 /// <para>
-/// A remote's trusted identity is persisted as <c>Identity.&lt;TimeName&gt;.public</c> under
+/// A remote's trusted identity is pinned as <c>Identity.{Seq}.trust</c> under
 /// <c>&lt;StoreRoot&gt;/#Dev/&lt;remote full name&gt;/</c> — that is, it is keyed by the
 /// <b>remote's name alone</b> and is shared by every local party in the same store. Two tests that
 /// each declare a remote called <c>$AdvPeer</c> therefore share one trusted key, and a test rerun

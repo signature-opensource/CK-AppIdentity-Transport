@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer;
 /// This exists because of a gap in the platform. A listener holds each remote's pinned identity as a
 /// SubjectPublicKeyInfo and nothing more — distributing the identity <em>certificate</em> is the
 /// format change the design deliberately did not make. But <see cref="X509Chain"/> can only validate
-/// against an <see cref="X509Certificate2"/>, and net8.0 offers no way to verify a certificate's
+/// against an <see cref="X509Certificate2"/>, and the platform offers no way to verify a certificate's
 /// signature against a key on its own. So the signature is checked directly: a certificate is a
 /// SEQUENCE of the signed body, the algorithm, and the signature over that body, and all three are
 /// readable without reconstructing anything.

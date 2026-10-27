@@ -11,12 +11,13 @@ public enum ConnectionAvailability
     None,
 
     /// <summary>
-    /// The connection to the remote has been lost for a long time. 
+    /// A transport is still connected but the remote no longer answers the keep-alive probes.
+    /// An answer to a probe restores <see cref="Connected"/>.
     /// </summary>
     DangerZone,
 
     /// <summary>
-    /// The remote is not currently connected but was recently.
+    /// The negotiated transport to the remote died and a reconnection attempt is scheduled.
     /// </summary>
     Low,
 

@@ -13,13 +13,13 @@ public interface IOutgoingMessageData
     MessageProtocol Protocol { get; }
 
     /// <summary>
-    /// Gets an optional source object associated to this <see cref="TransportMessage"/>.
+    /// Gets an optional source object associated to this message.
     /// For an outgoing message, this typically references a data object that is serialized in the message.
     /// </summary>
     object? Source { get; }
 
     /// <summary>
-    /// Gets whether this message is valid: it is not the <see cref="TransportMessage.Invalid"/> nor the <see cref="TransportMessage.Canceled"/> message
+    /// Gets whether this message is valid: it is not the <see cref="IOutgoingMessage.Invalid"/> nor the <see cref="IOutgoingMessage.Canceled"/> message
     /// and has not been disposed yet.
     /// </summary>
     bool IsValid { get; }

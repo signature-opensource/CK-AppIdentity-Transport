@@ -417,17 +417,6 @@ public abstract partial class Transport
     }
 
     /// <summary>
-    /// Root method that calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> with
-    /// the <paramref name="messagePrefix"/> and then <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/>
-    /// (mono buffer again) or <see cref="SendAsync(ReadOnlySequence{byte}, CancellationToken)"/> (when the message has multiple buffer).
-    /// <para>
-    /// Calls to this methods are serialized.
-    /// </para>
-    /// </summary>
-    /// <param name="message">The message body.</param>
-    /// <param name="messagePrefix">The message prefix.</param>
-    /// <returns>False if the <paramref name="cancellation"/> has been signaled, true otherwise.</returns>
-    /// <summary>
     /// Run-phase send: header, payload, then the authentication tag.
     /// </summary>
     async ValueTask<bool> SendAsync( ReadOnlyMemory<byte> messagePrefix,
@@ -455,6 +444,18 @@ public abstract partial class Transport
         }
     }
 
+    /// <summary>
+    /// Root method that calls <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/> with
+    /// the <paramref name="messagePrefix"/> and then <see cref="SendAsync(ReadOnlyMemory{byte}, CancellationToken)"/>
+    /// (mono buffer again) or <see cref="SendAsync(ReadOnlySequence{byte}, CancellationToken)"/> (when the message has multiple buffer).
+    /// <para>
+    /// Calls to this methods are serialized.
+    /// </para>
+    /// </summary>
+    /// <param name="message">The message body.</param>
+    /// <param name="messagePrefix">The message prefix.</param>
+    /// <param name="cancellation">The token that, when signaled, turns a cancellation into a false result.</param>
+    /// <returns>False if the <paramref name="cancellation"/> has been signaled, true otherwise.</returns>
     protected virtual async ValueTask<bool> SendAsync( ReadOnlyMemory<byte> messagePrefix, ReadOnlySequence<byte> message, CancellationToken cancellation )
     {
         try

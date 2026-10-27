@@ -69,7 +69,7 @@ public static class TestHelperExtensions
 
         // Adds the TransportFeatureDriver before the KeyManagementFeatureDriver to test
         // the existence of the dependency from TransportFeatureDriver to KeyManagementFeatureDriver.
-        // (Without the - unused - constructor parameter, registering services in this order fails.)
+        // (The KeyManagementFeatureDriver constructor parameter of the TransportFeatureDriver carries this dependency.)
         serviceBuilder.AddSingleton<TransportFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
 

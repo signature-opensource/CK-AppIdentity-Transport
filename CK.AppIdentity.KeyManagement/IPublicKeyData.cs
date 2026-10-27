@@ -19,7 +19,7 @@ public interface IPublicKeyData
     /// this is the DER encoded X.509 <c>SubjectPublicKeyInfo</c> (RFC 5280), that holds the key algorithm
     /// and parameters (the curve) and the key itself.
     /// <para>
-    /// This is the content of the "Identity.*.public" files of the key store and what is exchanged on the wire.
+    /// This is what the key events carry (<see cref="KeyEvent.Spki"/>), in the <c>Identity.{Seq}.trust</c> files of the key store and on the wire.
     /// It can be read back by <see cref="PublicKey.CreateFromSubjectPublicKeyInfo(ReadOnlySpan{byte}, out int)"/>
     /// (or <c>ECDsa.ImportSubjectPublicKeyInfo</c>). Its PEM form is
     /// <c>PemEncoding.WriteString( "PUBLIC KEY", PublicKeyRawData.Span )</c>, the "-----BEGIN PUBLIC KEY-----"

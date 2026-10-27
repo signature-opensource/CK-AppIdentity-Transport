@@ -11,7 +11,7 @@ public enum PeeringIssueKind
     None,
 
     /// <summary>
-    /// The offset between this system and the remote one is bigger than <see cref="TransportFeature.MaxClockOffset"/>.
+    /// The offset between this system and the remote one is bigger than <see cref="KeyManagement.IRemoteKeys.MaxClockOffset"/>.
     /// Clocks must be synchronized before anything can be done.
     /// <para>
     /// This applies to listeners and initiators.

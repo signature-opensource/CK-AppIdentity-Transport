@@ -192,7 +192,7 @@ public sealed class PeeringIssue
     /// Gets whether the remote can be accepted: <see cref="Kind"/> is <see cref="PeeringIssueKind.RequiresLocalApproval"/>
     /// or <see cref="PeeringIssueKind.RequiresBothApproval"/> and the <see cref="RemoteKeyForApproval"/> is not null.
     /// <para>
-    /// This should be true before calling <see cref="AcceptRemote"/> but this state can change at any time:
+    /// This should be true before calling <see cref="AcceptRemoteIdentity(IActivityMonitor)"/> but this state can change at any time:
     /// <see cref="AcceptRemoteIdentity(IActivityMonitor)"/> may return false if conditions are not met when it is called.
     /// </para>
     /// </summary>
@@ -201,11 +201,14 @@ public sealed class PeeringIssue
                                                 && _remoteKeyForApproval != null);
 
     /// <summary>
-    /// Accepts the current <see cref="IIncomingRequest.CurrentRemoteIdentity"/> for this remote.
-    /// This information is persited: from now on, the remote incoming connections will be accepted.
+    /// Accepts the <see cref="RemoteIdentityForApproval"/> for this remote: it becomes its trusted identity.
+    /// This information is persisted: from now on, the remote connections presenting this identity will be accepted.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <returns>True on success, false if <see cref="Kind"/> is not <see cref="PeeringIssueKind.RequiresLocalApproval"/>.</returns>
+    /// <returns>
+    /// True on success, false if <see cref="Kind"/> is not <see cref="PeeringIssueKind.RequiresLocalApproval"/>
+    /// or <see cref="PeeringIssueKind.RequiresBothApproval"/> or there is no <see cref="RemoteIdentityForApproval"/>.
+    /// </returns>
     public bool AcceptRemoteIdentity( IActivityMonitor monitor )
     {
         if( _cloneSource != null ) return _cloneSource.AcceptRemoteIdentity( monitor );

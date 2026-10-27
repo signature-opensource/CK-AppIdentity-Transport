@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace CK.AppIdentity.KeyManagement;
 
 /// <summary>
-/// Computes the <see cref="IPublicKeyData.Fingerprint"/>.
+/// Computes the <see cref="PublicKeyDataExtensions.GetFingerprint(IPublicKeyData)"/>.
 /// </summary>
 public static class PublicKeyFingerprint
 {

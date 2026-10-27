@@ -133,11 +133,11 @@ public interface IRemoteKeys : IPartyKeys
     bool CheckClockOffset( IActivityLineEmitter logger, TimeSpan clockOffset, LogLevel logLevel = LogLevel.Error );
 
     /// <summary>
-    /// Checks that the provided <paramref name="nonceValue"/> is not already in the cache and adds it.
+    /// Checks that the provided <paramref name="nonce"/> is not already in the cache and adds it.
     /// Checking a nonce value always adds it to the cache. 
     /// </summary>
     /// <param name="logger">The logger to use.</param>
-    /// <param name="nonceValue">The nonce value to check and add.</param>
+    /// <param name="nonce">The nonce to check and add.</param>
     /// <param name="logLevel">Log level used to log the failure. Use <see cref="LogLevel.None"/> to not log anything.</param>
     /// <returns>True if the nonce has been added.</returns>
     bool CheckAndAddNonceValue( IActivityLineEmitter logger, in TimedNonce nonce, LogLevel logLevel = LogLevel.Error );

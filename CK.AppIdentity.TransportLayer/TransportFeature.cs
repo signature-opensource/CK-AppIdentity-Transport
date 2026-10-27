@@ -510,7 +510,7 @@ public sealed class TransportFeature
         Throw.DebugAssert( _channels.Skip( _bestRegisteredProtocols.Count ).All( c => c == null ) );
         if( _bestRegisteredProtocols.Count == 0 )
         {
-            monitor.Warn( $"No message protocol registered for '{_party.FullName}'. You may want to disallow the \"TransportLayer\" feature." );
+            monitor.Warn( $"No message protocol registered for '{_party.FullName}'. You may want to disallow the \"Transport\" feature." );
         }
         else
         {

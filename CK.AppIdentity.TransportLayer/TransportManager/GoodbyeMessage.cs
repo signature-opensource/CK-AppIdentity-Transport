@@ -115,7 +115,7 @@ public abstract class GoodbyeMessage
 
         /// <summary>
         /// Gets the newcomer endpoint description.
-        /// Length is between 1 and 255.
+        /// It is not empty or white space and its length is at most <see cref="MaxEndPointDescriptionLength"/>.
         /// </summary>
         public string RemoteEndPointDescription { get; }
 
