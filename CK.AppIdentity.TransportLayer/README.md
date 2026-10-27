@@ -108,7 +108,9 @@ negotiate the ones they can and want to use. Any Transport between 2 parties can
 The declared length is chosen by the peer, so it is bounded before anything is allocated for it:
 `MessageProtocol.MaxIncomingMessageLength` is 16 MiB by default (`DefaultMaxIncomingMessageLength`) and 1 MiB for the
 "0 Protocol". A longer frame is invalid, which kills the transport; the sender refuses to build an outgoing message above
-the same bound. The bound of a protocol is set when it is first registered (`TryRegister`'s `maxIncomingMessageLength`).
+the same bound. A channel that legitimately carries larger messages declares its own bound by overriding
+`ChannelFeature.MaxIncomingMessageLength`: it applies to all its protocol versions (`TryRegister`'s `maxIncomingMessageLength`),
+and registering a protocol again with another bound is an error. Both parties must use the same bound.
 
 The final length of a message on the wire is between 2 bytes (the special Empty message, see below) and 2 GiB.
 A minimal 1 byte message requires 3 bytes (in any of the 7 available protocols) during the handshake.

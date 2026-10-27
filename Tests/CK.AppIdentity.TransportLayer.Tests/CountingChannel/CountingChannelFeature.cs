@@ -33,6 +33,8 @@ public sealed partial class CountingChannelFeature : ChannelFeature
 
     new Protocol? CurrentHandler => Unsafe.As<Protocol?>( base.CurrentHandler );
 
+    protected override int MaxIncomingMessageLength => _driver.MaxIncomingMessageLength;
+
     /// <summary>
     /// Gets how many times <see cref="PeerProtocolHandler.OnSendMessage"/> ran for a message.
     /// </summary>

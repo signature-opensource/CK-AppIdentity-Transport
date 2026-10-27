@@ -72,7 +72,8 @@ public abstract class ChannelFeatureDriver<T> : ApplicationIdentityFeatureDriver
                                             channel,
                                             FeatureName,
                                             channel.OverrideProtocolName ?? FeatureName.Substring( 0, FeatureName.Length - 7 ),
-                                            channel.Versions ) )
+                                            channel.Versions,
+                                            channel.MaxIncomingMessageLength ) )
             {
                 return false;
             }

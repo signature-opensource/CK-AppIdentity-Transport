@@ -21,7 +21,8 @@ public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDi
     }
 
     /// <summary>
-    /// Tries to register a protocol. Fails it the name is invalid or if it is the <see cref="MessageProtocol.ZeroProtocolName"/>.
+    /// Tries to register a protocol. Fails it the name is invalid, if it is the <see cref="MessageProtocol.ZeroProtocolName"/>
+    /// or if the protocol is already registered with another <see cref="MessageProtocol.MaxIncomingMessageLength"/>.
     /// </summary>
     /// <param name="monitor">Required monitor.</param>
     /// <param name="name">Base protocol name.</param>
@@ -48,8 +49,13 @@ public sealed class MessageProtocolDirectoryService : ISingletonAutoService, IDi
         else
         {
             var fullName = FormatFullName( name, version );
-            registered = _protocols.AddOrUpdate( fullName, new MessageProtocol( fullName, name, version, false, maxIncomingMessageLength ), ( n, exist ) => exist );
-            return true;
+            var candidate = new MessageProtocol( fullName, name, version, false, maxIncomingMessageLength );
+            registered = _protocols.GetOrAdd( fullName, candidate );
+            if( registered.MaxIncomingMessageLength == candidate.MaxIncomingMessageLength )
+            {
+                return true;
+            }
+            monitor.Error( $"Protocol '{fullName}' is already registered with a maximum incoming message length of {registered.MaxIncomingMessageLength} bytes. It cannot be registered with {candidate.MaxIncomingMessageLength} bytes." );
         }
         registered = null;
         return false;

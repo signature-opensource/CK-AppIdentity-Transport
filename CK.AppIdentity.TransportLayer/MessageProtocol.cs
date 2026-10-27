@@ -41,7 +41,7 @@ public sealed class MessageProtocol
     /// *before* the MAC can reject them.
     /// </para>
     /// <para>
-    /// A channel that legitimately carries more can raise it at registration.
+    /// A channel that legitimately carries more declares its own bound: see <see cref="ChannelFeature.MaxIncomingMessageLength"/>.
     /// </para>
     /// </summary>
     public const int DefaultMaxIncomingMessageLength = 16 * 1024 * 1024;

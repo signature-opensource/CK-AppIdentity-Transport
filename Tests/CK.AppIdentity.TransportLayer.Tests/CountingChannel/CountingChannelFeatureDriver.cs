@@ -30,6 +30,11 @@ public sealed class CountingChannelFeatureDriver : ChannelFeatureDriver<Counting
     /// </summary>
     public bool ThrowOnTeardown { get; set; }
 
+    /// <summary>
+    /// Gets or sets the <see cref="ChannelFeature.MaxIncomingMessageLength"/> of the features.
+    /// </summary>
+    public int MaxIncomingMessageLength { get; set; }
+
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CountingChannelFeature? channel )
     {
         channel = new CountingChannelFeature( this, transport );

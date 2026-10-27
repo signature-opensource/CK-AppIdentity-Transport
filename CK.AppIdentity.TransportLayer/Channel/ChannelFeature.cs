@@ -58,6 +58,16 @@ public abstract class ChannelFeature
     internal protected virtual IEnumerable<ushort> Versions => Array.Empty<ushort>();
 
     /// <summary>
+    /// Gets 0 by default: the <see cref="MessageProtocol.DefaultMaxIncomingMessageLength"/> applies.
+    /// A channel that legitimately carries larger messages must return its own bound: it is the
+    /// <see cref="MessageProtocol.MaxIncomingMessageLength"/> of all its <see cref="Versions"/>.
+    /// <para>
+    /// Both parties must agree on this bound: a message longer than what the receiver accepts kills the transport.
+    /// </para>
+    /// </summary>
+    internal protected virtual int MaxIncomingMessageLength => 0;
+
+    /// <summary>
     /// Gets the underlying <see cref="TransportFeature"/>.
     /// </summary>
     public TransportFeature Transport => _transportFeature;

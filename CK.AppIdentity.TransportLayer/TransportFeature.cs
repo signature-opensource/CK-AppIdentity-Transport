@@ -432,7 +432,8 @@ public sealed class TransportFeature
                                    ChannelFeature channel,
                                    string channelFeatureName,
                                    string protocolName,
-                                   IEnumerable<ushort> protocolVersions )
+                                   IEnumerable<ushort> protocolVersions,
+                                   int maxIncomingMessageLength )
     {
         Throw.DebugAssert( _transportManager.IsInApplicationIdentityLoop( monitor ) );
         if( _bestRegisteredProtocols.Count == MessageProtocolMap.MaxCount )
@@ -444,11 +445,11 @@ public sealed class TransportFeature
         using var versions = protocolVersions.OrderByDescending( Util.FuncIdentity ).GetEnumerator();
         if( versions.MoveNext() )
         {
-            idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, versions.Current );
+            idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, versions.Current, maxIncomingMessageLength );
             if( idxSorted < 0 ) return false;
             while( versions.MoveNext() )
             {
-                if( !_transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, versions.Current, out var messageProtocol ) )
+                if( !_transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, versions.Current, out var messageProtocol, maxIncomingMessageLength ) )
                 {
                     return false;
                 }
@@ -461,7 +462,7 @@ public sealed class TransportFeature
         }
         else
         {
-            idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0 );
+            idxSorted = RegisterBestProtocol( monitor, channelFeatureName, protocolName, 0, maxIncomingMessageLength );
             if( idxSorted < 0 ) return false;
         }
         channel._baseProtocolName = protocolName;
@@ -469,9 +470,9 @@ public sealed class TransportFeature
         return true;
     }
 
-    int RegisterBestProtocol( IActivityMonitor monitor, string channelFeatureName, string protocolName, ushort version )
+    int RegisterBestProtocol( IActivityMonitor monitor, string channelFeatureName, string protocolName, ushort version, int maxIncomingMessageLength )
     {
-        if( _transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, version, out var messageProtocol ) )
+        if( _transportManager.MessageProtocolDirectory.TryRegister( monitor, protocolName, version, out var messageProtocol, maxIncomingMessageLength ) )
         {
             int i = 0;
             for( ; i < _bestRegisteredProtocols.Count; i++ )
