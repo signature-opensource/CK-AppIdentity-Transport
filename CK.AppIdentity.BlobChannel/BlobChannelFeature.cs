@@ -35,6 +35,7 @@ public sealed partial class BlobChannelFeature : ChannelFeature
     /// <returns>True if data has been successfully sent.</returns>
     public bool TrySend( byte[] data )
     {
+        Throw.CheckArgument( data.Length > 0 );
         var h = CurrentHandler;
         if( h != null )
         {

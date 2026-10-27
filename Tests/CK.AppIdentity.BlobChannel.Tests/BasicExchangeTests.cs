@@ -4,6 +4,7 @@ using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -29,6 +30,27 @@ public class BasicExchangeTests
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<BlobChannelFeatureDriver>() );
     }
 
+
+    [Test]
+    [CancelAfter( 30000 )]
+    public async Task empty_data_is_rejected_by_TrySend_and_TrySendAsync_Async( CancellationToken token )
+    {
+        TestHelper.CleanupFolder( ApplicationIdentityServiceConfiguration.DefaultStoreRootPath );
+
+        // No listener: the channel exists but is not connected.
+        await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$Sender";
+            c["Parties:0:PartyName"] = "Listener";
+            c["Parties:0:Address"] = BlobChannelTester.Address;
+            c["AllowFeatures"] = "BlobChannel";
+        }, AddFastClockAndBlobChannel, token );
+        var channel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
+
+        Util.Invokable( () => { channel.TrySend( [] ); } ).ShouldThrow<ArgumentException>();
+        await Util.Awaitable( async () => { await channel.TrySendAsync( [], token ); } ).ShouldThrowAsync<ArgumentException>();
+        channel.TrySend( [1] ).ShouldBeFalse( "Not connected." );
+    }
 
     [Test]
     // A hang guard, not a performance check: this may be the first test of the process that pays the cold start
