@@ -15,10 +15,11 @@ sealed partial class TransportManager
     /// If the IRemoteParty has been found (we have it, it's its TrustedIdentity that is missing), we use
     /// its Owner local to find the "closest" url pattern.
     /// If the IRemoteParty is null, we use the DomainName to try to locate a domain that would better host
-    /// this remote than the Local one.
+    /// this remote than the Local one, and fall back to the Local one.
+    /// The "EnlistRemoteUrl" is looked up from this party up through its parents.
     /// </summary>
     /// <param name="party">The remote party if we already know it.</param>
-    /// <param name="domainName">The domain name of the remote.</param>
+    /// <param name="domainName">The domain name of the remote: it replaces "{DomainName}" in the url.</param>
     /// <returns>The enlistment url or null.</returns>
     /// <remarks>
     /// This is reached for <c>PeeringIssueKind.IncomingUnknown</c>, i.e. for a peer we have never
@@ -30,9 +31,10 @@ sealed partial class TransportManager
     /// </remarks>
     internal string? GetEnlistRemoteUrl( IRemoteParty? party, string domainName )
     {
-        IParty? closest = party;
-        closest ??= _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName );
-        var u = closest?.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
+        IParty closest = party
+                         ?? _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName )
+                         ?? (IParty)_agent.ApplicationIdentityService;
+        var u = closest.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
         if( u != null ) u = u.Replace( "{DomainName}", domainName );
         // The value is raw configuration and travels inside messages whose maximum length is budgeted
         // term by term (ZeroProtocol.FirstAnswerMaxLength). Without a bound here a long or non-ASCII

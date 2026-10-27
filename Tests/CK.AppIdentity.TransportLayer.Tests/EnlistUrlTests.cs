@@ -38,8 +38,8 @@ public class EnlistUrlTests
     /// <summary>
     /// A listener that hosts a tenant domain "Ghost" carrying an EnlistRemoteUrl, and does not know
     /// anybody in it. GetEnlistRemoteUrl resolves an unknown party's URL through
-    /// TenantDomains.FirstOrDefault( d =&gt; d.DomainName == domainName ), so without this tenant the
-    /// URL is null and nothing is offered at all.
+    /// TenantDomains.FirstOrDefault( d =&gt; d.DomainName == domainName ), so without this tenant (and
+    /// without an EnlistRemoteUrl on the local party) the URL is null and nothing is offered at all.
     /// </summary>
     Task<ApplicationIdentityService> CreateListenerAsync( string name, CancellationToken token )
         => TestHelper.CreateApplicationServiceAsync( c =>
@@ -94,6 +94,52 @@ public class EnlistUrlTests
         logs.ExtractCurrentTexts().ShouldNotContain( t => t.Contains( "Protocol error" ),
             "Configuring an EnlistRemoteUrl must not itself BE the protocol error: requiring an " +
             "unsigned reply to carry a null URL rejects exactly the reply that carries this one." );
+    }
+
+    [Test, CancelAfter( 90000 )]
+    public async Task An_unknown_party_from_an_unknown_domain_gets_the_enlist_url_of_the_local_party_Async( CancellationToken token )
+    {
+        // No "Ghost" tenant domain here: the "EnlistRemoteUrl" is looked up from the local party.
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8RootListen";
+            c["AlwaysListening"] = "True";
+            c["AutoTrustKey"] = "Never";
+            c["EnlistRemoteUrl"] = EnlistUrl;
+        }, ConfigureFastClock, token: token );
+        await using var stranger = await CreateStrangerAsync( "M8RootStranger", "M8RootListen", token );
+
+        var issue = await WaitForIssueAsync( stranger.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        issue.ShouldNotBeNull();
+        issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteCreation );
+        issue.EnlistUrl.ShouldBe( ExpectedUrl );
+    }
+
+    [Test, CancelAfter( 90000 )]
+    public async Task The_initiator_enlist_url_is_for_the_domain_of_the_listener_Async( CancellationToken token )
+    {
+        // Both parties know each other but trust nobody: both require an approval, and the initiator
+        // sends its EnlistRemoteUrl to the listener (that records it). "{DomainName}" is the listener's.
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8BothListen";
+            c["AlwaysListening"] = "True";
+            c["AutoTrustKey"] = "Never";
+            c["Parties:0:PartyName"] = "$M8BothInit";
+        }, ConfigureFastClock, token: token );
+        await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8BothInit";
+            c["AutoTrustKey"] = "Never";
+            c["Parties:0:PartyName"] = "$M8BothListen";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
+            c["Parties:0:EnlistRemoteUrl"] = EnlistUrl;
+        }, ConfigureFastClock, token: token );
+
+        var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        issue.ShouldNotBeNull();
+        issue!.Kind.ShouldBe( PeeringIssueKind.RequiresBothApproval );
+        issue.EnlistUrl.ShouldBe( "https://enlist.example.test/Test/join" );
     }
 
     [Test, CancelAfter( 90000 )]

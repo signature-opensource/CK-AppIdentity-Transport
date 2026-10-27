@@ -52,7 +52,7 @@ Other keys:
 | `AlwaysListening` | A local party | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
 | `DisallowEviction` | A listened remote | `true` refuses a new incoming connection from this remote while one is alive. By default, a new connection replaces (evicts) the current one. |
 | `NegotiationTimeout` | A remote we connect to | How long an outgoing connection attempt may take, in seconds (1 to 600). Defaults to `TransportManagerFeature.DefaultOutgoingNegotiationTimeout` (15 seconds). |
-| `EnlistRemoteUrl` | A remote, or a tenant domain | A URL sent to a party that is unknown here, or that does not trust us, so that it can be enlisted. It is looked up from the remote, or for an unknown caller from the tenant domain that has its domain name, up through the parents. `{DomainName}` is replaced by the domain name of the caller. It is handed to unauthenticated callers. |
+| `EnlistRemoteUrl` | A remote, a tenant domain or the local party | A URL sent to a party that is unknown here, or that does not trust us, so that it can be enlisted. It is looked up from the remote, or for an unknown caller from the tenant domain that has its domain name (or the local party when no tenant domain has it), up through the parents. `{DomainName}` is replaced by the domain name of the party it is sent to. It is handed to unauthenticated callers. |
 
 The "Transport" feature itself is allowed by default and requires the "KeyManagement" one on the remote.
 

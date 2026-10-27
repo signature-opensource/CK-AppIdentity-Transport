@@ -419,8 +419,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
                                       or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
                         {
-                            // This is our EnlistUrl for him. (Note that the second parameter is unused).
-                            var hisEnlistUrl = transportManager.GetEnlistRemoteUrl( remote.Party, string.Empty );
+                            // This is our EnlistUrl for him: its "{DomainName}" is his domain.
+                            var hisEnlistUrl = transportManager.GetEnlistRemoteUrl( remote.Party, remote.Party.DomainName );
                             // We don't care if this is not sent.
                             Throw.DebugAssert( remote.RemoteKeys == transport.RemoteKeys );
                             await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, sentNonce.Value );
