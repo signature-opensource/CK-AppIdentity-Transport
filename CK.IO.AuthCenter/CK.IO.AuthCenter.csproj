@@ -4,6 +4,6 @@
     <Description>The relay protocol between the fronts and their remote Authentication Center.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris" Version="3.0.0-0.cris-auth.0.ci.21" />
+    <PackageReference Include="CK.Cris" Version="3.0.0-0.cris-auth.0.ci.23" />
   </ItemGroup>
 </Project>
