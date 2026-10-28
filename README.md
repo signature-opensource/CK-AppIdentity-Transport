@@ -10,10 +10,11 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.TransportLayer](CK.AppIdentity.TransportLayer/README.md) | The transport: listeners, connections, the authenticating "0 Protocol" handshake, per-frame integrity and the channels. |
 | [CK.AppIdentity.Transport.MutualTls](CK.AppIdentity.Transport.MutualTls/README.md) | The `mtls:` transport: the same handshake inside a mutually authenticated TLS channel. |
 | [CK.AppIdentity.BlobChannel](CK.AppIdentity.BlobChannel/README.md) | A minimal channel that carries opaque `byte[]` between two parties. |
-| [CK.AppIdentity.Cris](CK.AppIdentity.Cris/README.md) | A channel that carries Cris commands and their results between parties. |
+| [CK.AppIdentity.Cris](CK.AppIdentity.Cris/README.md) | A channel that carries Cris commands and their results between parties, and the location-transparent dispatch over it. |
+| [CK.AppIdentity.Cris.Authentication](CK.AppIdentity.Cris.Authentication/README.md) | The identity of the users across the Cris channels: vouched for by the caller party, or proved. |
 | [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | The "AuthCenter" feature core: the designation of the Authentication Center and the reading of its tokens. |
-| [CK.AppIdentity.Cris.AuthCenter.Local](CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, login handlers. |
-| [CK.AppIdentity.Cris.AuthCenter.Remote](CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a front: it relays the session commands to its remote Authentication Center. |
+| [CK.AppIdentity.Cris.AuthCenter.Local](CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, the session operations. |
+| [CK.AppIdentity.Cris.AuthCenter.Remote](CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a remote of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. |
 | [CK.AppIdentity.Cris.AuthCenter.Oidc](CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) | The OpenID Connect logins of a local Authentication Center. |
 | [CK.AppIdentity.Cris.AuthCenter.Passkey](CK.AppIdentity.Cris.AuthCenter.Passkey/README.md) | The passkey (WebAuthn) logins of a local Authentication Center. |
 | [CK.IO.AuthCenter](CK.IO.AuthCenter/README.md) | The relay protocol between the fronts and their Authentication Center. |
