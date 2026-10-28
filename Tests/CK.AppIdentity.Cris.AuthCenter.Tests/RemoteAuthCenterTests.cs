@@ -4,12 +4,14 @@ using CK.Cris;
 using CK.IO.AuthCenter;
 using CK.IO.Authentication;
 using CK.IO.Authentication.Basic;
+using CK.IO.Authentication.Passkey;
 using CK.IO.Authentication.Weak;
 using CK.Testing.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
@@ -66,6 +68,11 @@ public class RemoteAuthCenterTests
                                       typeof( ILogoutSessionCommand ),
                                       typeof( IImpersonateCommand ),
                                       typeof( IClearImpersonationCommand ),
+                                      typeof( IStartLoginCommand ),
+                                      typeof( IRemoteLoginCallbackCommand ),
+                                      typeof( IGetLoginSchemesQCommand ),
+                                      typeof( IStartRemoteLoginOperationCommand ),
+                                      typeof( ICompleteRemoteLoginOperationCommand ),
                                       typeof( ISessionResult ),
                                       typeof( IAuthenticationInfoPoco ),
                                       typeof( IActorInfoPoco ),
@@ -98,6 +105,7 @@ public class RemoteAuthCenterTests
     // The AuthCenter: the operations, the policy for its remotes, the verifier of the user's proofs.
     static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
                                            typeof( AuthCenterOperationHandlers ),
+                                           typeof( AuthCenterCommandHandlers ),
                                            typeof( AuthCenterPartyActorIdsHandler ),
                                            typeof( AuthCenterEncryptionKeyHandler ),
                                            typeof( AuthCenterCallerPartyService ),
@@ -107,6 +115,16 @@ public class RemoteAuthCenterTests
                                            typeof( AuthCenterFieldDecryptor ),
                                            typeof( AuthCenterApp.AllowImpersonation ),
                                            typeof( CenterHandlers )];
+
+    static readonly Type[] _passkeyCommands = [typeof( IStartPasskeyLoginCommand ),
+                                               typeof( IPasskeyLoginCommand ),
+                                               typeof( IStartPasskeyRegistrationCommand ),
+                                               typeof( IPasskeyRegistrationCommand ),
+                                               typeof( IPasskeyRegistrationResult ),
+                                               typeof( IStartPasskeyLoginOperationCommand ),
+                                               typeof( IFinishPasskeyLoginOperationCommand ),
+                                               typeof( IStartPasskeyRegistrationOperationCommand ),
+                                               typeof( IFinishPasskeyRegistrationOperationCommand )];
 
     const int Port = 37147;
 
@@ -161,7 +179,11 @@ public class RemoteAuthCenterTests
         services.AddScoped( sp => new CurrentLocalParty( sp.GetRequiredService<ApplicationIdentityService>() ) );
     }
 
-    static async Task<Pair> StartAsync( bool remoteIsAllowed = true, bool withRegistrar = true, bool remoteEncrypts = true )
+    static async Task<Pair> StartAsync( bool remoteIsAllowed = true,
+                                        bool withRegistrar = true,
+                                        bool remoteEncrypts = true,
+                                        bool passkeys = false,
+                                        Action<MutableConfigurationSection>? oidcSettings = null )
     {
         // The remote's AuthCenter is its remote "$Listener".
         var remote = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
@@ -169,14 +191,37 @@ public class RemoteAuthCenterTests
             c["AllowFeatures"] = "AuthCenter";
             c["Parties:0:AuthCenter"] = "true";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-        }, RemoteServices, remoteEncrypts ? [.. _common, .. _remoteTypes, typeof( AuthCenterFieldEncryptor )] : [.. _common, .. _remoteTypes] );
-        Type[] centerTypes = withRegistrar ? [.. _common, .. _centerTypes, typeof( PartyActorIdsTests.FakePartyActorFeatureDriver )] : [.. _common, .. _centerTypes];
+        }, RemoteServices, [.. _common, .. _remoteTypes,
+                            .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
+                            .. (passkeys ? [.. _passkeyCommands, typeof( PasskeyHandlers )] : Type.EmptyTypes)] );
+        Type[] centerTypes = [.. _common, .. _centerTypes,
+                              .. (withRegistrar ? [typeof( PartyActorIdsTests.FakePartyActorFeatureDriver )] : Type.EmptyTypes),
+                              .. (passkeys
+                                    ? [.. _passkeyCommands,
+                                       typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
+                                       typeof( Passkey.AuthCenterPasskeyConfiguration ),
+                                       typeof( Passkey.AuthCenterPasskeyHandlers ),
+                                       typeof( AuthCenterApp.InMemoryPasskeyStore ),
+                                       typeof( AuthCenterApp.FakePasskeyLoginProvider )]
+                                    : Type.EmptyTypes),
+                              .. (oidcSettings != null
+                                    ? [typeof( Oidc.AuthCenterOidcFeatureDriver ),
+                                       typeof( Oidc.AuthCenterOidcConfiguration ),
+                                       typeof( AuthCenterApp.FakeOidcLoginProvider )]
+                                    : Type.EmptyTypes)];
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
             c["AllowFeatures"] = "AuthCenter";
             c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
-            c["AuthCenter"] = "true";
             if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
+            // A settings section designates the local party as its own AuthCenter, like "true".
+            if( passkeys )
+            {
+                c["AuthCenter:Passkey:RpId"] = "example.com";
+                c["AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
+            }
+            if( oidcSettings != null ) oidcSettings( c );
+            if( !passkeys && oidcSettings == null ) c["AuthCenter"] = "true";
         }, null, centerTypes );
         return new Pair { Remote = remote, Center = center };
     }
@@ -293,5 +338,70 @@ public class RemoteAuthCenterTests
         } ) );
         (r is ISessionResult { Success: true }).ShouldBeFalse();
         AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task a_passkey_registration_and_login_go_through_the_remote_with_its_origin_Async()
+    {
+        await using var p = await StartAsync( passkeys: true );
+        using var authenticator = new SoftAuthenticator();
+
+        // Albert logs in (Critical) and registers a passkey: the registration operations are Critical, they reach the
+        // AuthCenter with the user's proof and the remote's origin.
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var albert = p.Browser.Current.UnsafeActor.ActorId;
+        var options = (await p.RequestAsync( pocos => pocos.Create<IStartPasskeyRegistrationCommand>( c => c.ActorId = albert ) )).ShouldBeOfType<string>();
+        var registered = (await p.RequestAsync( pocos => pocos.Create<IPasskeyRegistrationCommand>( c =>
+        {
+            c.ActorId = albert;
+            c.Response = authenticator.Create( options );
+        } ) )).ShouldBeAssignableTo<IPasskeyRegistrationResult>()!;
+        registered.Success.ShouldBeTrue();
+
+        // A passkey login through the remote.
+        var loginOptions = (await p.RequestAsync( pocos => pocos.Create<IStartPasskeyLoginCommand>() )).ShouldBeOfType<string>();
+        var r = (await p.RequestAsync( pocos => pocos.Create<IPasskeyLoginCommand>( c => c.Response = authenticator.Get( loginOptions ) ) )).ShouldBeAssignableTo<ISessionResult>()!;
+        r.Success.ShouldBeTrue();
+        p.Browser.Current.UnsafeActor.ActorName.ShouldBe( "Albert" );
+
+        // A remote's endpoint whose origin is not configured is refused by the AuthCenter.
+        p.Browser.WebOrigin = "https://other.example.com";
+        (await p.RequestAsync( pocos => pocos.Create<IStartPasskeyLoginCommand>() )).ShouldBeAssignableTo<ICrisResultError>()!
+            .Errors.Select( e => e.Text ).ShouldContain( "The origin 'https://other.example.com' is not allowed for passkeys." );
+    }
+
+    [Test]
+    public async Task an_oidc_login_goes_through_the_remote_Async()
+    {
+        const string callback = "https://front.example.com/.auth/oidc/callback";
+        using var idp = new FakeIdentityProvider();
+        await using var p = await StartAsync( oidcSettings: c =>
+        {
+            c["AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+            c["AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+            c["AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+            c["AuthCenter:Oidc:Test:CallbackUrls:0"] = callback;
+        } );
+        p.Browser.RemoteLoginCallbackUrl = callback;
+
+        // The remote's endpoint starts the login with its callback and the hash of the correlation it prepared.
+        var start = (await p.RequestAsync( pocos => pocos.Create<IStartLoginCommand>( c => { c.Scheme = "Oidc.Test"; c.ReturnUrl = "/"; } ) )).ShouldBeOfType<RedirectedUrl>();
+        p.Browser.RemoteLoginCorrelation.ShouldNotBeNull();
+        p.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 1 );
+
+        // The provider redirects the browser to the remote's endpoint, that completes the login: the code travels encrypted
+        // for the AuthCenter (in a copy: the remote's command keeps it).
+        var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
+        IRemoteLoginCallbackCommand? sent = null;
+        var r = (await p.RequestAsync( pocos => sent = pocos.Create<IRemoteLoginCallbackCommand>( c => { c.State = state; c.Code = code; } ) )).ShouldBeAssignableTo<ISessionResult>()!;
+        r.Success.ShouldBeTrue();
+        sent.ShouldNotBeNull().Code.ShouldBe( code );
+        p.Browser.Current.ActualActor.ActorName.ShouldBe( "Albert" );
+        var cookies = p.Browser.Cookies.ShouldNotBeNull( "The remote's endpoint issued the session." );
+        AuthCenterSession.TryParseSessionKey( cookies.SessionKey, out var actorId, out var sessionId ).ShouldBeTrue();
+        (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldNotBeNull().Matches( cookies ).ShouldBeTrue();
+
+        // The login schemes are the AuthCenter's ones (dispatched: the remote has no handler).
+        (await p.RequestAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<string>>()!.ShouldContain( "Oidc.Test" );
     }
 }
