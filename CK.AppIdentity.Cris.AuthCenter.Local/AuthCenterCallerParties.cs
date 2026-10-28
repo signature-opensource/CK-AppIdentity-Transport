@@ -48,7 +48,7 @@ public sealed class AuthCenterCallerPartyService : ICallerPartyService
 public sealed class AuthCenterProofVerifier : ICallerProofVerifier
 {
     /// <inheritdoc />
-    public async ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IAuthenticationCallContext proof )
+    public async ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IAuthenticationCallEnvelope proof )
     {
         var center = AuthCenterEncryptionKeyHandler.GetLocal( caller );
         if( center == null || proof.Token == null )

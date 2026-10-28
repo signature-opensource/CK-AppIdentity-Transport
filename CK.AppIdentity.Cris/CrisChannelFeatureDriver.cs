@@ -9,7 +9,7 @@ namespace CK.AppIdentity.Cris;
 /// Creates the <see cref="CrisChannelFeature"/> on each remote that has a <see cref="TransportFeature"/>.
 /// </summary>
 // The channel exchanges commands, events and results as Json.
-[AlsoRegisterType<ICrisCallResult, CommonPocoJsonSupport, ICrisCallContext>]
+[AlsoRegisterType<ICrisCallResult, CommonPocoJsonSupport, ICrisCallEnvelope>]
 public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
 {
     readonly PocoDirectory _pocoDirectory;

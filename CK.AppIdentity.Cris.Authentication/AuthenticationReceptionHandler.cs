@@ -17,7 +17,7 @@ namespace CK.Auth;
 ///   the caller has no PartyActorId (0); an anonymous command executes as the anonymous.
 ///   </item>
 ///   <item>
-///   With the user's proof (see <see cref="IAuthenticationCallContext"/>) and a <see cref="ICallerProofVerifier"/> that
+///   With the user's proof (see <see cref="IAuthenticationCallEnvelope"/>) and a <see cref="ICallerProofVerifier"/> that
 ///   accepts it, the identity is the proved one.
 ///   </item>
 ///   <item>
@@ -54,7 +54,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
                                                                                              IServiceProvider services,
                                                                                              IRemoteParty caller,
                                                                                              IAbstractCommand command,
-                                                                                             ICrisCallContext? callContext )
+                                                                                             ICrisCallEnvelope envelope )
     {
         int callerId = caller.PartyActorId;
         AuthenticationInfo info = AuthenticationInfo.None;
@@ -65,7 +65,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
                 return Refuse( monitor, services, $"'{caller}' has no PartyActorId: it cannot be the caller party of '{command.CrisPocoModel.PocoName}'." );
             }
             AuthenticationInfo? proved = null;
-            if( _proofVerifier != null && callContext is IAuthenticationCallContext { Token: not null } proof )
+            if( _proofVerifier != null && envelope is IAuthenticationCallEnvelope { Token: not null } proof )
             {
                 proved = await _proofVerifier.VerifyAsync( monitor, services, caller, proof ).ConfigureAwait( false );
             }

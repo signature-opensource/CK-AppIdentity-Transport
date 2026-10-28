@@ -23,9 +23,9 @@ public sealed partial class CrisChannelFeature
             _feature = crisChannelFeature;
         }
 
-        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallContext? callContext )
+        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallEnvelope envelope )
         {
-            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _callContext = callContext };
+            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _envelope = envelope };
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,
@@ -52,7 +52,7 @@ public sealed partial class CrisChannelFeature
             var handler = _feature._receptionHandler;
             if( handler == null || job.Command is ICommandEndpointOnly ) return (null, null);
             var data = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData );
-            var (error, hub) = await handler.ConfigureAsync( monitor, services, data._remoteParty, job.Command, data._callContext ).ConfigureAwait( false );
+            var (error, hub) = await handler.ConfigureAsync( monitor, services, data._remoteParty, job.Command, data._envelope ).ConfigureAwait( false );
             hub?.Override( new CurrentLocalParty( data._remoteParty.Owner ) );
             return (error, hub);
         }

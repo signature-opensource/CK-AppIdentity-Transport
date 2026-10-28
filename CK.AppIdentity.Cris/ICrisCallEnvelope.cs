@@ -6,30 +6,35 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris;
 
 /// <summary>
-/// Optional data sent beside a command over a <see cref="CrisChannelFeature"/>: it is empty here and extended by Poco
-/// extensions (for instance with the user's proof, by the authentication packages). The channel knows nothing about
-/// what it carries: <see cref="ICrisCallContextContributor"/> fill it, a <see cref="ICrisChannelReceptionHandler"/> reads it.
+/// What travels over a <see cref="CrisChannelFeature"/> for a command: the command and, through Poco extensions, the data
+/// sent beside it (for instance the user's proof, by the authentication packages). This is a message, not a command: it
+/// is never executed, validated nor deferred; the receiver unwraps it, gives it to the <see cref="ICrisChannelReceptionHandler"/>
+/// and executes its <see cref="Command"/>. The channel knows nothing about the extensions: <see cref="ICrisCallEnvelopeContributor"/>
+/// fill them.
 /// </summary>
-public interface ICrisCallContext : IPoco
+public interface ICrisCallEnvelope : IPoco
 {
+    /// <summary>
+    /// Gets or sets the command. It is set by the channel when the envelope is sent.
+    /// </summary>
+    IAbstractCommand? Command { get; set; }
 }
 
 /// <summary>
-/// Fills the <see cref="ICrisCallContext"/> of a command dispatched to a remote (see <see cref="ChannelCrisRemoteDispatcher"/>).
+/// Fills the <see cref="ICrisCallEnvelope"/> of a command dispatched to a remote (see <see cref="ChannelCrisRemoteDispatcher"/>).
 /// </summary>
 [IsMultiple]
-public interface ICrisCallContextContributor : ISingletonAutoService
+public interface ICrisCallEnvelopeContributor : ISingletonAutoService
 {
     /// <summary>
-    /// Contributes to the call context of a command sent to a remote.
+    /// Contributes to the envelope of a command sent to a remote.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the sending scope.</param>
     /// <param name="target">The remote that will receive the command.</param>
-    /// <param name="command">The command.</param>
-    /// <param name="context">The call context to fill.</param>
-    /// <returns>True if something has been set (the call context is sent only when a contributor set something).</returns>
-    bool Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallContext context );
+    /// <param name="command">The command (the envelope's <see cref="ICrisCallEnvelope.Command"/> is set when it is sent).</param>
+    /// <param name="envelope">The envelope to fill.</param>
+    void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope );
 }
 
 /// <summary>
@@ -48,11 +53,11 @@ public interface ICrisChannelReceptionHandler : ISingletonAutoService
     /// <param name="services">The services of the channel scope.</param>
     /// <param name="caller">The remote that sent the command.</param>
     /// <param name="command">The received command.</param>
-    /// <param name="callContext">The call context sent with the command, if any.</param>
+    /// <param name="envelope">The envelope in which the command has been received.</param>
     /// <returns>An error that refuses the command, or the ambient services to use (null to keep the channel's ones).</returns>
     ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureAsync( IActivityMonitor monitor,
                                                                                IServiceProvider services,
                                                                                IRemoteParty caller,
                                                                                IAbstractCommand command,
-                                                                               ICrisCallContext? callContext );
+                                                                               ICrisCallEnvelope envelope );
 }

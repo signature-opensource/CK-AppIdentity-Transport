@@ -92,7 +92,7 @@ A message starts with a discriminator byte, read by [`CrisChannelFeature.Protoco
 
 | Discriminator | Direction | Content |
 |---------------|-----------|---------|
-| 1 | Caller to callee | The issuer token of the command, then the command (typed JSON). |
+| 1 | Caller to callee | The issuer token of the command, then the `ICrisCallEnvelope` that contains it (typed JSON). |
 | 2 | Callee to caller | The key of the issuer token, then an immediate event (typed JSON). |
 | 3 | Callee to caller | The key of the issuer token, then the `ICrisCallResult` (JSON). |
 | 4 | Callee to caller | The key of the issuer token, then a final caller-only event (typed JSON), before the result. |

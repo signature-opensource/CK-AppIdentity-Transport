@@ -12,20 +12,18 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// an identity, <b>only</b> to the Authentication Center of the current local party: a proof is a bearer credential, any
 /// other party could replay it. A deferred execution has no presented proof: its commands travel without one.
 /// </summary>
-public sealed class AuthCenterProofContributor : ICrisCallContextContributor
+public sealed class AuthCenterProofContributor : ICrisCallEnvelopeContributor
 {
     /// <inheritdoc />
-    public bool Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallContext context )
+    public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope )
     {
-        if( command is not IAuthUnsafePart
-            || services.GetService<CurrentLocalParty>()?.LocalParty.GetFeature<RemoteAuthCenter>()?.Center.AuthCenter != target
-            || services.GetService<IAuthenticationSessionEndpoint>() is not { PresentedToken: { } token } endpoint )
+        if( command is IAuthUnsafePart
+            && services.GetService<CurrentLocalParty>()?.LocalParty.GetFeature<RemoteAuthCenter>()?.Center.AuthCenter == target
+            && services.GetService<IAuthenticationSessionEndpoint>() is { PresentedToken: { } token } endpoint )
         {
-            return false;
+            var proof = (IAuthenticationCallEnvelope)envelope;
+            proof.Token = token;
+            proof.BindingSecretHash = endpoint.PresentedBindingSecretHash;
         }
-        var proof = (IAuthenticationCallContext)context;
-        proof.Token = token;
-        proof.BindingSecretHash = endpoint.PresentedBindingSecretHash;
-        return true;
     }
 }

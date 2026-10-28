@@ -24,9 +24,9 @@ one, which keeps the channel scope):
 The identity is then validated by the incoming validators of the command's authentication parts, as for any received
 command.
 
-## The user's proof ([`IAuthenticationCallContext`](IAuthenticationCallContext.cs))
+## The user's proof ([`IAuthenticationCallEnvelope`](IAuthenticationCallEnvelope.cs))
 
-A Poco extension of the channel's `ICrisCallContext`: the token and the binding secret hash that the user presented to
+A Poco extension of the channel's `ICrisCallEnvelope` (the message in which a command travels): the token and the binding secret hash that the user presented to
 the sending endpoint. A proof is a bearer credential: it must only be sent to a party that verifies it. The
 Authentication Center packages ([CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md)) send it
 to the AuthCenter only and verify it there. A deferred execution has no proof: the caller party vouches.

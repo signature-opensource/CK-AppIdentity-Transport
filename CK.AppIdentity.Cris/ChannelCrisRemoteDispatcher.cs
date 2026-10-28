@@ -33,7 +33,7 @@ namespace CK.AppIdentity.Cris;
 public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
 {
     readonly ApplicationIdentityService _identity;
-    readonly IEnumerable<ICrisCallContextContributor> _contributors;
+    readonly IEnumerable<ICrisCallEnvelopeContributor> _contributors;
     readonly IEnumerable<ICrisOutgoingCommandTransformer> _transformers;
 
     /// <summary>
@@ -45,10 +45,10 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
     /// Initializes a new dispatcher.
     /// </summary>
     /// <param name="identity">The application identity service.</param>
-    /// <param name="contributors">The contributors to the call context of the dispatched commands.</param>
+    /// <param name="contributors">The contributors to the envelope of the dispatched commands.</param>
     /// <param name="transformers">The transformers of the dispatched commands.</param>
     public ChannelCrisRemoteDispatcher( ApplicationIdentityService identity,
-                                        IEnumerable<ICrisCallContextContributor> contributors,
+                                        IEnumerable<ICrisCallEnvelopeContributor> contributors,
                                         IEnumerable<ICrisOutgoingCommandTransformer> transformers )
     {
         _identity = identity;
@@ -162,7 +162,7 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
             }
             toSend = transformed;
         }
-        var executing = channel.SendCommand( monitor, toSend, callContext: CreateCallContext( monitor, services, channel.Party, command ) );
+        var executing = channel.SendCommand( monitor, toSend, envelope: CreateEnvelope( monitor, services, channel.Party, command ) );
         // The caller-only immediate events of the remote execution are the ones of the caller.
         if( context != null )
         {
@@ -191,16 +191,14 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
         return new RawCrisExecutor.RawResult( executed.Result, messages );
     }
 
-    ICrisCallContext? CreateCallContext( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command )
+    ICrisCallEnvelope CreateEnvelope( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command )
     {
-        ICrisCallContext? context = null;
-        bool hasData = false;
+        var envelope = services.GetRequiredService<PocoDirectory>().Create<ICrisCallEnvelope>();
         foreach( var c in _contributors )
         {
-            context ??= services.GetRequiredService<PocoDirectory>().Create<ICrisCallContext>();
-            hasData |= c.Contribute( monitor, services, target, command, context );
+            c.Contribute( monitor, services, target, command, envelope );
         }
-        return hasData ? context : null;
+        return envelope;
     }
 
     static ILocalParty GetCurrentLocalParty( IServiceProvider services )

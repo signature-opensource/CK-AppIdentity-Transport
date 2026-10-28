@@ -81,7 +81,7 @@ public class RemoteAuthCenterTests
                                       typeof( IAuthCenterEncryptionKey ),
                                       typeof( IWhoCallsCommand ),
                                       typeof( ICriticalWhoCallsCommand ),
-                                      typeof( IAuthenticationCallContext ),
+                                      typeof( IAuthenticationCallEnvelope ),
                                       typeof( AuthenticationReceptionHandler ),
                                       typeof( ChannelCrisRemoteDispatcher ),
                                       typeof( CrisBackgroundExecutorService )];
