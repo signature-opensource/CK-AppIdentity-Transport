@@ -22,10 +22,10 @@ This package transforms the `CK.vGroupMember` view to add the `PartyActor` membe
 
 This package also sets the `IParty.PartyActorId` of the parties of the application (see
 [CK.AppIdentity.Abstractions](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/README.md)):
-`PartyActorFeatureDriver` is a feature driver (the "PartyActor" feature, allowed by default) that, when a party is set
-up, finds or creates its PartyActor with `CK.sPartyActorEnsure` and calls `TrySetPartyActorId`. This covers every
-party: the local parties (the dynamic tenants included) and all their remotes. A party for which the feature is
-disallowed keeps 0.
+`PartyActorFeatureDriver` is a feature driver that, when a party is set up, finds or creates its PartyActor with
+`CK.sPartyActorEnsure` and calls `TrySetPartyActorId`. This covers every party: the local parties (the dynamic tenants
+included) and all their remotes. The "PartyActor" feature is always required: disallowing it by configuration
+("DisallowFeatures") is a setup error.
 
 It is generic: the PartyActor is the identity of a party in the actors model, nothing more. The applications that share
 the same actors database get the same identifiers. An application without actors database gets its identifiers

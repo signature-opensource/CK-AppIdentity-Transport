@@ -57,21 +57,30 @@ public class PartyActorFeatureDriverTests
         {
             c["FullName"] = $"{domain}/$App";
             c["Parties:0:PartyName"] = "Remote1";
-            c["Parties:1:PartyName"] = "NoId";
-            c["Parties:1:DisallowFeatures"] = "PartyActor";
             // A tenant domain: its party name is its domain name.
-            c["Parties:2:FullName"] = $"{domain}T/${domain}T";
-            c["Parties:2:Parties:0:PartyName"] = "TenantRemote";
+            c["Parties:1:FullName"] = $"{domain}T/${domain}T";
+            c["Parties:1:Parties:0:PartyName"] = "TenantRemote";
         } );
         var tenant = s.TenantDomains.Single();
-        var all = new IParty[] { s, s.Remotes.Single( r => r.PartyName == "$Remote1" ), tenant, tenant.Remotes.Single() };
+        var all = new IParty[] { s, s.Remotes.Single(), tenant, tenant.Remotes.Single() };
         foreach( var p in all )
         {
             p.PartyActorId.ShouldBeGreaterThan( 0, p.FullName );
             p.PartyActorId.ShouldBe( await IdOfAsync( p ), p.FullName );
         }
         all.Select( p => p.PartyActorId ).Distinct().Count().ShouldBe( all.Length );
-        s.Remotes.Single( r => r.PartyName == "$NoId" ).PartyActorId.ShouldBe( 0, "The feature is disallowed for it." );
+    }
+
+    [Test]
+    public async Task the_PartyActor_feature_cannot_be_disallowed_Async()
+    {
+        var domain = NewDomainName();
+        await Should.ThrowAsync<Exception>( () => StartAsync( c =>
+        {
+            c["FullName"] = $"{domain}/$App";
+            c["Parties:0:PartyName"] = "NoId";
+            c["Parties:0:DisallowFeatures"] = "PartyActor";
+        } ) );
     }
 
     [Test]
