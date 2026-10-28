@@ -18,6 +18,7 @@ public sealed class RemoteAuthCenter
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
 
     readonly CrisAuthCenter _center;
+    readonly TaskCompletionSource<bool> _partyActorIds;
     // The encryption key of the Authentication Center, until the expiration of its signature.
     (byte[] Spki, DateTime Expires)? _encryptionKey;
 
@@ -25,6 +26,7 @@ public sealed class RemoteAuthCenter
     {
         Throw.DebugAssert( center.AuthCenter is IRemoteParty );
         _center = center;
+        _partyActorIds = new TaskCompletionSource<bool>( TaskCreationOptions.RunContinuationsAsynchronously );
     }
 
     /// <summary>
@@ -32,6 +34,65 @@ public sealed class RemoteAuthCenter
     /// Authentication Center.
     /// </summary>
     public CrisAuthCenter Center => _center;
+
+    /// <summary>
+    /// Gets a task that completes when the <see cref="IParty.PartyActorId"/> of the local party and of the Authentication
+    /// Center are resolved (true) or cannot be (false, the reason is logged). It never completes while the Authentication
+    /// Center is not reachable: the identifiers stay 0 until the channel connects.
+    /// </summary>
+    public Task<bool> PartyActorIdsResolution => _partyActorIds.Task;
+
+    // Called once all the features are set up. A party with an actors database has its identifiers already (the
+    // CK.DB.AppIdentity registrar): nothing is asked then. Otherwise, they are asked on the Cris channel, sent as soon
+    // as it connects.
+    internal void StartPartyActorIdsResolution( IActivityMonitor monitor )
+    {
+        var center = (IRemoteParty)_center.AuthCenter;
+        var local = center.Owner;
+        if( local.PartyActorId != 0 && center.PartyActorId != 0 )
+        {
+            _partyActorIds.TrySetResult( true );
+            return;
+        }
+        var channel = center.GetFeature<CrisChannelFeature>();
+        if( channel == null )
+        {
+            monitor.Warn( $"No Cris channel to the AuthCenter '{center}': the PartyActor identifiers of '{local}' and '{center}' cannot be resolved." );
+            _partyActorIds.TrySetResult( false );
+            return;
+        }
+        var executing = channel.SendCommand( monitor, channel.PocoDirectory.Create<IGetPartyActorIdsQCommand>() ).WithResult<IPartyActorIds>();
+        _ = OnPartyActorIdsAsync( executing.Result, local, center );
+    }
+
+    async Task OnPartyActorIdsAsync( Task<IPartyActorIds> result, ILocalParty local, IRemoteParty center )
+    {
+        var monitor = new ActivityMonitor( $"Resolving the PartyActor identifiers of '{local}' and '{center}'." );
+        try
+        {
+            var ids = await result.ConfigureAwait( false );
+            bool success = ids.CallerPartyActorId > 0 && ids.AuthCenterPartyActorId > 0;
+            if( !success )
+            {
+                monitor.Warn( $"The AuthCenter '{center}' has not resolved the PartyActor identifiers of '{local}' and itself." );
+            }
+            else
+            {
+                success = local.TrySetPartyActorId( monitor, ids.CallerPartyActorId )
+                          & center.TrySetPartyActorId( monitor, ids.AuthCenterPartyActorId );
+            }
+            _partyActorIds.TrySetResult( success );
+        }
+        catch( Exception ex )
+        {
+            monitor.Error( $"Unable to get the PartyActor identifiers from the AuthCenter '{center}'.", ex );
+            _partyActorIds.TrySetResult( false );
+        }
+        finally
+        {
+            monitor.MonitorEnd();
+        }
+    }
 
     /// <summary>
     /// Gets the current encryption key of the Authentication Center: it is asked for over the Cris channel, its signature

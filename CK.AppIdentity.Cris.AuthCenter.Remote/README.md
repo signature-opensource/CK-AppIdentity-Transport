@@ -34,3 +34,12 @@ package). The [Sensitive] strings of a relayed command are encrypted in place fo
 `RemoteAuthCenter` gets its current encryption key with `IGetAuthCenterEncryptionKeyQCommand`, verifies its signature
 ("CK.AuthCenter.EncryptionKey" purpose, with the same safety net as the tokens) and caches it until its signature
 expires.
+
+## The PartyActor identifiers
+
+A remote of an Authentication Center usually has no actors database. Once the features are set up, its
+`RemoteAuthCenter` sends `IGetPartyActorIdsQCommand` on the Cris channel to the Authentication Center (sent as soon as
+the channel connects) and sets the `PartyActorId` of its local party and of the Authentication Center with the answer.
+`RemoteAuthCenter.PartyActorIdsResolution` completes with true once they are set, false when they cannot be (the
+Authentication Center has not resolved them, or there is no Cris channel to it). Nothing is asked when both
+identifiers are already set (the application has the CK.DB.AppIdentity registrar).

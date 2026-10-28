@@ -155,3 +155,10 @@ So a compromised front can act only for the callers that use it, while their ses
 core package). The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the
 `LocalFileStore` ("AuthCenter/EncryptionKeys"), protected by the local party's data protector; the current one is
 published, signed, to the fronts (`IGetAuthCenterEncryptionKeyQCommand`).
+
+## The PartyActor identifiers ([`AuthCenterPartyActorIdsHandler`](AuthCenterPartyActorIdsHandler.cs))
+
+The Authentication Center answers `IGetPartyActorIdsQCommand` for a calling remote that has its "AuthCenter" feature:
+the `PartyActorId` of the caller and of its local party. They are set by the PartyActor registrar of
+[CK.DB.AppIdentity](../CK.DB.AppIdentity/README.md), that an Authentication Center is expected to install: without it,
+they are 0 (logged as a warning) and the remote keeps 0.

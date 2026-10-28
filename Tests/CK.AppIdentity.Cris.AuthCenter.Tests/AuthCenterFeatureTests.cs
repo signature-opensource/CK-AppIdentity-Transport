@@ -300,7 +300,7 @@ public class AuthCenterFeatureTests
         }
         // An AuthCenter application cannot have a remote AuthCenter, a front cannot be its own AuthCenter.
         await StartMustFailAsync( "' but this application is an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local)", Mixed, local: true );
-        await StartMustFailAsync( "is its own AuthCenter but this application is a front of a remote AuthCenter", Mixed, remote: true );
+        await StartMustFailAsync( "is its own AuthCenter but this application is a remote of an AuthCenter", Mixed, remote: true );
 
         // Each side adds its feature.
         await using( var s = await StartAsync( c =>

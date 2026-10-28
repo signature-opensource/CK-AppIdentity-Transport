@@ -1,3 +1,3 @@
-The relay protocol between the fronts and their remote CK-AppIdentity Authentication Center: `IRelaySessionCommand` and
-`IRelaySessionResult` for the session commands, `IRelayAuthCenterCommand` and `IRelayAuthCenterResult` for the commands
-executed by the Authentication Center, and `IGetAuthCenterEncryptionKeyQCommand` for its signed encryption key.
+The `[Internal]` queries between the parties of a System and their CK-AppIdentity Authentication Center:
+`IGetAuthCenterEncryptionKeyQCommand` for its signed encryption key and `IGetPartyActorIdsQCommand` for the PartyActor
+identifiers of a remote and of the Authentication Center.

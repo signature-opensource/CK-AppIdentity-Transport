@@ -17,3 +17,16 @@ A PartyActor can be added to Groups as any other Actor (see `CK.sGroupMemberAdd`
 
 The view `CK.vPartyActor` is mirroring all fields from the table `CK.tPartyActor`. It aims to be transformed by other packages.
 This package transforms the `CK.vGroupMember` view to add the `PartyActor` member type.
+
+## The PartyActor registrar ([`PartyActorFeatureDriver`](PartyActorFeatureDriver.cs))
+
+This package also sets the `IParty.PartyActorId` of the parties of the application (see
+[CK.AppIdentity.Abstractions](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/README.md)):
+`PartyActorFeatureDriver` is a feature driver (the "PartyActor" feature, allowed by default) that, when a party is set
+up, finds or creates its PartyActor with `CK.sPartyActorEnsure` and calls `TrySetPartyActorId`. This covers every
+party: the local parties (the dynamic tenants included) and all their remotes. A party for which the feature is
+disallowed keeps 0.
+
+It is generic: the PartyActor is the identity of a party in the actors model, nothing more. The applications that share
+the same actors database get the same identifiers. An application without actors database gets its identifiers
+elsewhere (a remote of an Authentication Center asks it on connection).

@@ -67,6 +67,11 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     }
 
     /// <summary>
+    /// Gets the poco directory (to create the commands to send).
+    /// </summary>
+    public PocoDirectory PocoDirectory => _pocoDirectory;
+
+    /// <summary>
     /// Sends a command to the remote party.
     /// <para>
     /// This never throws: the returned <see cref="IExecutingCommand{T}.ExecutedCommand"/> eventually carries

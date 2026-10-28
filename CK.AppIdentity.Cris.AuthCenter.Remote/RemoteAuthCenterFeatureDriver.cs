@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The Remote side of the "AuthCenter" feature: this application is a front of a remote Authentication Center. It adds a
+/// The Remote side of the "AuthCenter" feature: this application is a remote of an Authentication Center. It adds a
 /// <see cref="RemoteAuthCenter"/> to every local party that has an Authentication Center (see <see cref="AuthCenterFeatureDriver"/>),
 /// the dynamic tenants included.
 /// <para>
@@ -30,7 +30,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         bool success = true;
         foreach( var local in context.GetAllLocals() )
         {
-            success &= Plug( context.Monitor, local );
+            success &= Plug( context, local );
         }
         return Task.FromResult( success );
     }
@@ -38,7 +38,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     /// <inheritdoc />
     protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
-        return Task.FromResult( party is not ILocalParty local || Plug( context.Monitor, local ) );
+        return Task.FromResult( party is not ILocalParty local || Plug( context, local ) );
     }
 
     /// <inheritdoc />
@@ -47,16 +47,19 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     /// <inheritdoc />
     protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
 
-    static bool Plug( IActivityMonitor monitor, ILocalParty local )
+    static bool Plug( FeatureLifetimeContext context, ILocalParty local )
     {
         var center = local.GetFeature<CrisAuthCenter>();
         if( center == null ) return true;
         if( center.AuthCenter == local )
         {
-            monitor.Error( $"'{local}' is its own AuthCenter but this application is a front of a remote AuthCenter (CK.AppIdentity.Cris.AuthCenter.Remote): an application has one role, an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Local." );
+            context.Monitor.Error( $"'{local}' is its own AuthCenter but this application is a remote of an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Remote): an application has one role, an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Local." );
             return false;
         }
-        local.AddFeature( new RemoteAuthCenter( center ) );
+        var remote = new RemoteAuthCenter( center );
+        local.AddFeature( remote );
+        // Once all the features are set up (the Cris channel to the AuthCenter, the PartyActor registrar if any).
+        context.Trampoline.OnSuccess( () => remote.StartPartyActorIdsResolution( context.Monitor ) );
         return true;
     }
 }

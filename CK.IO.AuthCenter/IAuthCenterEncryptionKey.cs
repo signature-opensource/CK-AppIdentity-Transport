@@ -4,7 +4,7 @@ namespace CK.IO.AuthCenter;
 
 /// <summary>
 /// The public encryption key of an Authentication Center, signed by it for the "CK.AuthCenter.EncryptionKey" purpose:
-/// a front verifies it like a token before using it. The key must not be used after the expiration of its signature.
+/// a remote verifies it like a token before using it. The key must not be used after the expiration of its signature.
 /// </summary>
 public interface IAuthCenterEncryptionKey : IPoco
 {
