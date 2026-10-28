@@ -20,6 +20,7 @@ public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<A
         [AllowNull]
         internal CrisChannelFeature.Protocol _handler;
         internal readonly IRemoteParty _remoteParty;
+        internal ICrisCallContext? _callContext;
 
         public Data( IRemoteParty remoteParty )
         {

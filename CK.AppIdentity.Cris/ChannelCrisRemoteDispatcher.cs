@@ -33,6 +33,7 @@ namespace CK.AppIdentity.Cris;
 public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
 {
     readonly ApplicationIdentityService _identity;
+    readonly IEnumerable<ICrisCallContextContributor> _contributors;
 
     /// <summary>
     /// The maximal time to wait for a route or for the answer of a remote: 30 seconds.
@@ -43,9 +44,11 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
     /// Initializes a new dispatcher.
     /// </summary>
     /// <param name="identity">The application identity service.</param>
-    public ChannelCrisRemoteDispatcher( ApplicationIdentityService identity )
+    /// <param name="contributors">The contributors to the call context of the dispatched commands.</param>
+    public ChannelCrisRemoteDispatcher( ApplicationIdentityService identity, IEnumerable<ICrisCallContextContributor> contributors )
     {
         _identity = identity;
+        _contributors = contributors;
     }
 
     /// <inheritdoc />
@@ -143,7 +146,7 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
     {
         var monitor = services.GetRequiredService<IActivityMonitor>();
         var context = services.GetService<ICrisCommandContext>();
-        var executing = channel.SendCommand( monitor, command );
+        var executing = channel.SendCommand( monitor, command, callContext: CreateCallContext( monitor, services, channel.Party, command ) );
         // The caller-only immediate events of the remote execution are the ones of the caller.
         if( context != null )
         {
@@ -170,6 +173,18 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
             foreach( var m in executed.ValidationMessages ) messages.UserMessages.Add( m );
         }
         return new RawCrisExecutor.RawResult( executed.Result, messages );
+    }
+
+    ICrisCallContext? CreateCallContext( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command )
+    {
+        ICrisCallContext? context = null;
+        bool hasData = false;
+        foreach( var c in _contributors )
+        {
+            context ??= services.GetRequiredService<PocoDirectory>().Create<ICrisCallContext>();
+            hasData |= c.Contribute( monitor, services, target, command, context );
+        }
+        return hasData ? context : null;
     }
 
     static ILocalParty GetCurrentLocalParty( IServiceProvider services )

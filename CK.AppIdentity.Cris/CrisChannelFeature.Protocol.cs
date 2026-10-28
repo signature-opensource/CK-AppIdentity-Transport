@@ -12,7 +12,7 @@ namespace CK.AppIdentity.Cris;
 
 public sealed partial class CrisChannelFeature
 {
-    // Caller to callee: the issuer token and the typed command.
+    // Caller to callee: the issuer token, an optional length-prefixed typed call context, then the typed command.
     const byte DCommand = 1;
     // Callee to caller: the issuer token key and a typed immediate event.
     const byte DImmediateEvent = 2;
@@ -43,13 +43,25 @@ public sealed partial class CrisChannelFeature
             _feature = feature;
         }
 
-        internal IOutgoingMessage CreateCommandMessage( ExecutingCommand c )
+        internal IOutgoingMessage CreateCommandMessage( ExecutingCommand c, ICrisCallContext? callContext )
         {
             return MessageFactory.Create( bytes =>
             {
                 var w = new FastByteWriter( bytes );
                 w.WriteByte( DCommand );
                 w.WriteString( c.IssuerToken.ToString() );
+                if( callContext == null )
+                {
+                    w.WriteByte( 0 );
+                }
+                else
+                {
+                    var json = new ArrayBufferWriter<byte>();
+                    _feature._pocoDirectory.WriteJson( json, callContext, withType: true, _exportOptions );
+                    w.WriteByte( 1 );
+                    w.WriteInt32( json.WrittenCount );
+                    w.WriteBytes( json.WrittenSpan );
+                }
                 w.Commit();
                 _feature._pocoDirectory.WriteJson( bytes, c.Command, withType: true, _exportOptions );
             }, source: c );
@@ -193,8 +205,14 @@ public sealed partial class CrisChannelFeature
                 return;
             }
             IAbstractCommand? command = null;
+            ICrisCallContext? callContext = null;
             try
             {
+                if( r.ReadByte() == 1 )
+                {
+                    var json = r.ReadBytes( (uint)r.ReadInt32() );
+                    callContext = _feature._pocoDirectory.ReadJson( new ReadOnlySequence<byte>( json ), _importOptions ) as ICrisCallContext;
+                }
                 command = _feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions ) as IAbstractCommand;
                 if( command == null )
                 {
@@ -223,7 +241,7 @@ public sealed partial class CrisChannelFeature
                 SendError( monitor, token.Key, $"Party command '{command.CrisPocoModel.PocoName}' doesn't target this party." );
                 return;
             }
-            _feature._executor.Execute( this, command, token );
+            _feature._executor.Execute( this, command, token, callContext );
         }
 
         void HandleFinalEvent( IActivityMonitor monitor, ref FastByteReader r )

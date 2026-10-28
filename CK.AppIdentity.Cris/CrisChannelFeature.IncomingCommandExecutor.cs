@@ -23,9 +23,9 @@ public sealed partial class CrisChannelFeature
             _feature = crisChannelFeature;
         }
 
-        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken )
+        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallContext? callContext )
         {
-            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party );
+            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _callContext = callContext };
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,
@@ -40,6 +40,21 @@ public sealed partial class CrisChannelFeature
             // queued by the transport controller and survive a reconnection.
             scopedData._handler = handler;
             ExecutionHost.StartJob( job );
+        }
+
+        // The reception handler (the identity derived from the caller) configures the ambient services, except for an
+        // endpoint-only command: it executes in the channel scope (its handlers may need the IRemoteParty). The current
+        // local party of the configured scope is the owner of the remote, as in the channel scope.
+        protected override async ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureReceptionAsync( IActivityMonitor monitor,
+                                                                                                                          CrisJob job,
+                                                                                                                          System.IServiceProvider services )
+        {
+            var handler = _feature._receptionHandler;
+            if( handler == null || job.Command is ICommandEndpointOnly ) return (null, null);
+            var data = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData );
+            var (error, hub) = await handler.ConfigureAsync( monitor, services, data._remoteParty, job.Command, data._callContext ).ConfigureAwait( false );
+            hub?.Override( new CurrentLocalParty( data._remoteParty.Owner ) );
+            return (error, hub);
         }
 
         // Only the caller-only events travel with the response: the routed ones are dispatched here, where the

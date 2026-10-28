@@ -31,6 +31,9 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     readonly IPocoFactory<ICrisCallResult> _callResultFactory;
     readonly IncomingCommandExecutor _executor;
     readonly CrisDirectory _crisDirectory;
+    readonly ICrisChannelReceptionHandler? _receptionHandler;
+    // The call contexts of the commands not yet sent.
+    readonly ConcurrentDictionary<ActivityMonitor.LogKey, ICrisCallContext> _callContexts;
     // The command names the remote accepts from us: null until its first advertisement.
     volatile IReadOnlySet<string>? _acceptedCommands;
     readonly TaskCompletionSource _firstAccepted;
@@ -53,11 +56,14 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                                  IPocoFactory<ICrisCallResult> callResultFactory,
                                  CrisExecutionHost executionHost,
                                  IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
-                                 CrisDirectory crisDirectory )
+                                 CrisDirectory crisDirectory,
+                                 ICrisChannelReceptionHandler? receptionHandler )
         : base( transportFeature )
     {
         _pocoDirectory = pocoDirectory;
         _crisDirectory = crisDirectory;
+        _receptionHandler = receptionHandler;
+        _callContexts = new ConcurrentDictionary<ActivityMonitor.LogKey, ICrisCallContext>();
         _firstAccepted = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
         _finalEvents = new ConcurrentDictionary<ActivityMonitor.LogKey, List<IEvent>>();
         _errorFactory = errorFactory;
@@ -192,8 +198,9 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="command">The command to send.</param>
     /// <param name="issuerToken">Optional issuer token. When null a new token is obtained from the <paramref name="monitor"/>.</param>
+    /// <param name="callContext">Optional call context sent with the command (see <see cref="ICrisCallContext"/>).</param>
     /// <returns>The executing command.</returns>
-    public IExecutingCommand<T> SendCommand<T>( IActivityMonitor monitor, T command, ActivityMonitor.Token? issuerToken = null )
+    public IExecutingCommand<T> SendCommand<T>( IActivityMonitor monitor, T command, ActivityMonitor.Token? issuerToken = null, ICrisCallContext? callContext = null )
         where T : class, IAbstractCommand
     {
         Throw.CheckNotNullArgument( monitor );
@@ -204,6 +211,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         {
             Throw.ArgumentException( nameof( issuerToken ), $"Issuer token '{issuerToken.Key}' is already used by a command being sent to '{Party.FullName}'." );
         }
+        if( callContext != null ) _callContexts[issuerToken.Key] = callContext;
         if( !_toSend.Writer.TryWrite( executing ) )
         {
             monitor.Warn( $"Channel to '{Party.FullName}' is closed. Command '{command.CrisPocoModel.PocoName}' cannot be sent." );
@@ -231,7 +239,8 @@ public sealed partial class CrisChannelFeature : ChannelFeature
             IOutgoingMessage message;
             try
             {
-                message = h.CreateCommandMessage( c );
+                _callContexts.TryRemove( c.IssuerToken.Key, out var callContext );
+                message = h.CreateCommandMessage( c, callContext );
             }
             catch( System.Exception ex )
             {
@@ -279,6 +288,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     {
         if( _executing.TryRemove( key, out var c ) )
         {
+            _callContexts.TryRemove( key, out _ );
             var command = c.Command;
             var events = _finalEvents.TryRemove( key, out var finals ) ? finals.ToImmutableArray() : ImmutableArray<IEvent>.Empty;
             c.DarkSide.SetResult( command.CrisPocoModel.CreateExecutedCommand( command, result, validationMessages, events, c ) );
