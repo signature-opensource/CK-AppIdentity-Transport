@@ -14,8 +14,9 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// Implements the <see cref="IAuthenticationSessionOpener"/> of a local Authentication Center: the
-/// <see cref="CurrentLocalParty"/> must have its <see cref="LocalAuthCenter"/>.
+/// Issues the sessions of a local Authentication Center: the handler of the open session operation, of the remote
+/// login completion and of the passkey login use it (the endpoint side is the <see cref="IAuthenticationSessionOpener"/>
+/// of CK.Cris.Authentication, that executes the operation). The <see cref="CurrentLocalParty"/> must have its <see cref="LocalAuthCenter"/>.
 /// <para>
 /// The login sequence is: the <see cref="ILoginProvider"/> of the scheme (only a check when there are
 /// <see cref="ILoginValidator"/>), the validators, the actual login. An unregistered user can be created
@@ -25,7 +26,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// the signed token.
 /// </para>
 /// </summary>
-public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
+public sealed class AuthCenterSessionIssuer
 {
     readonly CurrentLocalParty _localParty;
     readonly AuthenticationInfo _initial;
@@ -35,15 +36,15 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
     readonly IServiceProvider _services;
 
     /// <summary>
-    /// Initializes a new session opener.
+    /// Initializes a new session issuer.
     /// </summary>
     /// <param name="localParty">The current local party: its Authentication Center must be local.</param>
     /// <param name="initial">The authentication before the login.</param>
-    /// <param name="endpoint">The endpoint that received the command.</param>
+    /// <param name="endpoint">The endpoint of the operation.</param>
     /// <param name="providers">The login providers.</param>
     /// <param name="validators">The login validators.</param>
     /// <param name="services">The services, for the optional account creation and binding services.</param>
-    public AuthCenterSessionOpener( CurrentLocalParty localParty,
+    public AuthCenterSessionIssuer( CurrentLocalParty localParty,
                                     AuthenticationInfo initial,
                                     IAuthenticationSessionEndpoint endpoint,
                                     IEnumerable<ILoginProvider> providers,
@@ -58,14 +59,26 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         _services = services;
     }
 
-    /// <inheritdoc />
-    public async ValueTask<ISessionResult> OpenSessionAsync<T>( IActivityMonitor monitor,
-                                                                T command,
-                                                                string scheme,
-                                                                object payload,
-                                                                bool rememberMe = false,
-                                                                IReadOnlyDictionary<string, string?>? userData = null )
-        where T : ICommand<ISessionResult>, ICommandAuthenticationSession
+    /// <summary>
+    /// Runs the login and, on success, opens the session. A failed login is not an exception: the result carries the
+    /// error and no token.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="command">
+    /// The session command being handled (the login command, the remote login callback...): used to log and, when
+    /// <paramref name="userData"/> is null, for its <see cref="ICommandLoginUserData"/>.
+    /// </param>
+    /// <param name="scheme">The scheme to use (see <see cref="LoginScheme"/>).</param>
+    /// <param name="payload">The <see cref="ILoginProvider"/> payload for the scheme.</param>
+    /// <param name="rememberMe">Whether the session must survive the end of the caller session.</param>
+    /// <param name="userData">The user data of the login, null to use the command's ones.</param>
+    /// <returns>The session result.</returns>
+    public async ValueTask<ISessionResult> OpenSessionAsync( IActivityMonitor monitor,
+                                                             ICrisPoco command,
+                                                             string scheme,
+                                                             object payload,
+                                                             bool rememberMe = false,
+                                                             IReadOnlyDictionary<string, string?>? userData = null )
     {
         Throw.CheckNotNullArgument( command );
         Throw.CheckNotNullOrWhiteSpaceArgument( scheme );
@@ -132,8 +145,7 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         return fixedResult ?? r;
     }
 
-    async ValueTask<ISessionResult> OpenAsync<T>( IActivityMonitor monitor, T command, LocalAuthCenter center, ActorInfo actor, bool rememberMe )
-        where T : ICommand<ISessionResult>
+    async ValueTask<ISessionResult> OpenAsync( IActivityMonitor monitor, ICrisPoco command, LocalAuthCenter center, ActorInfo actor, bool rememberMe )
     {
         var options = center.Options;
         var utcNow = DateTime.UtcNow;
@@ -158,6 +170,6 @@ public sealed class AuthCenterSessionOpener : IAuthenticationSessionOpener
         return AuthCenterResults.Success( command, info, token, rememberMe );
     }
 
-    static ISessionResult Failure<T>( IActivityMonitor monitor, T command, string text, string resName ) where T : ICommand<ISessionResult>
+    static ISessionResult Failure( IActivityMonitor monitor, ICrisPoco command, string text, string resName )
         => AuthCenterResults.Failure( monitor, command, text, resName );
 }

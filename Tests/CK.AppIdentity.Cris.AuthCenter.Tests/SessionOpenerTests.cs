@@ -10,7 +10,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// The local AuthCenter: a provider handler delegates to the <see cref="AuthCenterSessionOpener"/>.
+/// The local AuthCenter: a login operation is issued by the <see cref="AuthCenterSessionIssuer"/>.
 /// </summary>
 [TestFixture]
 public class SessionOpenerTests

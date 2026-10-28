@@ -7,11 +7,16 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The feature of a local party whose Authentication Center is a remote party: this application is a front of it.
-/// Added by the <see cref="RemoteAuthCenterFeatureDriver"/>; the <see cref="AuthCenterRelay"/> uses it.
+/// The feature of a local party whose Authentication Center is a remote party: this application is a remote of it.
+/// Added by the <see cref="RemoteAuthCenterFeatureDriver"/>.
 /// </summary>
 public sealed class RemoteAuthCenter
 {
+    /// <summary>
+    /// The maximal time to wait for the remote Authentication Center: 30 seconds.
+    /// </summary>
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
+
     readonly CrisAuthCenter _center;
     // The encryption key of the Authentication Center, until the expiration of its signature.
     (byte[] Spki, DateTime Expires)? _encryptionKey;
@@ -44,7 +49,7 @@ public sealed class RemoteAuthCenter
         try
         {
             published = await channel.SendCommand( monitor, pocos.Create<IGetAuthCenterEncryptionKeyQCommand>() )
-                                     .WithResult<IAuthCenterEncryptionKey>().Result.WaitAsync( AuthCenterRelay.Timeout ).ConfigureAwait( false );
+                                     .WithResult<IAuthCenterEncryptionKey>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
         }
         catch( Exception ex )
         {

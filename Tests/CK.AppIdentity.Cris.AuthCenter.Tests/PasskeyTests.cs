@@ -103,7 +103,7 @@ public class PasskeyTests
         app.Caller.WebOrigin = "https://other.example.com";
         Errors( await app.ExecuteAsync( p => p.Create<IStartPasskeyLoginCommand>() ) ).ShouldContain( "The origin 'https://other.example.com' is not allowed for passkeys." );
         app.Caller.WebOrigin = null;
-        Errors( await app.ExecuteAsync( p => p.Create<IStartPasskeyLoginCommand>() ) ).ShouldContain( "This endpoint cannot serve passkeys." );
+        Errors( await app.ExecuteAsync( p => p.Create<IStartPasskeyLoginCommand>() ) ).ShouldContain( "Passkeys require an endpoint that serves web pages.", "Refused by the receiving endpoint." );
     }
 
     [Test]

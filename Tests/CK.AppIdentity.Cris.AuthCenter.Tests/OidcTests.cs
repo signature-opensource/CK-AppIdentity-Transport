@@ -14,7 +14,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// The OpenID Connect logins of a local AuthCenter (<see cref="AuthCenterOidc"/>, <see cref="AuthCenterRemoteLoginHandlers"/>)
+/// The OpenID Connect logins of a local AuthCenter (<see cref="AuthCenterOidc"/>, <see cref="AuthCenterOperationHandlers"/>)
 /// against the <see cref="FakeIdentityProvider"/>.
 /// </summary>
 [TestFixture]

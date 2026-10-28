@@ -5,6 +5,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris.Executor.Engine" Version="2.0.2-0.cris-auth.0.ci.12" />
+    <PackageReference Include="CK.Cris.Authentication.Basic" Version="3.0.0-0.cris-auth.0.ci.32" />
+    <PackageReference Include="CK.Cris.Authentication.Weak" Version="3.0.0-0.cris-auth.0.ci.32" />
+    <PackageReference Include="CK.Cris.Authentication.Passkey" Version="3.0.0-0.cris-auth.0.ci.32" />
     <PackageReference Include="CK.Testing.StObjEngine" Version="35.0.2-0.cris-auth.0.ci.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="CK.Testing.NUnit" Version="17.0.2-0.cris-auth.0.ci.1" />
@@ -17,5 +20,10 @@
     <ProjectReference Include="..\..\CK.AppIdentity.Cris.AuthCenter.Oidc\CK.AppIdentity.Cris.AuthCenter.Oidc.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.Cris.AuthCenter.Passkey\CK.AppIdentity.Cris.AuthCenter.Passkey.csproj" />
     <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris\CK.Testing.AppIdentity.Cris.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The relay is gone (cris-auth note 44, pass 6a): these tests are rewritten as two-party dispatch tests in 6d. -->
+    <Compile Remove="RelayTests.cs" />
+    <None Include="RelayTests.cs" />
   </ItemGroup>
 </Project>

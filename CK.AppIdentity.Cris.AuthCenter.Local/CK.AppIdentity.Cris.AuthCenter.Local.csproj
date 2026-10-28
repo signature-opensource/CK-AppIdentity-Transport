@@ -9,8 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- For the Basic and Weak login handlers (AuthCenterLoginHandlers.cs): temporary, until the old stack is retired. -->
-    <PackageReference Include="CK.IO.Authentication.Basic" Version="2.0.2-0.cris-auth.0.ci.9" />
-    <PackageReference Include="CK.IO.Authentication.Weak" Version="2.0.2-0.cris-auth.0.ci.9" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter\CK.AppIdentity.Cris.AuthCenter.csproj" />

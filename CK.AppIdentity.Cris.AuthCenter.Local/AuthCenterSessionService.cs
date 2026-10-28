@@ -9,15 +9,17 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The session commands of a local Authentication Center (see <see cref="AuthCenterCommandHandlers"/>): they act on
-/// "the current session", the one whose proof is presented by the <see cref="IAuthenticationSessionEndpoint"/>.
+/// The session operations of a local Authentication Center (see <see cref="AuthCenterOperationHandlers"/>): they act on
+/// "the current session", the one whose proof is presented by the <see cref="IAuthenticationSessionEndpoint"/> (an
+/// <see cref="OperationSessionEndpoint"/> built from the operation). Created per operation (see
+/// <see cref="AuthCenterOperationHandlers.CreateSessionService"/>).
 /// <para>
 /// A presented proof must match the stored session exactly (the session key and both secret hashes). A proof with the
 /// right key but other secrets revokes the session: a refresh secret is used once, a rotated secret presented again
 /// means that it has been stolen (or that two copies of the caller compete).
 /// </para>
 /// </summary>
-public sealed class AuthCenterSessionService : IScopedAutoService
+public sealed class AuthCenterSessionService
 {
     readonly CurrentLocalParty _localParty;
     readonly AuthenticationInfo _current;
@@ -30,7 +32,7 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// </summary>
     /// <param name="localParty">The current local party: its Authentication Center must be local.</param>
     /// <param name="current">The current authentication.</param>
-    /// <param name="endpoint">The endpoint that received the command.</param>
+    /// <param name="endpoint">The endpoint of the operation.</param>
     /// <param name="actors">The actor provider: a refresh reads the actors again.</param>
     /// <param name="services">The services, for the optional <see cref="IImpersonationService"/>.</param>
     public AuthCenterSessionService( CurrentLocalParty localParty,
@@ -127,14 +129,13 @@ public sealed class AuthCenterSessionService : IScopedAutoService
 
     // Rotates the endpoint secrets (the current ones become the previous ones, unless the previous ones were presented:
     // they are then used), saves the session (with its actor and its end) and returns the new token.
-    async ValueTask<ISessionResult> IssueAsync<T>( IActivityMonitor monitor, T command, Current c, int actorId, DateTime expires, AuthenticationInfo info, DateTime utcNow )
-        where T : ICommand<ISessionResult>
+    async ValueTask<ISessionResult> IssueAsync( IActivityMonitor monitor, ICrisPoco source, Current c, int actorId, DateTime expires, AuthenticationInfo info, DateTime utcNow )
     {
         var s = c.Session;
         var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, expires );
         await c.Center.Sessions.SaveAsync( s.Rotate( proof.RefreshSecretHash, proof.BindingSecretHash, utcNow, c.FromPrevious ) with { ActorId = actorId, Expires = expires } )
                                .ConfigureAwait( false );
-        return AuthCenterResults.Success( command, info, c.Center.CreateToken( s.SessionId, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
+        return AuthCenterResults.Success( source, info, c.Center.CreateToken( s.SessionId, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
     }
 
     /// <summary>
@@ -144,16 +145,16 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// token is issued.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
+    /// <param name="source">The handled operation.</param>
     /// <returns>The session result.</returns>
-    public async ValueTask<ISessionResult> RefreshAsync( IActivityMonitor monitor, IRefreshSessionCommand command )
+    public async ValueTask<ISessionResult> RefreshAsync( IActivityMonitor monitor, ICrisPoco source )
     {
         using var sessionLock = await LockAsync().ConfigureAwait( false );
         var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
         if( c == null )
         {
             _endpoint.Clear();
-            return AuthCenterResults.Failure( monitor, command, error!, resName! );
+            return AuthCenterResults.Failure( monitor, source, error!, resName! );
         }
         var s = c.Value.Session;
         var actual = await _actors.GetActorInfoAsync( monitor, s.ActualActorId ).ConfigureAwait( false );
@@ -164,13 +165,13 @@ public sealed class AuthCenterSessionService : IScopedAutoService
         {
             c.Value.Center.Sessions.TryDelete( monitor, s.ActualActorId, s.SessionId );
             _endpoint.Clear();
-            return AuthCenterResults.Failure( monitor, command, "The actor cannot be used anymore.", "Authentication.InvalidActor" );
+            return AuthCenterResults.Failure( monitor, source, "The actor cannot be used anymore.", "Authentication.InvalidActor" );
         }
         var utcNow = DateTime.UtcNow;
         // The session slides: it ends SessionLifetime after its last refresh.
         var expires = utcNow + c.Value.Center.Options.SessionLifetime;
         var info = AuthenticationInfo.Create( ToNormal( actual ), ToNormal( actor ), expires, null, s.DeviceId, utcNow );
-        return await IssueAsync( monitor, command, c.Value, actor.ActorId, expires, info, utcNow ).ConfigureAwait( false );
+        return await IssueAsync( monitor, source, c.Value, actor.ActorId, expires, info, utcNow ).ConfigureAwait( false );
 
         static ActorInfo ToNormal( ActorInfo a ) => a.Level > AuthLevel.Normal ? a.WithLevel( AuthLevel.Normal ) : a;
     }
@@ -200,42 +201,44 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// <see cref="IImpersonationService"/> must allow it: by default, any impersonation is refused.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
+    /// <param name="source">The handled operation.</param>
+    /// <param name="targetActorId">The identifier of the actor to impersonate.</param>
+    /// <param name="targetActorName">The name of the actor to impersonate (when <paramref name="targetActorId"/> is null).</param>
     /// <returns>The session result.</returns>
-    public async ValueTask<ISessionResult> ImpersonateAsync( IActivityMonitor monitor, IImpersonateCommand command )
+    public async ValueTask<ISessionResult> ImpersonateAsync( IActivityMonitor monitor, ICrisPoco source, int? targetActorId, string? targetActorName )
     {
-        if( command.TargetActorId.HasValue == (command.TargetActorName != null) )
+        if( targetActorId.HasValue == (targetActorName != null) )
         {
-            return AuthCenterResults.Failure( monitor, command, "Exactly one of TargetActorId or TargetActorName must be set.", "Authentication.InvalidImpersonation" );
+            return AuthCenterResults.Failure( monitor, source, "Exactly one of TargetActorId or TargetActorName must be set.", "Authentication.InvalidImpersonation" );
         }
         using var sessionLock = await LockAsync().ConfigureAwait( false );
         var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
-        if( c == null ) return AuthCenterResults.Failure( monitor, command, error!, resName! );
+        if( c == null ) return AuthCenterResults.Failure( monitor, source, error!, resName! );
         var actual = _current.UnsafeActualActor;
         if( actual.ActorId != c.Value.Session.ActualActorId || _current.ActualActor.Level != AuthLevel.Critical )
         {
-            return AuthCenterResults.Failure( monitor, command, "Impersonation requires the Critical level.", "Authentication.CriticalLevelRequired" );
+            return AuthCenterResults.Failure( monitor, source, "Impersonation requires the Critical level.", "Authentication.CriticalLevelRequired" );
         }
-        if( command.TargetActorId == actual.ActorId
-            || (command.TargetActorName != null && string.Equals( command.TargetActorName, actual.ActorName, StringComparison.OrdinalIgnoreCase )) )
+        if( targetActorId == actual.ActorId
+            || (targetActorName != null && string.Equals( targetActorName, actual.ActorName, StringComparison.OrdinalIgnoreCase )) )
         {
-            return AuthCenterResults.Failure( monitor, command, "Impersonating oneself: use the IClearImpersonationCommand.", "Authentication.InvalidImpersonation" );
+            return AuthCenterResults.Failure( monitor, source, "Impersonating oneself: use the IClearImpersonationCommand.", "Authentication.InvalidImpersonation" );
         }
         var service = _services.GetService<IImpersonationService>();
         var target = service == null
                         ? null
-                        : command.TargetActorId.HasValue
-                            ? await service.ImpersonateAsync( monitor, _current, command.TargetActorId.Value ).ConfigureAwait( false )
-                            : await service.ImpersonateAsync( monitor, _current, command.TargetActorName! ).ConfigureAwait( false );
+                        : targetActorId.HasValue
+                            ? await service.ImpersonateAsync( monitor, _current, targetActorId.Value ).ConfigureAwait( false )
+                            : await service.ImpersonateAsync( monitor, _current, targetActorName! ).ConfigureAwait( false );
         if( target == null )
         {
-            return AuthCenterResults.Failure( monitor, command, "Impersonation is not allowed.", "Authentication.ImpersonationNotAllowed" );
+            return AuthCenterResults.Failure( monitor, source, "Impersonation is not allowed.", "Authentication.ImpersonationNotAllowed" );
         }
         var utcNow = DateTime.UtcNow;
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow )
                                      .Impersonate( target, utcNow );
         monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"{actual} impersonates {target}." );
-        return await IssueAsync( monitor, command, c.Value, target.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
+        return await IssueAsync( monitor, source, c.Value, target.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
     }
 
     /// <summary>
@@ -243,20 +246,20 @@ public sealed class AuthCenterSessionService : IScopedAutoService
     /// can only lower the privileges.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
+    /// <param name="source">The handled operation.</param>
     /// <returns>The session result.</returns>
-    public async ValueTask<ISessionResult> ClearImpersonationAsync( IActivityMonitor monitor, IClearImpersonationCommand command )
+    public async ValueTask<ISessionResult> ClearImpersonationAsync( IActivityMonitor monitor, ICrisPoco source )
     {
         using var sessionLock = await LockAsync().ConfigureAwait( false );
         var (c, error, resName) = await GetCurrentAsync( monitor, revokeOnMismatch: true, acceptPrevious: true ).ConfigureAwait( false );
-        if( c == null ) return AuthCenterResults.Failure( monitor, command, error!, resName! );
+        if( c == null ) return AuthCenterResults.Failure( monitor, source, error!, resName! );
         var actual = _current.UnsafeActualActor;
         if( actual.ActorId != c.Value.Session.ActualActorId )
         {
-            return AuthCenterResults.Failure( monitor, command, "The authentication doesn't match the session.", "Authentication.InvalidSession" );
+            return AuthCenterResults.Failure( monitor, source, "The authentication doesn't match the session.", "Authentication.InvalidSession" );
         }
         var utcNow = DateTime.UtcNow;
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow );
-        return await IssueAsync( monitor, command, c.Value, actual.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
+        return await IssueAsync( monitor, source, c.Value, actual.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
     }
 }

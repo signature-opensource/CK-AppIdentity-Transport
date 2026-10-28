@@ -104,7 +104,8 @@ public class RefreshGraceTests
         app.Caller.Cookies = c0;
         await using( var scope = app.Services.Services.CreateAsyncScope() )
         {
-            var (session, error, errorId) = await scope.ServiceProvider.GetRequiredService<AuthCenterSessionService>().GetCriticalSessionAsync( TestHelper.Monitor );
+            var (session, error, errorId) = await AuthCenterOperationHandlers.CreateSessionService( scope.ServiceProvider, scope.ServiceProvider.GetRequiredService<IAuthenticationSessionEndpoint>() )
+                                                            .GetCriticalSessionAsync( TestHelper.Monitor );
             session.ShouldBeNull();
             errorId.ShouldBe( "Authentication.InvalidSession" );
         }

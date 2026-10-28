@@ -11,7 +11,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// The session commands of a local AuthCenter (<see cref="AuthCenterSessionService"/>).
+/// The session commands of a local AuthCenter (executed by the endpoint, their operations by the <see cref="AuthCenterOperationHandlers"/>).
 /// </summary>
 [TestFixture]
 public class SessionCommandsTests

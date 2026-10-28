@@ -5,14 +5,23 @@ using CK.IO.Authentication;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// Builds the results of the session commands. Public for the scheme family packages, that handle their own commands.
+/// Builds the results of the session operations. Public for the scheme family packages, that handle their own operations.
+/// The source is the Cris Poco being handled (an operation, or the session command it carries): it is used to log and to
+/// reach the <see cref="PocoDirectory"/>.
 /// </summary>
 public static class AuthCenterResults
 {
-    internal static ISessionResult Success<T>( T command, AuthenticationInfo info, string token, bool rememberMe )
-        where T : ICommand<ISessionResult>
+    /// <summary>
+    /// Creates a successful session result.
+    /// </summary>
+    /// <param name="source">The handled Cris Poco.</param>
+    /// <param name="info">The authentication of the session.</param>
+    /// <param name="token">The signed token.</param>
+    /// <param name="rememberMe">Whether the session survives the end of the caller session.</param>
+    /// <returns>The session result.</returns>
+    public static ISessionResult Success( ICrisPoco source, AuthenticationInfo info, string token, bool rememberMe )
     {
-        return command.CreateResult( r =>
+        return Directory( source ).Create<ISessionResult>( r =>
         {
             r.Info.InitializeFrom( info );
             r.Token = token;
@@ -21,39 +30,37 @@ public static class AuthCenterResults
     }
 
     /// <summary>
-    /// Creates a failed result (no token): the error is a user message, and it is logged.
+    /// Creates a failed session result (a decision of the Authentication Center).
     /// </summary>
-    /// <typeparam name="T">The command type.</typeparam>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The refused command.</param>
+    /// <param name="source">The handled Cris Poco.</param>
     /// <param name="text">The error text.</param>
-    /// <param name="resName">The resource name of the error.</param>
-    /// <returns>The failed result.</returns>
-    public static ISessionResult Failure<T>( IActivityMonitor monitor, T command, string text, string resName )
-        where T : ICommand<ISessionResult>
+    /// <param name="resName">The error resource name.</param>
+    /// <returns>The session result.</returns>
+    public static ISessionResult Failure( IActivityMonitor monitor, ICrisPoco source, string text, string resName )
     {
-        return Failure<T, ISessionResult>( monitor, command, text, resName );
+        return Failure<ISessionResult>( monitor, source, text, resName );
     }
 
     /// <summary>
-    /// Creates a failed <see cref="IStandardResultPart"/> result: the error is a user message, and it is logged.
+    /// Creates a failed standard result (a decision of the Authentication Center).
     /// </summary>
-    /// <typeparam name="T">The command type.</typeparam>
     /// <typeparam name="TResult">The result type.</typeparam>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The refused command.</param>
+    /// <param name="source">The handled Cris Poco.</param>
     /// <param name="text">The error text.</param>
-    /// <param name="resName">The resource name of the error.</param>
-    /// <returns>The failed result.</returns>
-    public static TResult Failure<T, TResult>( IActivityMonitor monitor, T command, string text, string resName )
-        where T : ICommand<TResult>
+    /// <param name="resName">The error resource name.</param>
+    /// <returns>The result.</returns>
+    public static TResult Failure<TResult>( IActivityMonitor monitor, ICrisPoco source, string text, string resName )
         where TResult : class, IStandardResultPart
     {
-        monitor.Warn( $"Session command '{command.CrisPocoModel.PocoName}' refused: {text}" );
-        return command.CreateResult( r =>
+        monitor.Warn( $"'{source.CrisPocoModel.PocoName}' refused: {text}" );
+        return Directory( source ).Create<TResult>( r =>
         {
             r.Success = false;
             r.UserMessages.Add( UserMessage.Error( NormalizedCultureInfo.CodeDefault, text, resName ) );
         } );
     }
+
+    static PocoDirectory Directory( ICrisPoco source ) => ((IPocoGeneratedClass)source).Factory.PocoDirectory;
 }
