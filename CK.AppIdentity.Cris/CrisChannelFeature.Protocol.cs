@@ -4,6 +4,7 @@ using CK.Cris;
 using CK.Poco.Exc.Json;
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Threading.Tasks;
 
@@ -17,6 +18,10 @@ public sealed partial class CrisChannelFeature
     const byte DImmediateEvent = 2;
     // Callee to caller: the issuer token key and the untyped ICrisCallResult.
     const byte DExecuted = 3;
+    // Callee to caller: the issuer token key and a typed final caller-only event (sent before its DExecuted).
+    const byte DFinalEvent = 4;
+    // Both ways, on each connection: the names of the commands the sender accepts from the receiver.
+    const byte DAccepted = 5;
 
     /// <summary>
     /// Implements the Cris protocol. A message starts with one of the D* discriminators.
@@ -50,7 +55,23 @@ public sealed partial class CrisChannelFeature
             }, source: c );
         }
 
-        internal void SendImmediateEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
+        internal void SendImmediateEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e ) => SendEvent( monitor, DImmediateEvent, key, e );
+
+        internal void SendFinalEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e ) => SendEvent( monitor, DFinalEvent, key, e );
+
+        internal void SendAccepted( IActivityMonitor monitor, List<string> names )
+        {
+            Enqueue( monitor, MessageFactory.Create( bytes =>
+            {
+                var w = new FastByteWriter( bytes );
+                w.WriteByte( DAccepted );
+                w.WriteInt32( names.Count );
+                foreach( var n in names ) w.WriteString( n );
+                w.Commit();
+            } ) );
+        }
+
+        void SendEvent( IActivityMonitor monitor, byte discriminator, ActivityMonitor.LogKey key, IEvent e )
         {
             IOutgoingMessage message;
             try
@@ -58,7 +79,7 @@ public sealed partial class CrisChannelFeature
                 message = MessageFactory.Create( bytes =>
                 {
                     var w = new FastByteWriter( bytes );
-                    w.WriteByte( DImmediateEvent );
+                    w.WriteByte( discriminator );
                     w.WriteLogKey( key );
                     w.Commit();
                     _feature._pocoDirectory.WriteJson( bytes, e, withType: true, _exportOptions );
@@ -148,6 +169,12 @@ public sealed partial class CrisChannelFeature
                     return default;
                 case DImmediateEvent:
                     return HandleImmediateEvent( monitor, ref r );
+                case DFinalEvent:
+                    HandleFinalEvent( monitor, ref r );
+                    return default;
+                case DAccepted:
+                    HandleAccepted( monitor, ref r );
+                    return default;
                 case DExecuted:
                     HandleExecuted( monitor, ref r );
                     return default;
@@ -183,7 +210,49 @@ public sealed partial class CrisChannelFeature
                 SendError( monitor, token.Key, "Unable to read the command." );
                 return;
             }
+            // Refused before any validation: a command the remote may not send, a party command for another party.
+            if( !_feature.IsAcceptedFromRemote( command.CrisPocoModel ) )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Command '{command.CrisPocoModel.PocoName}' received from '{_feature.Party.FullName}' is not accepted from it. Refused." );
+                SendError( monitor, token.Key, $"Command '{command.CrisPocoModel.PocoName}' is not accepted." );
+                return;
+            }
+            if( command is ICommandTargetParty p && !(_feature.Party.Owner.FullName == p.TargetPartyFullName) )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Party command '{command.CrisPocoModel.PocoName}' received from '{_feature.Party.FullName}' targets '{p.TargetPartyFullName}', not '{_feature.Party.Owner.FullName}'. Refused." );
+                SendError( monitor, token.Key, $"Party command '{command.CrisPocoModel.PocoName}' doesn't target this party." );
+                return;
+            }
             _feature._executor.Execute( this, command, token );
+        }
+
+        void HandleFinalEvent( IActivityMonitor monitor, ref FastByteReader r )
+        {
+            var key = r.ReadLogKey();
+            IEvent? e = null;
+            try
+            {
+                e = _feature._pocoDirectory.ReadJson( r.GetAfterHead(), _importOptions ) as IEvent;
+            }
+            catch( Exception ex )
+            {
+                monitor.Error( $"Unable to read a final event received from '{_feature.Party.FullName}'. Ignored.", ex );
+                return;
+            }
+            if( e == null )
+            {
+                monitor.Error( $"Received a Poco that is not an event from '{_feature.Party.FullName}'. Ignored." );
+                return;
+            }
+            _feature.OnFinalEvent( monitor, key, e );
+        }
+
+        void HandleAccepted( IActivityMonitor monitor, ref FastByteReader r )
+        {
+            int count = r.ReadInt32();
+            var names = new HashSet<string>( count );
+            for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
+            _feature.OnAccepted( monitor, names );
         }
 
         ValueTask HandleImmediateEvent( IActivityMonitor monitor, ref FastByteReader r )

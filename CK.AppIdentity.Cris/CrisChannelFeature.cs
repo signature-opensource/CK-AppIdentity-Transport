@@ -1,8 +1,11 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.Cris;
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
@@ -15,6 +18,11 @@ namespace CK.AppIdentity.Cris;
 /// only identity that is established is the one of the remote party itself, that is available as a
 /// scoped <see cref="IRemoteParty"/> service. Nothing in the message can claim a user identity.
 /// </para>
+/// <para>
+/// A remote may only send the commands this party accepts from it (see <see cref="IsAcceptedFromRemote(ICrisPocoModel)"/>):
+/// on each connection, each side advertises them to the other (see <see cref="AcceptedCommands"/>). The other ones are
+/// refused before any validation.
+/// </para>
 /// </summary>
 public sealed partial class CrisChannelFeature : ChannelFeature
 {
@@ -22,6 +30,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     readonly IPocoFactory<ICrisResultError> _errorFactory;
     readonly IPocoFactory<ICrisCallResult> _callResultFactory;
     readonly IncomingCommandExecutor _executor;
+    readonly CrisDirectory _crisDirectory;
+    // The command names the remote accepts from us: null until its first advertisement.
+    volatile IReadOnlySet<string>? _acceptedCommands;
+    readonly TaskCompletionSource _firstAccepted;
+    // The final caller-only events received for a command not yet executed.
+    readonly ConcurrentDictionary<ActivityMonitor.LogKey, List<IEvent>> _finalEvents;
     // The commands sent and not yet executed (this includes the ones still in _toSend).
     // A command is completed exactly once: by the one that removes it from here.
     readonly ConcurrentDictionary<ActivityMonitor.LogKey, ExecutingCommand> _executing;
@@ -38,10 +52,14 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                                  IPocoFactory<ICrisResultError> errorFactory,
                                  IPocoFactory<ICrisCallResult> callResultFactory,
                                  CrisExecutionHost executionHost,
-                                 IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint )
+                                 IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
+                                 CrisDirectory crisDirectory )
         : base( transportFeature )
     {
         _pocoDirectory = pocoDirectory;
+        _crisDirectory = crisDirectory;
+        _firstAccepted = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
+        _finalEvents = new ConcurrentDictionary<ActivityMonitor.LogKey, List<IEvent>>();
         _errorFactory = errorFactory;
         _callResultFactory = callResultFactory;
         _executor = new IncomingCommandExecutor( this, executionHost, endpoint );
@@ -61,9 +79,95 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     {
         if( current != null )
         {
-            _handler = (Protocol)current;
-            _firstHandler.TrySetResult( _handler );
+            var h = (Protocol)current;
+            _handler = h;
+            _firstHandler.TrySetResult( h );
+            // On each connection, we tell the remote what it may send us.
+            h.SendAccepted( monitor, _crisDirectory.CrisPocoModels.Where( IsAcceptedFromRemote ).Select( m => m.PocoName ).ToList() );
         }
+    }
+
+    /// <summary>
+    /// Gets whether the remote <see cref="ChannelFeature.Party"/> is inside the System of its owner (our local party):
+    /// it shares its <see cref="IParty.DomainName"/> and <see cref="IParty.EnvironmentName"/>.
+    /// </summary>
+    public bool IsRemoteInsideSystem => Party.DomainName == Party.Owner.DomainName
+                                        && Party.EnvironmentName == Party.Owner.EnvironmentName;
+
+    /// <summary>
+    /// Gets whether a command can be received from the remote: it is a command handled here, not <see cref="CrisExposure.Private"/>
+    /// and, when it is <see cref="CrisExposure.Internal"/>, the remote is inside the System (see <see cref="IsRemoteInsideSystem"/>).
+    /// Endpoint-only commands are accepted (they are sent explicitly, never dispatched).
+    /// </summary>
+    /// <param name="model">The command model.</param>
+    /// <returns>True if the remote may send it.</returns>
+    public bool IsAcceptedFromRemote( ICrisPocoModel model )
+    {
+        return model.Kind is CrisPocoKind.Command or CrisPocoKind.CommandWithResult
+               && model.IsHandled
+               && model.Exposure switch
+               {
+                   CrisExposure.Public => true,
+                   CrisExposure.Internal => IsRemoteInsideSystem,
+                   _ => false
+               };
+    }
+
+    /// <summary>
+    /// Gets the names of the commands that the remote accepts from us (its advertisement, received on each connection),
+    /// or null until the first one is received.
+    /// </summary>
+    public IReadOnlySet<string>? AcceptedCommands => _acceptedCommands;
+
+    /// <summary>
+    /// Waits for the first advertisement of the remote (see <see cref="AcceptedCommands"/>).
+    /// </summary>
+    /// <param name="timeout">The maximal time to wait.</param>
+    /// <returns>True if the remote has advertised its accepted commands, false on timeout.</returns>
+    public async Task<bool> WaitForAcceptedCommandsAsync( TimeSpan timeout )
+    {
+        if( _acceptedCommands != null ) return true;
+        try
+        {
+            await _firstAccepted.Task.WaitAsync( timeout ).ConfigureAwait( false );
+            return _acceptedCommands != null;
+        }
+        catch( TimeoutException )
+        {
+            return false;
+        }
+    }
+
+    internal void OnAccepted( IActivityMonitor monitor, HashSet<string> names )
+    {
+        _acceptedCommands = names;
+        _firstAccepted.TrySetResult();
+        monitor.Info( $"'{Party.FullName}' accepts {names.Count} commands from '{Party.Owner.FullName}'." );
+        // Singleton commands: one eventual handler in the tenant (the local party), a local handler always wins.
+        foreach( var other in Party.Owner.Remotes )
+        {
+            if( other == Party || other.GetFeature<CrisChannelFeature>()?.AcceptedCommands is not { } o ) continue;
+            foreach( var name in names )
+            {
+                if( o.Contains( name )
+                    && _crisDirectory.CrisPocoModels.FirstOrDefault( m => m.PocoName == name ) is { IsHandled: false } m
+                    && !typeof( ICommandTargetParty ).IsAssignableFrom( m.CommandType ) )
+                {
+                    monitor.Error( $"Deployment error: command '{name}' is handled by '{Party.FullName}' and '{other.FullName}' for '{Party.Owner.FullName}'. It cannot be dispatched." );
+                }
+            }
+        }
+    }
+
+    internal void OnFinalEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
+    {
+        if( !_executing.ContainsKey( key ) )
+        {
+            monitor.Warn( $"Received final event '{e.CrisPocoModel.PocoName}' from '{Party.FullName}' for unknown command '{key}'. Ignored." );
+            return;
+        }
+        var events = _finalEvents.GetOrAdd( key, _ => new List<IEvent>() );
+        lock( events ) events.Add( e );
     }
 
     /// <summary>
@@ -79,8 +183,9 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// The command is sent as soon as a connection to the remote is established.
     /// </para>
     /// <para>
-    /// The <see cref="IExecutedCommand.Events"/> are always empty: the non immediate events are routed in the remote
-    /// party. The immediate events emitted by the remote execution appear in <see cref="IExecutingCommand.ImmediateEvents"/>.
+    /// Only the caller-only events cross the channel (they travel with the response): the immediate ones appear in
+    /// <see cref="IExecutingCommand.ImmediateEvents"/>, the final ones in <see cref="IExecutedCommand.Events"/>. The routed
+    /// events are dispatched in the remote party, where the command executed.
     /// </para>
     /// </summary>
     /// <typeparam name="T">The command type.</typeparam>
@@ -175,7 +280,8 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         if( _executing.TryRemove( key, out var c ) )
         {
             var command = c.Command;
-            c.DarkSide.SetResult( command.CrisPocoModel.CreateExecutedCommand( command, result, validationMessages, ImmutableArray<IEvent>.Empty, c ) );
+            var events = _finalEvents.TryRemove( key, out var finals ) ? finals.ToImmutableArray() : ImmutableArray<IEvent>.Empty;
+            c.DarkSide.SetResult( command.CrisPocoModel.CreateExecutedCommand( command, result, validationMessages, events, c ) );
             return true;
         }
         return false;
@@ -185,6 +291,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     {
         _toSend.Writer.TryComplete();
         _firstHandler.TrySetResult( null );
+        _firstAccepted.TrySetResult();
         foreach( var key in _executing.Keys )
         {
             SetError( key, $"Remote '{Party.FullName}' is no more available." );

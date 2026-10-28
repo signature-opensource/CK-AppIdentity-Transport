@@ -16,15 +16,18 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
     readonly IPocoFactory<ICrisCallResult> _callResultFactory;
     readonly IDIContainer<AppIdentityDIContainerDefinition.Data> _endpoint;
     readonly CrisExecutionHost _executionHost;
+    readonly CrisDirectory _crisDirectory;
 
     public CrisChannelFeatureDriver( TransportFeatureDriver transport,
                                      PocoDirectory pocoDirectory,
                                      IPocoFactory<ICrisResultError> errorFactory,
                                      IPocoFactory<ICrisCallResult> callResultFactory,
                                      IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
-                                     CrisExecutionHost executionHost )
+                                     CrisExecutionHost executionHost,
+                                     CrisDirectory crisDirectory )
         : base( transport, isAllowedByDefault: true )
     {
+        _crisDirectory = crisDirectory;
         _pocoDirectory = pocoDirectory;
         _errorFactory = errorFactory;
         _callResultFactory = callResultFactory;
@@ -34,7 +37,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory );
         return true;
     }
 }

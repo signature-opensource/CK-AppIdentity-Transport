@@ -42,15 +42,26 @@ public sealed partial class CrisChannelFeature
             ExecutionHost.StartJob( job );
         }
 
+        // Only the caller-only events travel with the response: the routed ones are dispatched here, where the
+        // command executes.
         protected override Task OnImmediateEventAsync( IActivityMonitor monitor, CrisJob job, IEvent e )
         {
-            Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler.SendImmediateEvent( monitor, job.IssuerToken.Key, e );
+            if( e.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyImmediateEvent )
+            {
+                Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler.SendImmediateEvent( monitor, job.IssuerToken.Key, e );
+            }
             return Task.CompletedTask;
         }
 
         protected override Task SetFinalResultAsync( IActivityMonitor monitor, CrisJob job, IExecutedCommand result )
         {
-            Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler.SendExecuted( monitor, job.IssuerToken.Key, result.Result, result.ValidationMessages );
+            var handler = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler;
+            // The final caller-only events precede the result on the same ordered queue.
+            foreach( var e in result.Events )
+            {
+                if( e.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyEvent ) handler.SendFinalEvent( monitor, job.IssuerToken.Key, e );
+            }
+            handler.SendExecuted( monitor, job.IssuerToken.Key, result.Result, result.ValidationMessages );
             return Task.CompletedTask;
         }
     }
