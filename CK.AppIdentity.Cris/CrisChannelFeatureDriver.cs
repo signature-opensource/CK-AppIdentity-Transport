@@ -1,6 +1,7 @@
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.Cris;
+using System.Collections.Generic;
 
 namespace CK.AppIdentity.Cris;
 
@@ -18,6 +19,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
     readonly CrisExecutionHost _executionHost;
     readonly CrisDirectory _crisDirectory;
     readonly ICrisChannelReceptionHandler? _receptionHandler;
+    readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
 
     public CrisChannelFeatureDriver( TransportFeatureDriver transport,
                                      PocoDirectory pocoDirectory,
@@ -26,11 +28,13 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
                                      IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
                                      CrisExecutionHost executionHost,
                                      CrisDirectory crisDirectory,
+                                     IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers,
                                      ICrisChannelReceptionHandler? receptionHandler = null )
         : base( transport, isAllowedByDefault: true )
     {
         _crisDirectory = crisDirectory;
         _receptionHandler = receptionHandler;
+        _incomingTransformers = incomingTransformers;
         _pocoDirectory = pocoDirectory;
         _errorFactory = errorFactory;
         _callResultFactory = callResultFactory;
@@ -40,7 +44,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers );
         return true;
     }
 }

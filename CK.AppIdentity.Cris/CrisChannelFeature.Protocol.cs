@@ -241,6 +241,14 @@ public sealed partial class CrisChannelFeature
                 SendError( monitor, token.Key, $"Party command '{command.CrisPocoModel.PocoName}' doesn't target this party." );
                 return;
             }
+            foreach( var t in _feature._incomingTransformers )
+            {
+                if( !t.Transform( monitor, _feature.Party, command ) )
+                {
+                    SendError( monitor, token.Key, $"Command '{command.CrisPocoModel.PocoName}' is refused." );
+                    return;
+                }
+            }
             _feature._executor.Execute( this, command, token, callContext );
         }
 

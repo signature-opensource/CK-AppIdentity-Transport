@@ -34,6 +34,7 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
 {
     readonly ApplicationIdentityService _identity;
     readonly IEnumerable<ICrisCallContextContributor> _contributors;
+    readonly IEnumerable<ICrisOutgoingCommandTransformer> _transformers;
 
     /// <summary>
     /// The maximal time to wait for a route or for the answer of a remote: 30 seconds.
@@ -45,10 +46,14 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
     /// </summary>
     /// <param name="identity">The application identity service.</param>
     /// <param name="contributors">The contributors to the call context of the dispatched commands.</param>
-    public ChannelCrisRemoteDispatcher( ApplicationIdentityService identity, IEnumerable<ICrisCallContextContributor> contributors )
+    /// <param name="transformers">The transformers of the dispatched commands.</param>
+    public ChannelCrisRemoteDispatcher( ApplicationIdentityService identity,
+                                        IEnumerable<ICrisCallContextContributor> contributors,
+                                        IEnumerable<ICrisOutgoingCommandTransformer> transformers )
     {
         _identity = identity;
         _contributors = contributors;
+        _transformers = transformers;
     }
 
     /// <inheritdoc />
@@ -146,7 +151,18 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
     {
         var monitor = services.GetRequiredService<IActivityMonitor>();
         var context = services.GetService<ICrisCommandContext>();
-        var executing = channel.SendCommand( monitor, command, callContext: CreateCallContext( monitor, services, channel.Party, command ) );
+        // The transformers run here, not in the channel's send loop: they may themselves query the remote (a key).
+        var toSend = command;
+        foreach( var t in _transformers )
+        {
+            var transformed = await t.TransformAsync( monitor, channel, toSend ).ConfigureAwait( false );
+            if( transformed == null )
+            {
+                return Error( services, $"Command '{command.CrisPocoModel.PocoName}' cannot be prepared for '{channel.Party.FullName}'.", "Cris.Unavailable" );
+            }
+            toSend = transformed;
+        }
+        var executing = channel.SendCommand( monitor, toSend, callContext: CreateCallContext( monitor, services, channel.Party, command ) );
         // The caller-only immediate events of the remote execution are the ones of the caller.
         if( context != null )
         {

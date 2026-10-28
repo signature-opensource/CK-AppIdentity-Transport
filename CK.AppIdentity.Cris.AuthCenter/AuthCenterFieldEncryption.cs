@@ -3,10 +3,7 @@ using CK.Cris;
 using System;
 using System.Buffers.Binary;
 using System.Buffers.Text;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -40,7 +37,6 @@ static class AuthCenterFieldEncryption
     internal static readonly TimeSpan Freshness = TimeSpan.FromMinutes( 5 );
 
     static readonly byte[] _info = "CK.AuthCenter.Field.v1"u8.ToArray();
-    static readonly ConcurrentDictionary<Type, PropertyInfo[]?> _sensitiveFields = new();
 
     internal static byte[] GetKeyId( ReadOnlySpan<byte> spki ) => SHA256.HashData( spki ).AsSpan( 0, KeyIdLength ).ToArray();
 
@@ -49,24 +45,6 @@ static class AuthCenterFieldEncryption
     /// </summary>
     internal static byte[] GetContext( NormalizedPath authCenter, NormalizedPath front, string pocoName, string propertyName )
         => Encoding.UTF8.GetBytes( $"{authCenter.Path}\n{front.Path}\n{pocoName}\n{propertyName}" );
-
-    /// <summary>
-    /// Gets the [Sensitive] properties of a command type. Null when a sensitive property is not a string: such a command
-    /// cannot be relayed.
-    /// </summary>
-    internal static PropertyInfo[]? GetSensitiveFields( Type commandType )
-    {
-        return _sensitiveFields.GetOrAdd( commandType, static t =>
-        {
-            var all = t.GetInterfaces()
-                       .SelectMany( i => i.GetProperties() )
-                       .Where( p => p.IsDefined( typeof( SensitiveAttribute ), inherit: true ) )
-                       .GroupBy( p => p.Name )
-                       .Select( g => g.First() )
-                       .ToArray();
-            return all.All( p => p.PropertyType == typeof( string ) && p.CanWrite ) ? all : null;
-        } );
-    }
 
     internal static string Encrypt( ReadOnlySpan<byte> recipientSpki, string clear, ReadOnlySpan<byte> context, DateTime utcNow )
     {
