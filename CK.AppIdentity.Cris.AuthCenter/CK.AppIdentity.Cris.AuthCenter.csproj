@@ -13,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />
-    <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
+    <ProjectReference Include="..\CK.AppIdentity.Cris.Authentication\CK.AppIdentity.Cris.Authentication.csproj" />
     <ProjectReference Include="..\CK.IO.AuthCenter\CK.IO.AuthCenter.csproj" />
   </ItemGroup>
 </Project>
