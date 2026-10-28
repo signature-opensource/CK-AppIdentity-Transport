@@ -54,9 +54,9 @@ public sealed class AuthCenterOptions
 
     /// <summary>
     /// Gets the time during which the previous secrets of a session are still accepted, once, after a rotation (a refresh,
-    /// an impersonation): when the answer of a rotation is lost (a dropped connection, a front's relay that timed out while
+    /// an impersonation): when the answer of a rotation is lost (a dropped connection, a remote's dispatch that timed out while
     /// the Authentication Center completed), the caller retries with its previous secrets instead of having its session
-    /// revoked. It must cover the relay timeout (30 seconds) and the client's first retries.
+    /// revoked. It must cover the dispatch timeout (30 seconds) and the client's first retries.
     /// <para>
     /// Defaults to 1 minute, at most <see cref="MaxRefreshGraceWindow"/>. <see cref="TimeSpan.Zero"/> disables it: the
     /// previous secrets are then a reuse, the session is revoked.

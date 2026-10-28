@@ -10,11 +10,11 @@ using System.Text;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The encryption of the sensitive fields of the relayed session commands, for the Authentication Center.
+/// The encryption of the sensitive fields of the commands that a remote sends to its Authentication Center.
 /// <para>
 /// HPKE-like: an ephemeral ECDH P-256 key agreement with the Authentication Center's encryption key, HKDF-SHA256, then
-/// AES-256-GCM. The associated data binds the ciphertext to its context (the Authentication Center, the front, the command
-/// type and the property) and to its creation time: it cannot be moved to another field, command or front, and an old one
+/// AES-256-GCM. The associated data binds the ciphertext to its context (the Authentication Center, the remote, the command
+/// type and the property) and to its creation time: it cannot be moved to another field, command or remote, and an old one
 /// is refused.
 /// </para>
 /// <para>
@@ -41,10 +41,10 @@ static class AuthCenterFieldEncryption
     internal static byte[] GetKeyId( ReadOnlySpan<byte> spki ) => SHA256.HashData( spki ).AsSpan( 0, KeyIdLength ).ToArray();
 
     /// <summary>
-    /// Gets the context of a field: the Authentication Center, the front, the command type and the property.
+    /// Gets the context of a field: the Authentication Center, the remote that sends it, the command type and the property.
     /// </summary>
-    internal static byte[] GetContext( NormalizedPath authCenter, NormalizedPath front, string pocoName, string propertyName )
-        => Encoding.UTF8.GetBytes( $"{authCenter.Path}\n{front.Path}\n{pocoName}\n{propertyName}" );
+    internal static byte[] GetContext( NormalizedPath authCenter, NormalizedPath remote, string pocoName, string propertyName )
+        => Encoding.UTF8.GetBytes( $"{authCenter.Path}\n{remote.Path}\n{pocoName}\n{propertyName}" );
 
     internal static string Encrypt( ReadOnlySpan<byte> recipientSpki, string clear, ReadOnlySpan<byte> context, DateTime utcNow )
     {
@@ -152,7 +152,7 @@ static class AuthCenterFieldEncryption
         }
         catch( AuthenticationTagMismatchException )
         {
-            logger.Warn( "Sensitive field refused: it doesn't match its context (another field, command or front) or it has been altered." );
+            logger.Warn( "Sensitive field refused: it doesn't match its context (another field, command or remote) or it has been altered." );
             return false;
         }
         finally

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>CK.AppIdentity.Cris.AuthCenter</RootNamespace>
-    <Description>The Local side of the "AuthCenter" feature: this application is the AuthCenter of its local parties (its settings, its sessions, the signing of its tokens, the login handlers and the handling of the commands relayed by its fronts).</Description>
+    <Description>The Local side of the "AuthCenter" feature: this application is the AuthCenter of its local parties (its settings, its sessions, the signing of its tokens, the session operations and the policy for its remotes).</Description>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />

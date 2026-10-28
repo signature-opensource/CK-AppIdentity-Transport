@@ -102,7 +102,7 @@ public class SessionOpenerTests
             c["Parties:0:PartyName"] = "Center";
             c["Parties:0:AuthCenter"] = "true";
         } ) );
-        await AuthCenterFeatureTests.ShouldLogAsync( logs, "an application has one role, a front references CK.AppIdentity.Cris.AuthCenter.Remote" );
+        await AuthCenterFeatureTests.ShouldLogAsync( logs, "an application has one role, a remote of an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Remote" );
     }
 
     [Test]

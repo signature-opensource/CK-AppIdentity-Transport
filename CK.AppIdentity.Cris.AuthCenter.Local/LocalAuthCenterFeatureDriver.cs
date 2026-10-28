@@ -11,7 +11,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// the dynamic tenants included, with the settings of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>).
 /// <para>
 /// An application has one role: a local party whose Authentication Center is a remote is a configuration error here (a
-/// front references CK.AppIdentity.Cris.AuthCenter.Remote instead).
+/// remote of an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Remote instead).
 /// </para>
 /// </summary>
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
@@ -73,7 +73,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         if( center == null ) return true;
         if( center.AuthCenter != local )
         {
-            monitor.Error( $"The AuthCenter of '{local}' is the remote '{center.AuthCenter}' but this application is an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local): an application has one role, a front references CK.AppIdentity.Cris.AuthCenter.Remote." );
+            monitor.Error( $"The AuthCenter of '{local}' is the remote '{center.AuthCenter}' but this application is an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local): an application has one role, a remote of an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Remote." );
             return false;
         }
         var settings = local.Configuration.Configuration.TryGetSection( AuthCenterFeatureDriver.ConfigurationKey );

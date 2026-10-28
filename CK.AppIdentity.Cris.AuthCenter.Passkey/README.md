@@ -1,9 +1,9 @@
 # CK.AppIdentity.Cris.AuthCenter.Passkey
 
-The passkey (WebAuthn) logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md): only an AuthCenter application references it; a front only needs the commands):
+The passkey (WebAuthn) logins of the Authentication Center ([CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md): only an AuthCenter application references it; a remote only needs the commands):
 the "Passkey" scheme. The Authentication Center alone runs the protocol and verifies, with
 [Fido2NetLib](https://github.com/passwordless-lib/fido2-net-lib): the browser's response is signed by the user's
-authenticator over a challenge chosen here, so a front can relay it but cannot forge nor replay it. The passkeys are kept by
+authenticator over a challenge chosen here, so a remote's endpoint can pass it on but cannot forge nor replay it. The passkeys are kept by
 an `IPasskeyStore` ([CK.AuthenticationInfo.Passkey](https://github.com/signature-opensource/CK-Auth-Abstractions/blob/stable/CK.AuthenticationInfo.Passkey/README.md)),
 implemented by a storage package; the commands are in CK.IO.Authentication.Passkey.
 
@@ -30,8 +30,8 @@ provider name.
 
 ## The rules ([`AuthCenterPasskeyHandlers`](AuthCenterPasskeyHandlers.cs))
 
-- **Origins:** a ceremony is accepted only from an endpoint whose `WebOrigin` is a configured origin (a front relays its
-  checked origin), and the origin signed by the browser must be this one: a phishing page signs its own origin and is
+- **Origins:** a ceremony is accepted only from an endpoint whose `WebOrigin` is a configured origin (a remote's endpoint
+  sends its checked origin with the operation), and the origin signed by the browser must be this one: a phishing page signs its own origin and is
   refused. The relying party hash must be the `RpId`'s.
 - **User verification required** (PIN, biometrics), at registration and at login: `userVerification: "required"` is
   asked, and the UV flag is checked. A passkey login gives the Critical level, like any login.
@@ -46,7 +46,7 @@ provider name.
   started it**. Discoverable credentials (`residentKey: "required"`), ES256 and RS256, attestation `none` (the AAGUID is
   declared, not attested: display only). A credential identifier that is already stored (for any actor) is refused.
 - **The responses** are limited to 16 KB when they enter the System (the incoming validators are in
-  CK.IO.Authentication.Passkey: a front that relays them refuses them too). Nothing in them is secret (a signature over a one use
+  CK.IO.Authentication.Passkey: the receiving endpoint refuses them). Nothing in them is secret (a signature over a one use
   challenge, a public key).
 
 On success, the session is opened with a `PasskeyLoginPayload` (the verified credential identifier, counter and backup

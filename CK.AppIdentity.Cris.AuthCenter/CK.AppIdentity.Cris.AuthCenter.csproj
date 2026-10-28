@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain). This is the core shared by its two sides: the designation of the AuthCenter and the reading of its tokens. An application references CK.AppIdentity.Cris.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.Cris.AuthCenter.Remote (it is a front of a remote AuthCenter).</Description>
+    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain). This is the core shared by its two sides: the designation of the AuthCenter and the reading of its tokens. An application references CK.AppIdentity.Cris.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.Cris.AuthCenter.Remote (it is a remote of an AuthCenter).</Description>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Local" />

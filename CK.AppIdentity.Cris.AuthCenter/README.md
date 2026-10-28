@@ -16,13 +16,13 @@ implemented in packages that depend on this one:
 | Package | Role | Feature added to each local party |
 |---|---|---|
 | this one (core) | The designation of the Authentication Center, the reading of its tokens. Referenced by both sides. | [`CrisAuthCenter`](CrisAuthCenter.cs) |
-| [CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application **is** the Authentication Center: settings, sessions, signing, login handlers, the handling of what its fronts relay. | `LocalAuthCenter` |
-| [CK.AppIdentity.Cris.AuthCenter.Remote](../CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a **front** of a remote Authentication Center: it relays. | `RemoteAuthCenter` |
+| [CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application **is** the Authentication Center: settings, sessions, signing, the session operations, the policy for its remotes. | `LocalAuthCenter` |
+| [CK.AppIdentity.Cris.AuthCenter.Remote](../CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a **remote** of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. | `RemoteAuthCenter` |
 
 The three drivers manage the same "AuthCenter" feature (`AllowFeatures` doesn't depend on the deployed package). The
-role is checked at setup: an AuthCenter application whose local party designates a remote, or a front whose local party
+role is checked at setup: an AuthCenter application whose local party designates a remote, or a remote whose local party
 designates itself, fails to start. The role is chosen by the installed packages (the DI composition), never by a runtime
-check: a front has no session handler at all. The Local and Remote packages cannot be both referenced (see the
+check: a remote has no operation handler at all. The Local and Remote packages cannot be both referenced (see the
 CK.AppIdentity feature drivers).
 
 ## Configuration
@@ -94,25 +94,26 @@ The endpoints read the tokens through `IAuthenticationTokenReader` (CK.Cris.Auth
 
 The tokens are signed by the Local side (`LocalAuthCenter.CreateToken`).
 
-**The tokens of a remote Authentication Center** (on a front) are verified by the front with the pinned keys of the Authentication
+**The tokens of a remote Authentication Center** (on a remote of it) are verified with the pinned keys of the Authentication
 Center. Their audience is the Authentication Center party. After a key rotation, the Authentication Center pushes its new
-key events to its connected fronts (the transport does it, see CK.AppIdentity.TransportLayer). A front that missed them
+key events to its connected remotes (the transport does it, see CK.AppIdentity.TransportLayer). A remote that missed them
 uses `ReadTokenAsync`: when a token is refused because its issuer is not known (`SignatureVerdict.UnknownIssuer`), the key
 events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once.
 
 ## The encryption of the sensitive fields ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs))
 
-The sensitive fields ([Sensitive] strings, like the Basic login password) of the relayed commands are **encrypted in
-place** by the front (Remote) for the Authentication Center (Local), so a `tcp:` channel stays acceptable:
+The sensitive fields ([Sensitive] strings, like the Basic login password) of the commands that a remote sends to its
+Authentication Center are **encrypted** by the remote (in a copy of the command, Remote side) for the Authentication
+Center (Local side), so a `tcp:` channel stays acceptable:
 - HPKE-like: ephemeral ECDH P-256 with the Authentication Center's encryption key, HKDF-SHA256, AES-256-GCM. A value
-  becomes `"ckenc1:..."`. The relayed command carries the ciphertext, never the clear value.
-- The associated data binds a ciphertext to the Authentication Center, the front, the command type, the property and
-  its creation time: it cannot be moved to another field, command or front, and one older than 5 minutes is refused.
+  becomes `"ckenc1:..."`. The sent command carries the ciphertext, never the clear value.
+- The associated data binds a ciphertext to the Authentication Center, the remote, the command type, the property and
+  its creation time: it cannot be moved to another field, command or remote, and one older than 5 minutes is refused.
 - The Authentication Center decrypts before validating and executing, and **refuses a clear value**.
 - The encryption keys (`AuthCenterEncryptionKeys`, Local side) are in the `LocalFileStore`
   ("AuthCenter/EncryptionKeys"), protected by the local party's data protector. One is published for a day (a new
   one 10 minutes before its end), the previous one still decrypts for 10 more minutes.
-- A front gets the current key with `IGetAuthCenterEncryptionKeyQCommand`: it is signed by the Authentication Center
+- A remote gets the current key with `IGetAuthCenterEncryptionKeyQCommand`: it is signed by the Authentication Center
   for the "CK.AuthCenter.EncryptionKey" purpose (verified like a token, with the same safety net) and cached until
   its signature expires.
 

@@ -11,8 +11,8 @@ using System.Security.Cryptography;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// The encryption keys of a local Authentication Center (ECDH P-256): the fronts encrypt the sensitive fields of the
-/// session commands they relay with the current one (see <see cref="AuthCenterFieldEncryption"/>).
+/// The encryption keys of a local Authentication Center (ECDH P-256): its remotes encrypt the sensitive fields of the
+/// commands they send to it with the current one (see <see cref="AuthCenterFieldEncryption"/>).
 /// <para>
 /// A key is used for <see cref="Lifetime"/> (a new one is created <see cref="Grace"/> before its end) and kept for
 /// <see cref="Grace"/> more, for the fields encrypted just before. Keys are persisted in the <see cref="ILocalParty.LocalFileStore"/>

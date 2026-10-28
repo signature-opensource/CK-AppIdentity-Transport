@@ -11,7 +11,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// all its <see cref="ILocalParty.Remotes"/> that allow the "AuthCenter" feature.
 /// <para>
 /// This is the part shared by the two sides: an AuthCenter application (CK.AppIdentity.Cris.AuthCenter.Local) adds a
-/// <c>LocalAuthCenter</c> feature to its local parties, a front (CK.AppIdentity.Cris.AuthCenter.Remote) adds a
+/// <c>LocalAuthCenter</c> feature to its local parties, a remote of it (CK.AppIdentity.Cris.AuthCenter.Remote) adds a
 /// <c>RemoteAuthCenter</c>.
 /// </para>
 /// </summary>

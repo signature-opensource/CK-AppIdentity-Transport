@@ -33,7 +33,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <para>
 /// This driver is the core shared by the two sides of the feature: the <c>LocalAuthCenterFeatureDriver</c>
 /// (CK.AppIdentity.Cris.AuthCenter.Local: this application is the Authentication Center of its local parties) and the
-/// <c>RemoteAuthCenterFeatureDriver</c> (CK.AppIdentity.Cris.AuthCenter.Remote: this application is a front of a remote
+/// <c>RemoteAuthCenterFeatureDriver</c> (CK.AppIdentity.Cris.AuthCenter.Remote: this application is a remote of a
 /// one). An application has one role: it references one of them.
 /// </para>
 /// </summary>

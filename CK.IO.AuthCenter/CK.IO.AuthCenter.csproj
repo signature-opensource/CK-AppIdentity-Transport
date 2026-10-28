@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>The relay protocol between the fronts and their remote Authentication Center.</Description>
+    <Description>The [Internal] queries between the parties of a System and their Authentication Center: its encryption key and the PartyActor identifiers.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris" Version="3.0.0-0.cris-auth.0.ci.25" />

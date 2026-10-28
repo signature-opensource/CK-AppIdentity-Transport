@@ -2,7 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>CK.AppIdentity.Cris.AuthCenter</RootNamespace>
-    <Description>The Remote side of the "AuthCenter" feature: this application is a front of a remote AuthCenter (it relays the session commands and the commands executed by the AuthCenter, with their sensitive fields encrypted for it).</Description>
+    <Description>The Remote side of the "AuthCenter" feature: this application is a remote of an AuthCenter (its endpoints execute the session commands, the AuthCenter their operations; the user's proof and the sensitive fields are sent to it only).</Description>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.AuthCenter.Tests" />

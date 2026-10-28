@@ -4,8 +4,8 @@ The Local side of the [AuthCenter feature](../CK.AppIdentity.Cris.AuthCenter/REA
 Authentication Center** of its local parties (the root and its tenant domains). Its
 [`LocalAuthCenterFeatureDriver`](LocalAuthCenterFeatureDriver.cs) adds a [`LocalAuthCenter`](LocalAuthCenter.cs) to every
 local party that designates itself (`"AuthCenter": true` or a settings section on the local party); a local party that
-designates a remote is a configuration error (an application has one role: a front references
-CK.AppIdentity.Cris.AuthCenter.Remote).
+designates a remote is a configuration error (an application has one role: a remote of an Authentication Center
+references CK.AppIdentity.Cris.AuthCenter.Remote).
 
 The `LocalAuthCenter` holds the settings, the sessions and the signing of the tokens. A remote Authentication Center has
 its own settings: a settings section on a remote is ignored (with a warning).
@@ -31,7 +31,7 @@ The session identifiers are random (16 bytes, base64url) and checked before bein
 presented proof that matches neither the current secrets nor (below) the previous ones **revokes the session**: two
 parties hold the same cookies.
 
-**The grace window** (`RefreshGraceWindow`): the answer of a rotation can be lost (a dropped connection, a front's relay
+**The grace window** (`RefreshGraceWindow`): the answer of a rotation can be lost (a dropped connection, a remote's dispatch
 that timed out while the Authentication Center completed). The caller then still has the previous secrets. They are
 accepted **once**, within the window after the rotation, by the operations that rotate again (refresh, impersonation, end
 of impersonation) and by the logout; the rotation then clears them. An operation that doesn't rotate (the Critical-session
@@ -42,35 +42,39 @@ not lost. The session file keeps the previous hashes and the rotation time (vers
 **One operation at a time per session:** reading the session, checking the proof, rotating and saving are serialized per
 session in the Authentication Center (`AuthCenterSessionStore.LockAsync`): two concurrent rotations cannot both match.
 
-## Opening a session ([`AuthCenterSessionOpener`](AuthCenterSessionOpener.cs))
+## The session operations ([`AuthCenterOperationHandlers`](AuthCenterOperationHandlers.cs))
 
-The `IAuthenticationSessionOpener` of a local Authentication Center. The login handlers call it
-(see CK.Cris.Authentication). It runs the login sequence (the `ILoginProvider` of the scheme, the `ILoginValidator`s, the
-account creation or binding of an unregistered user), then stores the session, lets the endpoint issue its secrets and
-returns the signed token.
+The session commands (CK.IO.Authentication) are executed by the endpoint that receives them, with the endpoint packages
+of CK-Cris (CK.Cris.Authentication and its per-scheme packages: the login commands are handled there). What needs the
+Authentication Center's state is an `[Internal]` **operation command** that the endpoint executes: handled here, locally
+when the endpoint is in this application, dispatched to it from a remote (see
+[CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)). An operation carries what the endpoint presented and prepared
+(the presented proof, the hashes of the next secrets): it is handled with an [`OperationSessionEndpoint`](OperationSessionEndpoint.cs)
+built from its data, so the logic is the same wherever it comes from, and its result (`ISessionOperationResult`) tells
+the endpoint what to issue or clear.
 
-**The Basic and Weak login handlers are here temporarily** ([`AuthCenterLoginHandlers`](AuthCenterLoginHandlers.cs)).
-A package that implements an authentication provider handles its login commands, so they belong to
-CK.DB.User.UserPassword and CK.DB.Actor.WeakActor. But these packages are also used by the old authentication stack, and
-a handler needs CK.Cris.Authentication, which defines the same `CK.Auth.CrisAuthenticationService` as the old CK.Cris.Auth
-(CS0433 in the generated code of an old-stack application). **When the old stack is retired, these handlers go back to
-their DB packages.** Both use the command as the payload (the "Basic" login provider is CK.DB.User.UserPassword's);
-the Weak one never remembers the session. The `IWeakZoneLoginCommand` handler is in CK.DB.Zone.WeakActor.
+**Opening a session** ([`AuthCenterSessionIssuer`](AuthCenterSessionIssuer.cs)): `IOpenSessionOperationCommand` carries
+the login scheme and the payload of its login provider (the login command itself: it is data, never executed). The
+issuer runs the login sequence (the `ILoginProvider` of the scheme, the `ILoginValidator`s, the account creation or
+binding of an unregistered user), then stores the session, issues the endpoint's secrets and returns the signed token.
+The remote login completion and the passkey login use it too.
 
+## The other session operations ([`AuthCenterSessionService`](AuthCenterSessionService.cs))
 
-## The other session commands ([`AuthCenterSessionService`](AuthCenterSessionService.cs))
-
-They carry nothing: they act on **the current session**, the one whose proof the endpoint presents. The session key
+They carry nothing but the presented proof: they act on **the current session**. The session key
 (`"{ActualActorId}.{SessionId}"`, given to `IAuthenticationSessionEndpoint.Issue`) finds it, and the proof must match
 **exactly**: the key and both secret hashes (compared in constant time). The key is not a secret.
 
-| Command | |
+| Operation | |
 |---|---|
-| `IRefreshSessionCommand` | Reads the actors again (a disabled or removed actor cannot refresh), at most at `Normal` level (the `Critical` level requires a login), slides the session (it ends `SessionLifetime` after the refresh), rotates the secrets and issues a new token. The impersonation is kept. |
-| `ILogoutSessionCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
-| `IImpersonateCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. |
-| `IClearImpersonationCommand` | Always possible: it can only lower the privileges. |
-| `IGetLoginSchemesQCommand` | The provider names of the login providers; the provider of a scheme family appears as the schemes of its family ("Oidc" as its configured `Oidc.<Suffix>` schemes). Not a session command. |
+| `IRefreshSessionOperationCommand` | Reads the actors again (a disabled or removed actor cannot refresh), at most at `Normal` level (the `Critical` level requires a login), slides the session (it ends `SessionLifetime` after the refresh), rotates the secrets and issues a new token. The impersonation is kept. |
+| `ILogoutSessionOperationCommand` | Deletes the session (only when the proof matches: a key alone deletes nothing) and clears the endpoint secrets. |
+| `IImpersonateOperationCommand` | Requires the `Critical` level and an `IImpersonationService` that allows it (refused by default). Impersonating oneself is refused. From a remote, the `Critical` level requires the user's proof (see below). |
+| `IClearImpersonationOperationCommand` | Always possible: it can only lower the privileges. |
+
+`IGetLoginSchemesQCommand` ([`AuthCenterCommandHandlers`](AuthCenterCommandHandlers.cs)) is not an operation: it
+answers the provider names of the login providers; the provider of a scheme family appears as the schemes of its family
+("Oidc" as its configured `Oidc.<Suffix>` schemes).
 
 **A replayed secret revokes the session.** The secrets rotate at each refresh, so a refresh secret is used once: the
 right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The
@@ -83,8 +87,8 @@ end is checked before they are deleted. An expired session that is presented is 
 
 ## Scheme families ([`IAuthCenterScheme`](IAuthCenterScheme.cs))
 
-This package knows no login technology beyond the direct Basic and Weak commands (temporarily, see above): each family
-of schemes is a package of its own ("Package First": a simple application references little). For concrete families
+This package knows no login technology: the login providers (`ILoginProvider`) do, and each family of schemes is a
+package of its own ("Package First": a simple application references little). For concrete families
 built on this package, see [CK.AppIdentity.Cris.AuthCenter.Oidc](../CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) for
 the "Oidc.&lt;Suffix&gt;" schemes and [CK.AppIdentity.Cris.AuthCenter.Passkey](../CK.AppIdentity.Cris.AuthCenter.Passkey/README.md)
 for the "Passkey" one.
@@ -105,56 +109,48 @@ handle their own commands, and so is `AuthCenterResults`, from the core
   `IAutoCreateAccountService` only for a scheme whose family allows it. Fail closed: a scheme without family (Basic,
   Weak) never creates an account, and no family does by default.
 
-## Remote logins ([`AuthCenterRemoteLoginHandlers`](AuthCenterRemoteLoginHandlers.cs), [`IAuthCenterRemoteScheme`](IAuthCenterRemoteScheme.cs))
+## Remote logins ([`AuthCenterOperationHandlers`](AuthCenterOperationHandlers.cs), [`IAuthCenterRemoteScheme`](IAuthCenterRemoteScheme.cs))
 
-The generic `IStartLoginCommand` and `IRemoteLoginCallbackCommand` are handled here, whatever the remote family: a Cris
-command has one handler, two remote families cannot both claim them. The local Authentication Center keeps the
-**pending remote logins** ([`AuthCenterPendingStore`](AuthCenterPendingStore.cs): in memory, one use, 10 minutes, at
-most 10,000) and the family only runs its protocol.
+The endpoint executes the generic `IStartLoginCommand` and `IRemoteLoginCallbackCommand`, whatever the remote family,
+with two operations handled here: the local Authentication Center keeps the **pending remote logins**
+([`AuthCenterPendingStore`](AuthCenterPendingStore.cs): in memory, one use, 10 minutes, at most 10,000) and the family
+only runs its protocol.
 
-1. **`IStartLoginCommand`**: the scheme must belong to a remote family, the endpoint must be able to receive remote
-   logins with a callback that the family allows for the scheme, the `ReturnUrl` must be a relative path. The core chooses
-   the state, the family returns the URL and its private data, and the pending login keeps them with the scheme, the
-   callback, the hash of the endpoint's correlation secret, `RememberMe` and an immutable copy of the `UserData`.
-2. **`IRemoteLoginCallbackCommand`** (built by the endpoint's callback): the pending login is consumed (one use), its
-   expiry is checked, and the correlation presented by the endpoint must be the one of the start (**login CSRF**: only the
-   caller that started a login can complete it). The family completes the login with the payload of its login provider,
-   and the session is opened with the **user data of the start**: the callback never carries them.
+1. **`IStartRemoteLoginOperationCommand`**: the scheme must belong to a remote family, the endpoint must be able to
+   receive remote logins with a callback that the family allows for the scheme, the `ReturnUrl` must be a relative path.
+   The core chooses the state, the family returns the URL and its private data, and the pending login keeps them with the
+   scheme, the callback, the hash of the endpoint's correlation secret, `RememberMe` and an immutable copy of the
+   `UserData`.
+2. **`ICompleteRemoteLoginOperationCommand`** (it carries the callback built by the endpoint): the pending login is
+   consumed (one use), its expiry is checked, and the correlation presented by the endpoint must be the one of the start
+   (**login CSRF**: only the caller that started a login can complete it). The family completes the login with the payload
+   of its login provider, and the session is opened with the **user data of the start**: the callback never carries them.
 
-The `Code` of the callback is `[Sensitive]`: it is encrypted in place when relayed.
+The `Code` of the callback is `[Sensitive]`: from a remote, it travels encrypted for the Authentication Center.
 
-## The relayed commands ([`AuthCenterRelayHandler`](AuthCenterRelayHandler.cs))
+## The commands from its remotes
 
-The fronts (CK.AppIdentity.Cris.AuthCenter.Remote) relay the session commands and the `ICommandAuthCenter` commands over
-the Cris channel. The protocol is in [CK.IO.AuthCenter](../CK.IO.AuthCenter).
+Its remotes (CK.AppIdentity.Cris.AuthCenter.Remote) send it the operations of their endpoints and the commands it
+handles, over the Cris channel. The identity of their users is established by
+[CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md), with what this package provides:
 
-**The session commands:**
-- **Authorization without configuration:** only its remotes that have its "AuthCenter" feature (its fronts) can relay.
-- It reads the bearer token again (the front is never trusted), validates the relayed command as an incoming command and
-  executes it in its own endpoint ([`AuthCenterRelayDIContainerDefinition`](AuthCenterRelayDIContainerDefinition.cs)):
-  the session endpoint is the relayed one (it presents what the front presented, its `Issue` uses the front's prepared
-  hashes), the current local party is the Authentication Center, the caller is the front.
+- **The caller party policy** ([`AuthCenterCallerPartyService`](AuthCenterCallerParties.cs)): its remotes that have its
+  "AuthCenter" feature may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
+  command included); any other caller party is refused.
+- **The user's proof** ([`AuthCenterProofVerifier`](AuthCenterCallerParties.cs)): a token of this Authentication Center,
+  presented with the binding secret of its session, whose session is alive and is still the token's one (same binding,
+  same actor: a logout, a revocation or an impersonation takes effect at once, not after the token's lifetime). The
+  proved identity keeps its level: this is how a `Critical` command (an impersonation, a passkey registration) crosses a
+  party boundary. An invalid proof is ignored: the remote then only vouches, at most at `Normal`.
+- **The sensitive fields** ([`AuthCenterFieldDecryptor`](AuthCenterFieldDecryptor.cs)) are decrypted on reception, before
+  the validation and the execution. A clear value is refused, and so is a sensitive value from a party that is not one of
+  its remotes. The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the
+  `LocalFileStore` ("AuthCenter/EncryptionKeys"), protected by the local party's data protector; the current one is
+  published, signed, to its remotes (`IGetAuthCenterEncryptionKeyQCommand`,
+  [`AuthCenterEncryptionKeyHandler`](AuthCenterEncryptionKeyHandler.cs)).
 
-**The commands executed by the Authentication Center** (`ICommandAuthCenter`, CK.IO.Auth) are what a login point serves:
-the actor's self-service on its own login methods (its passkeys, its password) and the login schemes
-(`IGetLoginSchemesQCommand`). Never the administration: an Authentication Center is a login point, not an
-administration point.
-
-The Authentication Center never trusts the front for the identity:
-- only its fronts can relay, and **only the `ICommandAuthCenter` commands** are executed (never a session command: they
-  have their own relay). Anything else is refused and logged `SecurityCritical`;
-- the identity is established again: the token is read with its keys, it must be presented with the binding secret of its
-  session, and **its session must be alive and still the token's one** (same binding, same actor). A logout, a
-  revocation or an impersonation takes effect at once for these commands, not after the token's lifetime. Anything else
-  is the anonymous: the authentication parts of the command then fail its validation;
-- the command is validated as an incoming command and executed in the relay endpoint, without session endpoint.
-
-So a compromised front can act only for the callers that use it, while their sessions live.
-
-**The sensitive fields** are decrypted before the validation and the execution, and a clear value is refused (see the
-core package). The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the
-`LocalFileStore` ("AuthCenter/EncryptionKeys"), protected by the local party's data protector; the current one is
-published, signed, to the fronts (`IGetAuthCenterEncryptionKeyQCommand`).
+A compromised remote can act only for the users it vouches for, at most at `Normal`: the high-value actions are
+`Critical` and need the user's live proof.
 
 ## The PartyActor identifiers ([`AuthCenterPartyActorIdsHandler`](AuthCenterPartyActorIdsHandler.cs))
 

@@ -25,7 +25,7 @@ namespace CK.AppIdentity.Cris.AuthCenter.Oidc;
 /// <summary>
 /// The OpenID Connect client of a <see cref="LocalAuthCenter"/> (authorization code flow with PKCE): the
 /// <see cref="IAuthCenterRemoteScheme"/> family of the "Oidc.&lt;Suffix&gt;" schemes. It alone holds the client secrets:
-/// the fronts only relay the start of a login and the callback.
+/// its remotes' endpoints only execute the start of a login and the callback (their operations are handled here).
 /// <list type="number">
 ///   <item>
 ///   <see cref="StartAsync"/> generates the nonce and the PKCE verifier (kept with the pending login by the core) and
