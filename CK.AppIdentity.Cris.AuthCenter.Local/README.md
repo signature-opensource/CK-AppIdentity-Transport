@@ -17,9 +17,20 @@ Read from the `"AuthCenter"` section of the local party (never inherited, static
 | Key | Default | |
 |---|---|---|
 | `SessionLifetime` | 1 day | The `Expires` of a login. The session slides: each refresh moves its end `SessionLifetime` later. |
-| `CriticalLifetime` | 5 minutes | The `CriticalExpires` of a login at `Critical` level. |
+| `CriticalLifetime` | 5 minutes | The `CriticalExpires` of a login at `Critical` level, after the authentication of the user. |
+| `CriticalLifetimes:<scheme>` | `CriticalLifetime` | The same, for one scheme (at most the session's). `00:00:00`: the scheme never elevates to `Critical`. |
 | `TokenLifetime` | 10 minutes | The lifetime of a token (at most the session's). |
 | `RefreshGraceWindow` | 1 minute | How long the previous secrets of a session are accepted, once, after a rotation (0 disables it, at most 5 minutes). See "Sessions". |
+
+### The Critical level is a fresh proof
+
+A login is at the `Critical` level when its provider says so (a user, not a weak actor) **and** the authentication of the
+user is recent: the `Critical` level lasts the scheme's critical lifetime after the actual authentication, not after the
+login. The direct schemes (Basic, Passkey) verify the credentials: the authentication is now. A remote scheme gives the
+time of the authentication at its provider (`RemoteLoginCompletion.AuthenticationTime`: the `auth_time` of an OpenID
+Connect identity token): a single sign-on login with an old provider session, or a provider that doesn't tell this time,
+is at the `Normal` level. A login started with `IStartLoginCommand.Critical` asks the provider to authenticate the user
+again (`IAuthCenterRemoteScheme.StartAsync`'s `critical` parameter).
 
 ## Sessions ([`AuthCenterSessionStore`](AuthCenterSessionStore.cs))
 
@@ -74,7 +85,8 @@ They carry nothing but the presented proof: they act on **the current session**.
 
 `IGetLoginSchemesQCommand` ([`AuthCenterCommandHandlers`](AuthCenterCommandHandlers.cs)) is not an operation: it
 answers the provider names of the login providers; the provider of a scheme family appears as the schemes of its family
-("Oidc" as its configured `Oidc.<Suffix>` schemes).
+("Oidc" as its configured `Oidc.<Suffix>` schemes). Each `ILoginSchemeInfo` has the scheme's critical lifetime: zero
+for the "Weak" scheme (its actors are weak) and for a scheme configured with `00:00:00`.
 
 **A replayed secret revokes the session.** The secrets rotate at each refresh, so a refresh secret is used once: the
 right key with other secrets means that the secrets have been stolen (or that two copies of the caller compete). The

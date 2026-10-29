@@ -3,6 +3,7 @@ using CK.Cris;
 using CK.IO.Authentication;
 using NUnit.Framework;
 using Shouldly;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -153,8 +154,8 @@ public class SessionCommandsTests
     public async Task the_login_schemes_are_the_provider_names_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
-        var schemes = (IList<string>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
-        schemes.ShouldBe( ["Weak"] );
+        var schemes = (IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
+        schemes.Select( s => (s.Name, s.CriticalLifetime) ).ShouldBe( [("Weak", TimeSpan.Zero)] );
     }
 
     [Test]

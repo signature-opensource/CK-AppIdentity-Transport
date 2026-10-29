@@ -28,10 +28,12 @@ public sealed class AuthCenterCommandHandlers : ISingletonAutoService
     }
 
     /// <summary>
-    /// Handles the <see cref="IGetLoginSchemesQCommand"/>: the provider names of the login providers of the AuthCenter.
+    /// Handles the <see cref="IGetLoginSchemesQCommand"/>: the provider names of the login providers of the AuthCenter,
+    /// with the lifetime of their Critical level (see <see cref="AuthCenterOptions.GetCriticalLifetime(string)"/>): zero for
+    /// the <see cref="ActorInfo.WeakScheme"/>, whose actors are weak (at most <see cref="AuthLevel.Unsafe"/>).
     /// </summary>
     [CommandHandler]
-    public IList<string> Handle( IActivityMonitor monitor, IGetLoginSchemesQCommand command, CurrentLocalParty localParty )
+    public IList<ILoginSchemeInfo> Handle( IActivityMonitor monitor, IGetLoginSchemesQCommand command, CurrentLocalParty localParty, PocoDirectory pocos )
     {
         var center = localParty.LocalParty.GetFeature<LocalAuthCenter>();
         var names = _providers.SelectMany( p => p.ProviderNames ).Distinct( StringComparer.OrdinalIgnoreCase ).ToList();
@@ -46,6 +48,15 @@ public sealed class AuthCenterCommandHandlers : ISingletonAutoService
                 }
             }
         }
-        return names.Order( StringComparer.OrdinalIgnoreCase ).ToList();
+        var options = center?.Options ?? AuthCenterOptions.Default;
+        return names.Order( StringComparer.OrdinalIgnoreCase )
+                    .Select( n => pocos.Create<ILoginSchemeInfo>( s =>
+                    {
+                        s.Name = n;
+                        s.CriticalLifetime = string.Equals( n, ActorInfo.WeakScheme, StringComparison.OrdinalIgnoreCase )
+                                                ? TimeSpan.Zero
+                                                : options.GetCriticalLifetime( n );
+                    } ) )
+                    .ToList();
     }
 }

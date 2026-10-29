@@ -71,6 +71,7 @@ public class RemoteAuthCenterTests
                                       typeof( IStartLoginCommand ),
                                       typeof( IRemoteLoginCallbackCommand ),
                                       typeof( IGetLoginSchemesQCommand ),
+                                      typeof( ILoginSchemeInfo ),
                                       typeof( IStartRemoteLoginOperationCommand ),
                                       typeof( ICompleteRemoteLoginOperationCommand ),
                                       typeof( ISessionResult ),
@@ -402,6 +403,6 @@ public class RemoteAuthCenterTests
         (await p.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, actorId, sessionId )).ShouldNotBeNull().Matches( cookies ).ShouldBeTrue();
 
         // The login schemes are the AuthCenter's ones (dispatched: the remote has no handler).
-        (await p.RequestAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<string>>()!.ShouldContain( "Oidc.Test" );
+        (await p.RequestAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<ILoginSchemeInfo>>()!.Select( s => s.Name ).ShouldContain( "Oidc.Test" );
     }
 }

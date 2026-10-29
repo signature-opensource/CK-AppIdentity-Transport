@@ -36,7 +36,7 @@ public class OidcTests
         };
     }
 
-    static async Task<object?> StartAsync( AuthCenterApp app, string scheme = "Oidc.Test", string? returnUrl = "/home", bool rememberMe = true )
+    static async Task<object?> StartAsync( AuthCenterApp app, string scheme = "Oidc.Test", string? returnUrl = "/home", bool rememberMe = true, bool critical = false )
     {
         return await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c =>
         {
@@ -44,6 +44,7 @@ public class OidcTests
             c.ReturnUrl = returnUrl;
             c.RememberMe = rememberMe;
             c.InlineMode = true;
+            c.Critical = critical;
         } ) );
     }
 
@@ -282,9 +283,53 @@ public class OidcTests
     {
         using var idp = new FakeIdentityProvider();
         await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
-        var schemes = (IList<string>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
+        var schemes = ((IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull()).Select( s => s.Name ).ToList();
         schemes.ShouldContain( "Oidc.Test" );
         schemes.ShouldNotContain( "Oidc" );
+    }
+
+    [Test]
+    public async Task the_Critical_level_of_an_oidc_login_starts_with_the_authentication_at_the_provider_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+
+        // No auth_time: the provider doesn't tell when the user authenticated.
+        (await LoginAsync( app, idp )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Normal );
+        idp.LastPrompt.ShouldBeNull();
+
+        // A provider session older than the Critical lifetime (5 minutes): a single sign-on login is Normal.
+        idp.SessionStart = DateTime.UtcNow.AddHours( -1 );
+        (await LoginAsync( app, idp )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Normal );
+
+        // A recent one: Critical, until 5 minutes after the authentication at the provider (not after the login).
+        var authenticated = DateTime.UtcNow.AddMinutes( -2 );
+        idp.SessionStart = authenticated;
+        var recent = await LoginAsync( app, idp );
+        recent.Info.UnsafeActor.Level.ShouldBe( AuthLevel.Critical );
+        recent.Info.CriticalExpires.ShouldNotBeNull().ShouldBe( authenticated.AddMinutes( 5 ), TimeSpan.FromSeconds( 2 ) );
+
+        // A Critical login: the provider must authenticate the user again (its old session doesn't count).
+        idp.SessionStart = DateTime.UtcNow.AddHours( -1 );
+        var critical = await LoginAsync( app, idp, critical: true );
+        idp.LastPrompt.ShouldBe( "login" );
+        critical.Info.UnsafeActor.Level.ShouldBe( AuthLevel.Critical );
+
+        // A provider that ignores the request gives a Normal login.
+        idp.IgnoresForcedLogin = true;
+        (await LoginAsync( app, idp, critical: true )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Normal );
+    }
+
+    [Test]
+    public async Task a_scheme_with_a_zero_Critical_lifetime_never_elevates_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:CriticalLifetimes:Oidc.Test"] = "00:00:00" ) );
+        var schemes = ((IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull())
+                        .ToDictionary( s => s.Name, s => s.CriticalLifetime );
+        schemes["Oidc.Test"].ShouldBe( TimeSpan.Zero );
+        schemes["Weak"].ShouldBe( TimeSpan.Zero, "Its actors are weak." );
+        (await LoginAsync( app, idp, critical: true )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Normal );
     }
 
     [TestCase( "Authority", "ftp://idp.example.com", "'Authority' must be an absolute https URL" )]
@@ -300,9 +345,9 @@ public class OidcTests
         await AuthCenterFeatureTests.ShouldLogAsync( logs, message );
     }
 
-    static async Task<ISessionResult> LoginAsync( AuthCenterApp app, FakeIdentityProvider idp )
+    static async Task<ISessionResult> LoginAsync( AuthCenterApp app, FakeIdentityProvider idp, bool critical = false )
     {
-        var start = (RedirectedUrl)(await StartAsync( app )).ShouldNotBeNull();
+        var start = (RedirectedUrl)(await StartAsync( app, critical: critical )).ShouldNotBeNull();
         var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
         return await CallbackAsync( app, state, code );
     }

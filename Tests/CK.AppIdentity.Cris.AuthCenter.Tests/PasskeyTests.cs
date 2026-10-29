@@ -84,14 +84,14 @@ public class PasskeyTests
     {
         await using( var app = await StartAsync() )
         {
-            var schemes = (IList<string>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
-            schemes.ShouldContain( "Passkey" );
+            var schemes = (IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
+            schemes.Single( s => s.Name == "Passkey" ).CriticalLifetime.ShouldBe( TimeSpan.FromMinutes( 5 ), "The default CriticalLifetime." );
         }
         // Installed but not configured: the family hides its provider name.
         await using( var app = await AuthCenterApp.StartAsync( withPasskeys: true ) )
         {
-            var schemes = (IList<string>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
-            schemes.ShouldNotContain( "Passkey" );
+            var schemes = (IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
+            schemes.Select( s => s.Name ).ShouldNotContain( "Passkey" );
             Errors( await app.ExecuteAsync( p => p.Create<IStartPasskeyLoginCommand>() ) ).ShouldContain( "Passkeys are not available." );
         }
     }

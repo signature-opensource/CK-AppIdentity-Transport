@@ -33,7 +33,7 @@ public sealed class FakeIdentityProvider : IDisposable
     readonly ConcurrentDictionary<string, Grant> _grants = new();
     readonly CancellationTokenSource _stop = new();
 
-    sealed record Grant( string Sub, string Nonce, string Challenge, string RedirectUri, string ClientId );
+    sealed record Grant( string Sub, string Nonce, string Challenge, string RedirectUri, string ClientId, DateTime? AuthTime );
 
     public FakeIdentityProvider()
     {
@@ -72,6 +72,23 @@ public sealed class FakeIdentityProvider : IDisposable
     /// Gets the client authentication method of the last token request ("client_secret_basic" or "client_secret_post").
     /// </summary>
     public string? LastAuthMethod { get; private set; }
+
+    /// <summary>
+    /// Gets or sets when the user authenticated at this provider (its session): the auth_time of the identity tokens.
+    /// Null: the identity tokens have no auth_time, unless the request forces a new authentication (prompt=login or
+    /// max_age=0, see <see cref="IgnoresForcedLogin"/>): the auth_time is then the time of the authorization.
+    /// </summary>
+    public DateTime? SessionStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether this provider ignores prompt=login and max_age=0 (it keeps the <see cref="SessionStart"/>).
+    /// </summary>
+    public bool IgnoresForcedLogin { get; set; }
+
+    /// <summary>
+    /// Gets the prompt parameter of the last authorization request.
+    /// </summary>
+    public string? LastPrompt { get; private set; }
 
     /// <summary>
     /// Gets or sets the issuer written in the identity tokens. Defaults to <see cref="BaseUrl"/>.
@@ -135,7 +152,9 @@ public sealed class FakeIdentityProvider : IDisposable
         if( q["response_type"] != "code" || q["code_challenge_method"] != "S256" ) throw new ArgumentException( "Code flow with PKCE (S256) expected." );
         if( !(q["scope"] ?? "").Split( ' ' ).Contains( "openid" ) ) throw new ArgumentException( "openid scope expected." );
         var code = Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 16 ) );
-        _grants[code] = new Grant( sub, q["nonce"]!, q["code_challenge"]!, q["redirect_uri"]!, q["client_id"]! );
+        LastPrompt = q["prompt"];
+        bool forced = !IgnoresForcedLogin && (q["prompt"] == "login" || q["max_age"] == "0");
+        _grants[code] = new Grant( sub, q["nonce"]!, q["code_challenge"]!, q["redirect_uri"]!, q["client_id"]!, forced ? DateTime.UtcNow : SessionStart );
         return (q["redirect_uri"]!, code, q["state"]!);
     }
 
@@ -235,6 +254,7 @@ public sealed class FakeIdentityProvider : IDisposable
                 // The left half of the SHA-256 of the access token.
                 ["at_hash"] = TokenAtHash ?? Base64Url.EncodeToString( SHA256.HashData( Encoding.ASCII.GetBytes( AccessToken ) ).AsSpan( 0, 16 ) )
             };
+            if( g.AuthTime is { } authTime ) claims["auth_time"] = new DateTimeOffset( authTime ).ToUnixTimeSeconds();
             var idToken = new JsonWebTokenHandler().CreateToken( new SecurityTokenDescriptor
             {
                 Issuer = TokenIssuer ?? BaseUrl,

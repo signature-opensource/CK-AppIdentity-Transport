@@ -72,13 +72,20 @@ public sealed class AuthCenterSessionIssuer
     /// <param name="payload">The <see cref="ILoginProvider"/> payload for the scheme.</param>
     /// <param name="rememberMe">Whether the session must survive the end of the caller session.</param>
     /// <param name="userData">The user data of the login, null to use the command's ones.</param>
+    /// <param name="authenticationTime">
+    /// The time of the actual authentication of the user, when it is not now: the Critical level starts at this time (see
+    /// <see cref="AuthCenterOptions.GetCriticalLifetime(string)"/>). Null when this login verifies the credentials (Basic,
+    /// Passkey...). A remote login gives the time of the authentication at the provider, <see cref="DateTime.MinValue"/>
+    /// when it is unknown (the login cannot reach the Critical level).
+    /// </param>
     /// <returns>The session result.</returns>
     public async ValueTask<ISessionResult> OpenSessionAsync( IActivityMonitor monitor,
                                                              ICrisPoco command,
                                                              string scheme,
                                                              object payload,
                                                              bool rememberMe = false,
-                                                             IReadOnlyDictionary<string, string?>? userData = null )
+                                                             IReadOnlyDictionary<string, string?>? userData = null,
+                                                             DateTime? authenticationTime = null )
     {
         Throw.CheckNotNullArgument( command );
         Throw.CheckNotNullOrWhiteSpaceArgument( scheme );
@@ -112,7 +119,7 @@ public sealed class AuthCenterSessionIssuer
         {
             return Failure( monitor, command, r?.FailureReason ?? "Login failed.", "Authentication.LoginFailed" );
         }
-        return await OpenAsync( monitor, command, center, r.Actor!, rememberMe ).ConfigureAwait( false );
+        return await OpenAsync( monitor, command, center, scheme, r.Actor!, rememberMe, authenticationTime ).ConfigureAwait( false );
     }
 
     async ValueTask<ActorLoginResult?> LoginAsync( IActivityMonitor monitor, ILoginProvider provider, LoginContext context, bool allowsAccountCreation )
@@ -145,12 +152,35 @@ public sealed class AuthCenterSessionIssuer
         return fixedResult ?? r;
     }
 
-    async ValueTask<ISessionResult> OpenAsync( IActivityMonitor monitor, ICrisPoco command, LocalAuthCenter center, ActorInfo actor, bool rememberMe )
+    async ValueTask<ISessionResult> OpenAsync( IActivityMonitor monitor,
+                                              ICrisPoco command,
+                                              LocalAuthCenter center,
+                                              string scheme,
+                                              ActorInfo actor,
+                                              bool rememberMe,
+                                              DateTime? authenticationTime )
     {
         var options = center.Options;
         var utcNow = DateTime.UtcNow;
         var expires = utcNow + options.SessionLifetime;
-        DateTime? criticalExpires = actor.Level == AuthLevel.Critical ? utcNow + options.CriticalLifetime : null;
+        DateTime? criticalExpires = null;
+        var criticalLifetime = options.GetCriticalLifetime( scheme );
+        if( actor.Level == AuthLevel.Critical && criticalLifetime > TimeSpan.Zero )
+        {
+            // The Critical level starts with the actual authentication of the user (a provider's clock may be ahead).
+            var authenticated = authenticationTime is { } t && t < utcNow ? t : utcNow;
+            var end = authenticated + criticalLifetime;
+            if( end > utcNow )
+            {
+                criticalExpires = end;
+            }
+            else
+            {
+                monitor.Info( authenticated == DateTime.MinValue
+                                ? $"'{scheme}' login of {actor}: the provider doesn't tell when the user authenticated: Normal level."
+                                : $"'{scheme}' login of {actor}: the user authenticated at the provider at {authenticated:O}: Normal level." );
+            }
+        }
         var deviceId = _initial.DeviceId.Length > 0 ? _initial.DeviceId : Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 16 ) );
         var info = AuthenticationInfo.Create( actor, expires, criticalExpires, deviceId, utcNow );
 

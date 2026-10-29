@@ -370,6 +370,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( IImpersonateCommand ),
                                        typeof( IClearImpersonationCommand ),
                                        typeof( IGetLoginSchemesQCommand ),
+                                       typeof( ILoginSchemeInfo ),
                                        typeof( ISessionResult ),
                                        typeof( IAuthenticationInfoPoco ),
                                        typeof( IActorInfoPoco ) );

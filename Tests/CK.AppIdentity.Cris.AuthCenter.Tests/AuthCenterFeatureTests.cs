@@ -231,6 +231,19 @@ public class AuthCenterFeatureTests
             c["AllowFeatures"] = "AuthCenter";
             c["AuthCenter"] = "yes";
         } );
+        await StartMustFailAsync( "0 when the scheme never elevates to the Critical level", c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter:CriticalLifetimes:Basic"] = "-00:01:00";
+        }, local: true );
+        await StartMustFailAsync( "cannot exceed the SessionLifetime", c =>
+        {
+            c["FullName"] = "D/$App";
+            c["AllowFeatures"] = "AuthCenter";
+            c["AuthCenter:SessionLifetime"] = "01:00:00";
+            c["AuthCenter:CriticalLifetimes:Basic"] = "02:00:00";
+        }, local: true );
     }
 
     [Test]

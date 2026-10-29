@@ -101,7 +101,7 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     }
 
     /// <inheritdoc />
-    public async Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl )
+    public async Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl, bool critical )
     {
         var options = FindScheme( scheme );
         if( options == null || !options.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) )
@@ -132,8 +132,14 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         };
         request.SetParameter( "code_challenge", challenge );
         request.SetParameter( "code_challenge_method", "S256" );
+        if( critical )
+        {
+            // The provider must authenticate the user again: its auth_time is then recent (checked by the session issuer).
+            request.Prompt = "login";
+            request.MaxAge = "0";
+        }
         var url = request.CreateAuthenticationRequestUrl();
-        monitor.Info( $"'{options.Scheme}' login started." );
+        monitor.Info( critical ? $"'{options.Scheme}' login started (the provider must authenticate the user again)." : $"'{options.Scheme}' login started." );
         return new RemoteLoginStart( url, new PendingData( options, nonce, verifier ), null );
     }
 
@@ -163,8 +169,8 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         {
             return Failure( monitor, p.Scheme, "The authorization code cannot be redeemed.", "Authentication.RemoteLoginFailed" );
         }
-        var sub = await ValidateTokenResponseAsync( monitor, p, configuration, tokenResponse ).ConfigureAwait( false );
-        if( sub == null )
+        var validated = await ValidateTokenResponseAsync( monitor, p, configuration, tokenResponse ).ConfigureAwait( false );
+        if( validated is not var (sub, authenticationTime) )
         {
             return Failure( monitor, p.Scheme, "The identity token is invalid.", "Authentication.RemoteLoginFailed" );
         }
@@ -184,7 +190,7 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
             monitor.Trace( $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable Claims: they are not kept." );
         }
         monitor.Info( $"'{p.Scheme.Scheme}' login completed." );
-        return new RemoteLoginCompletion( payload, null, null );
+        return new RemoteLoginCompletion( payload, null, null ) { AuthenticationTime = authenticationTime };
     }
 
     // The claims of the validated identity token, completed by the UserInfo endpoint when configured (its "sub" must be
@@ -322,7 +328,8 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
 
     // The token: its signature, issuer, audience and lifetime (JsonWebTokenHandler). Then the protocol rules
     // (OpenIdConnectProtocolValidator): the required claims, the nonce, the at_hash when there is an access token.
-    async Task<string?> ValidateTokenResponseAsync( IActivityMonitor monitor, PendingData p, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse )
+    // Returns the subject and the auth_time (DateTime.MinValue when the provider doesn't tell it).
+    async Task<(string Sub, DateTime AuthenticationTime)?> ValidateTokenResponseAsync( IActivityMonitor monitor, PendingData p, OpenIdConnectConfiguration configuration, OpenIdConnectMessage tokenResponse )
     {
         var idToken = tokenResponse.IdToken;
         var handler = new JsonWebTokenHandler();
@@ -354,7 +361,31 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity token of a '{p.Scheme.Scheme}' login breaks the protocol.", ex );
             return null;
         }
-        return result.Claims.TryGetValue( "sub", out var sub ) && sub is string s && s.Length > 0 ? s : null;
+        if( !result.Claims.TryGetValue( "sub", out var sub ) || sub is not string s || s.Length == 0 ) return null;
+        var authenticationTime = ReadAuthTime( result.Claims );
+        if( authenticationTime == DateTime.MinValue )
+        {
+            monitor.Trace( $"The identity token of a '{p.Scheme.Scheme}' login has no auth_time: the login cannot reach the Critical level." );
+        }
+        return (s, authenticationTime);
+    }
+
+    // The auth_time claim is a number of seconds since the Unix epoch (OpenID Connect Core 1.0, section 2).
+    static DateTime ReadAuthTime( IDictionary<string, object> claims )
+    {
+        if( claims.TryGetValue( "auth_time", out var v ) )
+        {
+            long? seconds = v switch
+            {
+                long l => l,
+                int i => i,
+                double d => (long)d,
+                string t when long.TryParse( t, out var parsed ) => parsed,
+                _ => null
+            };
+            if( seconds is > 0 ) return DateTime.UnixEpoch.AddSeconds( seconds.Value );
+        }
+        return DateTime.MinValue;
     }
 
     static TokenValidationParameters CreateParameters( OidcSchemeOptions scheme, OpenIdConnectConfiguration configuration )

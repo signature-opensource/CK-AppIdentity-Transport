@@ -1,4 +1,5 @@
 using CK.Core;
+using System;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
@@ -30,8 +31,12 @@ public interface IAuthCenterRemoteScheme : IAuthCenterScheme
     /// <param name="scheme">One of the <see cref="IAuthCenterScheme.Schemes"/>.</param>
     /// <param name="state">The state of the login, chosen by the core: the provider must send it back.</param>
     /// <param name="callbackUrl">The (allowed) callback URL of the endpoint.</param>
+    /// <param name="critical">
+    /// True when the login is meant to reach the Critical level: the provider must authenticate the user again, even when
+    /// the user has a session there (OpenID Connect: <c>prompt=login</c> and <c>max_age=0</c>).
+    /// </param>
     /// <returns>The URL and the private data, or the error.</returns>
-    Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl );
+    Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl, bool critical );
 
     /// <summary>
     /// Completes a pending login of this family: the core has already consumed it (one use) and checked its expiry and
@@ -62,6 +67,13 @@ public readonly record struct RemoteLoginStart( string? Url, object? SchemeData,
 /// <param name="ErrorId">The error resource name. Null on success.</param>
 public readonly record struct RemoteLoginCompletion( object? Payload, string? Error, string? ErrorId )
 {
+    /// <summary>
+    /// Gets the time of the authentication of the user at the provider (OpenID Connect: the <c>auth_time</c> of the identity
+    /// token). The Critical level starts at this time: <see cref="DateTime.MinValue"/> (the default) when the provider
+    /// doesn't tell it, and the login cannot reach the Critical level.
+    /// </summary>
+    public DateTime AuthenticationTime { get; init; }
+
     /// <summary>
     /// Creates a failure.
     /// </summary>

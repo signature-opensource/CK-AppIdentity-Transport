@@ -164,7 +164,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             Throw.CKException( "Too many logins in progress. Please retry later." );
         }
         var state = Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 32 ) );
-        var start = await family.StartAsync( monitor, login.Scheme, state, op.CallbackUrl ).ConfigureAwait( false );
+        var start = await family.StartAsync( monitor, login.Scheme, state, op.CallbackUrl, login.Critical ).ConfigureAwait( false );
         if( start.Url == null ) Throw.CKException( start.Error ?? $"The '{login.Scheme}' login cannot start." );
         var userData = login.UserData.Count == 0
                         ? ImmutableDictionary<string, string?>.Empty
@@ -228,7 +228,13 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             {
                 return AuthCenterResults.Failure( monitor, command, completion.Error ?? "Login failed.", completion.ErrorId ?? "Authentication.RemoteLoginFailed" );
             }
-            return await CreateIssuer( services, endpoint ).OpenSessionAsync( monitor, command, pending.Scheme, completion.Payload, pending.RememberMe, pending.UserData )
+            return await CreateIssuer( services, endpoint ).OpenSessionAsync( monitor,
+                                                                              command,
+                                                                              pending.Scheme,
+                                                                              completion.Payload,
+                                                                              pending.RememberMe,
+                                                                              pending.UserData,
+                                                                              completion.AuthenticationTime )
                                                            .ConfigureAwait( false );
         }
     }

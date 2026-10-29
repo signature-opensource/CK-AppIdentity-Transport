@@ -40,7 +40,8 @@ none: the family still hides the "Oidc" provider name in the scheme listing). `A
 pending logins, this package runs the protocol.
 
 1. **Start:** the callback of the endpoint must be one of the scheme's `CallbackUrls`. The nonce and the PKCE verifier are
-   generated here and kept with the pending login; the result is the authorization URL.
+   generated here and kept with the pending login; the result is the authorization URL. A Critical login
+   (`IStartLoginCommand.Critical`) adds `prompt=login` and `max_age=0`: the provider must authenticate the user again.
 2. **Completion:** the code is redeemed (client secret + PKCE verifier) at the token endpoint (see the client
    authentication below) and the identity token is validated: signature (the provider's keys, read again once on an unknown
    key), issuer, audience, lifetime, then the protocol rules of `OpenIdConnectProtocolValidator` (nonce, `at_hash`, required
@@ -49,7 +50,10 @@ pending logins, this package runs the protocol.
    commands).
 3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
    `Sub` (the payload of CK.DB.User.UserOidc for instance), and gets the claims in its `Claims` string property when it
-   has one. The session is opened like any login.
+   has one. The session is opened like any login, with the `auth_time` of the identity token as the time of the
+   authentication: the login is `Critical` only when this authentication is recent (see the Critical level in
+   CK.AppIdentity.Cris.AuthCenter.Local's [README](../CK.AppIdentity.Cris.AuthCenter.Local/README.md)). A provider
+   that ignores `prompt=login`, or doesn't send `auth_time`, gives `Normal` logins.
 
 ## The claims
 
