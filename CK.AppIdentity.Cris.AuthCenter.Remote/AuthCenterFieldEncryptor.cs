@@ -1,7 +1,6 @@
 using CK.AppIdentity.Cris;
 using CK.Core;
 using CK.Cris;
-using CK.Poco.Exc.Json;
 using System;
 using System.Threading.Tasks;
 
@@ -51,14 +50,12 @@ public sealed class AuthCenterFieldEncryptor : ICrisOutgoingCommandTransformer
         return success ? copy : null;
     }
 
-    // TODO: TEMPORARY WORKAROUND for the lack of a Poco clone (a JSON round-trip). To be replaced by the planned
-    //       Create<T>() / Clone() of any Poco (see .wip/cris-auth/34-engine-ideas.md, "Create<T>() on any Poco").
-    IAbstractCommand? Copy( IActivityMonitor monitor, IAbstractCommand command )
+    // The deep copy throws only when an object property holds a type that is not a registered Poco type.
+    static IAbstractCommand? Copy( IActivityMonitor monitor, IAbstractCommand command )
     {
         try
         {
-            var json = command.ToString( PocoJsonExportOptions.ToStringDefault, withType: true );
-            return _pocos.ReadJson( json, PocoJsonImportOptions.ToStringDefault ) as IAbstractCommand;
+            return command.Clone();
         }
         catch( Exception ex )
         {
