@@ -107,8 +107,9 @@ public class SingleApplicationTests
                                        typeof( ICultureAmbientValues ),
                                        typeof( INormalWhoAmIQCommand ),
                                        typeof( NormalWhoAmIHandler ) );
-        // The HTTP front reads only the commands of the TypeScript set ("TypeFilterName").
-        engine.FirstBinPath.EnsureTypeScriptConfigurationAspect( TestHelper.GetTypeScriptInlineTargetProjectPath(),
+        // The HTTP front reads only the commands of the TypeScript set ("TypeFilterName"). Only the type set is needed:
+        // "ck-gen" is generated without any TypeScript tooling.
+        engine.FirstBinPath.EnsureTypeScriptConfigurationAspect( TestHelper.GetTypeScriptGeneratedOnlyTargetProjectPath( "SingleApplication" ),
                                                                  typeof( BasicLoginCommand ),
                                                                  typeof( IRefreshSessionCommand ),
                                                                  typeof( ILogoutSessionCommand ),
