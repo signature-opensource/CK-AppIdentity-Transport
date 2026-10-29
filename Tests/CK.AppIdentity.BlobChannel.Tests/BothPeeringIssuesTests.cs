@@ -49,7 +49,7 @@ public class BothPeeringIssuesTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Listener";
-            c["ListeningAddress:0"] = BlobChannelTester.Address;
+            c["Defaults:ListeningAddress:0"] = BlobChannelTester.Address;
         }, Configure, token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c => c["FullName"] = "Test/$Sender", Configure, token: token );
 

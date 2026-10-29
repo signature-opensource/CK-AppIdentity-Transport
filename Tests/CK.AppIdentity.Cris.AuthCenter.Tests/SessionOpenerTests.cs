@@ -91,18 +91,19 @@ public class SessionOpenerTests
     }
 
     [Test]
-    public async Task an_AuthCenter_application_cannot_be_the_front_of_a_remote_AuthCenter_Async()
+    public async Task an_AuthCenter_application_is_its_own_AuthCenter_Async()
     {
-        // An application has one role: with CK.AppIdentity.Cris.AuthCenter.Local, every AuthCenter is local.
-        using var logs = CK.Monitoring.GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
-        await Should.ThrowAsync<Exception>( () => AuthCenterApp.StartAsync( c =>
+        // An application has one role: with CK.AppIdentity.Cris.AuthCenter.Local, a local party that allows the feature is
+        // its own AuthCenter, and a remote that allows it is one of its remotes (never its AuthCenter).
+        await using var app = await AuthCenterApp.StartAsync( c =>
         {
-            c["FullName"] = "D/$Front";
-            c["AllowFeatures"] = "AuthCenter";
-            c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AuthCenter"] = "true";
-        } ) );
-        await AuthCenterFeatureTests.ShouldLogAsync( logs, "an application has one role, a remote of an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Remote" );
+            c["FullName"] = "D/$App";
+            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:PartyName"] = "Front";
+            c["Parties:0:AllowFeatures"] = "AuthCenter";
+        } );
+        app.Center.AuthCenter.ShouldBeSameAs( app.Identity );
+        app.Identity.Remotes.Single().GetFeature<CrisAuthCenter>().ShouldBeSameAs( app.Center );
     }
 
     [Test]

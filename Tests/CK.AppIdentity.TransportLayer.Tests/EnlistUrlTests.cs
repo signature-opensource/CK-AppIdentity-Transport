@@ -45,10 +45,10 @@ public class EnlistUrlTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c["AlwaysListening"] = "True";
-            c["AutoTrustKey"] = "Never";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:FullName"] = "Ghost/$Ghost";
-            c["Parties:0:EnlistRemoteUrl"] = EnlistUrl;
+            c["Parties:0:Local:EnlistRemoteUrl"] = EnlistUrl;
         }, ConfigureFastClock, token: token );
 
     /// <summary>A party in the "Ghost" domain that the listener has never heard of.</summary>
@@ -56,7 +56,7 @@ public class EnlistUrlTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Ghost/${name}";
-            c["AutoTrustKey"] = "Never";
+            c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:FullName"] = $"Test/${listenerName}";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureFastClock, token: token );
@@ -103,9 +103,9 @@ public class EnlistUrlTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8RootListen";
-            c["AlwaysListening"] = "True";
-            c["AutoTrustKey"] = "Never";
-            c["EnlistRemoteUrl"] = EnlistUrl;
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:EnlistRemoteUrl"] = EnlistUrl;
         }, ConfigureFastClock, token: token );
         await using var stranger = await CreateStrangerAsync( "M8RootStranger", "M8RootListen", token );
 
@@ -123,14 +123,14 @@ public class EnlistUrlTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothListen";
-            c["AlwaysListening"] = "True";
-            c["AutoTrustKey"] = "Never";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = "$M8BothInit";
         }, ConfigureFastClock, token: token );
         await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothInit";
-            c["AutoTrustKey"] = "Never";
+            c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = "$M8BothListen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
             c["Parties:0:EnlistRemoteUrl"] = EnlistUrl;

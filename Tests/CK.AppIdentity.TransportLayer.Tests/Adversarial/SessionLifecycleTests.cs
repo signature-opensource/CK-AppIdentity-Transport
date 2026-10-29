@@ -113,15 +113,15 @@ public class SessionLifecycleTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$RelListen";
-            c["AutoTrustKey"] = "Once";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = "$RelSend";
         }, ConfigureFastClock, token: token );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$RelSend";
-            c["AutoTrustKey"] = "Once";
+            c["Defaults:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$RelListen";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
         }, ConfigureFastClock, token: token );

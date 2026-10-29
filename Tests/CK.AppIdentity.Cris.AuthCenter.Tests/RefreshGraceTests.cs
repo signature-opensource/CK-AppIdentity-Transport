@@ -87,7 +87,7 @@ public class RefreshGraceTests
         await using var app = await AuthCenterApp.StartAsync( c =>
         {
             AuthCenterApp.LocalAuthCenter( c );
-            c["AuthCenter:RefreshGraceWindow"] = "00:00:00.300";
+            c["Local:AuthCenter:RefreshGraceWindow"] = "00:00:00.300";
         } );
         var (c0, c1) = await LoginAndRefreshAsync( app );
         await Task.Delay( 400 );

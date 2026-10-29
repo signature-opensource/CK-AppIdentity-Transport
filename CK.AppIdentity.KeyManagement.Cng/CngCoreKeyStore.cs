@@ -124,13 +124,13 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
     {
         return _settings.GetValue( owner, o =>
         {
-            var c = o.Configuration.Configuration;
-            var providerName = c.TryLookupValue( "CoreKeyStore:CngProvider" ) ?? DefaultProviderName;
+            var c = o.LocalConfiguration.Configuration;
+            var providerName = c.TryResolveValue( "CoreKeyStore:CngProvider" ) ?? DefaultProviderName;
             return new Settings( providerName, ReadBool( c, "CoreKeyStore:AllowFallback" ), ReadBool( c, "CoreKeyStore:MachineWide" ) );
 
             bool ReadBool( ImmutableConfigurationSection c, string key )
             {
-                var v = c.TryLookupValue( key );
+                var v = c.TryResolveValue( key );
                 if( v == null ) return false;
                 if( bool.TryParse( v, out var b ) ) return b;
                 monitor.Warn( $"Invalid '{c.Path}:{key}' = '{v}': expected 'true' or 'false', using false." );

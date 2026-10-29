@@ -189,8 +189,8 @@ public class RemoteAuthCenterTests
         // The remote's AuthCenter is its remote "$Listener".
         var remote = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
         {
-            c["AllowFeatures"] = "AuthCenter";
-            c["Parties:0:AuthCenter"] = "true";
+            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:AllowFeatures"] = "AuthCenter";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, RemoteServices, [.. _common, .. _remoteTypes,
                             .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
@@ -212,17 +212,16 @@ public class RemoteAuthCenterTests
                                     : Type.EmptyTypes)];
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
-            c["AllowFeatures"] = "AuthCenter";
-            c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
             // A settings section designates the local party as its own AuthCenter, like "true".
             if( passkeys )
             {
-                c["AuthCenter:Passkey:RpId"] = "example.com";
-                c["AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
+                c["Local:AuthCenter:Passkey:RpId"] = "example.com";
+                c["Local:AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
             }
             if( oidcSettings != null ) oidcSettings( c );
-            if( !passkeys && oidcSettings == null ) c["AuthCenter"] = "true";
         }, null, centerTypes );
         return new Pair { Remote = remote, Center = center };
     }
@@ -378,10 +377,10 @@ public class RemoteAuthCenterTests
         using var idp = new FakeIdentityProvider();
         await using var p = await StartAsync( oidcSettings: c =>
         {
-            c["AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
-            c["AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
-            c["AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
-            c["AuthCenter:Oidc:Test:CallbackUrls:0"] = callback;
+            c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+            c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+            c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+            c["Local:AuthCenter:Oidc:Test:CallbackUrls:0"] = callback;
         } );
         p.Browser.RemoteLoginCallbackUrl = callback;
 

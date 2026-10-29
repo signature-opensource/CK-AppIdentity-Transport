@@ -31,9 +31,9 @@ public class CngCoreKeyStoreTests
     static Action<MutableConfigurationSection> Configure( string? provider, bool? allowFallback = null, bool? machineWide = null )
         => c =>
         {
-            if( provider != null ) c["CoreKeyStore:CngProvider"] = provider;
-            if( allowFallback.HasValue ) c["CoreKeyStore:AllowFallback"] = allowFallback.Value ? "true" : "false";
-            if( machineWide.HasValue ) c["CoreKeyStore:MachineWide"] = machineWide.Value ? "true" : "false";
+            if( provider != null ) c["Defaults:CoreKeyStore:CngProvider"] = provider;
+            if( allowFallback.HasValue ) c["Defaults:CoreKeyStore:AllowFallback"] = allowFallback.Value ? "true" : "false";
+            if( machineWide.HasValue ) c["Defaults:CoreKeyStore:MachineWide"] = machineWide.Value ? "true" : "false";
         };
 
     static string[] Files( string partyName, string pattern )
@@ -191,7 +191,7 @@ public class CngCoreKeyStoreTests
         const string partyName = "CngRoot";
         IdentityStoreHelper.ClearKeys( partyName );
         await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                    configure: c => c["CoreKeyStore:CngProvider"] = SoftwareProvider, keyStore: Cng() );
+                                    configure: c => c["Defaults:CoreKeyStore:CngProvider"] = SoftwareProvider, keyStore: Cng() );
         Files( partyName, "*.cng" ).Length.ShouldBe( 3 );
         DestroyKeys( s );
     }

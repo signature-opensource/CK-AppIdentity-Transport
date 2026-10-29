@@ -31,14 +31,14 @@ public class KeyEventsPushTests
         var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${prefix}Listener";
-            c["AutoTrustKey"] = "Once";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = $"${prefix}Sender";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
         var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${prefix}Sender";
-            c["AutoTrustKey"] = "Once";
+            c["Defaults:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = $"${prefix}Listener";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );

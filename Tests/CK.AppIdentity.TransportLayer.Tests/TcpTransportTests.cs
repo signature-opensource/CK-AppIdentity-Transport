@@ -44,14 +44,14 @@ public partial class TcpTransportTests
         var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Listener";
-            c["AutoTrustKey"] = "Once";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = "$Sender";
         }, ConfigureFastClock, token: token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Sender";
-            c["AutoTrustKey"] = "Once";
+            c["Defaults:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$Listener";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureFastClock, token: token );

@@ -37,7 +37,7 @@ public class NegotiationCapTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = $"${name}Peer";
         }, ConfigureFastClock, token: token );
 

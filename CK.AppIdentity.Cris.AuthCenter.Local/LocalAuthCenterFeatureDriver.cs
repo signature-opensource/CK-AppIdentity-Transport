@@ -30,6 +30,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         : base( s, AuthCenterFeatureDriver.ConfigurationKey, isAllowedByDefault: false )
     {
         _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
+        authCenter.SetSide( isLocal: true );
     }
 
     /// <inheritdoc />
@@ -76,7 +77,8 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
             monitor.Error( $"The AuthCenter of '{local}' is the remote '{center.AuthCenter}' but this application is an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Local): an application has one role, a remote of an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Remote." );
             return false;
         }
-        var settings = local.Configuration.Configuration.TryGetSection( AuthCenterFeatureDriver.ConfigurationKey );
+        // The settings are the local party's own "AuthCenter" section, in its "Local".
+        var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeatureDriver.ConfigurationKey );
         if( settings != null && !settings.GetChildren().Any() ) settings = null;
         var options = AuthCenterOptions.Read( monitor, settings, _schemeKeys );
         if( options == null ) return false;

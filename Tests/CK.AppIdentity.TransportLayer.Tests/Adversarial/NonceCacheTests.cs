@@ -66,7 +66,7 @@ public class NonceCacheTests
         var s = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${local}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = nameA;
             c["Parties:1:PartyName"] = nameB;
         }, ConfigureFastClock, token: token );
@@ -170,7 +170,7 @@ public class NonceCacheTests
         await using var restarted = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${local}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = $"${local}A";
             c["Parties:1:PartyName"] = $"${local}B";
         }, ConfigureFastClock, token: token );
@@ -246,7 +246,7 @@ public class NonceCacheTests
             live = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = $"Test/${local}";
-                c["AlwaysListening"] = "True";
+                c["Defaults:AlwaysListening"] = "True";
                 c["Parties:0:PartyName"] = $"${local}A";
                 c["Parties:1:PartyName"] = $"${local}B";
             }, ConfigureFastClock, token: token );

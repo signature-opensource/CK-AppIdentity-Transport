@@ -155,7 +155,7 @@ public sealed class RunningApplication : IAsyncDisposable
         {
             var appIdentityConfiguration = ApplicationIdentityServiceConfiguration.Create( monitor, c =>
             {
-                c["RootStorePath"] = outputPath.AppendPart( "AppStore" );
+                c["StoreRootPath"] = outputPath.AppendPart( "AppStore" );
                 c["FullName"] = (isSender ? "Test/$Sender" : "Test/$Listener");
                 c["Parties:0:PartyName"] = isSender ? "$Listener" : "$Sender";
                 // Both applications have a fresh key store: they trust each other on first contact.
@@ -168,7 +168,7 @@ public sealed class RunningApplication : IAsyncDisposable
                 }
                 else
                 {
-                    c["ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+                    c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
                 }
                 configuration?.Invoke( c );
             } );

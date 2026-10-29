@@ -271,7 +271,7 @@ sealed partial class LocalKeys
         /// </summary>
         byte[] InceptRecovery( IActivityMonitor monitor )
         {
-            var configured = _local.Configuration.Configuration["RecoveryPublicKey"];
+            var configured = _local.LocalConfiguration.Configuration["RecoveryPublicKey"];
             if( configured != null )
             {
                 byte[] spki;
@@ -284,7 +284,7 @@ sealed partial class LocalKeys
                 }
                 catch( Exception ex )
                 {
-                    Throw.CKException( $"Configuration '{_local.Configuration.Configuration.Path}:RecoveryPublicKey' must be the base64 SubjectPublicKeyInfo of a P-256 key.", ex );
+                    Throw.CKException( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:RecoveryPublicKey' must be the base64 SubjectPublicKeyInfo of a P-256 key.", ex );
                     throw;
                 }
                 monitor.Info( $"The identity of '{_local.FullName}' commits to the configured offline recovery key." );
@@ -317,17 +317,17 @@ sealed partial class LocalKeys
 
         int ReadOperationalKeyDays( IActivityMonitor monitor )
         {
-            var s = _local.Configuration.Configuration["OperationalKeyDays"];
+            var s = _local.LocalConfiguration.Configuration["OperationalKeyDays"];
             if( s == null ) return ILocalKeys.DefaultOperationalKeyDays;
             if( !int.TryParse( s, out var days ) )
             {
-                monitor.Warn( $"Invalid configuration '{_local.Configuration.Configuration.Path}:OperationalKeyDays' = '{s}': using {nameof( ILocalKeys.DefaultOperationalKeyDays )} = {ILocalKeys.DefaultOperationalKeyDays}." );
+                monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:OperationalKeyDays' = '{s}': using {nameof( ILocalKeys.DefaultOperationalKeyDays )} = {ILocalKeys.DefaultOperationalKeyDays}." );
                 return ILocalKeys.DefaultOperationalKeyDays;
             }
             if( days < 1 || days > ILocalKeys.MaxOperationalKeyDays )
             {
                 var clamped = Math.Clamp( days, 1, ILocalKeys.MaxOperationalKeyDays );
-                monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
+                monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
                 return clamped;
             }
             return days;
@@ -335,8 +335,8 @@ sealed partial class LocalKeys
 
         int ReadMaxSignatureDays( IActivityMonitor monitor, int allowedOfflineDays )
         {
-            var path = _local.Configuration.Configuration.Path;
-            var s = _local.Configuration.Configuration["MaxSignatureDays"];
+            var path = _local.LocalConfiguration.Configuration.Path;
+            var s = _local.LocalConfiguration.Configuration["MaxSignatureDays"];
             int days = ILocalKeys.DefaultMaxSignatureDays;
             if( s != null && !int.TryParse( s, out days ) )
             {
@@ -356,26 +356,26 @@ sealed partial class LocalKeys
 
         int ReadAllowedOfflineDays( IActivityMonitor monitor )
         {
-            var s = _local.Configuration.Configuration["AllowedOfflineDays"];
+            var s = _local.LocalConfiguration.Configuration["AllowedOfflineDays"];
             if( s != null )
             {
                 if( int.TryParse( s, out var allowedOfflineDays ) )
                 {
                     if( allowedOfflineDays < ILocalKeys.MinAllowedOfflineDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:AllowedOfflineDays' is too small: using {nameof(ILocalKeys.MinAllowedOfflineDays)} = {ILocalKeys.MinAllowedOfflineDays}." );
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' is too small: using {nameof(ILocalKeys.MinAllowedOfflineDays)} = {ILocalKeys.MinAllowedOfflineDays}." );
                         allowedOfflineDays = ILocalKeys.MinAllowedOfflineDays;
                     }
                     else if( allowedOfflineDays > ILocalKeys.MaxAllowedOfflineDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.Configuration.Configuration.Path}:AllowedOfflineDays' is too big: using {nameof(ILocalKeys.MaxAllowedOfflineDays)} = {ILocalKeys.MaxAllowedOfflineDays}." );
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' is too big: using {nameof(ILocalKeys.MaxAllowedOfflineDays)} = {ILocalKeys.MaxAllowedOfflineDays}." );
                         allowedOfflineDays = ILocalKeys.MaxAllowedOfflineDays;
                     }
                     return allowedOfflineDays;
                 }
                 else
                 {
-                    monitor.Warn( $"Invalid configuration '{_local.Configuration.Configuration.Path}:AllowedOfflineDays' = '{s}': using {nameof( ILocalKeys.DefaultAllowedOfflineDays )} = {ILocalKeys.DefaultAllowedOfflineDays}." );
+                    monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' = '{s}': using {nameof( ILocalKeys.DefaultAllowedOfflineDays )} = {ILocalKeys.DefaultAllowedOfflineDays}." );
                 }
             }
             return ILocalKeys.DefaultAllowedOfflineDays;

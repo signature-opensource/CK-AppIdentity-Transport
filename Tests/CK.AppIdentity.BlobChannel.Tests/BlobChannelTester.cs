@@ -155,12 +155,12 @@ public sealed class BlobChannelTester : IAsyncDisposable
     {
         return await TestHelper.CreateApplicationServiceAsync( c =>
         {
-            if( !storeSubPath.IsEmptyPath ) c["RootStorePath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
-            c["AutoTrustKey"] = autoTrustKey;
+            if( !storeSubPath.IsEmptyPath ) c["StoreRootPath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
+            c["Defaults:AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "$Listener";
             c["Parties:0:Address"] = Address;
-            c["AllowFeatures"] = "BlobChannel";
+            c["Defaults:AllowFeatures"] = "BlobChannel";
         }, Configure( configureServices ), token );
     }
 
@@ -181,12 +181,12 @@ public sealed class BlobChannelTester : IAsyncDisposable
     {
         return await TestHelper.CreateApplicationServiceAsync( c =>
         {
-            if( !storeSubPath.IsEmptyPath ) c["RootStorePath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
-            c["AutoTrustKey"] = autoTrustKey;
+            if( !storeSubPath.IsEmptyPath ) c["StoreRootPath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
+            c["Defaults:AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Listener";
-            c["ListeningAddress:0"] = Address;
+            c["Defaults:ListeningAddress:0"] = Address;
             c["Parties:0:PartyName"] = "$Sender";
-            c["AllowFeatures"] = "BlobChannel";
+            c["Defaults:AllowFeatures"] = "BlobChannel";
         }, Configure( configureServices ), token );
     }
 

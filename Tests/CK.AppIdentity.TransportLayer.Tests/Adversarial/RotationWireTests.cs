@@ -27,7 +27,7 @@ public class RotationWireTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{Listener}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = Sender;
             c["Parties:0:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );

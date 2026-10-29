@@ -126,7 +126,7 @@ public class OperationalWireTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{listenerName}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = senderName;
             c["Parties:0:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( clock ), token: token );
@@ -172,7 +172,7 @@ public class OperationalWireTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{listenerName}";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );

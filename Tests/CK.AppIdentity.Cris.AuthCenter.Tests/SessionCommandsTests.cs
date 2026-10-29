@@ -33,7 +33,7 @@ public class SessionCommandsTests
         await using var app = await AuthCenterApp.StartAsync( c =>
         {
             AuthCenterApp.LocalAuthCenter( c );
-            c["AuthCenter:RefreshGraceWindow"] = "0";
+            c["Local:AuthCenter:RefreshGraceWindow"] = "0";
         } );
         (await app.LoginAsync( "Albert" )).Info.UnsafeActor.Level.ShouldBe( AuthLevel.Critical );
         var firstCookies = app.Caller.Cookies.ShouldNotBeNull();

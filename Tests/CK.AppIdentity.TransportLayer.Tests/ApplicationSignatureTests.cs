@@ -38,9 +38,9 @@ public class ApplicationSignatureTests
     static Action<MutableConfigurationSection> Days( int? operational = null, int? maxSignature = null, int? allowedOffline = null )
         => c =>
         {
-            if( operational.HasValue ) c["OperationalKeyDays"] = operational.Value.ToString();
-            if( maxSignature.HasValue ) c["MaxSignatureDays"] = maxSignature.Value.ToString();
-            if( allowedOffline.HasValue ) c["AllowedOfflineDays"] = allowedOffline.Value.ToString();
+            if( operational.HasValue ) c["Local:OperationalKeyDays"] = operational.Value.ToString();
+            if( maxSignature.HasValue ) c["Local:MaxSignatureDays"] = maxSignature.Value.ToString();
+            if( allowedOffline.HasValue ) c["Local:AllowedOfflineDays"] = allowedOffline.Value.ToString();
         };
 
     #region Local side

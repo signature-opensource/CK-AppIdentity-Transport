@@ -25,7 +25,7 @@ The test adds what is specific to it:
 `WebApplicationBuilder`) creates and starts the application:
 
 - its identity: `DefaultIdentity` ("Test/$AuthCenter", whose root is its own Authentication Center:
-  `"AuthCenter": true` with the default settings) unless the `identity` callback configures another one;
+  `"Local": { "AllowFeatures": "AuthCenter" }`, with the default settings) unless the `identity` callback configures another one;
 - the data protection is the `FakeProtector`
   (see [CK.Testing.AppIdentity.TransportLayer](../CK.Testing.AppIdentity.TransportLayer/README.md)): the identity keys
   are not really protected at rest;

@@ -34,7 +34,7 @@ sealed partial class TransportManager
         IParty closest = party
                          ?? _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName )
                          ?? (IParty)_agent.ApplicationIdentityService;
-        var u = closest.Configuration.Configuration.TryLookupValue( "EnlistRemoteUrl" );
+        var u = TransportFeatureDriver.PartyConfiguration( closest ).TryResolveValue( "EnlistRemoteUrl" );
         if( u != null ) u = u.Replace( "{DomainName}", domainName );
         // The value is raw configuration and travels inside messages whose maximum length is budgeted
         // term by term (ZeroProtocol.FirstAnswerMaxLength). Without a bound here a long or non-ASCII

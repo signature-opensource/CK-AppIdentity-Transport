@@ -52,9 +52,9 @@ public class ReverseLookupTests
         => CreateAsync( c =>
         {
             c["FullName"] = "Test/$LookupListener";
-            c["AutoTrustKey"] = "Once";
-            c["AlwaysListening"] = "True";
-            c["ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$LookupSender";
         }, token );
 
@@ -62,7 +62,7 @@ public class ReverseLookupTests
         => CreateAsync( c =>
         {
             c["FullName"] = "Test/$LookupSender";
-            c["AutoTrustKey"] = "Once";
+            c["Defaults:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$LookupListener";
             c["Parties:0:Address"] = $"mtls:127.0.0.1:{Port}";
         }, token );

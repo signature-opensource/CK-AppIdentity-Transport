@@ -22,6 +22,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     public RemoteAuthCenterFeatureDriver( ApplicationIdentityService s, AuthCenterFeatureDriver authCenter )
         : base( s, AuthCenterFeatureDriver.ConfigurationKey, isAllowedByDefault: false )
     {
+        authCenter.SetSide( isLocal: false );
     }
 
     /// <inheritdoc />

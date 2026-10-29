@@ -27,11 +27,11 @@ public class OidcTests
         return c =>
         {
             AuthCenterApp.LocalAuthCenter( c );
-            c["AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
-            c["AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
-            c["AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
-            c["AuthCenter:Oidc:Test:Scopes"] = "openid profile";
-            c["AuthCenter:Oidc:Test:CallbackUrls:0"] = Callback;
+            c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+            c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+            c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+            c["Local:AuthCenter:Oidc:Test:Scopes"] = "openid profile";
+            c["Local:AuthCenter:Oidc:Test:CallbackUrls:0"] = Callback;
             more?.Invoke( c );
         };
     }
@@ -141,7 +141,7 @@ public class OidcTests
         idp.IdTokenClaims["email_verified"] = true;
         idp.IdTokenClaims["address"] = new Dictionary<string, object> { ["country"] = "CH" };
         idp.IdTokenClaims["groups"] = new[] { "physics", "patents" };
-        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:ExcludedClaims:0"] = "groups" ) );
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:Oidc:Test:ExcludedClaims:0"] = "groups" ) );
 
         (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
         var claims = System.Text.Json.Nodes.JsonNode.Parse( AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull().Claims )!.AsObject();
@@ -162,7 +162,7 @@ public class OidcTests
         using var idp = new FakeIdentityProvider();
         idp.IdTokenClaims["name"] = "From the identity token";
         idp.UserInfoClaims = new Dictionary<string, object> { ["name"] = "From UserInfo", ["email"] = "albert@example.com" };
-        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:GetClaimsFromUserInfoEndpoint"] = "true" ) );
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:Oidc:Test:GetClaimsFromUserInfoEndpoint"] = "true" ) );
 
         (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
         idp.UserInfoCount.ShouldBe( 1 );
@@ -187,7 +187,7 @@ public class OidcTests
             (await LoginAsync( app, idp, "unknown-sub" )).Success.ShouldBeFalse();
             AuthCenterApp.FakeAutoCreateAccount.CallCount.ShouldBe( 0, "AllowAccountCreation is false by default: the service is not even called." );
         }
-        await using( var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:AllowAccountCreation"] = "true" ), createAccounts: true ) )
+        await using( var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:Oidc:Test:AllowAccountCreation"] = "true" ), createAccounts: true ) )
         {
             var r = await LoginAsync( app, idp, "unknown-sub" );
             r.Success.ShouldBeTrue();
@@ -270,7 +270,7 @@ public class OidcTests
     public async Task the_issuer_announced_by_the_provider_must_be_the_configured_one_Async()
     {
         using var idp = new FakeIdentityProvider();
-        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:Oidc:Test:Issuer"] = "https://expected.example.com" ) );
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:Oidc:Test:Issuer"] = "https://expected.example.com" ) );
         using( TestHelper.Monitor.CollectTexts( out var texts ) )
         {
             (await StartAsync( app )).ShouldBeAssignableTo<ICrisResultError>();
@@ -324,7 +324,7 @@ public class OidcTests
     public async Task a_scheme_with_a_zero_Critical_lifetime_never_elevates_Async()
     {
         using var idp = new FakeIdentityProvider();
-        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["AuthCenter:CriticalLifetimes:Oidc.Test"] = "00:00:00" ) );
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:CriticalLifetimes:Oidc.Test"] = "00:00:00" ) );
         var schemes = ((IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull())
                         .ToDictionary( s => s.Name, s => s.CriticalLifetime );
         schemes["Oidc.Test"].ShouldBe( TimeSpan.Zero );
@@ -341,7 +341,7 @@ public class OidcTests
     {
         using var idp = new FakeIdentityProvider();
         using var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
-        await Should.ThrowAsync<Exception>( () => AuthCenterApp.StartAsync( Configuration( idp, c => c[$"AuthCenter:Oidc:Test:{key}"] = value ) ) );
+        await Should.ThrowAsync<Exception>( () => AuthCenterApp.StartAsync( Configuration( idp, c => c[$"Local:AuthCenter:Oidc:Test:{key}"] = value ) ) );
         await AuthCenterFeatureTests.ShouldLogAsync( logs, message );
     }
 
@@ -365,7 +365,7 @@ public class OidcTests
         using var idp = new FakeIdentityProvider { AuthMethods = announced?.Split( ',' ) };
         await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c =>
         {
-            if( configured != null ) c["AuthCenter:Oidc:Test:TokenEndpointAuthMethod"] = configured;
+            if( configured != null ) c["Local:AuthCenter:Oidc:Test:TokenEndpointAuthMethod"] = configured;
         } ) );
         var r = await LoginAsync( app, idp );
         r.Success.ShouldBeTrue();
@@ -383,8 +383,8 @@ public class OidcTests
         using var idp = new FakeIdentityProvider { ExpectedClientId = id, ExpectedClientSecret = secret, AuthMethods = [method] };
         await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c =>
         {
-            c["AuthCenter:Oidc:Test:ClientId"] = id;
-            c["AuthCenter:Oidc:Test:ClientSecret"] = secret;
+            c["Local:AuthCenter:Oidc:Test:ClientId"] = id;
+            c["Local:AuthCenter:Oidc:Test:ClientSecret"] = secret;
         } ) );
         var r = await LoginAsync( app, idp );
         idp.LastAuthMethod.ShouldBe( method );

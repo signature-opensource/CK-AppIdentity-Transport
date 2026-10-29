@@ -7,6 +7,11 @@ namespace CK.AppIdentity.TransportLayer;
 
 public partial class TransportFeatureDriver
 {
+    // The configuration of a party: the "Local" section of a local party (the root or a tenant domain), the
+    // configuration of a remote.
+    internal static ImmutableConfigurationSection PartyConfiguration( IParty party )
+        => (party is ILocalParty local ? local.LocalConfiguration : (ApplicationIdentityConfiguration)party.Configuration).Configuration;
+
     bool ResolveAdresses( IActivityMonitor monitor,
                           IRemoteParty r,
                           out IReadOnlyCollection<TransportTypeAddress>? listen,
@@ -31,7 +36,7 @@ public partial class TransportFeatureDriver
 
     IReadOnlyCollection<TransportTypeAddress>? ResolveListeningAddresses( IActivityMonitor monitor, IParty party )
     {
-        if( !ReadListeningAddresses( monitor, party.Configuration.Configuration, out var available ) )
+        if( !ReadListeningAddresses( monitor, PartyConfiguration( party ), out var available ) )
         {
             return null;
         }
@@ -66,7 +71,7 @@ public partial class TransportFeatureDriver
         // Handling "ListeningTypes". This normally applies to Remote (not to a Local party) but this doesn't
         // cost much to equally applies it a Local configuration level: this enables a transport Type to be an
         // "opt-in one"... It's overkill but corresponds to simpler code.
-        var listeningTypesSection = party.Configuration.Configuration.TryLookupSection( "ListeningTypes" );
+        var listeningTypesSection = PartyConfiguration( party ).TryResolveSection( "ListeningTypes" );
         if( listeningTypesSection == null )
         {
             monitor.Warn( $"No \"ListeningTypes\" configuration for Party '{party.FullName}'. " +
@@ -109,7 +114,7 @@ public partial class TransportFeatureDriver
     {
         result = null;
         List<ITransportTypeService>? locally = null;
-        foreach( var config in configuration.LookupAllSection( "ListeningAddress" ) )
+        foreach( var config in configuration.ResolveAllSection( "ListeningAddress" ) )
         {
             var onLevel = config.ReadStringArray( monitor );
             if( onLevel == null ) return false;

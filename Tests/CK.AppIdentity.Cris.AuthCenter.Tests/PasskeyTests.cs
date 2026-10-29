@@ -24,8 +24,8 @@ public class PasskeyTests
     static void Configuration( MutableConfigurationSection c )
     {
         AuthCenterApp.LocalAuthCenter( c );
-        c["AuthCenter:Passkey:RpId"] = "example.com";
-        c["AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
+        c["Local:AuthCenter:Passkey:RpId"] = "example.com";
+        c["Local:AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
     }
 
     static Task<AuthCenterApp> StartAsync() => AuthCenterApp.StartAsync( Configuration, withPasskeys: true );

@@ -158,7 +158,7 @@ sealed partial class RemoteKeys
         static TimeSpan GetMaxClockOffset( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
         {
             var maxClockOffset = IRemoteKeys.DefaultMaxClockOffset;
-            var o = configuration.TryLookupValue( nameof( MaxClockOffset ) );
+            var o = configuration.TryResolveValue( nameof( MaxClockOffset ) );
             if( o != null )
             {
                 if( TimeSpan.TryParse( o, CultureInfo.InvariantCulture, out var offset )
@@ -180,7 +180,7 @@ sealed partial class RemoteKeys
         AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
         {
             AutoTrustKey autoTrust = AutoTrustKey.Never;
-            var a = configuration.TryLookupValue( nameof( AutoTrustKey ) );
+            var a = configuration.TryResolveValue( nameof( AutoTrustKey ) );
             // Enum.TryParse also accepts numerals and any combination of them, so "1" parses as Once
             // and "7" as an undefined value that passes every "!= Never" test. IsDefined rejects both:
             // this is a security switch, a typo in it must not silently grant trust.

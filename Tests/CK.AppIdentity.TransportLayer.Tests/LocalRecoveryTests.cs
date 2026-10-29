@@ -56,7 +56,7 @@ public class LocalRecoveryTests
         using var nextOffline = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
         using var someOther = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
         await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                    configure: c => c["RecoveryPublicKey"] = Convert.ToBase64String( offline.ExportSubjectPublicKeyInfo() ) );
+                                    configure: c => c["Local:RecoveryPublicKey"] = Convert.ToBase64String( offline.ExportSubjectPublicKeyInfo() ) );
         var keys = s.GetRequiredFeature<ILocalKeys>();
         keys.State.Head.CommitsToRecovery( offline.ExportSubjectPublicKeyInfo() ).ShouldBeTrue();
         IdentityStoreHelper.GetKeyNames( partyName ).ShouldBe( new[] { "0", "1" }, "Nothing of the recovery key is on this host." );

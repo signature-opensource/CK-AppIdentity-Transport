@@ -66,15 +66,15 @@ public class MacNegotiationTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/$MacListen{forceHmac}";
-            c["AutoTrustKey"] = "Once";
-            c["AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = $"$MacSend{forceHmac}";
         }, ConfigureFastClock, token: token );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/$MacSend{forceHmac}";
-            c["AutoTrustKey"] = "Once";
+            c["Defaults:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = $"$MacListen{forceHmac}";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
         }, ConfigureFastClock, token: token );
