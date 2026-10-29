@@ -8,9 +8,6 @@
     <PackageReference Include="CK.Cris.Authentication.Basic" Version="3.0.0-0.cris-auth.0.ci.57" />
     <PackageReference Include="CK.Cris.Authentication.Weak" Version="3.0.0-0.cris-auth.0.ci.57" />
     <PackageReference Include="CK.Cris.Authentication.Passkey" Version="3.0.0-0.cris-auth.0.ci.57" />
-    <PackageReference Include="CK.Cris.AspNet.Authentication" Version="3.0.0-0.cris-auth.0.ci.30" />
-    <PackageReference Include="CK.Cris.AspNet.Engine" Version="3.0.0-0.cris-auth.0.ci.30" />
-    <PackageReference Include="CK.Testing.AspNetServer" Version="24.0.0-0.cris-auth.0.ci.5" />
     <PackageReference Include="CK.Testing.TypeScriptEngine" Version="2.0.2-0.cris-auth.0.ci.9" />
     <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.9" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
@@ -24,5 +21,6 @@
     <ProjectReference Include="..\..\CK.AppIdentity.Cris.AuthCenter.Oidc\CK.AppIdentity.Cris.AuthCenter.Oidc.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.Cris.AuthCenter.Passkey\CK.AppIdentity.Cris.AuthCenter.Passkey.csproj" />
     <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris\CK.Testing.AppIdentity.Cris.csproj" />
+    <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris.AuthCenter\CK.Testing.AppIdentity.Cris.AuthCenter.csproj" />
   </ItemGroup>
 </Project>

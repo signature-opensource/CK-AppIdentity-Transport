@@ -50,61 +50,13 @@ public class SingleApplicationTests
     static async Task<RunningAspNetServer> StartAsync()
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
-        engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
-                                       typeof( CurrentLocalParty ),
-                                       typeof( CurrentLocalPartyDefaultProvider ),
-                                       typeof( KeyManagementFeatureDriver ),
-                                       typeof( DefaultCoreKeyStore ),
-                                       typeof( AuthCenterFeatureDriver ),
-                                       typeof( LocalAuthCenterFeatureDriver ),
-                                       // The HTTP front.
-                                       typeof( CrisAspNetService ),
-                                       typeof( CrisAspNetAuthenticationPackage ),
-                                       // The endpoint side and the operations, handled here.
-                                       typeof( IAuthenticationSessionOpener ),
-                                       typeof( AuthenticationSessionEndpointService ),
-                                       typeof( AuthenticationSessionHandlers ),
-                                       typeof( AuthCenterOperationHandlers ),
-                                       typeof( AuthCenterCommandHandlers ),
-                                       typeof( ISessionOperationResult ),
-                                       typeof( IOpenSessionOperationCommand ),
-                                       typeof( IRefreshSessionOperationCommand ),
-                                       typeof( ILogoutSessionOperationCommand ),
-                                       typeof( IImpersonateOperationCommand ),
-                                       typeof( IClearImpersonationOperationCommand ),
-                                       typeof( IStartRemoteLoginOperationCommand ),
-                                       typeof( ICompleteRemoteLoginOperationCommand ),
-                                       typeof( IAuthenticationTokenReader ),
-                                       typeof( AuthCenterTokenReader ),
-                                       typeof( IAuthenticationSessionEndpoint ),
-                                       typeof( CrisAuthenticationService ),
-                                       typeof( AuthenticationInfo ),
-                                       typeof( AuthenticationInfoDefaultProvider ),
-                                       typeof( AuthCenterApp.FakeActors ),
+        engine.FirstBinPath.Path = TestHelper.BinFolder;
+        engine.FirstBinPath.AddAuthCenterApplication();
+        // The Basic scheme, with fakes for its provider and the actors (a real application uses its database packages,
+        // like CK.DB.User.UserPassword).
+        engine.FirstBinPath.Assemblies.Add( "CK.Cris.Authentication.Basic" );
+        engine.FirstBinPath.Types.Add( typeof( AuthCenterApp.FakeActors ),
                                        typeof( AuthCenterApp.FakeBasicLoginProvider ),
-                                       typeof( BasicLoginHandler ),
-                                       typeof( BasicLoginCommand ),
-                                       typeof( NormalizedCultureInfoAmbientServiceDefault ),
-                                       typeof( TranslationService ),
-                                       typeof( NormalizedCultureInfo ),
-                                       typeof( CurrentCultureInfo ),
-                                       typeof( IStartLoginCommand ),
-                                       typeof( IRemoteLoginCallbackCommand ),
-                                       typeof( RawCrisExecutor ),
-                                       typeof( CrisDirectory ),
-                                       typeof( ICrisResultError ),
-                                       typeof( IRefreshSessionCommand ),
-                                       typeof( ILogoutSessionCommand ),
-                                       typeof( IImpersonateCommand ),
-                                       typeof( IClearImpersonationCommand ),
-                                       typeof( IGetLoginSchemesQCommand ),
-                                       typeof( ILoginSchemeInfo ),
-                                       typeof( ISessionResult ),
-                                       typeof( IAuthenticationInfoPoco ),
-                                       typeof( IActorInfoPoco ),
-                                       typeof( CK.Cris.AmbientValues.AmbientValuesService ),
-                                       typeof( IAuthAmbientValues ),
-                                       typeof( ICultureAmbientValues ),
                                        typeof( INormalWhoAmIQCommand ),
                                        typeof( NormalWhoAmIHandler ) );
         // The HTTP front reads only the commands of the TypeScript set ("TypeFilterName"). Only the type set is needed:
@@ -115,18 +67,7 @@ public class SingleApplicationTests
                                                                  typeof( ILogoutSessionCommand ),
                                                                  typeof( INormalWhoAmIQCommand ) );
         var map = (await engine.RunSuccessfullyAsync()).LoadMap();
-        var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, AuthCenterApp.LocalAuthCenter ).ShouldNotBeNull();
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Services.AddSingleton( c );
-        builder.Services.AddSingleton<IDataProtectionProvider>( FakeProtector.Fake );
-        builder.Services.AddCrisAuthentication();
-        var server = await builder.CreateRunningAspNetServerAsync( map, app =>
-        {
-            app.UseCrisAuthentication();
-            app.UseCris();
-        } );
-        await server.Services.GetRequiredService<ApplicationIdentityService>().InitializationTask;
-        return server;
+        return await WebApplication.CreateSlimBuilder().CreateRunningAuthCenterApplicationAsync( map );
     }
 
     static string ToJson( RunningAspNetServer server, IPoco command )

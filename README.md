@@ -21,3 +21,4 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.DB.AppIdentity](CK.DB.AppIdentity/README.md) | The PartyActor: a CK-DB actor that represents a party. |
 | [CK.Testing.AppIdentity.TransportLayer](CK.Testing.AppIdentity.TransportLayer/README.md) | Test helpers for the transport layer, including an adversarial peer. |
 | [CK.Testing.AppIdentity.Cris](CK.Testing.AppIdentity.Cris/README.md) | Test helpers that run two applications talking over a Cris channel. |
+| [CK.Testing.AppIdentity.Cris.AuthCenter](CK.Testing.AppIdentity.Cris.AuthCenter/README.md) | Test helpers for an application that is its own Authentication Center and its HTTP front. |

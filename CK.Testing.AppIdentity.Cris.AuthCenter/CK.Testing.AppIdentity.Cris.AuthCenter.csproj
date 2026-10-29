@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="CK.Cris.AspNet.Authentication" Version="3.0.0-0.cris-auth.0.ci.30" />
+        <PackageReference Include="CK.Cris.AspNet.Engine" Version="3.0.0-0.cris-auth.0.ci.30" />
+        <PackageReference Include="CK.Testing.AspNetServer" Version="24.0.0-0.cris-auth.0.ci.5" />
+        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.9" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CK.AppIdentity.Cris.AuthCenter.Local\CK.AppIdentity.Cris.AuthCenter.Local.csproj" />
+        <ProjectReference Include="..\CK.Testing.AppIdentity.TransportLayer\CK.Testing.AppIdentity.TransportLayer.csproj" />
+    </ItemGroup>
+
+</Project>
