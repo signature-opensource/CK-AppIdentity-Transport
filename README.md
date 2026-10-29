@@ -12,7 +12,7 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.BlobChannel](CK.AppIdentity.BlobChannel/README.md) | A minimal channel that carries opaque `byte[]` between two parties. |
 | [CK.AppIdentity.Cris](CK.AppIdentity.Cris/README.md) | A channel that carries Cris commands and their results between parties, and the location-transparent dispatch over it. |
 | [CK.AppIdentity.Cris.Authentication](CK.AppIdentity.Cris.Authentication/README.md) | The identity of the users across the Cris channels: vouched for by the caller party, or proved. |
-| [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | The "AuthCenter" feature core: the designation of the Authentication Center and the reading of its tokens. |
+| [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | The "AuthCenter" feature core: the Authentication Center of each local party and the reading of its tokens. |
 | [CK.AppIdentity.Cris.AuthCenter.Local](CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, the session operations. |
 | [CK.AppIdentity.Cris.AuthCenter.Remote](CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a remote of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. |
 | [CK.AppIdentity.Cris.AuthCenter.Oidc](CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) | The OpenID Connect logins of a local Authentication Center. |

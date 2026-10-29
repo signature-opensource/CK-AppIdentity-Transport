@@ -3,16 +3,27 @@
 The Local side of the [AuthCenter feature](../CK.AppIdentity.Cris.AuthCenter/README.md): **this application is the
 Authentication Center** of its local parties (the root and its tenant domains). Its
 [`LocalAuthCenterFeatureDriver`](LocalAuthCenterFeatureDriver.cs) adds a [`LocalAuthCenter`](LocalAuthCenter.cs) to every
-local party that designates itself (`"AuthCenter": true` or a settings section on the local party); a local party that
-designates a remote is a configuration error (an application has one role: a remote of an Authentication Center
-references CK.AppIdentity.Cris.AuthCenter.Remote).
+local party that allows the "AuthCenter" feature (in its `"Local"`, or in a `"Defaults"` above it): this local party is
+its own Authentication Center, and its remotes that allow the feature are its remotes. An application has one role: a
+remote of an Authentication Center references CK.AppIdentity.Cris.AuthCenter.Remote.
+
+```jsonc
+"CK-AppIdentity": {
+  "FullName": "Acme/$Center",
+  "Defaults": { "AllowFeatures": "AuthCenter" },            // The application and all its remotes.
+  "Local": {
+    "AuthCenter": { "TokenLifetime": "00:05:00" }           // The settings (below).
+  },
+  "Parties": [ { "PartyName": "Front" } ]
+}
+```
 
 The `LocalAuthCenter` holds the settings, the sessions and the signing of the tokens. A remote Authentication Center has
-its own settings: a settings section on a remote is ignored (with a warning).
+its own settings: an `"AuthCenter"` key on a remote is a configuration error.
 
 ## Settings ([`AuthCenterOptions`](AuthCenterOptions.cs))
 
-Read from the `"AuthCenter"` section of the local party (never inherited, static):
+Read from the `"AuthCenter"` section of the local party's `"Local"` (never from a `"Defaults"`, static):
 
 | Key | Default | |
 |---|---|---|

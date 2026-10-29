@@ -15,7 +15,7 @@ services.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<Mutual
 ```json
 {
   "FullName": "Acme/$Gateway",
-  "ListeningAddress": "mtls:0.0.0.0:37121",
+  "Defaults": { "ListeningAddress": "mtls:0.0.0.0:37121" },
   "Parties": [ { "PartyName": "$Device", "Address": "mtls:10.0.0.4:37121" } ]
 }
 ```

@@ -6,7 +6,7 @@ protocol plugs into the transport layer: a driver, a feature and a protocol hand
 
 ## Activation
 
-The "BlobChannel" feature is opt-in: the `"AllowFeatures"` of the remote must contain "BlobChannel" (see the
+The "BlobChannel" feature is opt-in: the `"AllowFeatures"` of the remote (or of a `"Defaults"` above it) must contain "BlobChannel" (see the
 [CK.AppIdentity features](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/Features/README.md)).
 [`BlobChannelFeatureDriver`](BlobChannelFeatureDriver.cs) then adds a [`BlobChannelFeature`](BlobChannelFeature.cs) to
 every such remote that has a `TransportFeature`. Its protocol is "Blob", in version 0: the name comes from the feature name

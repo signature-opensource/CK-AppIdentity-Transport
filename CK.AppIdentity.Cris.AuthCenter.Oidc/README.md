@@ -10,19 +10,21 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
 ## Configuration
 
 ```jsonc
-"AuthCenter": {
-  "Oidc": {
-    "Google": {                                   // The scheme is "Oidc.Google".
-      "Authority": "https://accounts.google.com", // https (http only on a loopback address).
-      "Issuer": "...",                            // Optional: defaults to the Authority.
-      "ClientId": "...",
-      "ClientSecret": "...",
-      "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
-      "Scopes": "openid email",                   // "openid" is always included.
-      "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ],
-      "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
-      "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
-      "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
+"Local": {
+  "AuthCenter": {
+    "Oidc": {
+      "Google": {                                   // The scheme is "Oidc.Google".
+        "Authority": "https://accounts.google.com", // https (http only on a loopback address).
+        "Issuer": "...",                            // Optional: defaults to the Authority.
+        "ClientId": "...",
+        "ClientSecret": "...",
+        "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
+        "Scopes": "openid email",                   // "openid" is always included.
+        "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ],
+        "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
+        "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
+        "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
+      }
     }
   }
 }

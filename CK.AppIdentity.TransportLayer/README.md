@@ -14,10 +14,14 @@ can add another one (see [Transport types](#transport-types)).
 `IRemoteParty.Address` is the only modeled property: it can only be defined on a RemoteParty and is optional.
 When not specified, then the Remote is Client: we must act as a Server, meaning that we must listen to
 incoming connections until the Remote establishes the connection. When listening to incoming connections, a
-single local end point can handle connections from more than one RemoteParty: the `ListeningAddress` is a
-configuration property that can be defined once, at the root level (ApplicationIdentityService), but nothing
-prevents this `ListeningAddress` to be defined at any configuration level: they are combined, the closest level winning
-for a given type of transport. This enables a dedicated listening address for a Domain or even for a specific Remote.
+single local end point can handle connections from more than one RemoteParty: the `ListeningAddress` of a remote is
+its own key or the one of a `"Defaults"` section above it, so it can be defined once, in the `"Defaults"` of the root,
+for every remote. The `ListeningAddress` of the `"Defaults"` above the party and its own one are combined, the nearest
+winning for a given type of transport (see
+[the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
+This enables a dedicated listening address for a tenant domain (in its `"Defaults"`) or even for a specific Remote (on
+its entry). The listening addresses of a local party (see `AlwaysListening` below) are read from its `"Local"` section
+and the `"Defaults"` above it.
 
 An `Address` or a `ListeningAddress` are mere strings: their exact syntax depends on the type of Transport that
 must be used. This type is the prefix of the address, with the standard URI protocol syntax: it is the `TypeName` of a
@@ -26,7 +30,7 @@ the same as `tcp:127.0.0.1:37120`. A `tcp:` address is an IP address with an opt
 For an encrypting transport built on this layer, see [`mtls:`](../CK.AppIdentity.Transport.MutualTls/README.md): it is
 the same handshake inside a mutually authenticated TLS channel and lives in its own package.
 
-A `ListeningAddress` property at one level can be a string, a comma separated string or an array of strings,
+A `ListeningAddress` property in one section can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. With the `mtls:`
 transport registered, this is valid: `"ListeningAddress": [ "tcp:127.0.0.1:3712", "mtls:127.0.0.1:3713" ]`.
 When no `ListeningAddress` is configured at all, the party listens on the default `tcp:` address, on all interfaces
@@ -45,14 +49,15 @@ multi-homed. And with the default 'all', a remote configured for a cleartext tra
 and authenticates correctly even though a secured listener was available: `ListeningTypes` set to that one
 type is how a deployment requires the secured one.
 
-Other keys:
+Other keys (each one is the party's own key, in its `"Local"` for a local party, otherwise the one of the nearest
+`"Defaults"` above it):
 
 | Key | On | |
 |-----|----|---|
-| `AlwaysListening` | A local party | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
+| `AlwaysListening` | A local party (its `"Local"`) | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
 | `DisallowEviction` | A listened remote | `true` refuses a new incoming connection from this remote while one is alive. By default, a new connection replaces (evicts) the current one. |
 | `NegotiationTimeout` | A remote we connect to | How long an outgoing connection attempt may take, in seconds (1 to 600). Defaults to `TransportManagerFeature.DefaultOutgoingNegotiationTimeout` (15 seconds). |
-| `EnlistRemoteUrl` | A remote, a tenant domain or the local party | A URL sent to a party that is unknown here, or that does not trust us, so that it can be enlisted. It is looked up from the remote, or for an unknown caller from the tenant domain that has its domain name (or the local party when no tenant domain has it), up through the parents. `{DomainName}` is replaced by the domain name of the party it is sent to. It is handed to unauthenticated callers. |
+| `EnlistRemoteUrl` | A remote or a local party (its `"Local"`) | A URL sent to a party that is unknown here, or that does not trust us, so that it can be enlisted. It is read from the remote, or for an unknown caller from the `"Local"` of the tenant domain that has its domain name (or of the application when no tenant domain has it), then from the `"Defaults"` above. `{DomainName}` is replaced by the domain name of the party it is sent to. It is handed to unauthenticated callers. |
 
 The "Transport" feature itself is allowed by default and requires the "KeyManagement" one on the remote.
 

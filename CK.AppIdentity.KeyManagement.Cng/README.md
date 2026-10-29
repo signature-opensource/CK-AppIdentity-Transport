@@ -17,13 +17,15 @@ Referencing the package is enough.
 
 ## Configuration
 
-Per local party, looked up from the party up through its parents (a value at the root applies to every tenant domain,
-which may override it):
+Per local party: read from its `"Local"` section, otherwise from the nearest `"Defaults"` above it (a value in the
+`"Defaults"` of the root applies to the application and to every tenant domain, which may override it in its own
+`"Local"` or `"Defaults"`, see
+[the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)):
 
 | Key | Default | |
 |-----|---------|---|
 | `CoreKeyStore:CngProvider` | `Microsoft Platform Crypto Provider` (`CngCoreKeyStore.DefaultProviderName`, the TPM) | The CNG provider name. |
-| `CoreKeyStore:AllowFallback` | `false` | When `true` and the provider is not usable (another OS, no chip, a chip disabled in firmware, a missing driver), keys go to the `DefaultCoreKeyStore` with a warning. When `false`, an unusable provider stops the party from starting rather than silently downgrading to file keys. Set it at the root for a mixed fleet. |
+| `CoreKeyStore:AllowFallback` | `false` | When `true` and the provider is not usable (another OS, no chip, a chip disabled in firmware, a missing driver), keys go to the `DefaultCoreKeyStore` with a warning. When `false`, an unusable provider stops the party from starting rather than silently downgrading to file keys. Set it in the `"Defaults"` of the root for a mixed fleet. |
 | `CoreKeyStore:MachineWide` | `false` | When `true`, keys are CNG machine keys (default access: administrators and LocalSystem) instead of keys of the service account, for services whose account may change. Creating them in the TPM provider usually needs administrative rights. |
 
 `IsUsable( providerName, out reason )` tells whether a provider can create keys on this machine, for this account. A

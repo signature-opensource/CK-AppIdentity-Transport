@@ -148,7 +148,7 @@ store built on this interface that keeps the keys in hardware, see
 
 ## Configuration
 
-On a local party (read from its own configuration):
+On a local party (read from its `"Local"` section only, never from a `"Defaults"`):
 
 | Key | Default | |
 |-----|---------|---|
@@ -157,7 +157,8 @@ On a local party (read from its own configuration):
 | `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `AllowedOfflineDays`). It must not exceed the `AllowedOfflineDays` of the parties that verify the signatures. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 
-On a remote (looked up from the remote up through its parents):
+On a remote (its own entry, otherwise the nearest `"Defaults"` above it, see
+[the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)):
 
 | Key | Default | |
 |-----|---------|---|

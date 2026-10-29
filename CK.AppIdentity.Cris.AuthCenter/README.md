@@ -15,35 +15,54 @@ implemented in packages that depend on this one:
 
 | Package | Role | Feature added to each local party |
 |---|---|---|
-| this one (core) | The designation of the Authentication Center, the reading of its tokens. Referenced by both sides. | [`CrisAuthCenter`](CrisAuthCenter.cs) |
+| this one (core) | The Authentication Center of each local party, the reading of its tokens. Referenced by both sides. | [`CrisAuthCenter`](CrisAuthCenter.cs) |
 | [CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application **is** the Authentication Center: settings, sessions, signing, the session operations, the policy for its remotes. | `LocalAuthCenter` |
 | [CK.AppIdentity.Cris.AuthCenter.Remote](../CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a **remote** of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. | `RemoteAuthCenter` |
 
 The three drivers manage the same "AuthCenter" feature (`AllowFeatures` doesn't depend on the deployed package). The
-role is checked at setup: an AuthCenter application whose local party designates a remote, or a remote whose local party
-designates itself, fails to start. The role is chosen by the installed packages (the DI composition), never by a runtime
-check: a remote has no operation handler at all. The Local and Remote packages cannot be both referenced (see the
-CK.AppIdentity feature drivers).
+role is chosen by the installed packages (the DI composition), never by a configuration key nor by a runtime check: a
+remote has no operation handler at all. An application that allows the feature but references neither side fails to
+start. The Local and Remote packages cannot be both referenced (see the CK.AppIdentity feature drivers).
 
 ## Configuration
 
-The feature is opt-in: `"AllowFeatures": "AuthCenter"`. The Authentication Center of a local party is the party whose
-**own** configuration has an `"AuthCenter"` key:
+The feature is opt-in: `"AllowFeatures": "AuthCenter"` in the `"Local"` of a local party, on its remotes concerned, or
+in a `"Defaults"` that applies to them (see
+[the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
+There is no designation key: the Authentication Center of a local party that allows the feature is given by the role of
+the application:
 
-- the local party itself: this application is the Authentication Center;
-- or one of its remotes: this application delegates its authentication to it.
+- with CK.AppIdentity.Cris.AuthCenter.Local, the local party **is** its own Authentication Center; its remotes that allow
+  the feature are its remotes (they share its `CrisAuthCenter`);
+- with CK.AppIdentity.Cris.AuthCenter.Remote, **the** remote that allows the feature is its Authentication Center: this
+  application delegates its authentication to it.
 
-The value is `true` or a section (that will hold the settings of the Authentication Center). This key is **never
-inherited**: a tenant domain that inherits the allowed feature from the root has no Authentication Center until one of
-its parties is configured with it.
+The settings of a local Authentication Center are the `"AuthCenter"` section of its `"Local"` (see
+[CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md)). A tenant domain has an
+Authentication Center only when the feature is allowed for it, in its `"Local"` or in a `"Defaults"` above it.
+
+A remote of an Authentication Center (it references CK.AppIdentity.Cris.AuthCenter.Remote):
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Front",
-  "AllowFeatures": "AuthCenter",
+  "Local": { "AllowFeatures": "AuthCenter" },
   "Parties": [
-    { "PartyName": "Center", "AuthCenter": true },
+    { "PartyName": "Center", "AllowFeatures": "AuthCenter" },
     { "PartyName": "Box" }
+  ]
+}
+```
+
+An Authentication Center (it references CK.AppIdentity.Cris.AuthCenter.Local) whose remotes all have the feature:
+
+```jsonc
+"CK-AppIdentity": {
+  "FullName": "Acme/$Center",
+  "Defaults": { "AllowFeatures": "AuthCenter" },            // The application and all its remotes.
+  "Local": { "AuthCenter": { "TokenLifetime": "00:05:00" } },
+  "Parties": [
+    { "PartyName": "Front" }
   ]
 }
 ```
@@ -62,14 +81,16 @@ local Authentication Center signs, with its `ILocalKeys`.
 
 ## Rules ([`AuthCenterFeatureDriver`](AuthCenterFeatureDriver.cs))
 
-- **Uniqueness:** two parties configured with `"AuthCenter"` in the same local party is a configuration error.
+- **Uniqueness:** on the Remote side, more than one remote that allows the feature in the same local party is a
+  configuration error (a `"Defaults"` that allows it applies to every remote below it).
 - **Keys:** the Authentication Center must have the "KeyManagement" feature (its keys verify the tokens). A remote
   Authentication Center that is not pinned yet is accepted: `Verify` refuses until it is.
-- **Not allowed:** a party configured with `"AuthCenter"` where the feature is not allowed (on the local party or on
-  the remote itself) is a configuration error. An allowed feature without any Authentication Center is a warning.
+- **No designation:** an `"AuthCenter"` key on a remote, or an `"AuthCenter"` value that is not a section in a `"Local"`
+  (like `true`), is a configuration error. Remotes that allow the feature while their local party doesn't, or (on the
+  Remote side) a local party that allows it for none of its remotes, is a warning: that local party has no authentication.
 - **Defined with its local party:** the Authentication Center is set when its local party is set up (at start, or when
-  a tenant domain is added with its remotes). A remote added later cannot be the Authentication Center (its setup
-  fails); it receives the existing feature.
+  a tenant domain is added with its remotes). A remote added later cannot be the Authentication Center: on the Remote
+  side, its setup fails when it allows the feature; on the Local side, it receives the existing feature when it allows it.
 - **Lifetime:** features cannot be removed. When a remote Authentication Center is destroyed (a remote of a dynamic
   tenant domain), its local party has no more authentication: the feature stays, is no more `IsAvailable`, and an
   error is logged. It fails closed. Destroying a tenant domain takes its Authentication Center with it.

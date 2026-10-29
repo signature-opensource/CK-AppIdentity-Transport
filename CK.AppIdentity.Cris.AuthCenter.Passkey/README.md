@@ -12,12 +12,14 @@ An application that doesn't use passkeys doesn't reference this package (nor Fid
 ## Configuration
 
 ```jsonc
-"AuthCenter": {
-  "Passkey": {
-    "RpId": "example.com",                          // The relying party: a passkey is bound to it (never change it).
-    "RpName": "Example",                            // Optional: defaults to the RpId.
-    "Origins": [ "https://app.example.com" ],       // The origins of the endpoints: the RpId or its sub-domains, https.
-    "Timeout": "00:05:00"                           // Optional: the lifetime of a ceremony (at most 10 minutes).
+"Local": {
+  "AuthCenter": {
+    "Passkey": {
+      "RpId": "example.com",                          // The relying party: a passkey is bound to it (never change it).
+      "RpName": "Example",                            // Optional: defaults to the RpId.
+      "Origins": [ "https://app.example.com" ],       // The origins of the endpoints: the RpId or its sub-domains, https.
+      "Timeout": "00:05:00"                           // Optional: the lifetime of a ceremony (at most 10 minutes).
+    }
   }
 }
 ```
