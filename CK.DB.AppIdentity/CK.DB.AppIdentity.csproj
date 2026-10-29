@@ -4,8 +4,8 @@
         <Description>This package implements the PartyActor: a system wide Actor identified by a CK-AppIdentity party full name.</Description>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.cris-auth.0.ci.18" />
-        <PackageReference Include="CK.SqlServer.Setup.Model" Version="36.0.0-0.cris-auth.0.ci.15" />
+        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.cris-auth.0.ci.19" />
+        <PackageReference Include="CK.SqlServer.Setup.Model" Version="36.0.0-0.cris-auth.0.ci.16" />
         <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth.0.ci.7" />
     </ItemGroup>
     <ItemGroup>
