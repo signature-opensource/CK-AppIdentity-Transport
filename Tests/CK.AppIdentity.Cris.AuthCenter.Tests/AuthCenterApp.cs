@@ -20,96 +20,18 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.AuthCenter.Tests;
 
 /// <summary>
-/// An AuthCenter application (CK.AppIdentity.Cris.AuthCenter.Local): its root (and the "Acme" tenant) is a local AuthCenter, with fakes for the providers,
-/// the actors and the endpoint. The <see cref="Browser"/> plays the caller: it keeps what the endpoint issued
+/// An AuthCenter application (CK.AppIdentity.Cris.AuthCenter.Local): its root (and the "Acme" tenant) is a local AuthCenter, with fakes for the providers
+/// and the actors (CK.Testing.Cris.Authentication) and for the endpoint. The <see cref="Browser"/> plays the caller: it keeps what the endpoint issued
 /// (the cookies) and the current authentication (what a front reads from the bearer token).
 /// </summary>
 public sealed class AuthCenterApp : IAsyncDisposable
 {
-    public static readonly ActorInfo Operator = new ActorInfo( 42, "Operator", AuthLevel.Unsafe, [new SchemeInfo( ActorInfo.WeakScheme, new DateTime( 2026, 1, 1, 0, 0, 0, DateTimeKind.Utc ) )] );
-    public static readonly ActorInfo Albert = new ActorInfo( 3712, "Albert", AuthLevel.Critical );
-    public static readonly ActorInfo Paula = new ActorInfo( 12, "Paula", AuthLevel.Critical );
+    // The actors of the FakeActorDatabase (CK.Testing.Cris.Authentication): the applications have their own instance.
+    static readonly FakeActorDatabase _actors = new FakeActorDatabase();
 
-    public static ActorInfo? Find( int actorId ) => actorId switch { 42 => Operator, 3712 => Albert, 12 => Paula, _ => null };
-    public static ActorInfo? Find( string name ) => name switch { "Operator" => Operator, "Albert" => Albert, "Paula" => Paula, _ => null };
-
-    public sealed class FakeActors : IActorInfoProvider
-    {
-        public static readonly HashSet<int> Disabled = new();
-
-        public ValueTask<ActorInfo?> GetActorInfoAsync( IActivityMonitor monitor, int actorId )
-            => ValueTask.FromResult( Disabled.Contains( actorId ) ? null : Find( actorId ) );
-    }
-
-    /// <summary>
-    /// A "Weak" provider whose payload is the command (any known actor, to test the session mechanics).
-    /// </summary>
-    public sealed class FakeWeakLoginProvider : ILoginProvider
-    {
-        public IReadOnlyCollection<string> ProviderNames => [ActorInfo.WeakScheme];
-
-        public object CreatePayload( string scheme ) => throw new ArgumentException( "No payload." );
-
-        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
-        {
-            var a = Find( ((IWeakLoginCommand)payload).WeakActorName );
-            return ValueTask.FromResult( a != null ? ActorLoginResult.Success( a ) : ActorLoginResult.Failure( 3, "Invalid user name or identifier." ) );
-        }
-    }
-
-    /// <summary>
-    /// A "Basic" provider (its payload is the IBasicLoginCommand): Albert's password is "secret". It records the password it receives.
-    /// </summary>
-    public sealed class FakeBasicLoginProvider : ILoginProvider
-    {
-        public static string? LastPassword;
-
-        public IReadOnlyCollection<string> ProviderNames => ["Basic"];
-
-        public object CreatePayload( string scheme ) => throw new ArgumentException( "No payload." );
-
-        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
-        {
-            var cmd = (CK.IO.Authentication.Basic.IBasicLoginCommand)payload;
-            LastPassword = cmd.Password;
-            return ValueTask.FromResult( cmd.UserName == "Albert" && cmd.Password == "secret"
-                                            ? ActorLoginResult.Success( Albert )
-                                            : ActorLoginResult.Failure( 4, "Invalid credentials." ) );
-        }
-    }
-
-    /// <summary>
-    /// The payload of the fake "Oidc" provider (like the IUserOidcInfo of CK.DB.User.UserOidc).
-    /// </summary>
-    public sealed class OidcPayload
-    {
-        public string SchemeSuffix { get; set; } = "";
-        public string Sub { get; set; } = "";
-        public string Claims { get; set; } = "";
-    }
-
-    /// <summary>
-    /// A fake "Oidc" provider: in the "Test" scheme, "albert-sub" is Albert and "paula-sub" is Paula (the actors bound
-    /// to these identities). It records the last payload.
-    /// </summary>
-    public sealed class FakeOidcLoginProvider : ILoginProvider
-    {
-        public static OidcPayload? LastPayload;
-
-        public IReadOnlyCollection<string> ProviderNames => ["Oidc"];
-
-        public object CreatePayload( string scheme ) => new OidcPayload();
-
-        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
-        {
-            var p = (OidcPayload)payload;
-            LastPayload = p;
-            var a = p.SchemeSuffix != "Test"
-                        ? null
-                        : p.Sub switch { "albert-sub" => Albert, "paula-sub" => Paula, _ => null };
-            return ValueTask.FromResult( a != null ? ActorLoginResult.Success( a ) : ActorLoginResult.Failure( 5, "No actor is bound to this identity.", isUnregisteredUser: true ) );
-        }
-    }
+    public static ActorInfo Operator => _actors.Find( 42 )!;
+    public static ActorInfo Albert => _actors.Find( 3712 )!;
+    public static ActorInfo Robert => _actors.Find( 3713 )!;
 
     /// <summary>
     /// A login validator that accepts everything and records the user data of the last login.
@@ -122,77 +44,6 @@ public sealed class AuthCenterApp : IAsyncDisposable
         {
             LastUserData = context.UserData;
             return ValueTask.CompletedTask;
-        }
-    }
-
-    /// <summary>
-    /// The passkey storage, in memory.
-    /// </summary>
-    public sealed class InMemoryPasskeyStore : IPasskeyStore
-    {
-        readonly Dictionary<string, PasskeyCredential> _credentials = new();
-        readonly Dictionary<int, byte[]> _handles = new();
-
-        public IReadOnlyCollection<PasskeyCredential> All => _credentials.Values;
-
-        static string Key( ReadOnlyMemory<byte> id ) => Convert.ToHexString( id.Span );
-
-        public ValueTask<ReadOnlyMemory<byte>> GetOrCreateUserHandleAsync( IActivityMonitor monitor, int actorId )
-        {
-            lock( _handles )
-            {
-                if( !_handles.TryGetValue( actorId, out var h ) ) _handles.Add( actorId, h = System.Security.Cryptography.RandomNumberGenerator.GetBytes( 32 ) );
-                return ValueTask.FromResult<ReadOnlyMemory<byte>>( h );
-            }
-        }
-
-        public ValueTask<PasskeyCredential?> FindAsync( IActivityMonitor monitor, ReadOnlyMemory<byte> credentialId )
-        {
-            lock( _credentials ) return ValueTask.FromResult( _credentials.GetValueOrDefault( Key( credentialId ) ) );
-        }
-
-        public ValueTask<IReadOnlyList<PasskeyCredential>> GetCredentialsAsync( IActivityMonitor monitor, int actorId )
-        {
-            lock( _credentials ) return ValueTask.FromResult<IReadOnlyList<PasskeyCredential>>( _credentials.Values.Where( c => c.ActorId == actorId ).ToList() );
-        }
-
-        public ValueTask<bool> CreateAsync( IActivityMonitor monitor, PasskeyCredential credential )
-        {
-            lock( _credentials ) return ValueTask.FromResult( _credentials.TryAdd( Key( credential.CredentialId ), credential ) );
-        }
-
-        // What the "Passkey" provider does on an actual login.
-        internal void Update( PasskeyLoginPayload p )
-        {
-            lock( _credentials )
-            {
-                var c = _credentials[Key( p.CredentialId )];
-                _credentials[Key( p.CredentialId )] = new PasskeyCredential( c.CredentialId, c.ActorId, c.UserHandle, c.PublicKey, p.SignCount, c.BackupEligible, p.BackupState, c.Aaguid, c.Transports, c.Name );
-            }
-        }
-    }
-
-    /// <summary>
-    /// The "Passkey" provider of the <see cref="InMemoryPasskeyStore"/>.
-    /// </summary>
-    public sealed class FakePasskeyLoginProvider : ILoginProvider
-    {
-        readonly InMemoryPasskeyStore _store;
-
-        public FakePasskeyLoginProvider( InMemoryPasskeyStore store ) => _store = store;
-
-        public IReadOnlyCollection<string> ProviderNames => [PasskeyLoginPayload.Scheme];
-
-        public object CreatePayload( string scheme ) => throw new ArgumentException( "No payload." );
-
-        public async ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true )
-        {
-            var p = (PasskeyLoginPayload)payload;
-            var c = await _store.FindAsync( monitor, p.CredentialId );
-            var a = c != null ? Find( c.ActorId ) : null;
-            if( a == null ) return ActorLoginResult.Failure( 6, "Unknown passkey." );
-            if( actualLogin ) _store.Update( p );
-            return ActorLoginResult.Success( a );
         }
     }
 
@@ -212,8 +63,12 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
     public sealed class AllowImpersonation : IImpersonationService
     {
-        public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, int actorId ) => ValueTask.FromResult( Find( actorId ) );
-        public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, string actorName ) => ValueTask.FromResult( Find( actorName ) );
+        readonly FakeActorDatabase _actors;
+
+        public AllowImpersonation( FakeActorDatabase actors ) => _actors = actors;
+
+        public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, int actorId ) => ValueTask.FromResult( _actors.Find( actorId ) );
+        public ValueTask<ActorInfo?> ImpersonateAsync( IActivityMonitor monitor, AuthenticationInfo current, string actorName ) => ValueTask.FromResult( _actors.Find( actorName ) );
     }
 
     public sealed class Browser
@@ -350,7 +205,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( CrisAuthenticationService ),
                                        typeof( AuthenticationInfo ),
                                        typeof( AuthenticationInfoDefaultProvider ),
-                                       typeof( FakeActors ),
+                                       typeof( FakeActorDatabase ),
                                        typeof( FakeWeakLoginProvider ),
                                        typeof( WeakLoginHandler ),
                                        typeof( FakeOidcLoginProvider ),

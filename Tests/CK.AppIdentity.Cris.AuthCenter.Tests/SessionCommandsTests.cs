@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using CK.Testing;
 using CK.Core;
 using CK.Cris;
 using CK.IO.Authentication;
@@ -71,7 +73,7 @@ public class SessionCommandsTests
     {
         await using var app = await AuthCenterApp.StartAsync();
         await app.LoginAsync( "Operator" );
-        AuthCenterApp.FakeActors.Disabled.Add( 42 );
+        app.Services.Services.GetRequiredService<FakeActorDatabase>().Disabled.Add( 42 );
         try
         {
             var r = await RefreshAsync( app );
@@ -81,7 +83,7 @@ public class SessionCommandsTests
         }
         finally
         {
-            AuthCenterApp.FakeActors.Disabled.Remove( 42 );
+            app.Services.Services.GetRequiredService<FakeActorDatabase>().Disabled.Remove( 42 );
         }
         (await RefreshAsync( app )).UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.NoSession" );
     }
@@ -110,7 +112,7 @@ public class SessionCommandsTests
     {
         await using var app = await AuthCenterApp.StartAsync();
         await app.LoginAsync( "Albert" );
-        var r = await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Paula" ) );
+        var r = await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Robert" ) );
         r.Success.ShouldBeFalse();
         r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.ImpersonationNotAllowed" );
     }
@@ -122,25 +124,25 @@ public class SessionCommandsTests
 
         // A weak actor (Unsafe) cannot impersonate.
         await app.LoginAsync( "Operator" );
-        (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Paula" ) ))
+        (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Robert" ) ))
             .UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.CriticalLevelRequired" );
 
         await app.LoginAsync( "Albert" );
-        (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => { c.TargetActorId = 12; c.TargetActorName = "Paula"; } ) ))
+        (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => { c.TargetActorId = 3713; c.TargetActorName = "Robert"; } ) ))
             .UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.InvalidImpersonation" );
         (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorId = 3712 ) ))
             .UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.InvalidImpersonation" );
 
-        var r = await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Paula" ) );
+        var r = await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Robert" ) );
         r.Success.ShouldBeTrue();
         app.Caller.Current.IsImpersonated.ShouldBeTrue();
         app.Caller.Current.ActualActor.ActorName.ShouldBe( "Albert" );
-        app.Caller.Current.Actor.ActorName.ShouldBe( "Paula" );
-        (await ReadSessionAsync( app )).ShouldNotBeNull().ActorId.ShouldBe( 12 );
+        app.Caller.Current.Actor.ActorName.ShouldBe( "Robert" );
+        (await ReadSessionAsync( app )).ShouldNotBeNull().ActorId.ShouldBe( 3713 );
 
         // The impersonation survives a refresh.
         (await RefreshAsync( app )).Success.ShouldBeTrue();
-        app.Caller.Current.Actor.ActorName.ShouldBe( "Paula" );
+        app.Caller.Current.Actor.ActorName.ShouldBe( "Robert" );
         app.Caller.Current.ActualActor.ActorName.ShouldBe( "Albert" );
 
         // And it ends.

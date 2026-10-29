@@ -52,12 +52,11 @@ public class SingleApplicationTests
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Path = TestHelper.BinFolder;
         engine.FirstBinPath.AddAuthCenterApplication();
-        // The Basic scheme, with fakes for its provider and the actors (a real application uses its database packages,
-        // like CK.DB.User.UserPassword).
+        // The Basic scheme, with the fake login providers and actors of CK.Testing.Cris.Authentication (a real application
+        // uses its database packages, like CK.DB.User.UserPassword).
         engine.FirstBinPath.Assemblies.Add( "CK.Cris.Authentication.Basic" );
-        engine.FirstBinPath.Types.Add( typeof( AuthCenterApp.FakeActors ),
-                                       typeof( AuthCenterApp.FakeBasicLoginProvider ),
-                                       typeof( INormalWhoAmIQCommand ),
+        engine.FirstBinPath.AddFakeLoginProviders();
+        engine.FirstBinPath.Types.Add( typeof( INormalWhoAmIQCommand ),
                                        typeof( NormalWhoAmIHandler ) );
         // The HTTP front reads only the commands of the TypeScript set ("TypeFilterName"). Only the type set is needed:
         // "ck-gen" is generated without any TypeScript tooling.
@@ -108,7 +107,7 @@ public class SingleApplicationTests
         await PostRefusedAsync( server, "/.cris", Create<INormalWhoAmIQCommand>( server, c => c.ActorId = 0 ) );
 
         // A Basic login over HTTP: executed by the HTTP endpoint, its operation by the local AuthCenter.
-        var login = (ISessionResult)(await PostAsync( server, "/.cris/auth", Create<BasicLoginCommand>( server, c => { c.UserName = "Albert"; c.Password = "secret"; } ) ))
+        var login = (ISessionResult)(await PostAsync( server, "/.cris/auth", Create<BasicLoginCommand>( server, c => { c.UserName = "Albert"; c.Password = FakeActorDatabase.BasicPassword; } ) ))
                                         .Result.ShouldNotBeNull();
         login.Success.ShouldBeTrue();
         login.Info.UnsafeActor.ActorName.ShouldBe( "Albert" );

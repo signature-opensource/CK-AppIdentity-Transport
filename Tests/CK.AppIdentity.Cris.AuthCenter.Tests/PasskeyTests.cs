@@ -1,3 +1,4 @@
+using CK.Testing;
 using CK.AppIdentity.Cris.AuthCenter.Passkey;
 using CK.Core;
 using CK.Cris;
@@ -30,7 +31,7 @@ public class PasskeyTests
 
     static Task<AuthCenterApp> StartAsync() => AuthCenterApp.StartAsync( Configuration, withPasskeys: true );
 
-    static AuthCenterApp.InMemoryPasskeyStore Store( AuthCenterApp app ) => app.Services.Services.GetRequiredService<AuthCenterApp.InMemoryPasskeyStore>();
+    static InMemoryPasskeyStore Store( AuthCenterApp app ) => app.Services.Services.GetRequiredService<InMemoryPasskeyStore>();
 
     static IEnumerable<string> Errors( object? result ) => result.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull().Errors.Select( e => e.Text );
 

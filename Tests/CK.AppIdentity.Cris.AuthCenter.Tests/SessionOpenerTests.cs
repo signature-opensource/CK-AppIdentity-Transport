@@ -1,3 +1,4 @@
+using CK.Testing;
 using CK.Core;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -116,7 +117,7 @@ public class SessionOpenerTests
 
         // An impersonation at Critical level: everything goes through the token.
         var utcNow = DateTime.UtcNow;
-        var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Paula, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
+        var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Robert, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
         var sessionId = AuthCenterSession.NewSessionId();
         var token = app.LocalCenter.CreateToken( sessionId, "the-binding-hash", auth, utcNow );
 
@@ -125,7 +126,7 @@ public class SessionOpenerTests
         readId.ShouldBe( sessionId );
         info.IsImpersonated.ShouldBeTrue();
         info.UnsafeActualActor.ActorName.ShouldBe( "Albert" );
-        info.UnsafeActor.ActorName.ShouldBe( "Paula" );
+        info.UnsafeActor.ActorName.ShouldBe( "Robert" );
         info.Actor.Level.ShouldBe( AuthLevel.Critical );
         info.CriticalExpires.ShouldNotBeNull().ShouldBeLessThanOrEqualTo( utcNow.AddMinutes( 2 ), "Clamped by the token (2 minutes)." );
 

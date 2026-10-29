@@ -1,3 +1,4 @@
+using CK.Testing;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
@@ -53,7 +54,7 @@ public class RemoteAuthCenterTests
                                       typeof( IAuthenticationSessionEndpoint ),
                                       typeof( CrisAuthenticationService ),
                                       typeof( AuthenticationInfo ),
-                                      typeof( AuthCenterApp.FakeActors ),
+                                      typeof( FakeActorDatabase ),
                                       typeof( RawCrisExecutor ),
                                       typeof( RawCrisReceiver ),
                                       typeof( CrisDirectory ),
@@ -111,8 +112,8 @@ public class RemoteAuthCenterTests
                                            typeof( AuthCenterEncryptionKeyHandler ),
                                            typeof( AuthCenterCallerPartyService ),
                                            typeof( AuthCenterProofVerifier ),
-                                           typeof( AuthCenterApp.FakeWeakLoginProvider ),
-                                           typeof( AuthCenterApp.FakeBasicLoginProvider ),
+                                           typeof( FakeWeakLoginProvider ),
+                                           typeof( FakeBasicLoginProvider ),
                                            typeof( AuthCenterFieldDecryptor ),
                                            typeof( AuthCenterApp.AllowImpersonation ),
                                            typeof( CenterHandlers )];
@@ -202,13 +203,13 @@ public class RemoteAuthCenterTests
                                        typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
                                        typeof( Passkey.AuthCenterPasskeyConfiguration ),
                                        typeof( Passkey.AuthCenterPasskeyHandlers ),
-                                       typeof( AuthCenterApp.InMemoryPasskeyStore ),
-                                       typeof( AuthCenterApp.FakePasskeyLoginProvider )]
+                                       typeof( InMemoryPasskeyStore ),
+                                       typeof( FakePasskeyLoginProvider )]
                                     : Type.EmptyTypes),
                               .. (oidcSettings != null
                                     ? [typeof( Oidc.AuthCenterOidcFeatureDriver ),
                                        typeof( Oidc.AuthCenterOidcConfiguration ),
-                                       typeof( AuthCenterApp.FakeOidcLoginProvider )]
+                                       typeof( FakeOidcLoginProvider )]
                                     : Type.EmptyTypes)];
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
@@ -278,10 +279,10 @@ public class RemoteAuthCenterTests
         var r = (await p.RequestAsync( pocos => pocos.Create<IImpersonateCommand>( c =>
         {
             c.ActorId = p.Browser.Current.UnsafeActor.ActorId;
-            c.TargetActorName = "Paula";
+            c.TargetActorName = "Robert";
         } ) )).ShouldBeAssignableTo<ISessionResult>()!;
         r.Success.ShouldBeTrue();
-        p.Browser.Current.UnsafeActor.ActorName.ShouldBe( "Paula" );
+        p.Browser.Current.UnsafeActor.ActorName.ShouldBe( "Robert" );
         p.Browser.Current.UnsafeActualActor.ActorName.ShouldBe( "Albert" );
     }
 
@@ -312,32 +313,30 @@ public class RemoteAuthCenterTests
     public async Task the_sensitive_fields_are_encrypted_for_the_AuthCenter_Async()
     {
         await using var p = await StartAsync();
-        AuthCenterApp.FakeBasicLoginProvider.LastPassword = null;
         IBasicLoginCommand? sent = null;
         var r = await p.RequestAsync( pocos => sent = pocos.Create<IBasicLoginCommand>( c =>
         {
             c.UserName = "Albert";
-            c.Password = "secret";
+            c.Password = FakeActorDatabase.BasicPassword;
         } ) );
         r.ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
         // The AuthCenter decrypted the password (in the payload of the operation that opens the session).
-        AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBe( "secret" );
+        p.Center.Services.GetRequiredService<FakeBasicLoginProvider>().LastPassword.ShouldBe( FakeActorDatabase.BasicPassword );
         // A copy has been encrypted: the caller's command is left as is.
-        sent.ShouldNotBeNull().Password.ShouldBe( "secret" );
+        sent.ShouldNotBeNull().Password.ShouldBe( FakeActorDatabase.BasicPassword );
     }
 
     [Test]
     public async Task a_clear_sensitive_field_is_refused_by_the_AuthCenter_Async()
     {
         await using var p = await StartAsync( remoteEncrypts: false );
-        AuthCenterApp.FakeBasicLoginProvider.LastPassword = null;
         var r = await p.RequestAsync( pocos => pocos.Create<IBasicLoginCommand>( c =>
         {
             c.UserName = "Albert";
-            c.Password = "secret";
+            c.Password = FakeActorDatabase.BasicPassword;
         } ) );
         (r is ISessionResult { Success: true }).ShouldBeFalse();
-        AuthCenterApp.FakeBasicLoginProvider.LastPassword.ShouldBeNull();
+        p.Center.Services.GetRequiredService<FakeBasicLoginProvider>().LastPassword.ShouldBeNull();
     }
 
     [Test]

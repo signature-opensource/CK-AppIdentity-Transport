@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using CK.Testing;
 using CK.AppIdentity.Cris.AuthCenter.Oidc;
 using CK.Core;
 using CK.Cris;
@@ -82,7 +84,7 @@ public class OidcTests
         r.Info.UnsafeActor.ActorName.ShouldBe( "Albert" );
         app.Caller.Current.Actor.ActorName.ShouldBe( "Albert" );
         idp.LastAuthMethod.ShouldBe( "client_secret_basic", "The default of OpenID Connect when the provider announces nothing." );
-        var payload = AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull();
+        var payload = app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().LastPayload.ShouldNotBeNull();
         payload.SchemeSuffix.ShouldBe( "Test" );
         payload.Sub.ShouldBe( "albert-sub" );
         app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0, "The pending login is consumed." );
@@ -144,7 +146,7 @@ public class OidcTests
         await using var app = await AuthCenterApp.StartAsync( Configuration( idp, c => c["Local:AuthCenter:Oidc:Test:ExcludedClaims:0"] = "groups" ) );
 
         (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
-        var claims = System.Text.Json.Nodes.JsonNode.Parse( AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull().Claims )!.AsObject();
+        var claims = System.Text.Json.Nodes.JsonNode.Parse( app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().LastPayload.ShouldNotBeNull().Claims )!.AsObject();
         claims["name"]!.GetValue<string>().ShouldBe( "Albert Einstein" );
         claims["email_verified"]!.GetValue<bool>().ShouldBeTrue( "A boolean stays a boolean." );
         claims["address"]!["country"]!.GetValue<string>().ShouldBe( "CH", "An object stays an object." );
@@ -166,7 +168,7 @@ public class OidcTests
 
         (await LoginAsync( app, idp, "albert-sub" )).Success.ShouldBeTrue();
         idp.UserInfoCount.ShouldBe( 1 );
-        var claims = System.Text.Json.Nodes.JsonNode.Parse( AuthCenterApp.FakeOidcLoginProvider.LastPayload.ShouldNotBeNull().Claims )!.AsObject();
+        var claims = System.Text.Json.Nodes.JsonNode.Parse( app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().LastPayload.ShouldNotBeNull().Claims )!.AsObject();
         claims["email"]!.GetValue<string>().ShouldBe( "albert@example.com" );
         claims["name"]!.GetValue<string>().ShouldBe( "From the identity token", "On a conflict, the signed identity token wins." );
 

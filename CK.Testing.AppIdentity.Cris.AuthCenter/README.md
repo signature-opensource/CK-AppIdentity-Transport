@@ -14,7 +14,10 @@ packages, for instance) run their server with it.
 
 The test adds what is specific to it:
 
-- the login schemes (`CK.Cris.Authentication.Basic`...) and their providers (`CK.DB.User.UserPassword`...), or fakes;
+- the login schemes (`CK.Cris.Authentication.Basic`..., or the Angular packages that bring them) and their providers:
+  the database packages (`CK.DB.User.UserPassword`...), or the fakes of
+  [CK.Testing.Cris.Authentication](https://github.com/signature-opensource/CK-Cris/blob/stable/CK.Testing.Cris.Authentication/README.md)
+  (`AddFakeLoginProviders()`: the actors of its `FakeActorDatabase`, "Albert" 3712 with the password "success"...);
 - a **TypeScript configuration aspect**: the HTTP front reads only the commands of the "TypeScript" type set. A test
   without TypeScript tooling uses `TestHelper.GetTypeScriptGeneratedOnlyTargetProjectPath()` (only the `ck-gen` folder
   is generated).
