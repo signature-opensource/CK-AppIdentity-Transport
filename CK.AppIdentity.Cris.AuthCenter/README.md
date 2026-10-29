@@ -90,7 +90,8 @@ local Authentication Center signs, with its `ILocalKeys`.
   Remote side) a local party that allows it for none of its remotes, is a warning: that local party has no authentication.
 - **Defined with its local party:** the Authentication Center is set when its local party is set up (at start, or when
   a tenant domain is added with its remotes). A remote added later cannot be the Authentication Center: on the Remote
-  side, its setup fails when it allows the feature; on the Local side, it receives the existing feature when it allows it.
+  side, its setup fails when it allows the feature and its local party does too (it is ignored, with a warning, when its
+  local party doesn't); on the Local side, it receives the existing feature when it allows it.
 - **Lifetime:** features cannot be removed. When a remote Authentication Center is destroyed (a remote of a dynamic
   tenant domain), its local party has no more authentication: the feature stays, is no more `IsAvailable`, and an
   error is logged. It fails closed. Destroying a tenant domain takes its Authentication Center with it.

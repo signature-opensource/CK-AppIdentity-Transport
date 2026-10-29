@@ -8,8 +8,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <see cref="RemoteAuthCenter"/> to every local party that has an Authentication Center (see <see cref="AuthCenterFeatureDriver"/>),
 /// the dynamic tenants included.
 /// <para>
-/// An application has one role: a local party that is its own Authentication Center is a configuration error here (the
-/// application must reference CK.AppIdentity.Cris.AuthCenter.Local instead).
+/// An application has one role: with this package, the Authentication Center of a local party that allows the feature is
+/// the remote that allows it (an Authentication Center references CK.AppIdentity.Cris.AuthCenter.Local instead).
 /// </para>
 /// </summary>
 public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
@@ -52,11 +52,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     {
         var center = local.GetFeature<CrisAuthCenter>();
         if( center == null ) return true;
-        if( center.AuthCenter == local )
-        {
-            context.Monitor.Error( $"'{local}' is its own AuthCenter but this application is a remote of an AuthCenter (CK.AppIdentity.Cris.AuthCenter.Remote): an application has one role, an AuthCenter references CK.AppIdentity.Cris.AuthCenter.Local." );
-            return false;
-        }
+        Throw.DebugAssert( "The role is resolved by the core driver.", center.AuthCenter != local );
         var remote = new RemoteAuthCenter( center );
         local.AddFeature( remote );
         // Once all the features are set up (the Cris channel to the AuthCenter, the PartyActor registrar if any).

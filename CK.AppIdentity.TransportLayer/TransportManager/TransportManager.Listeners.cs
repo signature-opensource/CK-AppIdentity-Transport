@@ -16,7 +16,8 @@ sealed partial class TransportManager
     /// its Owner local to find the "closest" url pattern.
     /// If the IRemoteParty is null, we use the DomainName to try to locate a domain that would better host
     /// this remote than the Local one, and fall back to the Local one.
-    /// The "EnlistRemoteUrl" is looked up from this party up through its parents.
+    /// The "EnlistRemoteUrl" is the one of the remote, or of the "Local" of the tenant domain (or of the application), otherwise
+    /// the one of the nearest "Defaults" above it.
     /// </summary>
     /// <param name="party">The remote party if we already know it.</param>
     /// <param name="domainName">The domain name of the remote: it replaces "{DomainName}" in the url.</param>

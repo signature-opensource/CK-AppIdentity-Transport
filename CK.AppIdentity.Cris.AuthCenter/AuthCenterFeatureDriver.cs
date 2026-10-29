@@ -23,8 +23,9 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 ///   feature is a configuration error (a "Defaults" that allows the feature applies to every remote below it).
 ///   </item>
 /// </list>
-/// The local AuthCenter's settings are the "AuthCenter" section of its "Local" (see <c>AuthCenterOptions</c>). The former
-/// designation (<c>"AuthCenter": true</c> on a party) is a configuration error: allowing the feature is enough.
+/// The local AuthCenter's settings are the "AuthCenter" section of its "Local" (see <c>AuthCenterOptions</c>). There is no
+/// designation: an "AuthCenter" key on a remote, or an "AuthCenter" value that is not a section in a "Local" (like
+/// <c>true</c>), is a configuration error.
 /// </para>
 /// <para>
 /// The rules:
@@ -97,10 +98,14 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
             {
                 if( f != null ) remote.AddFeature( f );
             }
-            else
+            else if( IsAllowedFeature( remote.Owner ) )
             {
                 context.Monitor.Error( $"Remote '{remote}' cannot be the AuthCenter of '{remote.Owner}': the AuthCenter is defined with its local party, not by a remote added later." );
                 return Task.FromResult( false );
+            }
+            else
+            {
+                context.Monitor.Warn( $"The '{FeatureName}' feature is allowed for the remote '{remote}' but not for '{remote.Owner}' (in its \"Local\"): it is ignored." );
             }
         }
         return Task.FromResult( true );
@@ -181,7 +186,8 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         return true;
     }
 
-    // The former designation ("AuthCenter": true on a party) is an error: allowing the feature is enough.
+    // There is no designation: an "AuthCenter" key on a remote is an error, and so is an "AuthCenter" value of a "Local"
+    // that is not a section (the "AuthCenter" section of a "Local" is the settings of a local AuthCenter).
     // The "AuthCenter" section of a "Local" is the settings of a local AuthCenter: it must be a section.
     static bool CheckNoAuthCenterKey( IActivityMonitor monitor, IParty party )
     {

@@ -329,6 +329,19 @@ public class AuthCenterFeatureTests
     }
 
     [Test]
+    public async Task a_dynamic_remote_that_allows_the_feature_is_ignored_when_its_local_party_does_not_Async()
+    {
+        await using var s = await StartAsync( c => c["FullName"] = "D/$Front", remote: true );
+        using( var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 ) )
+        {
+            var r = await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Late"; c["AllowFeatures"] = "AuthCenter"; } );
+            r.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldBeNull();
+            await ShouldLogAsync( logs, "but not for 'Application: D/$Front/#Dev' (in its \"Local\"): it is ignored" );
+        }
+        s.GetFeature<CrisAuthCenter>().ShouldBeNull();
+    }
+
+    [Test]
     public async Task the_role_of_the_application_is_its_package_Async()
     {
         // The same configuration: the local party allows the feature, and so does its single remote.
