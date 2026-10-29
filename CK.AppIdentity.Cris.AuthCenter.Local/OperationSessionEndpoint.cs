@@ -11,7 +11,14 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// (<see cref="ICommandNextSessionSecrets"/>), and it records what the receiving endpoint must apply: the result of the
 /// operation (<see cref="ToResult"/>). The Authentication Center's logic works with it as with any endpoint, wherever the
 /// operation comes from (the local endpoint or a remote).
+/// <para>
+/// This is excluded from the type discovery: an implementation of a <see cref="ScopedContainerConfiguredServiceAttribute"/>
+/// interface is provided by its endpoint, never built by the DI. Being public (it is used by the scheme packages), it would
+/// otherwise be registered as the implementation of <see cref="IAuthenticationSessionEndpoint"/> in the global container
+/// (see .wip/cris-auth/34-engine-ideas.md, the first idea: the engine should check this).
+/// </para>
 /// </summary>
+[ExcludedCKType]
 public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
 {
     readonly ICommandPresentedSession? _presented;
