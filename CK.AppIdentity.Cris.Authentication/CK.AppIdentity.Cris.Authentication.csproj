@@ -4,7 +4,7 @@
     <Description>The identity across the CK-AppIdentity Cris channels: a received command executes with the identity of its user, vouched for by the calling party (its CallerPartyId), capped by the receiver's ICallerPartyService, or proved by the user's token when a proof verifier exists.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.cris-auth.0.ci.61" />
+    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.cris-auth.0.ci.64" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
