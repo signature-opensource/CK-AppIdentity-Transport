@@ -116,16 +116,29 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
 
     /// <summary>
     /// Validates the start of a remote login: the scheme belongs to a remote family, the receiving endpoint's callback is
-    /// allowed for it, the return URL is relative.
+    /// allowed for it, the return URL is relative, a binding is at the Critical level and not impersonated.
     /// </summary>
     [CommandHandlingValidator]
-    public void Validate( UserMessageCollector c, IStartRemoteLoginOperationCommand op, CurrentLocalParty localParty )
+    public void Validate( UserMessageCollector c, IStartRemoteLoginOperationCommand op, CurrentLocalParty localParty, AuthenticationInfo authentication )
     {
         var login = op.Login;
         if( login == null )
         {
             c.Error( "The remote login operation has no start command.", "Authentication.InvalidCommand" );
             return;
+        }
+        // A binding: the authentication must be at the Critical level and not impersonated (the session itself is
+        // checked by the handler).
+        if( login.BindToCurrentActor )
+        {
+            if( authentication.IsImpersonated )
+            {
+                c.Error( "This is refused while impersonating.", "Authentication.Impersonated" );
+            }
+            else if( authentication.ActualActor.Level != AuthLevel.Critical )
+            {
+                c.Error( "This requires the Critical level.", "Authentication.CriticalLevelRequired" );
+            }
         }
         var center = localParty.LocalParty.GetFeature<LocalAuthCenter>();
         if( center?.FindSchemeFamily( login.Scheme ) is not IAuthCenterRemoteScheme family )

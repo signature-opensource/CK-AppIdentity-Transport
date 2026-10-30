@@ -474,7 +474,7 @@ public class OidcTests
         await using var app = await AuthCenterApp.StartAsync( Configuration( idp ), allowImpersonation: true );
 
         // Nobody is logged in.
-        Errors( await StartAsync( app, bind: true ) ).ShouldContain( "No session." );
+        Errors( await StartAsync( app, bind: true ) ).ShouldContain( "This requires the Critical level." );
         app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
 
         // Impersonating.
