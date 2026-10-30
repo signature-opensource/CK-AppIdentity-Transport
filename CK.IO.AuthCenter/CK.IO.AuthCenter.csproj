@@ -4,6 +4,6 @@
     <Description>The [Internal] queries between the parties of a System and their Authentication Center: its encryption key and the PartyActor identifiers.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris" Version="3.0.0-0.cris-auth" />
+    <PackageReference Include="CK.Cris" Version="3.0.0-0.cris-auth.0.ci.37" />
   </ItemGroup>
 </Project>
