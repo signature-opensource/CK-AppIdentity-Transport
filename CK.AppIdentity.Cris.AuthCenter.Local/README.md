@@ -149,6 +149,14 @@ only runs its protocol.
    (**login CSRF**: only the caller that started a login can complete it). The family completes the login with the payload
    of its login provider, and the session is opened with the **user data of the start**: the callback never carries them.
 
+**Binding an identity** (`IStartLoginCommand.BindToCurrentActor`): a logged in user adds a remote identity to its account.
+The start requires the presented session at the `Critical` level, not impersonated: the pending login keeps this session
+and its authentication. The completion (the callback doesn't carry the session cookies: the correlation proves the same
+browser) requires the session to be still alive and not impersonated, then binds the identity through the
+`IAutoBindingAccountService` (CK.DB.Auth's one only binds the identities asserted by a remote provider). An identity
+already bound to the user is accepted, one bound to another user is refused (`Authentication.IdentityBoundToAnotherUser`),
+no account is ever created and the successful result issues no session (`Authentication.IdentityBound`).
+
 The `Code` of the callback is `[Sensitive]`: from a remote, it travels encrypted for the Authentication Center.
 
 ## The commands from its remotes

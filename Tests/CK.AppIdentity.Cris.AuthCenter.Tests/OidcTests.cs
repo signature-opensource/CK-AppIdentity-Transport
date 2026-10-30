@@ -38,7 +38,7 @@ public class OidcTests
         };
     }
 
-    static async Task<object?> StartAsync( AuthCenterApp app, string scheme = "Oidc.Test", string? returnUrl = "/home", bool rememberMe = true, bool critical = false )
+    static async Task<object?> StartAsync( AuthCenterApp app, string scheme = "Oidc.Test", string? returnUrl = "/home", bool rememberMe = true, bool critical = false, bool bind = false )
     {
         return await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c =>
         {
@@ -47,6 +47,7 @@ public class OidcTests
             c.RememberMe = rememberMe;
             c.InlineMode = true;
             c.Critical = critical;
+            c.BindToCurrentActor = bind;
         } ) );
     }
 
@@ -419,5 +420,89 @@ public class OidcTests
             texts.ShouldContain( t => t.Contains( "accepts neither 'client_secret_basic' nor 'client_secret_post'" ) );
         }
         app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0, "No pending login: the user is not sent to the provider." );
+    }
+
+    static async Task<ISessionResult> BindAsync( AuthCenterApp app, FakeIdentityProvider idp, string sub )
+    {
+        var start = (RedirectedUrl)(await StartAsync( app, bind: true )).ShouldNotBeNull();
+        var (_, code, state) = idp.Authorize( start.Url, sub );
+        return await CallbackAsync( app, state, code );
+    }
+
+    [Test]
+    public async Task a_logged_in_user_binds_an_identity_to_its_account_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+        (await app.LoginAsync( "Albert" )).Info.UnsafeActualActor.Level.ShouldBe( AuthLevel.Critical );
+        var issued = app.Caller.Issued.Count;
+
+        var r = await BindAsync( app, idp, "new-sub" );
+        r.Success.ShouldBeTrue();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.IdentityBound" );
+        r.Token.ShouldBeNull( "A binding issues no session." );
+        app.Caller.Issued.Count.ShouldBe( issued );
+        app.Caller.Current.Actor.ActorName.ShouldBe( "Albert", "The session is unchanged." );
+        app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().Bindings[("Test", "new-sub")].ShouldBe( 3712 );
+
+        // Bound again: accepted, nothing changes.
+        r = await BindAsync( app, idp, "new-sub" );
+        r.Success.ShouldBeTrue();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.IdentityAlreadyBound" );
+
+        // The identity now logs in.
+        await app.ExecuteAsync( p => p.Create<ILogoutSessionCommand>() );
+        (await LoginAsync( app, idp, "new-sub" )).Info.UnsafeActor.ActorName.ShouldBe( "Albert" );
+    }
+
+    [Test]
+    public async Task an_identity_bound_to_another_user_is_not_bound_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+        await app.LoginAsync( "Albert" );
+        var r = await BindAsync( app, idp, "robert-sub" );
+        r.Success.ShouldBeFalse();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.IdentityBoundToAnotherUser" );
+        app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().Bindings[("Test", "robert-sub")].ShouldBe( 3713 );
+    }
+
+    [Test]
+    public async Task a_binding_requires_a_Critical_session_that_is_not_impersonated_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ), allowImpersonation: true );
+
+        // Nobody is logged in.
+        Errors( await StartAsync( app, bind: true ) ).ShouldContain( "No session." );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
+
+        // Impersonating.
+        await app.LoginAsync( "Albert" );
+        (await app.ExecuteSessionAsync( p => p.Create<IImpersonateCommand>( c => c.TargetActorName = "Robert" ) )).Success.ShouldBeTrue();
+        Errors( await StartAsync( app, bind: true ) ).ShouldContain( "This is refused while impersonating." );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
+
+        // Not at the Critical level anymore (a refresh is Normal).
+        (await app.ExecuteSessionAsync( p => p.Create<IClearImpersonationCommand>() )).Success.ShouldBeTrue();
+        (await app.ExecuteSessionAsync( p => p.Create<IRefreshSessionCommand>() )).Info.UnsafeActualActor.Level.ShouldBe( AuthLevel.Normal );
+        Errors( await StartAsync( app, bind: true ) ).ShouldContain( "This requires the Critical level." );
+        app.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
+    }
+
+    [Test]
+    public async Task a_binding_requires_the_session_that_started_it_to_be_alive_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var app = await AuthCenterApp.StartAsync( Configuration( idp ) );
+        await app.LoginAsync( "Albert" );
+        var start = (RedirectedUrl)(await StartAsync( app, bind: true )).ShouldNotBeNull();
+        var (_, code, state) = idp.Authorize( start.Url, "new-sub" );
+
+        await app.ExecuteAsync( p => p.Create<ILogoutSessionCommand>() );
+        var r = await CallbackAsync( app, state, code );
+        r.Success.ShouldBeFalse();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.BindingSessionEnded" );
+        app.Services.Services.GetRequiredService<FakeOidcLoginProvider>().Bindings.ContainsKey( ("Test", "new-sub") ).ShouldBeFalse();
     }
 }

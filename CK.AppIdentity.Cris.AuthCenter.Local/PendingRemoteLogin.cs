@@ -1,3 +1,4 @@
+using CK.Core;
 using System.Collections.Generic;
 
 namespace CK.AppIdentity.Cris.AuthCenter;
@@ -14,7 +15,9 @@ public sealed class PendingRemoteLogin
                                  string correlationHash,
                                  bool rememberMe,
                                  IReadOnlyDictionary<string, string?> userData,
-                                 object? schemeData )
+                                 object? schemeData,
+                                 string? bindingSessionKey = null,
+                                 AuthenticationInfo? bindingAuthentication = null )
     {
         Family = family;
         Scheme = scheme;
@@ -23,6 +26,8 @@ public sealed class PendingRemoteLogin
         RememberMe = rememberMe;
         UserData = userData;
         SchemeData = schemeData;
+        BindingSessionKey = bindingSessionKey;
+        BindingAuthentication = bindingAuthentication;
     }
 
     internal IAuthCenterRemoteScheme Family { get; }
@@ -56,4 +61,16 @@ public sealed class PendingRemoteLogin
     /// Gets the private data of the family (see <see cref="RemoteLoginStart.SchemeData"/>).
     /// </summary>
     public object? SchemeData { get; }
+
+    /// <summary>
+    /// Gets the key of the session of the actor that binds the identity to its account (see
+    /// <see cref="CK.IO.Authentication.IStartLoginCommand.BindToCurrentActor"/>). Null for a login.
+    /// </summary>
+    public string? BindingSessionKey { get; }
+
+    /// <summary>
+    /// Gets the authentication of the actor that binds the identity to its account, when the binding started (Critical
+    /// level, not impersonated). Null for a login.
+    /// </summary>
+    public AuthenticationInfo? BindingAuthentication { get; }
 }

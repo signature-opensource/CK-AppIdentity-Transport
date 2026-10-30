@@ -149,14 +149,28 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
 
     /// <summary>
     /// Starts a remote login: a pending login (one use, its correlation hash, its user data) and the provider URL.
+    /// A binding (<see cref="IStartLoginCommand.BindToCurrentActor"/>) requires the presented session to be at the
+    /// Critical level and not impersonated: the pending login carries this session and its authentication.
     /// </summary>
     [CommandHandler]
-    public async Task<RedirectedUrl> HandleAsync( IActivityMonitor monitor, IStartRemoteLoginOperationCommand op, CurrentLocalParty localParty )
+    public async Task<RedirectedUrl> HandleAsync( IActivityMonitor monitor,
+                                                  IStartRemoteLoginOperationCommand op,
+                                                  CurrentLocalParty localParty,
+                                                  IServiceProvider services,
+                                                  AuthenticationInfo authentication )
     {
         // The validator has checked the scheme and the callback.
         var login = op.Login!;
         var center = localParty.LocalParty.GetRequiredFeature<LocalAuthCenter>();
         var family = (IAuthCenterRemoteScheme)center.FindSchemeFamily( login.Scheme )!;
+        string? bindingSessionKey = null;
+        if( login.BindToCurrentActor )
+        {
+            var (session, error, _) = await CreateSessionService( services, new OperationSessionEndpoint( op ) ).GetCriticalSessionAsync( monitor )
+                                                                                                                .ConfigureAwait( false );
+            if( session == null ) Throw.CKException( error! );
+            bindingSessionKey = session.SessionKey;
+        }
         var pendings = center.PendingRemoteLogins;
         if( !pendings.HasRoom( DateTime.UtcNow ) )
         {
@@ -169,7 +183,15 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
         var userData = login.UserData.Count == 0
                         ? ImmutableDictionary<string, string?>.Empty
                         : login.UserData.ToImmutableDictionary( kv => kv.Key, kv => (string?)kv.Value );
-        var pending = new PendingRemoteLogin( family, login.Scheme, op.CallbackUrl, op.CorrelationHash, login.RememberMe, userData, start.SchemeData );
+        var pending = new PendingRemoteLogin( family,
+                                              login.Scheme,
+                                              op.CallbackUrl,
+                                              op.CorrelationHash,
+                                              login.RememberMe,
+                                              userData,
+                                              start.SchemeData,
+                                              bindingSessionKey,
+                                              bindingSessionKey != null ? authentication : null );
         if( !pendings.TryAdd( state, pending, DateTime.UtcNow ) )
         {
             Throw.CKException( "Too many logins in progress. Please retry later." );
@@ -180,6 +202,8 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
     /// <summary>
     /// Completes a remote login: the pending login is consumed (one use), its expiry and its correlation with the caller
     /// that started it are checked, its family completes it and the session is opened with the user data of its start.
+    /// A binding (<see cref="IStartLoginCommand.BindToCurrentActor"/>) binds the identity to the actor of the session that
+    /// started it, through the <see cref="IAutoBindingAccountService"/>: its successful result issues no session.
     /// </summary>
     [CommandHandler]
     public async Task<ISessionOperationResult> HandleAsync( IActivityMonitor monitor,
@@ -228,6 +252,10 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             {
                 return AuthCenterResults.Failure( monitor, command, completion.Error ?? "Login failed.", completion.ErrorId ?? "Authentication.RemoteLoginFailed" );
             }
+            if( pending.BindingSessionKey != null )
+            {
+                return await BindAsync( monitor, command, center, pending, provider, completion.Payload, services, pocos ).ConfigureAwait( false );
+            }
             return await CreateIssuer( services, endpoint ).OpenSessionAsync( monitor,
                                                                               command,
                                                                               pending.Scheme,
@@ -236,6 +264,82 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                                                                               pending.UserData,
                                                                               completion.AuthenticationTime )
                                                            .ConfigureAwait( false );
+        }
+    }
+
+    // Binds the identity of a remote login to the actor that started it (IStartLoginCommand.BindToCurrentActor). The
+    // session that started the binding must still be alive and not impersonated: the callback doesn't carry the session
+    // cookies, the correlation (checked by the caller) proves the same browser. The Critical level was checked at the
+    // start (the pending login lives at most PendingRemoteLoginLifetime). An identity already bound to the actor is
+    // accepted, one bound to another actor is refused; no account is created and no session is issued.
+    static async Task<ISessionResult> BindAsync( IActivityMonitor monitor,
+                                                 ICrisPoco command,
+                                                 LocalAuthCenter center,
+                                                 PendingRemoteLogin pending,
+                                                 ILoginProvider provider,
+                                                 object payload,
+                                                 IServiceProvider services,
+                                                 PocoDirectory pocos )
+    {
+        var auth = pending.BindingAuthentication!;
+        var actorId = auth.UnsafeActualActor.ActorId;
+        var session = AuthCenterSession.TryParseSessionKey( pending.BindingSessionKey, out var actualActorId, out var sessionId )
+                        ? await center.Sessions.TryReadAsync( monitor, actualActorId, sessionId ).ConfigureAwait( false )
+                        : null;
+        if( session == null
+            || session.Expires <= DateTime.UtcNow
+            || session.ActualActorId != actorId
+            || session.ActorId != actorId )
+        {
+            return AuthCenterResults.Failure( monitor, command, "The session that started the binding has ended.", "Authentication.BindingSessionEnded" );
+        }
+        try
+        {
+            var r = await provider.LoginAsync( monitor, pending.Scheme, payload, actualLogin: false ).ConfigureAwait( false );
+            if( r.IsSuccess )
+            {
+                if( r.Actor!.ActorId != actorId )
+                {
+                    monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"User #{actorId} cannot bind a '{pending.Scheme}' identity that is bound to another user." );
+                    return AuthCenterResults.Failure( monitor, command, "This identity is already used by another account.", "Authentication.IdentityBoundToAnotherUser" );
+                }
+                return Bound( pocos, "This identity is already bound to your account.", "Authentication.IdentityAlreadyBound" );
+            }
+            if( !r.IsUnregisteredUser )
+            {
+                return AuthCenterResults.Failure( monitor, command, r.FailureReason ?? "Login failed.", "Authentication.LoginFailed" );
+            }
+            var binder = services.GetService<IAutoBindingAccountService>();
+            if( binder == null )
+            {
+                return AuthCenterResults.Failure( monitor, command, "This application doesn't bind identities.", "Authentication.BindingNotAvailable" );
+            }
+            var context = new LoginContext( pending.Scheme, payload, auth, pending.UserData );
+            var b = await binder.BindAccountAsync( monitor, context ).ConfigureAwait( false );
+            if( context.HasError )
+            {
+                return AuthCenterResults.Failure( monitor, command, context.ErrorText ?? context.ErrorId!, context.ErrorId! );
+            }
+            if( b == null || !b.IsSuccess || b.Actor!.ActorId != actorId )
+            {
+                return AuthCenterResults.Failure( monitor, command, b?.FailureReason ?? "The identity cannot be bound.", "Authentication.BindingFailed" );
+            }
+        }
+        catch( Exception ex )
+        {
+            monitor.Error( $"While binding a '{pending.Scheme}' identity to user #{actorId}.", ex );
+            return AuthCenterResults.Failure( monitor, command, "The identity cannot be bound.", "Authentication.BindingFailed" );
+        }
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"User #{actorId} bound a '{pending.Scheme}' identity." );
+        return Bound( pocos, "The identity is bound to your account.", "Authentication.IdentityBound" );
+
+        static ISessionResult Bound( PocoDirectory pocos, string text, string resName )
+        {
+            return pocos.Create<ISessionResult>( r =>
+            {
+                r.Success = true;
+                r.UserMessages.Add( UserMessage.Info( NormalizedCultureInfo.CodeDefault, text, resName ) );
+            } );
         }
     }
 
