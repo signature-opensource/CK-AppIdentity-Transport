@@ -190,7 +190,7 @@ public class RemoteAuthCenterTests
         // The remote's AuthCenter is its remote "$Listener".
         var remote = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
         {
-            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Local:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:0:AllowFeatures"] = "AuthCenter";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, RemoteServices, [.. _common, .. _remoteTypes,
@@ -213,9 +213,9 @@ public class RemoteAuthCenterTests
                                     : Type.EmptyTypes)];
         var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
-            if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter";
+            if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter,AuthCenterRemote";
             // A settings section designates the local party as its own AuthCenter, like "true".
             if( passkeys )
             {

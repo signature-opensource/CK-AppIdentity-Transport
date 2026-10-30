@@ -2,15 +2,15 @@
 
 The Remote side of the [AuthCenter feature](../CK.AppIdentity.Cris.AuthCenter/README.md): **this application is a remote**
 of an Authentication Center. Its [`RemoteAuthCenterFeatureDriver`](RemoteAuthCenterFeatureDriver.cs) adds a
-[`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that allows the "AuthCenter" feature (in its `"Local"`, or
-in a `"Defaults"` above it): its Authentication Center is **the** remote that allows the feature (more than one is a
+[`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that allows `"AuthCenterRemote"` (in its `"Local"`, or in
+a `"Defaults"` above it): its Authentication Center is **the** remote that allows `"AuthCenter"` (more than one is a
 configuration error). An application has one role: an Authentication Center references
 CK.AppIdentity.Cris.AuthCenter.Local.
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Front",
-  "Local": { "AllowFeatures": "AuthCenter" },
+  "Local": { "AllowFeatures": "AuthCenterRemote" },        // The application is a remote of an Authentication Center.
   "Parties": [
     { "PartyName": "Center", "AllowFeatures": "AuthCenter" },   // The Authentication Center.
     { "PartyName": "Box" }

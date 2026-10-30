@@ -30,7 +30,6 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         : base( s, AuthCenterFeatureDriver.ConfigurationKey, isAllowedByDefault: false )
     {
         _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
-        authCenter.SetSide( isLocal: true );
     }
 
     /// <inheritdoc />

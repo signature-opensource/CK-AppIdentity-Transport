@@ -3,15 +3,16 @@
 The Local side of the [AuthCenter feature](../CK.AppIdentity.Cris.AuthCenter/README.md): **this application is the
 Authentication Center** of its local parties (the root and its tenant domains). Its
 [`LocalAuthCenterFeatureDriver`](LocalAuthCenterFeatureDriver.cs) adds a [`LocalAuthCenter`](LocalAuthCenter.cs) to every
-local party that allows the "AuthCenter" feature (in its `"Local"`, or in a `"Defaults"` above it): this local party is
-its own Authentication Center, and its remotes that allow the feature are its remotes. An application has one role: a
+local party that allows `"AuthCenter"` (in its `"Local"`, or in a `"Defaults"` above it): this local party is its own
+Authentication Center, and its remotes that allow `"AuthCenterRemote"` are its remotes. An application has one role: a
 remote of an Authentication Center references CK.AppIdentity.Cris.AuthCenter.Remote.
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Center",
-  "Defaults": { "AllowFeatures": "AuthCenter" },            // The application and all its remotes.
+  "Defaults": { "AllowFeatures": "AuthCenterRemote" },      // All its remotes.
   "Local": {
+    "AllowFeatures": "AuthCenter",                          // The application is the Authentication Center.
     "AuthCenter": { "TokenLifetime": "00:05:00" }           // The settings (below).
   },
   "Parties": [ { "PartyName": "Front" } ]
@@ -165,8 +166,8 @@ Its remotes (CK.AppIdentity.Cris.AuthCenter.Remote) send it the operations of th
 handles, over the Cris channel. The identity of their users is established by
 [CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md), with what this package provides:
 
-- **The caller party policy** ([`AuthCenterCallerPartyService`](AuthCenterCallerParties.cs)): its remotes that have its
-  "AuthCenter" feature may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
+- **The caller party policy** ([`AuthCenterCallerPartyService`](AuthCenterCallerParties.cs)): its remotes (that have its
+  "AuthCenter" feature: they allow `"AuthCenterRemote"`) may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
   command included); any other caller party is refused.
 - **The user's proof** ([`AuthCenterProofVerifier`](AuthCenterCallerParties.cs)): a token of this Authentication Center,
   presented with the binding secret of its session, whose session is alive and is still the token's one (same binding,

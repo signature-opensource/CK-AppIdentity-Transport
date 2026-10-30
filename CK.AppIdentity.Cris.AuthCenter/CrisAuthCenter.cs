@@ -8,7 +8,8 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
 /// The <see cref="ICrisAuthCenter"/> feature. A single instance is shared by a <see cref="ILocalParty"/> and
-/// all its <see cref="ILocalParty.Remotes"/> that allow the "AuthCenter" feature.
+/// all its <see cref="ILocalParty.Remotes"/> that have the "AuthCenter" feature: its remotes that allow "AuthCenterRemote"
+/// when it is the Authentication Center, the remote that allows "AuthCenter" when it is a remote of it.
 /// <para>
 /// This is the part shared by the two sides: an AuthCenter application (CK.AppIdentity.Cris.AuthCenter.Local) adds a
 /// <c>LocalAuthCenter</c> feature to its local parties, a remote of it (CK.AppIdentity.Cris.AuthCenter.Remote) adds a

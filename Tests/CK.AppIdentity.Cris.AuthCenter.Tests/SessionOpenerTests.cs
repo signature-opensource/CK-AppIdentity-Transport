@@ -94,14 +94,14 @@ public class SessionOpenerTests
     [Test]
     public async Task an_AuthCenter_application_is_its_own_AuthCenter_Async()
     {
-        // An application has one role: with CK.AppIdentity.Cris.AuthCenter.Local, a local party that allows the feature is
-        // its own AuthCenter, and a remote that allows it is one of its remotes (never its AuthCenter).
+        // An application has one role: with CK.AppIdentity.Cris.AuthCenter.Local, a local party that allows "AuthCenter" is
+        // its own AuthCenter, and a remote that allows "AuthCenterRemote" is one of its remotes (never its AuthCenter).
         await using var app = await AuthCenterApp.StartAsync( c =>
         {
             c["FullName"] = "D/$App";
             c["Local:AllowFeatures"] = "AuthCenter";
             c["Parties:0:PartyName"] = "Front";
-            c["Parties:0:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
         } );
         app.Center.AuthCenter.ShouldBeSameAs( app.Identity );
         app.Identity.Remotes.Single().GetFeature<CrisAuthCenter>().ShouldBeSameAs( app.Center );

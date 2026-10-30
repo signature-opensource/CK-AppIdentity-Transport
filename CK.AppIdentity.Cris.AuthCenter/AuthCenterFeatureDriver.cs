@@ -7,22 +7,24 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Cris.AuthCenter;
 
 /// <summary>
-/// Manages the opt-in "AuthCenter" feature: "AllowFeatures" must contain "AuthCenter" (in the "Local" section of a local
-/// party, on a remote, or in a "Defaults" that applies to them).
+/// Manages the opt-in "AuthCenter" feature. The "AllowFeatures" (in the "Local" section of a local party, on a remote, or
+/// in a "Defaults" that applies to them) name what a party is: "AuthCenter" on the party that is the Authentication Center,
+/// "AuthCenterRemote" on the parties that are its remotes.
 /// <para>
 /// The Authentication Center of a <see cref="ILocalParty"/> is given by the role of the application (it references
 /// CK.AppIdentity.Cris.AuthCenter.Local or CK.AppIdentity.Cris.AuthCenter.Remote) and by the feature:
 /// <list type="bullet">
 ///   <item>
-///   <b>Local side</b> (this application is an Authentication Center): a local party that allows the feature <b>is</b> its
-///   Authentication Center. Its remotes that allow the feature are its remotes: they share its <see cref="CrisAuthCenter"/>.
+///   <b>Local side</b> (this application is an Authentication Center): a local party that allows "AuthCenter" <b>is</b> its
+///   Authentication Center. Its remotes that allow "AuthCenterRemote" are its remotes: they share its <see cref="CrisAuthCenter"/>.
 ///   </item>
 ///   <item>
-///   <b>Remote side</b> (this application is a remote of an Authentication Center): a local party that allows the feature
-///   uses <b>the</b> remote that allows it: this remote is its Authentication Center. More than one remote that allows the
-///   feature is a configuration error (a "Defaults" that allows the feature applies to every remote below it).
+///   <b>Remote side</b> (this application is a remote of an Authentication Center): a local party that allows "AuthCenterRemote"
+///   uses <b>the</b> remote that allows "AuthCenter": this remote is its Authentication Center. More than one remote that
+///   allows "AuthCenter" is a configuration error (a "Defaults" that allows it applies to every remote below it).
 ///   </item>
 /// </list>
+/// A party that allows only the name of the other role (the configuration of the other role) is a configuration error.
 /// The local AuthCenter's settings are the "AuthCenter" section of its "Local" (see <c>AuthCenterOptions</c>). There is no
 /// designation: an "AuthCenter" key on a remote, or an "AuthCenter" value that is not a section in a "Local" (like
 /// <c>true</c>), is a configuration error.
@@ -32,7 +34,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// <list type="bullet">
 ///   <item>
 ///   The Authentication Center is defined with its local party: a remote added later (<see cref="ILocalParty.AddRemoteAsync"/>)
-///   cannot be the Authentication Center (on the Local side, it receives the existing feature when it allows it).
+///   cannot be the Authentication Center (on the Local side, it receives the existing feature when it allows "AuthCenterRemote").
 ///   </item>
 ///   <item>
 ///   A remote Authentication Center that is destroyed leaves its local party without authentication: the feature
@@ -49,8 +51,6 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// </summary>
 public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
-    bool? _isLocalSide;
-
     /// <summary>
     /// The feature name and the name of the settings section of a local Authentication Center (in its "Local"): "AuthCenter".
     /// </summary>
@@ -67,9 +67,6 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         : base( s, isAllowedByDefault: false )
     {
     }
-
-    // Called by the constructor of the side driver: the role of the application.
-    internal void SetSide( bool isLocal ) => _isLocalSide = isLocal;
 
     /// <inheritdoc />
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
@@ -94,7 +91,7 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         if( IsAllowedFeature( remote ) )
         {
             var f = remote.Owner.GetFeature<CrisAuthCenter>();
-            if( _isLocalSide == true )
+            if( IsLocalSide == true )
             {
                 if( f != null ) remote.AddFeature( f );
             }
@@ -105,7 +102,7 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
             }
             else
             {
-                context.Monitor.Warn( $"The '{FeatureName}' feature is allowed for the remote '{remote}' but not for '{remote.Owner}' (in its \"Local\"): it is ignored." );
+                context.Monitor.Warn( $"The remote '{remote}' allows the '{GetFeatureName( remote )}' feature but '{remote.Owner}' doesn't allow '{GetFeatureName( remote.Owner )}' (in its \"Local\"): it is ignored." );
             }
         }
         return Task.FromResult( true );
@@ -141,17 +138,17 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         {
             if( allowingRemotes.Count > 0 )
             {
-                monitor.Warn( $"The '{FeatureName}' feature is allowed for the remotes '{allowingRemotes.Select( r => r.ToString() ).Concatenate( "', '" )}' but not for '{local}' (in its \"Local\"): '{local}' has no authentication." );
+                monitor.Warn( $"The remotes '{allowingRemotes.Select( r => r.ToString() ).Concatenate( "', '" )}' allow the '{GetFeatureName( allowingRemotes[0] )}' feature but '{local}' doesn't allow '{GetFeatureName( local )}' (in its \"Local\"): '{local}' has no authentication." );
             }
             return true;
         }
-        if( _isLocalSide == null )
+        if( IsLocalSide == null )
         {
-            monitor.Error( $"The '{FeatureName}' feature is allowed for '{local}' but the application has no role: it must reference CK.AppIdentity.Cris.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.Cris.AuthCenter.Remote (it is a remote of an AuthCenter)." );
+            monitor.Error( $"'{local}' allows the '{FeatureName}' feature but the application has no role: it must reference CK.AppIdentity.Cris.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.Cris.AuthCenter.Remote (it is a remote of an AuthCenter)." );
             return false;
         }
         IParty authCenter;
-        if( _isLocalSide.Value )
+        if( IsLocalSide.Value )
         {
             authCenter = local;
         }
@@ -159,12 +156,12 @@ public sealed class AuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
         {
             if( allowingRemotes.Count == 0 )
             {
-                monitor.Warn( $"The '{FeatureName}' feature is allowed for '{local}' but for none of its remotes: '{local}' has no AuthCenter, it has no authentication." );
+                monitor.Warn( $"'{local}' allows the '{GetFeatureName( local )}' feature but none of its remotes allows '{FeatureName}': '{local}' has no AuthCenter, it has no authentication." );
                 return true;
             }
             if( allowingRemotes.Count > 1 )
             {
-                monitor.Error( $"'{local}' can have only one AuthCenter but the '{FeatureName}' feature is allowed for the remotes '{allowingRemotes.Select( r => r.ToString() ).Concatenate( "', '" )}'. "
+                monitor.Error( $"'{local}' can have only one AuthCenter but the remotes '{allowingRemotes.Select( r => r.ToString() ).Concatenate( "', '" )}' allow the '{FeatureName}' feature. "
                                + $"Allow it only for the AuthCenter remote (a \"Defaults\" that allows it applies to every remote below it)." );
                 return false;
             }

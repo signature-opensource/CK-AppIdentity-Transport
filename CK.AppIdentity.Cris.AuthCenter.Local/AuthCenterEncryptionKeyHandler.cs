@@ -39,7 +39,7 @@ public sealed class AuthCenterEncryptionKeyHandler : ISingletonAutoService
 
     /// <summary>
     /// Gets the local Authentication Center of a remote: the caller is a remote of a local party that is its own
-    /// Authentication Center, and it allows the feature (it then shares its <see cref="CrisAuthCenter"/>).
+    /// Authentication Center, and it allows "AuthCenterRemote" (it then shares its <see cref="CrisAuthCenter"/>).
     /// </summary>
     /// <param name="caller">The remote.</param>
     /// <returns>The local Authentication Center or null.</returns>
