@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth.0.ci.9" />
+    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup>
