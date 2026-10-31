@@ -3,10 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth.0.ci.15" />
+    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth.0.ci.17" />
     <!-- KeyManagementDataProtection registers the DataProtection (keyed on the identity): the hosts don't. -->
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.14" />
-    <PackageReference Include="CK.StObj.Model" Version="36.0.0-0.cris-auth.0.ci.19" />
+    <PackageReference Include="CK.StObj.Model" Version="36.0.0-0.cris-auth.0.ci.21" />
   </ItemGroup>
   <ItemGroup>
     <!-- The flood tests turn off the nonce journal's disk sync (RemoteNonceCache.FlushJournalToDisk). -->

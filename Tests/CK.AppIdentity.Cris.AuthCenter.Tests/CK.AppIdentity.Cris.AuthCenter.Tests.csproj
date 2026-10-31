@@ -4,12 +4,12 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.0.ci.77" />
-    <PackageReference Include="CK.Cris.Authentication.Basic" Version="3.0.0-0.cris-auth.0.ci.77" />
-    <PackageReference Include="CK.Cris.Authentication.Weak" Version="3.0.0-0.cris-auth.0.ci.77" />
-    <PackageReference Include="CK.Cris.Authentication.Passkey" Version="3.0.0-0.cris-auth.0.ci.77" />
-    <PackageReference Include="CK.Testing.TypeScriptEngine" Version="3.0.0-0.cris-auth.0.ci.20" />
-    <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.19" />
+    <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.0.ci.79" />
+    <PackageReference Include="CK.Cris.Authentication.Basic" Version="3.0.0-0.cris-auth.0.ci.79" />
+    <PackageReference Include="CK.Cris.Authentication.Weak" Version="3.0.0-0.cris-auth.0.ci.79" />
+    <PackageReference Include="CK.Cris.Authentication.Passkey" Version="3.0.0-0.cris-auth.0.ci.79" />
+    <PackageReference Include="CK.Testing.TypeScriptEngine" Version="3.0.0-0.cris-auth.0.ci.31" />
+    <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.21" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
     <PackageReference Include="CK.Testing.NUnit" Version="18.0.0-0.cris-auth" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
