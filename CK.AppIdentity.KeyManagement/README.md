@@ -143,11 +143,12 @@ layer reports these statements from its handshakes.
 the key ring, not against a compromised host, and a warning says so at first use.
 
 The package registers the DataProtection ([`KeyManagementDataProtection`](KeyManagementDataProtection.cs)): a host
-doesn't call `AddDataProtection()`. Its application name, the discriminator of the key ring, is the full name of the
+doesn't call `DataProtectionServiceCollectionExtensions.AddDataProtection()`. Its application name, the discriminator of the key ring, is the full name of the
 application identity (`Domain/$Party/#Environment`) instead of the content root path, so the keys follow the identity,
 not the folder of the application: a moved or redeployed application still opens them. A host that sets its own
-application name (`SetApplicationName`) keeps it. Where the key ring is persisted and how it is protected
-(`PersistKeysTo...`, `ProtectKeysWith...`) remains the host's deployment choice: by default, it is per user and per
+application name (`DataProtectionBuilderExtensions.SetApplicationName`) keeps it. Where the key ring is persisted and
+how it is protected (`DataProtectionBuilderExtensions.PersistKeysToFileSystem`,
+`DataProtectionBuilderExtensions.ProtectKeysWithCertificate`, etc.) remains the host's deployment choice: by default, it is per user and per
 machine.
 
 Another store replaces it by taking the `DefaultCoreKeyStore` as a constructor parameter (and may fall back to it). For a
