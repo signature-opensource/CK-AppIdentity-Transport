@@ -68,7 +68,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                     if( delay > 0 )
                     {
                         if( !_offlineDecision ) NextCheckDelay = delay;
-                        else monitor.Debug( $"Forgetting the retry in {delay} seconds since '{_remote.Party}' is offline." );
+                        else monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Forgetting the retry in {delay} seconds since '{_remote.Party}' is offline. Give up." );
                     }
                     // Else (delay is 0), we are done, let this BackTask be reset.
                 }
@@ -108,6 +108,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         // On timeout the delay is the same as for an unexpected error.
                     }
                     if( !_offlineDecision ) NextCheckDelay = retryDelay;
+                    else monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Forgetting the retry since '{_remote.Party}' is offline. Give up." );
                 }
                 // Forget the completed result.
                 _result = null;
@@ -149,6 +150,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
         {
             // Delayed start: check that the remote is alive before starting.
             if( !_remote.IsOff ) StartTryConnect();
+            else monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Remote '{_remote.Party}' is off line ({_remote.SwitchOffMessage}). Give up." );
             return;
         }
     }
@@ -168,7 +170,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
         if( offline )
         {
             _offlineDecision = true;
-            monitor.Info( $"OutgoingConnectionBackTask #{GetHashCode()}: Remote '{_remote.Party}' is off line. Reseting in 1 second." );
+            monitor.Warn( $"OutgoingConnectionBackTask #{GetHashCode()}: Remote '{_remote.Party}' is off line ({_remote.SwitchOffMessage}). Reseting in 1 second." );
         }
         // We signal the cancelation but wait one tick to handle it.
         _cancelRequested = true;
@@ -482,6 +484,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             }
                         }
                         if( retryDelay != 0 ) transportManager.Logger.Trace( $"Retrying in {retryDelay} seconds." );
+                        else transportManager.Logger.Warn( $"The remote '{remote.Party}' answered that it is switched off for good ({offMessage}): " +
+                                                           $"it is switched off here too. Give up." );
                         return retryDelay;
                     }
                 case ZeroProtocol.DNegoDowngradeProtocol:

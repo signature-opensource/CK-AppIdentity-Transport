@@ -171,6 +171,10 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         var offMessage = remote.SwitchOffMessage;
         if( offMessage != null )
         {
+            // Warning: with an ExpectedAvailableTime of UtcMaxValue, the remote stops connecting for good.
+            transportManager.Logger.Warn( $"Incoming call from remote '{remote.Party.FullName}' while it is switched off here ({offMessage}" +
+                                          $"{(offMessage is GoodbyeMessage.SwitchedOff s ? $" ExpectedAvailableTime: {s.ExpectedAvailableTime?.ToString( "o" ) ?? "none"}." : "")}): " +
+                                          $"sending OffRemoteMessage and closing." );
             await ZeroProtocol.SendOffRemoteMessageAsync( incoming, initialMessage.Nonce, initialMessage.ClockOffset, offMessage ).ConfigureAwait( false );
             return false;
         }

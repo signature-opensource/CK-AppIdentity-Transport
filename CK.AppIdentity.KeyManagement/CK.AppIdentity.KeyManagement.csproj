@@ -4,7 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.cris-auth.0.ci.13" />
-    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.14" />
+    <!-- KeyManagementDataProtection registers the DataProtection (keyed on the identity): the hosts don't. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.14" />
+    <PackageReference Include="CK.StObj.Model" Version="36.0.0-0.cris-auth.0.ci.14" />
   </ItemGroup>
   <ItemGroup>
     <!-- The flood tests turn off the nonce journal's disk sync (RemoteNonceCache.FlushJournalToDisk). -->

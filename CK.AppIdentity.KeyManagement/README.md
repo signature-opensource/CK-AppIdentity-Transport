@@ -142,6 +142,14 @@ layer reports these statements from its handshakes.
 `LocalFileStore`), its PKCS#8 content protected by DataProtection. This protects against a key file that leaks without
 the key ring, not against a compromised host, and a warning says so at first use.
 
+The package registers the DataProtection ([`KeyManagementDataProtection`](KeyManagementDataProtection.cs)): a host
+doesn't call `AddDataProtection()`. Its application name, the discriminator of the key ring, is the full name of the
+application identity (`Domain/$Party/#Environment`) instead of the content root path, so the keys follow the identity,
+not the folder of the application: a moved or redeployed application still opens them. A host that sets its own
+application name (`SetApplicationName`) keeps it. Where the key ring is persisted and how it is protected
+(`PersistKeysTo...`, `ProtectKeysWith...`) remains the host's deployment choice: by default, it is per user and per
+machine.
+
 Another store replaces it by taking the `DefaultCoreKeyStore` as a constructor parameter (and may fall back to it). For a
 store built on this interface that keeps the keys in hardware, see
 [CK.AppIdentity.KeyManagement.Cng](../CK.AppIdentity.KeyManagement.Cng/README.md).
@@ -171,4 +179,5 @@ Out-of-range values are clamped (or replaced by the default) with a warning.
 
 - [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md): the
   parties, their features and their file stores.
-- Microsoft.AspNetCore.DataProtection.Abstractions.
+- Microsoft.AspNetCore.DataProtection.
+- CK.StObj.Model: the DataProtection registration.
