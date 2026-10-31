@@ -1,5 +1,6 @@
 using CK.Core;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CK.AppIdentity.KeyManagement;
@@ -21,7 +22,17 @@ public sealed class KeyManagementDataProtection : IRealObject
     void ConfigureServices( StObjContextRoot.ServiceRegister services )
     {
         services.Services.AddDataProtection();
-        services.Services.AddOptions<DataProtectionOptions>()
-                         .Configure<ApplicationIdentityServiceConfiguration>( ( o, c ) => o.ApplicationDiscriminator ??= c.FullName.Path );
+        // The default application name is read from the IApplicationDiscriminator (the content root by default):
+        // replacing it, rather than setting the option, lets an explicit SetApplicationName win.
+        services.Services.AddSingleton<IApplicationDiscriminator, IdentityDiscriminator>();
+    }
+
+    sealed class IdentityDiscriminator : IApplicationDiscriminator
+    {
+        readonly ApplicationIdentityServiceConfiguration _configuration;
+
+        public IdentityDiscriminator( ApplicationIdentityServiceConfiguration configuration ) => _configuration = configuration;
+
+        public string? Discriminator => _configuration.FullName.Path;
     }
 }
