@@ -6,9 +6,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.0.ci.82" />
-        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.cris-auth.0.ci.24" />
-        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.24" />
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.0.ci.83" />
+        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.cris-auth.0.ci.25" />
+        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.0.ci.25" />
     </ItemGroup>
 
     <ItemGroup>
