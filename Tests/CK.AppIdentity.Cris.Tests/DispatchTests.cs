@@ -95,11 +95,19 @@ public class DispatchTests
                                       typeof( RawCrisReceiver ),
                                       typeof( CommandTargetPartyValidator )];
 
-    static Task<RunningApplication> StartSenderAsync( Action<MutableConfigurationSection>? configuration = null )
-        => RunningApplication.CreateAsync( TestHelper.Monitor, true, configuration, null, _common );
+    // A sender started before its listener needs a heart beat: it retries its connection.
+    static Task<RunningApplication> StartSenderAsync( bool withHeartBeat )
+        => RunningApplication.CreateAsync( TestHelper.Monitor, true, null, withHeartBeat ? RunningApplication.WithHeartBeat() : null, _common );
 
-    static Task<RunningApplication> StartListenerAsync( Action<MutableConfigurationSection>? configuration = null )
-        => RunningApplication.CreateAsync( TestHelper.Monitor, false, configuration, null, [.. _common, typeof( ListenerSide )] );
+    static Task<RunningApplication> StartListenerAsync()
+        => RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null, [.. _common, typeof( ListenerSide )] );
+
+    // The listener first: the sender connects at once.
+    static Task<RunningApplicationPair> StartPairAsync( Action<MutableConfigurationSection>? senderConfiguration = null,
+                                                        Action<MutableConfigurationSection>? listenerConfiguration = null )
+        => RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                               senderConfiguration, _common,
+                                               listenerConfiguration, [.. _common, typeof( ListenerSide )] );
 
     // Executes a command on the application (in the background: with an execution context), with the ambient services
     // of the application. (Without a hub, the background restores them through a static of the generated code: the
@@ -119,8 +127,8 @@ public class DispatchTests
     [Test]
     public async Task a_command_without_local_handler_executes_on_the_remote_that_accepts_it_Async()
     {
-        await using var sender = await StartSenderAsync();
-        await using var listener = await StartListenerAsync();
+        await using var pair = await StartPairAsync();
+        var (sender, listener) = pair;
 
         var executing = Submit( sender, sender.PocoDirectory.Create<IPingCommand>( c => c.Text = "hi" ) );
         var executed = await executing.ExecutedCommand.WaitAsync( _timeout );
@@ -145,8 +153,8 @@ public class DispatchTests
     public async Task a_party_command_executes_where_its_target_is_Async()
     {
         // The sender has a tenant domain (its party name is its domain name).
-        await using var sender = await StartSenderAsync( c => c["Parties:1:FullName"] = "Tenant/$Tenant" );
-        await using var listener = await StartListenerAsync();
+        await using var pair = await StartPairAsync( c => c["Parties:1:FullName"] = "Tenant/$Tenant" );
+        var (sender, listener) = pair;
         var senderName = sender.ApplicationIdentityService.FullName.Path;
         var listenerName = listener.ApplicationIdentityService.FullName.Path;
         var tenantName = sender.ApplicationIdentityService.TenantDomains.Single().FullName.Path;
@@ -169,17 +177,17 @@ public class DispatchTests
     public async Task an_Internal_command_is_refused_from_a_remote_outside_the_System_Async()
     {
         // The sender is in another domain: outside the System of the listener.
-        await using var sender = await StartSenderAsync( c =>
+        await using var pair = await StartPairAsync( c =>
         {
             c["FullName"] = "Other/$Sender";
             c["Parties:0:PartyName"] = null;
             c["Parties:0:FullName"] = "Test/$Listener";
-        } );
-        await using var listener = await StartListenerAsync( c =>
+        }, c =>
         {
             c["Parties:0:PartyName"] = null;
             c["Parties:0:FullName"] = "Other/$Sender";
         } );
+        var (sender, listener) = pair;
 
         // Public: accepted.
         (await ExecuteAsync( sender, sender.PocoDirectory.Create<IPingCommand>( c => c.Text = "x" ) )).Result.ShouldBe( "pong:x" );
@@ -192,7 +200,7 @@ public class DispatchTests
     [Test]
     public async Task a_dispatch_waits_for_the_first_advertisement_of_the_remotes_Async()
     {
-        await using var sender = await StartSenderAsync();
+        await using var sender = await StartSenderAsync( withHeartBeat: true );
         // The listener doesn't exist yet: the dispatch waits for its advertisement (up to the timeout).
         var executing = Submit( sender, sender.PocoDirectory.Create<IPingCommand>( c => c.Text = "early" ) );
         sender.CrisChannel.AcceptedCommands.ShouldBeNull();

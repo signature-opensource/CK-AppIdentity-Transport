@@ -18,8 +18,8 @@ public class BasicTests
     [Test]
     public async Task basic_sending_and_receiving_Async()
     {
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null );
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor );
+        var (sender, listener) = pair;
 
         // Checks that Listener/Sender are actually different thanks to the handlers.
         sender.Services.GetService<SenderHandler>().ShouldNotBeNull();
@@ -43,8 +43,8 @@ public class BasicTests
     [Test]
     public async Task commands_flow_in_both_directions_Async()
     {
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null );
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor );
+        var (sender, listener) = pair;
 
         var sC = sender.PocoDirectory.Create<ISenderCommand>( c => c.Message = "From sender" );
         (await sender.CrisChannel.SendCommand( TestHelper.Monitor, sC ).WithResult<string>().Result.WaitAsync( _timeout ))
@@ -58,7 +58,8 @@ public class BasicTests
     [Test]
     public async Task a_command_sent_before_the_remote_exists_is_executed_once_connected_Async()
     {
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null );
+        // The sender is started before its listener: its heart beat retries the connection.
+        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, RunningApplication.WithHeartBeat() );
         var sC = sender.PocoDirectory.Create<ISenderCommand>( c => c.Message = "Early" );
         var executing = sender.CrisChannel.SendCommand( TestHelper.Monitor, sC );
         await Task.Delay( 200 );
@@ -71,8 +72,8 @@ public class BasicTests
     [Test]
     public async Task a_command_without_handler_on_the_remote_returns_an_error_Async()
     {
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null );
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor );
+        var (sender, listener) = pair;
 
         // The Sender has no handler for its own ISenderCommand.
         var sC = listener.PocoDirectory.Create<ISenderCommand>( c => c.Message = "Nobody handles this" );
@@ -87,8 +88,10 @@ public class BasicTests
     public async Task the_remote_executes_as_the_authenticated_party_and_anonymous_user_Async()
     {
         // AuthenticationInfo (CK.AuthenticationInfo) is an ambient service of the applications.
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, typeof( AuthenticationInfo ) );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null, typeof( AuthenticationInfo ) );
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: [typeof( AuthenticationInfo )],
+                                                                         listenerTypes: [typeof( AuthenticationInfo )] );
+        var (sender, listener) = pair;
 
         // Nothing in the message can carry a user identity: the only identity established is
         // the one of the remote party itself (authenticated by the transport).

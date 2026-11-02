@@ -104,8 +104,10 @@ public class ReceptionTests
     public async Task the_reception_handler_configures_the_received_commands_from_their_envelope_Async()
     {
         NormalizedCultureInfo.EnsureNormalizedCultureInfo( "fr" );
-        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, [.. _common, typeof( TestContributor )] );
-        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, null, null, [.. _common, typeof( ListenerSide ), typeof( TestReceptionHandler )] );
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: [.. _common, typeof( TestContributor )],
+                                                                         listenerTypes: [.. _common, typeof( ListenerSide ), typeof( TestReceptionHandler )] );
+        var (sender, listener) = pair;
 
         // Dispatched in an envelope: the listener executes it with the culture it carries, for the owner of the remote.
         var where = await Submit( sender, sender.PocoDirectory.Create<IWhereCommand>() ).ExecutedCommand.WaitAsync( _timeout );

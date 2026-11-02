@@ -19,6 +19,23 @@ The `configuration` callback runs after this configuration and `configureService
 anything. A `RunningApplication` exposes its `ApplicationIdentityService`, its `TransportManagerFeature` (`Transport`),
 the `CrisChannel` to the other application, its `PocoDirectory` and `Services`; disposing it disposes everything.
 
+### Start the listener first: `RunningApplication.CreatePairAsync`
+
+Without a heartbeat, a failed connection attempt is **never retried**: the retry delays of the transport are heartbeat
+ticks. So a sender started before its listener races with it. On Windows, its first attempt fails after about
+2 seconds if the listener isn't listening yet, and the sender then never connects: its commands wait until their
+timeout ("no remote ... accepts it"). `RunningApplication.CreatePairAsync` starts the listener and then the sender
+(a `RunningApplicationPair`, that deconstructs into `(sender, listener)` and disposes both):
+
+```csharp
+await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor );
+var (sender, listener) = pair;
+```
+
+A test that needs the sender first, to check what happens before the remote exists, gives the sender a heartbeat
+(100 ms): `RunningApplication.CreateAsync( monitor, true, null, RunningApplication.WithHeartBeat() )`. Its failed attempts
+are then retried until the listener is there.
+
 ## Test commands
 
 | Type | |

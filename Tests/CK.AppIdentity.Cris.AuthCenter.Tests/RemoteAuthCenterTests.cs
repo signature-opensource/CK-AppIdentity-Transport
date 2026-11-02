@@ -188,14 +188,9 @@ public class RemoteAuthCenterTests
                                         Action<MutableConfigurationSection>? oidcSettings = null )
     {
         // The remote's AuthCenter is its remote "$Listener".
-        var remote = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
-        {
-            c["Local:AllowFeatures"] = "AuthCenterRemote";
-            c["Parties:0:AllowFeatures"] = "AuthCenter";
-            c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-        }, RemoteServices, [.. _common, .. _remoteTypes,
-                            .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
-                            .. (passkeys ? [.. _passkeyCommands, typeof( PasskeyHandlers )] : Type.EmptyTypes)] );
+        Type[] remoteTypes = [.. _common, .. _remoteTypes,
+                              .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
+                              .. (passkeys ? [.. _passkeyCommands, typeof( PasskeyHandlers )] : Type.EmptyTypes)];
         Type[] centerTypes = [.. _common, .. _centerTypes,
                               .. (withRegistrar ? [typeof( PartyActorIdsTests.FakePartyActorFeatureDriver )] : Type.EmptyTypes),
                               .. (passkeys
@@ -211,7 +206,13 @@ public class RemoteAuthCenterTests
                                        typeof( Oidc.AuthCenterOidcConfiguration ),
                                        typeof( FakeOidcLoginProvider )]
                                     : Type.EmptyTypes)];
-        var center = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
+        // The AuthCenter (the listener) is started first: the remote connects at once.
+        var (remote, center) = await RunningApplication.CreatePairAsync( TestHelper.Monitor, c =>
+        {
+            c["Local:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
+        }, remoteTypes, c =>
         {
             c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
@@ -223,7 +224,7 @@ public class RemoteAuthCenterTests
                 c["Local:AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
             }
             if( oidcSettings != null ) oidcSettings( c );
-        }, null, centerTypes );
+        }, centerTypes, RemoteServices );
         return new Pair { Remote = remote, Center = center };
     }
 

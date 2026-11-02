@@ -64,7 +64,8 @@ public class PartyActorIdsTests
     // Not RunningApplication.Port (CK.AppIdentity.Cris.Tests may run concurrently) nor the one of the RelayTests.
     const int Port = 37146;
 
-    static Task<RunningApplication> StartRemoteAsync()
+    // A remote started before its AuthCenter needs a heart beat: it retries its connection.
+    static Task<RunningApplication> StartRemoteAsync( bool withHeartBeat = false )
     {
         // The remote's AuthCenter is its remote "$Listener".
         return RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
@@ -72,7 +73,7 @@ public class PartyActorIdsTests
             c["Local:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:0:AllowFeatures"] = "AuthCenter";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-        }, null, [.. _types, typeof( RemoteAuthCenterFeatureDriver )] );
+        }, withHeartBeat ? RunningApplication.WithHeartBeat() : null, [.. _types, typeof( RemoteAuthCenterFeatureDriver )] );
     }
 
     static Task<RunningApplication> StartAuthCenterAsync( bool withRegistrar = true )
@@ -109,7 +110,7 @@ public class PartyActorIdsTests
     public async Task while_the_AuthCenter_is_unreachable_the_ids_are_0_Async()
     {
         RunningApplication? center = null;
-        await using var remote = await StartRemoteAsync();
+        await using var remote = await StartRemoteAsync( withHeartBeat: true );
         try
         {
             var r = RemoteCenter( remote );

@@ -185,4 +185,57 @@ public sealed class RunningApplication : IAsyncDisposable
         return new RunningApplication( services, isSender );
     }
 
+    /// <summary>
+    /// Creates a running "Test/$Listener" and then a running "Test/$Sender" that connects to it.
+    /// <para>
+    /// The listener is started first, so the sender's first connection attempt succeeds. The applications have no heart beat
+    /// (<see cref="SystemClockTester.NoHeartBeat"/>): a failed connection attempt is never retried. A sender started before its
+    /// listener races with it (the attempt fails if the listener isn't listening yet) and may never connect. A test that needs
+    /// the sender first (what happens before the remote exists) gives the sender a heart beat: <see cref="WithHeartBeat"/>.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="senderConfiguration">Optional configurator of the sender (see <see cref="CreateAsync"/>).</param>
+    /// <param name="senderTypes">Types of the sender.</param>
+    /// <param name="listenerConfiguration">Optional configurator of the listener (see <see cref="CreateAsync"/>).</param>
+    /// <param name="listenerTypes">Types of the listener.</param>
+    /// <param name="senderServices">Optional services configuration of the sender.</param>
+    /// <param name="listenerServices">Optional services configuration of the listener.</param>
+    /// <returns>The running pair.</returns>
+    public static async Task<RunningApplicationPair> CreatePairAsync( IActivityMonitor monitor,
+                                                                      Action<MutableConfigurationSection>? senderConfiguration = null,
+                                                                      Type[]? senderTypes = null,
+                                                                      Action<MutableConfigurationSection>? listenerConfiguration = null,
+                                                                      Type[]? listenerTypes = null,
+                                                                      Action<IServiceCollection>? senderServices = null,
+                                                                      Action<IServiceCollection>? listenerServices = null )
+    {
+        var listener = await CreateAsync( monitor, false, listenerConfiguration, listenerServices, listenerTypes ?? [] ).ConfigureAwait( false );
+        try
+        {
+            var sender = await CreateAsync( monitor, true, senderConfiguration, senderServices, senderTypes ?? [] ).ConfigureAwait( false );
+            return new RunningApplicationPair( sender, listener );
+        }
+        catch
+        {
+            await listener.DisposeAsync().ConfigureAwait( false );
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gives an application a heart beat (a 100 ms period): its failed connection attempts are retried. This is required by
+    /// a sender that is started before its listener (see <see cref="CreatePairAsync"/>).
+    /// </summary>
+    /// <param name="configureServices">Optional other services configuration.</param>
+    /// <returns>The services configuration to give to <see cref="CreateAsync"/>.</returns>
+    public static Action<IServiceCollection> WithHeartBeat( Action<IServiceCollection>? configureServices = null )
+    {
+        return services =>
+        {
+            configureServices?.Invoke( services );
+            services.AddSingleton<ApplicationIdentityService.ISystemClock>( new SystemClockTester( 100 ) );
+        };
+    }
+
 }
