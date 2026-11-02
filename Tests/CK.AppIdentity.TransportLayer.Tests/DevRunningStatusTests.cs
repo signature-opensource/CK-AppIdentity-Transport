@@ -16,16 +16,21 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 [TestFixture]
 public class DevRunningStatusTests
 {
-    const string StorePath = "TestStore/DevStore";
+    const string StorePath = "TestStore/#Dev/Store";
 
     static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, CancellationToken cancel )
     {
         var config = new MutableConfigurationSection( "CK-AppIdentity" );
-        // A relative store, resolved against the content root: the "#Dev/Store" of a development solution.
-        config["StoreRootPath"] = StorePath;
         config["Defaults:AutoTrustKey"] = "Once";
         configuration( config );
-        var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, config, basePath: TestHelper.TestProjectFolder ).ShouldNotBeNull();
+        // The "#Dev/Store" of a development solution (a host in Development computes it from its solution).
+        var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor,
+                                                                config,
+                                                                null,
+                                                                null,
+                                                                CoreApplicationIdentity.DefaultEnvironmentName,
+                                                                TestHelper.TestProjectFolder,
+                                                                TestHelper.TestProjectFolder.Combine( StorePath ) ).ShouldNotBeNull();
         var s = await TestHelper.CreateApplicationServiceAsync( c, services =>
         {
             services.AddSingleton<ApplicationIdentityService.ISystemClock>( new SystemClockTester( 50 ) );
