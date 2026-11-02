@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using CK.Monitoring;
 using CK.Testing.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -74,6 +75,26 @@ public class DispatchTests
         public string Handle( IPrivatePingCommand c ) => "private";
     }
 
+    // Endpoint-only (like a login command): executed by the endpoint that receives it, never dispatched.
+    public interface IEndpointOnlyCommand : ICommand<string>, ICommandEndpointOnly
+    {
+    }
+
+    // Dispatched: handled by the senders only.
+    public interface ISendersCommand : ICommand<string>
+    {
+    }
+
+    // The handlers of the two senders of the deployment check test.
+    public sealed class SendersSide : ISingletonAutoService
+    {
+        [CommandHandler]
+        public string Handle( IEndpointOnlyCommand c ) => "endpoint-only";
+
+        [CommandHandler]
+        public string Handle( ISendersCommand c ) => "senders";
+    }
+
     public sealed class BothSides : ISingletonAutoService
     {
         [CommandHandler]
@@ -85,6 +106,8 @@ public class DispatchTests
                                       typeof( IPrivatePingCommand ),
                                       typeof( INobodyCommand ),
                                       typeof( IPartyEchoCommand ),
+                                      typeof( IEndpointOnlyCommand ),
+                                      typeof( ISendersCommand ),
                                       typeof( IPongEvent ),
                                       typeof( IPongImmediateEvent ),
                                       typeof( BothSides ),
@@ -207,5 +230,37 @@ public class DispatchTests
         await using var listener = await StartListenerAsync();
         (await executing.ExecutedCommand.WaitAsync( _timeout )).Result.ShouldBe( "pong:early" );
         sender.CrisChannel.AcceptedCommands.ShouldNotBeNull().ShouldContain( typeof( IPingCommand ).FullName!.Replace( '+', '.' ) );
+    }
+
+    [Test]
+    public async Task the_deployment_check_ignores_the_endpoint_only_commands_that_are_never_dispatched_Async()
+    {
+        using var logs = GrandOutput.Default!.CreateMemoryCollector( 5000 );
+        // The listener has two sender remotes that handle both commands (like the Front and the Admin of a Backend that
+        // receive the login commands): the listener handles none of them.
+        await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
+        {
+            c["Parties:1:PartyName"] = "$Sender2";
+            c["Parties:1:AutoTrustKey"] = "Once";
+        }, null, _common );
+        await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, [.. _common, typeof( SendersSide )] );
+        await using var sender2 = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c => c["FullName"] = "Test/$Sender2", null, [.. _common, typeof( SendersSide )] );
+        foreach( var r in listener.ApplicationIdentityService.Remotes )
+        {
+            (await r.GetRequiredFeature<CrisChannelFeature>().WaitForAcceptedCommandsAsync( _timeout )).ShouldBeTrue();
+        }
+        // The check runs once the second advertisement is recorded: waits for its (real) error.
+        var errors = new System.Collections.Generic.List<string>();
+        for( int i = 0; i < 50 && !errors.Any( e => e.Contains( "ISendersCommand" ) ); ++i )
+        {
+            await Task.Delay( 100 );
+            errors.AddRange( logs.ExtractCurrentTexts().Where( t => t.StartsWith( "Deployment error" ) ) );
+        }
+        await Task.Delay( 200 );
+        errors.AddRange( logs.ExtractCurrentTexts().Where( t => t.StartsWith( "Deployment error" ) ) );
+        // A command that can be dispatched is ambiguous...
+        errors.ShouldContain( e => e.Contains( "ISendersCommand" ) );
+        // ...an endpoint-only one is never dispatched.
+        errors.ShouldNotContain( e => e.Contains( "IEndpointOnlyCommand" ) );
     }
 }

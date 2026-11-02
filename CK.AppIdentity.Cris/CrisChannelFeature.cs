@@ -153,6 +153,8 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         _firstAccepted.TrySetResult();
         monitor.Info( $"'{Party.FullName}' accepts {names.Count} commands from '{Party.Owner.FullName}'." );
         // Singleton commands: one eventual handler in the tenant (the local party), a local handler always wins.
+        // Only the dispatched commands matter (the rule of the executor): a party command is routed by its target, and an
+        // endpoint-only command (a login command, handled by the endpoint that receives it) is never dispatched.
         foreach( var other in Party.Owner.Remotes )
         {
             if( other == Party || other.GetFeature<CrisChannelFeature>()?.AcceptedCommands is not { } o ) continue;
@@ -160,7 +162,8 @@ public sealed partial class CrisChannelFeature : ChannelFeature
             {
                 if( o.Contains( name )
                     && _crisDirectory.CrisPocoModels.FirstOrDefault( m => m.PocoName == name ) is { IsHandled: false } m
-                    && !typeof( ICommandTargetParty ).IsAssignableFrom( m.CommandType ) )
+                    && !typeof( ICommandTargetParty ).IsAssignableFrom( m.CommandType )
+                    && !typeof( ICommandEndpointOnly ).IsAssignableFrom( m.CommandType ) )
                 {
                     monitor.Error( $"Deployment error: command '{name}' is handled by '{Party.FullName}' and '{other.FullName}' for '{Party.Owner.FullName}'. It cannot be dispatched." );
                 }

@@ -61,6 +61,9 @@ the code that executes a command doesn't care whether it runs here or on a remot
 - **A command without local handler** (a singleton command: one eventual handler for the local party, a local handler
   always wins) is sent to the remote of the current local party that accepts it. No remote is "no route"; more than one
   is a deployment error (also logged when the advertisements show it).
+- **An endpoint-only command** (`ICommandEndpointOnly`, like a login command) is never dispatched: it executes on the
+  endpoint that receives it (that may send something else to a remote, like the session operation of a login). Several
+  remotes that accept it are not a deployment error.
 - **A party command** (`ICommandTargetParty`) is routed by its `TargetPartyFullName` before any local execution: the
   current local party executes it here; another local party of the application (the root or a tenant) executes it here,
   inline, as its `CurrentLocalParty` (an independent execution: its routed events are dispatched in that party's scope);
