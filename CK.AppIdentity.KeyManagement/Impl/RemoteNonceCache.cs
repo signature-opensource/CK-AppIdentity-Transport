@@ -2,6 +2,7 @@ using CK.Core;
 using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Linq;
 
 namespace CK.AppIdentity.KeyManagement;
 
@@ -60,7 +61,10 @@ sealed class RemoteNonceCache
     /// anything in the run phase.
     /// </para>
     /// </summary>
-    public const string LocalsFolderName = "-Locals";
+    public const string NonceFolderName = "-Nonces";
+
+    // The former name of the NonceFolderName: Load takes over a cache found there.
+    const string FormerFolderName = "-Locals";
 
     const string FileName = "Nonce.cache";
     const string JournalFileName = "Nonce.journal";
@@ -107,7 +111,7 @@ sealed class RemoteNonceCache
     /// </summary>
     public static NormalizedPath GetFilePath( IRemoteParty remote, ILocalParty local )
         => remote.SharedFileStore.FolderPath
-                 .AppendPart( LocalsFolderName )
+                 .AppendPart( NonceFolderName )
                  .Combine( local.FullName )
                  .AppendPart( FileName );
 
@@ -266,6 +270,7 @@ sealed class RemoteNonceCache
     {
         var store = remote.SharedFileStore;
         var filePath = GetFilePath( remote, local );
+        TakeOverFormerCache( monitor, remote, local, filePath );
         // No remote can be configured above MaxAllowedClockOffset, so an older nonce would be
         // refused on its timestamp before this cache was ever consulted: loading it back would only
         // grow the file across restarts.
@@ -306,6 +311,38 @@ sealed class RemoteNonceCache
         // into the file and removes the journal.
         if( cache.ReplayJournal( monitor, staleBefore ) ) cache._version = 1;
         return cache;
+    }
+
+    // The cache and its journal were in the "-Locals" folder: they are moved, so that renaming the folder
+    // forgets no nonce (a nonce spent before the upgrade would otherwise be replayable within the clock window).
+    static void TakeOverFormerCache( IActivityMonitor monitor, IRemoteParty remote, ILocalParty local, NormalizedPath filePath )
+    {
+        var formerRoot = remote.SharedFileStore.FolderPath.AppendPart( FormerFolderName );
+        var former = formerRoot.Combine( local.FullName );
+        if( !Directory.Exists( former ) ) return;
+        try
+        {
+            var folder = filePath.RemoveLastPart();
+            Directory.CreateDirectory( folder );
+            foreach( var name in (ReadOnlySpan<string>)[FileName, JournalFileName] )
+            {
+                var source = former.AppendPart( name );
+                var target = folder.AppendPart( name );
+                if( File.Exists( source ) && !File.Exists( target ) ) File.Move( source, target );
+            }
+            Directory.Delete( former, recursive: true );
+            // The parent folders (the parts of the local party's full name) that are now empty, "-Locals" included.
+            for( var p = former.RemoveLastPart(); p.Path.Length >= formerRoot.Path.Length; p = p.RemoveLastPart() )
+            {
+                if( Directory.EnumerateFileSystemEntries( p ).Any() ) break;
+                Directory.Delete( p );
+            }
+            monitor.Info( $"The nonce cache of '{local}' for '{remote}' has been moved from '{former}' to '{folder}'." );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to move the nonce cache of '{local}' for '{remote}' from '{former}'.", ex );
+        }
     }
 
     bool ReplayJournal( IActivityMonitor monitor, DateTime staleBefore )

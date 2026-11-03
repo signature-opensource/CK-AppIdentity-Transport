@@ -189,7 +189,7 @@ public class NonceCacheTests
         // files as they were right after the nonce was accepted: the journal alone, no cache file.
         // A torn record (a crash during an append) is added at its end.
         const string local = "NonceCrash";
-        var folder = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${local}A/-Locals/Test/${local}/#Dev" );
+        var folder = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${local}A/-Nonces/Test/${local}/#Dev" );
         var cachePath = folder.AppendPart( "Nonce.cache" );
         var journalPath = folder.AppendPart( "Nonce.journal" );
         var n = Nonce( _systemClock.UtcNow );
@@ -264,12 +264,46 @@ public class NonceCacheTests
         await using var _svc = service;
 
         var expected = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath
-                            .Combine( "#Dev/Test/$NonceScopeA/-Locals/Test/$NonceScope/#Dev/Nonce.cache" );
+                            .Combine( "#Dev/Test/$NonceScopeA/-Nonces/Test/$NonceScope/#Dev/Nonce.cache" );
         a.CheckAndAddNonceValue( TestHelper.Monitor, Nonce( _systemClock.UtcNow ) ).ShouldBeTrue();
         await service.DisposeAsync();
 
         System.IO.File.Exists( expected ).ShouldBeTrue(
             $"The cache must live under the remote's folder, scoped by the local party: '{expected}'." );
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task A_cache_in_the_former_Locals_folder_is_taken_over_Async( CancellationToken token )
+    {
+        // The folder was named "-Locals": a cache found there is moved, so that renaming the folder forgets no nonce.
+        const string local = "NonceFormer";
+        var remoteFolder = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( $"#Dev/Test/${local}A" );
+        var current = remoteFolder.Combine( $"-Nonces/Test/${local}/#Dev/Nonce.cache" );
+        var former = remoteFolder.Combine( $"-Locals/Test/${local}/#Dev/Nonce.cache" );
+        var n = Nonce( _systemClock.UtcNow );
+
+        var (service, a, _) = await TwoRemotesAsync( local, token );
+        a.CheckAndAddNonceValue( TestHelper.Monitor, n ).ShouldBeTrue();
+        await service.DisposeAsync();
+        // The cache is put back where a previous version wrote it.
+        System.IO.Directory.CreateDirectory( former.RemoveLastPart() );
+        System.IO.File.Move( current, former );
+
+        var restarted = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = $"Test/${local}";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Parties:0:PartyName"] = $"${local}A";
+            c["Parties:1:PartyName"] = $"${local}B";
+        }, ConfigureFastClock, token: token );
+        await using( restarted )
+        {
+            var a2 = restarted.AllRemotes.Single( r => r.PartyName == $"${local}A" ).GetRequiredFeature<IRemoteKeys>();
+            a2.CheckAndAddNonceValue( TestHelper.Monitor, n, LogLevel.None ).ShouldBeFalse(
+                "A nonce of the cache in the former folder must still be known." );
+            System.IO.File.Exists( current ).ShouldBeTrue();
+            System.IO.Directory.Exists( remoteFolder.AppendPart( "-Locals" ) ).ShouldBeFalse( "The former folder is removed once empty." );
+        }
     }
 
     [Test, CancelAfter( 60000 )]

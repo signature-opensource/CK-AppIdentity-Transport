@@ -92,7 +92,7 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   presented. This is a trust-on-first-use decision, not a proof. There is deliberately no "always": over an existing pin,
   an unrelated identity is a takeover.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
-  has never been seen from this remote. The cache is per remote and per local party (`-Locals/{local full name}/Nonce.cache`),
+  has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
   every accepted nonce is first journaled to disk (`Nonce.journal`), so a crash forgets nothing. It is bounded by time and,
   as a memory guard, by `IRemoteKeys.MaxNonceCacheEntries` (4096).
 
