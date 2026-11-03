@@ -15,7 +15,7 @@ namespace CK.AppIdentity.Cris.AuthCenter;
 /// This is excluded from the type discovery: an implementation of a <see cref="ScopedContainerConfiguredServiceAttribute"/>
 /// interface is provided by its endpoint, never built by the DI. Being public (it is used by the scheme packages), it would
 /// otherwise be registered as the implementation of <see cref="IAuthenticationSessionEndpoint"/> in the global container
-/// (see .wip/cris-auth/34-engine-ideas.md, the first idea: the engine should check this).
+/// (the engine should check this: an implementation of such an interface should never be an auto service).
 /// </para>
 /// </summary>
 [ExcludedCKType]

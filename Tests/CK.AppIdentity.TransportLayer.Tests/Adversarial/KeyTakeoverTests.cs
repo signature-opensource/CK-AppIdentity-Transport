@@ -17,8 +17,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
 /// A thief holding a party's CURRENT identity key must not be able to move a remote's pin onto a key
-/// of its own. This is the scenario of §1 of <c>.wip/DESIGN-key-pre-rotation.md</c>, and the reason
-/// pre-rotation exists.
+/// of its own: the reason pre-rotation exists (see the README of CK.AppIdentity.KeyManagement).
 /// <para>
 /// Before pre-rotation, a rotation was authorized by the key being rotated away: the pinned key's
 /// signature over a list that named a new key first was all it took (verified 2026-10-06 against the
