@@ -210,6 +210,8 @@ public class RemoteAuthCenterTests
         var (remote, center) = await RunningApplication.CreatePairAsync( TestHelper.Monitor, c =>
         {
             c["Local:AllowFeatures"] = "AuthCenterRemote";
+            // The remote announces its public URL: the AuthCenter derives the accepted passkey origins and OIDC callbacks.
+            c["Local:PublicUrl"] = "https://front.example.com";
             c["Parties:0:AllowFeatures"] = "AuthCenter";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, remoteTypes, c =>
@@ -221,7 +223,6 @@ public class RemoteAuthCenterTests
             if( passkeys )
             {
                 c["Local:AuthCenter:Passkey:RpId"] = "example.com";
-                c["Local:AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
             }
             if( oidcSettings != null ) oidcSettings( c );
         }, centerTypes, RemoteServices );
@@ -380,7 +381,6 @@ public class RemoteAuthCenterTests
             c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
             c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
             c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
-            c["Local:AuthCenter:Oidc:Test:CallbackUrls:0"] = callback;
         } );
         p.Browser.RemoteLoginCallbackUrl = callback;
 

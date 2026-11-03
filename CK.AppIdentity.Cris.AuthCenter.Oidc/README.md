@@ -20,7 +20,6 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
         "ClientSecret": "...",
         "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
         "Scopes": "openid email",                   // "openid" is always included.
-        "CallbackUrls": [ "https://app.example.com/.auth/oidc/callback" ],
         "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
         "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
         "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
@@ -41,7 +40,10 @@ none: the family still hides the "Oidc" provider name in the scheme listing). `A
 `IAuthCenterRemoteScheme` of these schemes: the core of the Authentication Center handles the remote login commands and the
 pending logins, this package runs the protocol.
 
-1. **Start:** the callback of the endpoint must be one of the scheme's `CallbackUrls`. The nonce and the PKCE verifier are
+1. **Start:** the callback of the endpoint must be an https URL (http only on a loopback address) on the origin of the
+   public URL of a party of the AuthCenter: itself or one of its remotes (`PartyOrigins` of
+   [CK.AppIdentity.Cris.AuthCenter.Local](../CK.AppIdentity.Cris.AuthCenter.Local/README.md): derived from what the
+   parties announce, never configured; the redirect URIs registered at the provider stay its configuration). The nonce and the PKCE verifier are
    generated here and kept with the pending login; the result is the authorization URL. A Critical login
    (`IStartLoginCommand.Critical`) adds `prompt=login` and `max_age=0`: the provider must authenticate the user again.
 2. **Completion:** the code is redeemed (client secret + PKCE verifier) at the token endpoint (see the client

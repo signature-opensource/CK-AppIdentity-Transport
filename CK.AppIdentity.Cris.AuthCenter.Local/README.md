@@ -141,7 +141,8 @@ with two operations handled here: the local Authentication Center keeps the **pe
 only runs its protocol.
 
 1. **`IStartRemoteLoginOperationCommand`**: the scheme must belong to a remote family, the endpoint must be able to
-   receive remote logins with a callback that the family allows for the scheme, the `ReturnUrl` must be a relative path.
+   receive remote logins with a callback that the family allows for the scheme and that is on the origin of a party
+   (see below), the `ReturnUrl` must be a relative path.
    The core chooses the state, the family returns the URL and its private data, and the pending login keeps them with the
    scheme, the callback, the hash of the endpoint's correlation secret, `RememberMe` and an immutable copy of the
    `UserData`.
@@ -159,6 +160,12 @@ already bound to the user is accepted, one bound to another user is refused (`Au
 no account is ever created and the successful result issues no session (`Authentication.IdentityBound`).
 
 The `Code` of the callback is `[Sensitive]`: from a remote, it travels encrypted for the Authentication Center.
+
+**The origins of the parties** ([`PartyOrigins`](PartyOrigins.cs)): the URLs that a remote relays (the callback of a
+remote login, the origin of a passkey ceremony) must be on the origin of the public URL of the Authentication Center's
+party or of one of its remotes: their `IParty.Description`, announced by the remotes with their accepted commands (see
+[CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)). They are derived from what the parties state about themselves:
+the Authentication Center configures none of them.
 
 ## The commands from its remotes
 

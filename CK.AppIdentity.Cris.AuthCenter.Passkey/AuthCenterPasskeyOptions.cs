@@ -10,11 +10,10 @@ namespace CK.AppIdentity.Cris.AuthCenter.Passkey;
 /// </summary>
 public sealed class AuthCenterPasskeyOptions
 {
-    AuthCenterPasskeyOptions( string rpId, string rpName, ImmutableArray<string> origins, TimeSpan timeout )
+    AuthCenterPasskeyOptions( string rpId, string rpName, TimeSpan timeout )
     {
         RpId = rpId;
         RpName = rpName;
-        Origins = origins;
         Timeout = timeout;
     }
 
@@ -28,12 +27,6 @@ public sealed class AuthCenterPasskeyOptions
     /// Gets the relying party name shown by the authenticators. Defaults to the <see cref="RpId"/>.
     /// </summary>
     public string RpName { get; }
-
-    /// <summary>
-    /// Gets the accepted origins ("https://app.example.com"): the <see cref="RpId"/> or one of its sub-domains, https
-    /// (http only on a loopback address). A passkey ceremony is accepted only from an endpoint whose origin is one of them.
-    /// </summary>
-    public ImmutableArray<string> Origins { get; }
 
     /// <summary>
     /// Gets the time given to the user to answer the authenticator: the lifetime of a ceremony. Defaults to 5 minutes.
@@ -55,11 +48,20 @@ public sealed class AuthCenterPasskeyOptions
     }
 
     /// <summary>
-    /// Gets whether an origin (normalized or not) is one of the <see cref="Origins"/>.
+    /// Gets whether the origin of a passkey ceremony is accepted: it is the origin of the public URL of the local party
+    /// or of one of its remotes (<see cref="PartyOrigins"/>: derived from what the parties state about themselves, never
+    /// configured), https (http only on a loopback address), on the <see cref="RpId"/> or one of its sub-domains.
     /// </summary>
-    /// <param name="origin">The origin.</param>
+    /// <param name="local">The local party (the AuthCenter).</param>
+    /// <param name="origin">The origin of the endpoint that serves the ceremony.</param>
     /// <returns>True if the origin is accepted.</returns>
-    public bool IsAllowedOrigin( string? origin ) => NormalizeOrigin( origin ) is string o && Origins.Contains( o, StringComparer.Ordinal );
+    public bool IsAllowedOrigin( ILocalParty local, string? origin )
+    {
+        if( NormalizeOrigin( origin ) is not string o ) return false;
+        var host = new Uri( o ).Host;
+        return (host == RpId || host.EndsWith( "." + RpId, StringComparison.Ordinal ))
+               && PartyOrigins.IsPartyUrl( local, o );
+    }
 
     internal static AuthCenterPasskeyOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection section )
     {
@@ -75,36 +77,11 @@ public sealed class AuthCenterPasskeyOptions
             Error( "'RpId' is required: a domain name (\"example.com\" or \"localhost\"), without scheme nor port." );
         }
         var rpName = section["RpName"] ?? rpId;
-        var origins = ImmutableArray.CreateBuilder<string>();
-        var o = section.TryGetSection( "Origins" );
-        var values = o == null
-                        ? []
-                        : o.HasChildren
-                            ? o.GetChildren().Select( c => c.Value ).ToArray()
-                            : (o.Value ?? "").Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries );
-        foreach( var v in values )
-        {
-            var n = NormalizeOrigin( v );
-            if( n == null )
-            {
-                Error( $"origin '{v}' must be an absolute https URL (http only on a loopback address) without path." );
-            }
-            else if( rpId != null )
-            {
-                var host = new Uri( n ).Host;
-                if( host != rpId && !host.EndsWith( "." + rpId, StringComparison.Ordinal ) )
-                {
-                    Error( $"origin '{v}' is not on the RpId '{rpId}' (nor one of its sub-domains)." );
-                }
-                else origins.Add( n );
-            }
-        }
-        if( origins.Count == 0 && success ) Error( "'Origins' is required (the origins of the endpoints that serve the passkey ceremonies)." );
         var timeout = TimeSpan.FromMinutes( 5 );
         if( section["Timeout"] is string t && (!TimeSpan.TryParse( t, out timeout ) || timeout <= TimeSpan.Zero || timeout > TimeSpan.FromMinutes( 10 )) )
         {
             Error( $"'Timeout' = '{t}': a positive time span of at most 10 minutes is expected." );
         }
-        return success ? new AuthCenterPasskeyOptions( rpId!, rpName!, origins.ToImmutable(), timeout ) : null;
+        return success ? new AuthCenterPasskeyOptions( rpId!, rpName!, timeout ) : null;
     }
 }

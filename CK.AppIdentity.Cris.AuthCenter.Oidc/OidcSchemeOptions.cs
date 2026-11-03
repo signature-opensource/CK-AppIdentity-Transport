@@ -25,7 +25,6 @@ public sealed partial class OidcSchemeOptions
                        string clientSecret,
                        string? tokenEndpointAuthMethod,
                        string scopes,
-                       ImmutableArray<string> callbackUrls,
                        bool getClaimsFromUserInfoEndpoint,
                        ImmutableArray<string> excludedClaims,
                        bool allowAccountCreation )
@@ -37,7 +36,6 @@ public sealed partial class OidcSchemeOptions
         ClientSecret = clientSecret;
         TokenEndpointAuthMethod = tokenEndpointAuthMethod;
         Scopes = scopes;
-        CallbackUrls = callbackUrls;
         GetClaimsFromUserInfoEndpoint = getClaimsFromUserInfoEndpoint;
         ExcludedClaims = excludedClaims;
         AllowAccountCreation = allowAccountCreation;
@@ -100,10 +98,16 @@ public sealed partial class OidcSchemeOptions
     public string Scopes { get; }
 
     /// <summary>
-    /// Gets the callback URLs (the redirect URIs registered at the provider) of the endpoints that can start a login
-    /// with this scheme: a login started by an endpoint whose callback is not one of them is refused.
+    /// Gets whether a callback URL (the redirect URI of a login) is well formed: an absolute https URL (http only on a
+    /// loopback address) without query nor fragment. Its origin must also be the one of a party of the AuthCenter
+    /// (<see cref="PartyOrigins"/>): the callback URLs are derived from the public URLs of the parties, never configured.
     /// </summary>
-    public ImmutableArray<string> CallbackUrls { get; }
+    /// <param name="callbackUrl">The callback URL.</param>
+    /// <returns>True if it is well formed.</returns>
+    public static bool IsValidCallbackUrl( string? callbackUrl )
+    {
+        return Uri.TryCreate( callbackUrl, UriKind.Absolute, out var u ) && IsAllowedUri( u ) && u.Query.Length == 0 && u.Fragment.Length == 0;
+    }
 
     /// <summary>
     /// Gets whether the claims are completed by the UserInfo endpoint of the provider, with the access token, after the
@@ -173,15 +177,6 @@ public sealed partial class OidcSchemeOptions
         }
         var scopes = (s["Scopes"] ?? "openid").Split( ' ', StringSplitOptions.RemoveEmptyEntries ).ToList();
         if( !scopes.Contains( "openid" ) ) scopes.Insert( 0, "openid" );
-        var callbacks = ReadStrings( s.TryGetSection( "CallbackUrls" ) );
-        if( callbacks.Count == 0 ) Error( "'CallbackUrls' is required (the redirect URIs registered at the provider)." );
-        foreach( var c in callbacks )
-        {
-            if( !Uri.TryCreate( c, UriKind.Absolute, out var u ) || !IsAllowedUri( u ) || u.Query.Length > 0 || u.Fragment.Length > 0 )
-            {
-                Error( $"callback URL '{c}' must be an absolute https URL (http only on a loopback address) without query nor fragment." );
-            }
-        }
         var userInfo = ReadBool( s, nameof( GetClaimsFromUserInfoEndpoint ), Error );
         var excluded = ReadStrings( s.TryGetSection( nameof( ExcludedClaims ) ) );
         var allowAccountCreation = ReadBool( s, nameof( AllowAccountCreation ), Error );
@@ -193,7 +188,6 @@ public sealed partial class OidcSchemeOptions
                                       clientSecret!,
                                       authMethod,
                                       string.Join( ' ', scopes ),
-                                      callbacks.ToImmutableArray(),
                                       userInfo,
                                       excluded.ToImmutableArray(),
                                       allowAccountCreation );
@@ -208,7 +202,7 @@ public sealed partial class OidcSchemeOptions
         return false;
     }
 
-    // A list ("CallbackUrls:0", "CallbackUrls:1"...) or a comma separated value.
+    // A list ("ExcludedClaims:0", "ExcludedClaims:1"...) or a comma separated value.
     static List<string> ReadStrings( ImmutableConfigurationSection? s )
     {
         if( s == null ) return [];

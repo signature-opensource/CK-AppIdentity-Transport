@@ -26,7 +26,8 @@ public class PasskeyTests
     {
         AuthCenterApp.LocalAuthCenter( c );
         c["Local:AuthCenter:Passkey:RpId"] = "example.com";
-        c["Local:AuthCenter:Passkey:Origins:0"] = "https://front.example.com";
+        // The accepted origins are the ones of the parties: here, the AuthCenter is its own front.
+        c["Local:PublicUrl"] = "https://front.example.com";
     }
 
     static Task<AuthCenterApp> StartAsync() => AuthCenterApp.StartAsync( Configuration, withPasskeys: true );

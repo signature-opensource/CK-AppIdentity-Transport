@@ -33,7 +33,8 @@ public class OidcTests
             c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
             c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
             c["Local:AuthCenter:Oidc:Test:Scopes"] = "openid profile";
-            c["Local:AuthCenter:Oidc:Test:CallbackUrls:0"] = Callback;
+            // The accepted callbacks are on the origins of the parties: here, the AuthCenter is its own front.
+            c["Local:PublicUrl"] = "https://front.example.com";
             more?.Invoke( c );
         };
     }
@@ -338,7 +339,6 @@ public class OidcTests
     [TestCase( "Authority", "ftp://idp.example.com", "'Authority' must be an absolute https URL" )]
     [TestCase( "Authority", "http://idp.example.com", "'Authority' must be an absolute https URL" )]
     [TestCase( "ClientSecret", "", "'ClientSecret' is required." )]
-    [TestCase( "CallbackUrls:0", "https://front.example.com/cb?x=1", "without query nor fragment" )]
     [TestCase( "TokenEndpointAuthMethod", "private_key_jwt", "'TokenEndpointAuthMethod' must be" )]
     public async Task invalid_oidc_configurations_are_errors_Async( string key, string value, string message )
     {

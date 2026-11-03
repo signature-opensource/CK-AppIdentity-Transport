@@ -150,7 +150,9 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
         {
             c.Error( "This endpoint cannot receive remote logins.", "Authentication.NoRemoteLogin" );
         }
-        else if( !family.IsAllowedCallback( login.Scheme, op.CallbackUrl ) )
+        else if( !family.IsAllowedCallback( login.Scheme, op.CallbackUrl )
+                 // The callback is an endpoint of a party: on the origin of its public URL (its announcement).
+                 || !PartyOrigins.IsPartyUrl( localParty.LocalParty, op.CallbackUrl ) )
         {
             c.Error( $"The callback '{op.CallbackUrl}' is not allowed for the scheme '{login.Scheme}'.", "Authentication.CallbackNotAllowed" );
         }

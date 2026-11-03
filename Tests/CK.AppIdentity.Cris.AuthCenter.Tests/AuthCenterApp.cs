@@ -178,6 +178,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
+                                       typeof( PartyDescriptionFeatureDriver ),
                                        typeof( CurrentLocalParty ),
                                        typeof( CurrentLocalPartyDefaultProvider ),
                                        typeof( KeyManagementFeatureDriver ),

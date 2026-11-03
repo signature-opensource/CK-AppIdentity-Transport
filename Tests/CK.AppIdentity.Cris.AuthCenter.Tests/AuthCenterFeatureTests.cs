@@ -391,7 +391,6 @@ public class AuthCenterFeatureTests
         c[$"{prefix}AuthCenter:Oidc:Test:ClientId"] = "client";
         c[$"{prefix}AuthCenter:Oidc:Test:ClientSecret"] = "secret";
         c[$"{prefix}AuthCenter:Oidc:Test:Scopes"] = "openid";
-        c[$"{prefix}AuthCenter:Oidc:Test:CallbackUrls:0"] = "https://front.example.com/.auth/oidc/callback";
     }
 
     [Test]
@@ -449,7 +448,6 @@ public class AuthCenterFeatureTests
             c["Local:AuthCenter:Oidc:Other:ClientId"] = "client";
             c["Local:AuthCenter:Oidc:Other:ClientSecret"] = "secret";
             c["Local:AuthCenter:Oidc:Other:Scopes"] = "openid";
-            c["Local:AuthCenter:Oidc:Other:CallbackUrls:0"] = "https://acme.example.com/.auth/oidc/callback";
         } );
         var acmeFamily = acme.ShouldNotBeNull().GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         acmeFamily.ShouldNotBeSameAs( rootFamily );

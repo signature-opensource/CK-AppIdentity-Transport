@@ -53,6 +53,12 @@ Endpoint-only commands are accepted when they are handled: they are sent explici
 connection, each side advertises the names of the commands it accepts from the other: `AcceptedCommands` is what the
 remote accepts from us (null until its first advertisement, see `WaitForAcceptedCommandsAsync`).
 
+The advertisement also carries the description of the party (`IParty.Description` of
+[CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md#the-description-of-a-party):
+its public URL and its client applications): the receiver sets it on its remote (`IRemoteParty.SetDescription`, persisted).
+It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know their URL
+once the host has started). A peer that sends only the command names keeps its last known description.
+
 ## Location-transparent dispatch
 
 [`ChannelCrisRemoteDispatcher`](ChannelCrisRemoteDispatcher.cs) implements the `ICrisRemoteDispatcher` of CK.Cris.Executor:

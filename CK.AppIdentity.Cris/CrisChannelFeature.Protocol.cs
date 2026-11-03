@@ -20,7 +20,8 @@ public sealed partial class CrisChannelFeature
     const byte DExecuted = 3;
     // Callee to caller: the issuer token key and a typed final caller-only event (sent before its DExecuted).
     const byte DFinalEvent = 4;
-    // Both ways, on each connection: the names of the commands the sender accepts from the receiver.
+    // Both ways, on each connection (and again when the sender's description changes): the names of the commands the
+    // sender accepts from the receiver, then the sender's description (its public URL and its client applications).
     const byte DAccepted = 5;
 
     /// <summary>
@@ -61,7 +62,7 @@ public sealed partial class CrisChannelFeature
 
         internal void SendFinalEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e ) => SendEvent( monitor, DFinalEvent, key, e );
 
-        internal void SendAccepted( IActivityMonitor monitor, List<string> names )
+        internal void SendAccepted( IActivityMonitor monitor, List<string> names, PartyDescription description )
         {
             Enqueue( monitor, MessageFactory.Create( bytes =>
             {
@@ -69,6 +70,15 @@ public sealed partial class CrisChannelFeature
                 w.WriteByte( DAccepted );
                 w.WriteInt32( names.Count );
                 foreach( var n in names ) w.WriteString( n );
+                // The description follows the names: a peer that reads only the names ignores it.
+                w.WriteBool( description.PublicUrl != null );
+                if( description.PublicUrl != null ) w.WriteString( description.PublicUrl.ToString() );
+                w.WriteInt32( description.ClientApplications.Length );
+                foreach( var a in description.ClientApplications )
+                {
+                    w.WriteString( a.Name );
+                    w.WriteString( a.RequestPath );
+                }
                 w.Commit();
             } ) );
         }
@@ -265,7 +275,32 @@ public sealed partial class CrisChannelFeature
             int count = r.ReadInt32();
             var names = new HashSet<string>( count );
             for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
-            _feature.OnAccepted( monitor, names );
+            // A peer that doesn't send its description: its last known one is kept.
+            PartyDescription? description = null;
+            if( !r.GetAfterHead().IsEmpty )
+            {
+                Uri? url = null;
+                string? error = null;
+                if( r.ReadBool() ) PartyDescription.TryParsePublicUrl( r.ReadString(), out url, out error );
+                int appCount = r.ReadInt32();
+                var apps = ImmutableArray.CreateBuilder<ClientApplicationDescription>( appCount );
+                for( int i = 0; i < appCount; ++i )
+                {
+                    var name = r.ReadString();
+                    var path = r.ReadString();
+                    if( name.Length == 0 || !path.StartsWith( '/' ) ) error ??= $"Invalid client application '{name}' ('{path}').";
+                    else apps.Add( new ClientApplicationDescription( name, path ) );
+                }
+                if( error != null )
+                {
+                    monitor.Error( $"Invalid description announced by '{_feature.Party.FullName}' (ignored): {error}" );
+                }
+                else
+                {
+                    description = new PartyDescription( url, apps.MoveToImmutable() );
+                }
+            }
+            _feature.OnAccepted( monitor, names, description );
         }
 
         ValueTask HandleImmediateEvent( IActivityMonitor monitor, ref FastByteReader r )

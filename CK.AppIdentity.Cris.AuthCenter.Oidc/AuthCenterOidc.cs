@@ -97,14 +97,14 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     /// <inheritdoc />
     public bool IsAllowedCallback( string scheme, string callbackUrl )
     {
-        return FindScheme( scheme )?.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) is true;
+        return FindScheme( scheme ) != null && OidcSchemeOptions.IsValidCallbackUrl( callbackUrl );
     }
 
     /// <inheritdoc />
     public async Task<RemoteLoginStart> StartAsync( IActivityMonitor monitor, string scheme, string state, string callbackUrl, bool critical )
     {
         var options = FindScheme( scheme );
-        if( options == null || !options.CallbackUrls.Contains( callbackUrl, StringComparer.Ordinal ) )
+        if( options == null || !OidcSchemeOptions.IsValidCallbackUrl( callbackUrl ) )
         {
             return new RemoteLoginStart( null, null, $"The callback '{callbackUrl}' is not allowed for the scheme '{scheme}'." );
         }

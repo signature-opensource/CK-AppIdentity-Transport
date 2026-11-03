@@ -75,6 +75,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         _executing = new ConcurrentDictionary<ActivityMonitor.LogKey, ExecutingCommand>();
         _toSend = Channel.CreateUnbounded<ExecutingCommand>( new UnboundedChannelOptions { SingleReader = true } );
         _firstHandler = new TaskCompletionSource<Protocol?>( TaskCreationOptions.RunContinuationsAsynchronously );
+        Party.Owner.DescriptionChanged.Sync += OnLocalDescriptionChanged;
         _ = Task.Run( SendLoopAsync );
     }
 
@@ -91,9 +92,22 @@ public sealed partial class CrisChannelFeature : ChannelFeature
             var h = (Protocol)current;
             _handler = h;
             _firstHandler.TrySetResult( h );
-            // On each connection, we tell the remote what it may send us.
-            h.SendAccepted( monitor, _crisDirectory.CrisPocoModels.Where( IsAcceptedFromRemote ).Select( m => m.PocoName ).ToList() );
+            // On each connection, we tell the remote what it may send us, and what we are.
+            SendAccepted( monitor, h );
         }
+    }
+
+    void SendAccepted( IActivityMonitor monitor, Protocol h )
+    {
+        h.SendAccepted( monitor,
+                        _crisDirectory.CrisPocoModels.Where( IsAcceptedFromRemote ).Select( m => m.PocoName ).ToList(),
+                        Party.Owner.Description );
+    }
+
+    // Our description changed (the HTTP endpoints know their URL once the host has started): it is announced again.
+    void OnLocalDescriptionChanged( IActivityMonitor monitor, ILocalParty local )
+    {
+        if( _handler is { } h ) SendAccepted( monitor, h );
     }
 
     /// <summary>
@@ -147,8 +161,9 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         }
     }
 
-    internal void OnAccepted( IActivityMonitor monitor, HashSet<string> names )
+    internal void OnAccepted( IActivityMonitor monitor, HashSet<string> names, PartyDescription? description )
     {
+        if( description != null ) Party.SetDescription( monitor, description );
         _acceptedCommands = names;
         _firstAccepted.TrySetResult();
         monitor.Info( $"'{Party.FullName}' accepts {names.Count} commands from '{Party.Owner.FullName}'." );
@@ -305,6 +320,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     protected override void Teardown( FeatureLifetimeContext context )
     {
+        Party.Owner.DescriptionChanged.Sync -= OnLocalDescriptionChanged;
         _toSend.Writer.TryComplete();
         _firstHandler.TrySetResult( null );
         _firstAccepted.TrySetResult();

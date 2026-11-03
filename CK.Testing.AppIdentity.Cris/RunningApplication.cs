@@ -140,6 +140,7 @@ public sealed class RunningApplication : IAsyncDisposable
                                                     typeof( IWhoAmICommand ),
                                                     typeof( CrisExecutionHost ),
                                                     typeof( ApplicationIdentityService ),
+                                                    typeof( PartyDescriptionFeatureDriver ),
                                                     typeof( MessageProtocolDirectoryService ),
                                                     typeof( TransportFeatureDriver ),
                                                     typeof( CrisChannelFeatureDriver ),
