@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The "AuthCenter" feature: the party that centralizes the authentication of a local party (the root application identity or a tenant domain). This is the core shared by its two sides: the designation of the AuthCenter and the reading of its tokens. An application references CK.AppIdentity.AuthCenter.Local (it is the AuthCenter) or CK.AppIdentity.AuthCenter.Remote (it is a remote of an AuthCenter).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Local" />
+    <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Remote" />
+    <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.cris-auth.0.ci.85" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />
+    <ProjectReference Include="..\CK.AppIdentity.Cris.Authentication\CK.AppIdentity.Cris.Authentication.csproj" />
+    <ProjectReference Include="..\CK.IO.AuthCenter\CK.IO.AuthCenter.csproj" />
+  </ItemGroup>
+</Project>

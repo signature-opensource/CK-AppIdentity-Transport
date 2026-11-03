@@ -12,13 +12,14 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.BlobChannel](CK.AppIdentity.BlobChannel/README.md) | A minimal channel that carries opaque `byte[]` between two parties. |
 | [CK.AppIdentity.Cris](CK.AppIdentity.Cris/README.md) | A channel that carries Cris commands and their results between parties, and the location-transparent dispatch over it. |
 | [CK.AppIdentity.Cris.Authentication](CK.AppIdentity.Cris.Authentication/README.md) | The identity of the users across the Cris channels: vouched for by the caller party, or proved. |
-| [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | The "AuthCenter" feature core: the Authentication Center of each local party and the reading of its tokens. |
-| [CK.AppIdentity.Cris.AuthCenter.Local](CK.AppIdentity.Cris.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, the session operations. |
-| [CK.AppIdentity.Cris.AuthCenter.Remote](CK.AppIdentity.Cris.AuthCenter.Remote/README.md) | This application is a remote of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. |
-| [CK.AppIdentity.Cris.AuthCenter.Oidc](CK.AppIdentity.Cris.AuthCenter.Oidc/README.md) | The OpenID Connect logins of a local Authentication Center. |
-| [CK.AppIdentity.Cris.AuthCenter.Passkey](CK.AppIdentity.Cris.AuthCenter.Passkey/README.md) | The passkey (WebAuthn) logins of a local Authentication Center. |
+| [CK.AppIdentity.AuthCenter](CK.AppIdentity.AuthCenter/README.md) | The "AuthCenter" feature core: the Authentication Center of each local party and the reading of its tokens. |
+| [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | **Deprecated**: renamed CK.AppIdentity.AuthCenter. |
+| [CK.AppIdentity.AuthCenter.Local](CK.AppIdentity.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, the session operations. |
+| [CK.AppIdentity.AuthCenter.Remote](CK.AppIdentity.AuthCenter.Remote/README.md) | This application is a remote of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. |
+| [CK.AppIdentity.AuthCenter.Oidc](CK.AppIdentity.AuthCenter.Oidc/README.md) | The OpenID Connect logins of a local Authentication Center. |
+| [CK.AppIdentity.AuthCenter.Passkey](CK.AppIdentity.AuthCenter.Passkey/README.md) | The passkey (WebAuthn) logins of a local Authentication Center. |
 | [CK.IO.AuthCenter](CK.IO.AuthCenter/README.md) | The relay protocol between the fronts and their Authentication Center. |
 | [CK.DB.AppIdentity](CK.DB.AppIdentity/README.md) | The PartyActor: a CK-DB actor that represents a party. |
 | [CK.Testing.AppIdentity.TransportLayer](CK.Testing.AppIdentity.TransportLayer/README.md) | Test helpers for the transport layer, including an adversarial peer. |
 | [CK.Testing.AppIdentity.Cris](CK.Testing.AppIdentity.Cris/README.md) | Test helpers that run two applications talking over a Cris channel. |
-| [CK.Testing.AppIdentity.Cris.AuthCenter](CK.Testing.AppIdentity.Cris.AuthCenter/README.md) | Test helpers for an application that is its own Authentication Center and its HTTP front. |
+| [CK.Testing.AppIdentity.AuthCenter](CK.Testing.AppIdentity.AuthCenter/README.md) | Test helpers for an application that is its own Authentication Center and its HTTP front. |

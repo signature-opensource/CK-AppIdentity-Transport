@@ -1,0 +1,6 @@
+<Project>
+  <Target Name="CK_AppIdentity_Cris_AuthCenter_IsDeprecated" BeforeTargets="ResolveAssemblyReferences">
+    <Error Code="CKDEPRECATED"
+           Text="Package 'CK.AppIdentity.Cris.AuthCenter' is deprecated and must be replaced by 'CK.AppIdentity.AuthCenter' (renamed, as are its .Local, .Remote, .Oidc and .Passkey packages and CK.Testing.AppIdentity.Cris.AuthCenter; the namespace is now CK.AppIdentity.AuthCenter): see https://github.com/signature-opensource/CK-AppIdentity-Transport/blob/stable/CK.AppIdentity.AuthCenter/README.md and the migration guide https://github.com/signature-opensource/CK-Stack/blob/main/Docs/Migrations/v2026.282-to-explo-cris-auth.md." />
+  </Target>
+</Project>

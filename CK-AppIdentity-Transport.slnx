@@ -11,7 +11,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/CK.AppIdentity.BlobChannel.Tests/CK.AppIdentity.BlobChannel.Tests.csproj" />
-    <Project Path="Tests/CK.AppIdentity.Cris.AuthCenter.Tests/CK.AppIdentity.Cris.AuthCenter.Tests.csproj" />
+    <Project Path="Tests/CK.AppIdentity.AuthCenter.Tests/CK.AppIdentity.AuthCenter.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.Cris.Tests/CK.AppIdentity.Cris.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.MutualTls.Tests/CK.AppIdentity.MutualTls.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.TransportLayer.Tests/CK.AppIdentity.TransportLayer.Tests.csproj" />
@@ -19,13 +19,14 @@
   </Folder>
   <Project Path="CK.AppIdentity.BlobChannel/CK.AppIdentity.BlobChannel.csproj" />
   <Project Path="CK.IO.AuthCenter/CK.IO.AuthCenter.csproj" />
-  <Project Path="CK.AppIdentity.Cris.AuthCenter/CK.AppIdentity.Cris.AuthCenter.csproj" Id="40d06d04-c068-44e9-9025-efce9b0b6e96" />
-  <Project Path="CK.AppIdentity.Cris.AuthCenter.Local/CK.AppIdentity.Cris.AuthCenter.Local.csproj" />
-  <Project Path="CK.AppIdentity.Cris.AuthCenter.Remote/CK.AppIdentity.Cris.AuthCenter.Remote.csproj" />
-  <Project Path="CK.AppIdentity.Cris.AuthCenter.Oidc/CK.AppIdentity.Cris.AuthCenter.Oidc.csproj" />
-  <Project Path="CK.AppIdentity.Cris.AuthCenter.Passkey/CK.AppIdentity.Cris.AuthCenter.Passkey.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter/CK.AppIdentity.AuthCenter.csproj" Id="40d06d04-c068-44e9-9025-efce9b0b6e96" />
+  <Project Path="CK.AppIdentity.Cris.AuthCenter/CK.AppIdentity.Cris.AuthCenter.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Local/CK.AppIdentity.AuthCenter.Local.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Remote/CK.AppIdentity.AuthCenter.Remote.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Oidc/CK.AppIdentity.AuthCenter.Oidc.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Passkey/CK.AppIdentity.AuthCenter.Passkey.csproj" />
   <Project Path="CK.Testing.AppIdentity.Cris/CK.Testing.AppIdentity.Cris.csproj" Id="8f415832-aeaf-4570-823e-2d2dde2100e2" />
-  <Project Path="CK.Testing.AppIdentity.Cris.AuthCenter/CK.Testing.AppIdentity.Cris.AuthCenter.csproj" />
+  <Project Path="CK.Testing.AppIdentity.AuthCenter/CK.Testing.AppIdentity.AuthCenter.csproj" />
   <Project Path="CK.AppIdentity.Cris/CK.AppIdentity.Cris.csproj" />
   <Project Path="CK.AppIdentity.Cris.Authentication/CK.AppIdentity.Cris.Authentication.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement/CK.AppIdentity.KeyManagement.csproj" />

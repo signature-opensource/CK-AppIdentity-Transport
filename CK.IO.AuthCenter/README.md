@@ -2,7 +2,7 @@
 
 The `[Internal]` queries between the parties of a System and their Authentication Center. They are executed by the
 endpoint that receives them (`ICommandEndpointOnly`): the handler of the Authentication Center answers for the calling
-remote. They are used by [CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md) and its two
+remote. They are used by [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md) and its two
 sides.
 
 | Query | Result | Purpose |

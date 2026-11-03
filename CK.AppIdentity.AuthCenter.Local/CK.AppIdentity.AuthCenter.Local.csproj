@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>CK.AppIdentity.AuthCenter</RootNamespace>
+    <Description>The Local side of the "AuthCenter" feature: this application is the AuthCenter of its local parties (its settings, its sessions, the signing of its tokens, the session operations and the policy for its remotes).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- For the Basic and Weak login handlers (AuthCenterLoginHandlers.cs): temporary, until the old stack is retired. -->
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.AuthCenter\CK.AppIdentity.AuthCenter.csproj" />
+  </ItemGroup>
+</Project>

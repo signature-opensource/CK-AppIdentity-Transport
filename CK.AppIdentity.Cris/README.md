@@ -6,7 +6,7 @@ command to a remote, the remote executes it and sends back its immediate events 
 
 This channel carries no user identity: the only identity that is established is the one of the remote party itself,
 authenticated by the transport. Authentication over this channel is the subject of a package built on it,
-[CK.AppIdentity.Cris.AuthCenter](../CK.AppIdentity.Cris.AuthCenter/README.md).
+[CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md).
 
 ## Activation
 
