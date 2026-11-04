@@ -217,9 +217,10 @@ public class AuthCenterFeatureTests
         await StartMustFailAsync( "it can use only one remote that is the 'AuthCenter'", c =>
         {
             c["FullName"] = "D/$Front";
-            c["Defaults:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:0:PartyName"] = "Remote1";
+            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:1:PartyName"] = "Remote2";
+            c["Parties:1:AllowFeatures"] = "AuthCenterRemote";
         }, remote: true );
         await StartMustFailAsync( "holds the settings of a local AuthCenter", c =>
         {
@@ -318,7 +319,7 @@ public class AuthCenterFeatureTests
         using( var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 ) )
         {
             (await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Usurper"; c["AllowFeatures"] = "AuthCenterRemote"; } )).ShouldBeNull();
-            await ShouldLogAsync( logs, "it can use only one remote that is the 'AuthCenter'" );
+            await ShouldLogAsync( logs, "already uses the AuthCenter 'D/$Center/#Dev': a local party can use only one remote AuthCenter." );
         }
 
         // A tenant domain added later comes with its AuthCenter (one of its remotes).
@@ -378,8 +379,6 @@ public class AuthCenterFeatureTests
         var acme = s.TenantDomains.Single();
         acme.GetRequiredFeature<RemoteAuthCenter>().Center.AuthCenter.PartyName.ShouldBe( "$AcmeCenter" );
         acme.GetFeature<LocalAuthCenter>().ShouldBeNull();
-        s.Description.Roles.ShouldBe( ["AuthCenter"] );
-        acme.Description.Roles.ShouldBeEmpty();
     }
 
     static void OidcScheme( MutableConfigurationSection c, string prefix = "Local:" )

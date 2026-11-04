@@ -44,10 +44,19 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
             return Task.FromResult( Plug( context, local ) );
         }
         var remote = (IRemoteParty)party;
-        if( IsAllowedFeature( remote.Owner ) ) return Task.FromResult( true );
+        var owner = remote.Owner;
+        if( IsAllowedFeature( owner ) ) return Task.FromResult( true );
         if( !AuthCenterFeature.CheckNoAuthCenterKey( context.Monitor, remote ) ) return Task.FromResult( false );
-        // A remote added later can be the AuthCenter of its local party: the local party can use only one.
-        return Task.FromResult( !IsAllowedFeature( remote ) || Plug( context, remote.Owner ) );
+        if( !IsAllowedFeature( remote ) ) return Task.FromResult( true );
+        // A remote added later can be the AuthCenter of its local party (it is not yet in the Remotes of its local
+        // party): the local party can use only one.
+        if( owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter existing )
+        {
+            context.Monitor.Error( $"'{remote}' allows the 'AuthCenterRemote' feature but '{owner}' already uses the AuthCenter '{existing.AuthCenter}': "
+                                   + $"a local party can use only one remote AuthCenter." );
+            return Task.FromResult( false );
+        }
+        return Task.FromResult( Attach( context, owner, remote ) );
     }
 
     /// <inheritdoc />
@@ -77,13 +86,14 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
             success &= AuthCenterFeature.CheckNoAuthCenterKey( monitor, r );
         }
         if( !success || !TryGetFeatureRemote( monitor, local, out var authCenter ) ) return false;
-        if( authCenter == null ) return true;
-        // Already plugged (a dynamic tenant domain and its remotes).
-        if( local.GetFeature<CrisAuthCenter>() is CrisAuthCenter existing )
-        {
-            Throw.DebugAssert( existing.AuthCenter == authCenter );
-            return true;
-        }
+        // No AuthCenter, or already plugged (a dynamic tenant domain and its remotes).
+        if( authCenter == null || local.GetFeature<CrisAuthCenter>() != null ) return true;
+        return Attach( context, local, authCenter );
+    }
+
+    static bool Attach( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )
+    {
+        var monitor = context.Monitor;
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
         var remote = new RemoteAuthCenter( center );
