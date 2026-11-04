@@ -7,13 +7,13 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The <see cref="ICrisAuthCenter"/> feature. A single instance is shared by a <see cref="ILocalParty"/> and
-/// all its <see cref="ILocalParty.Remotes"/> that have the "AuthCenter" feature: its remotes that allow "AuthCenterRemote"
-/// when it is the Authentication Center, the remote that allows "AuthCenter" when it is a remote of it.
+/// The <see cref="ICrisAuthCenter"/> feature (see <see cref="AuthCenterFeature"/>). A single instance is shared by a
+/// <see cref="ILocalParty"/> and its <see cref="ILocalParty.Remotes"/> that allow "AuthCenterRemote": the remotes that use it
+/// when the local party is the Authentication Center, the remote that is its Authentication Center otherwise.
 /// <para>
-/// This is the part shared by the two sides: an AuthCenter application (CK.AppIdentity.AuthCenter.Local) adds a
-/// <c>LocalAuthCenter</c> feature to its local parties, a remote of it (CK.AppIdentity.AuthCenter.Remote) adds a
-/// <c>RemoteAuthCenter</c>.
+/// This is the part shared by the two sides: the Local side (CK.AppIdentity.AuthCenter.Local) creates it for a local party
+/// that is the Authentication Center and adds a <c>LocalAuthCenter</c>, the Remote side (CK.AppIdentity.AuthCenter.Remote)
+/// creates it for a local party that uses a remote one and adds a <c>RemoteAuthCenter</c>.
 /// </para>
 /// </summary>
 public sealed class CrisAuthCenter : ICrisAuthCenter
@@ -26,6 +26,30 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         Throw.DebugAssert( authCenter == owner || (authCenter is IRemoteParty r && r.Owner == owner) );
         _owner = owner;
         _authCenter = authCenter;
+    }
+
+    /// <summary>
+    /// Creates the feature of a local party and adds it to the local party (and to the <paramref name="authCenter"/> when it
+    /// is a remote). The Authentication Center must have the "KeyManagement" feature: its keys verify the tokens (a remote
+    /// may not be pinned yet: the verification refuses until it is). Used by the two sides of the feature.
+    /// </summary>
+    /// <param name="monitor">The monitor.</param>
+    /// <param name="owner">The local party.</param>
+    /// <param name="authCenter">The local party itself, or the remote that is its Authentication Center.</param>
+    /// <returns>The feature or null on error.</returns>
+    public static CrisAuthCenter? TryCreate( IActivityMonitor monitor, ILocalParty owner, IParty authCenter )
+    {
+        Throw.CheckArgument( authCenter == owner || (authCenter is IRemoteParty r && r.Owner == owner) );
+        if( authCenter.GetFeature<IPartyKeys>() == null )
+        {
+            monitor.Error( $"'{authCenter}' cannot be the AuthCenter of '{owner}': it has no 'KeyManagement' feature (its keys verify the tokens)." );
+            return null;
+        }
+        var f = new CrisAuthCenter( owner, authCenter );
+        owner.AddFeature( f );
+        if( authCenter != owner ) authCenter.AddFeature( f );
+        monitor.Info( $"{f} is available." );
+        return f;
     }
 
     /// <summary>

@@ -1,22 +1,24 @@
 # CK.AppIdentity.AuthCenter.Remote
 
-The Remote side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **this application is a remote**
-of an Authentication Center. Its [`RemoteAuthCenterFeatureDriver`](RemoteAuthCenterFeatureDriver.cs) adds a
-[`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that allows `"AuthCenterRemote"` (in its `"Local"`, or in
-a `"Defaults"` above it): its Authentication Center is **the** remote that allows `"AuthCenter"` (more than one is a
-configuration error). An application has one role: an Authentication Center references
-CK.AppIdentity.AuthCenter.Local.
+The Remote side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **a local party relays its
+authentication to a remote Authentication Center**. Its [`RemoteAuthCenterFeatureDriver`](RemoteAuthCenterFeatureDriver.cs)
+adds a [`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that doesn't allow `"AuthCenter"` (in its
+`"Local"`) and has a remote that allows `"AuthCenterRemote"`: this remote is its Authentication Center (more than one is
+a configuration error, a remote added later can be it). A local party that allows `"AuthCenter"` is ignored:
+CK.AppIdentity.AuthCenter.Local handles it, and the two packages can be referenced by the same application.
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Front",
-  "Local": { "AllowFeatures": "AuthCenterRemote" },        // The application is a remote of an Authentication Center.
   "Parties": [
-    { "PartyName": "Center", "AllowFeatures": "AuthCenter" },   // The Authentication Center.
+    { "PartyName": "Center", "AllowFeatures": "AuthCenterRemote" }, // The Authentication Center.
     { "PartyName": "Box" }
   ]
 }
 ```
+
+The Authentication Center must announce it (the roles of its description): a `"Center"` whose `"Local"` doesn't allow
+`"AuthCenter"` is an error when it announces its description.
 
 ## How a remote authenticates its users
 

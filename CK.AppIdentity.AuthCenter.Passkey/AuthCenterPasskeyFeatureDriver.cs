@@ -8,7 +8,7 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// <summary>
 /// Adds the <see cref="AuthCenterPasskey"/> scheme family to every local Authentication Center, the dynamic tenants
 /// included, with its "AuthCenter:Passkey" section (possibly absent: the family then has no scheme). It depends on the
-/// <see cref="AuthCenterFeatureDriver"/>: the local Authentication Centers exist when it runs.
+/// <see cref="LocalAuthCenterFeatureDriver"/>: the local Authentication Centers exist when it runs.
 /// </summary>
 public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureDriver
 {

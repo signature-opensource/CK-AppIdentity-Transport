@@ -8,7 +8,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// package declares: a configured family that silently does nothing (its package is missing) is a misconfiguration.
 /// <para>
 /// This is a declaration only, distinct from the family's feature driver (that depends on the AuthCenter's one): the
-/// <see cref="AuthCenterFeatureDriver"/> knows the declared keys when it reads its configuration.
+/// <see cref="LocalAuthCenterFeatureDriver"/> knows the declared keys when it reads its configuration.
 /// </para>
 /// </summary>
 [IsMultiple]

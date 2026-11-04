@@ -183,7 +183,6 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( CurrentLocalPartyDefaultProvider ),
                                        typeof( KeyManagementFeatureDriver ),
                                        typeof( DefaultCoreKeyStore ),
-                                       typeof( AuthCenterFeatureDriver ),
                                        typeof( LocalAuthCenterFeatureDriver ),
                                        typeof( IAuthenticationSessionOpener ),
                                        // The endpoint side (CK.Cris.Authentication): the session commands are executed

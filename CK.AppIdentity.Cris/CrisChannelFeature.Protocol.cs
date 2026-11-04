@@ -79,6 +79,9 @@ public sealed partial class CrisChannelFeature
                     w.WriteString( a.Name );
                     w.WriteString( a.RequestPath );
                 }
+                // The roles follow the client applications: a peer that doesn't read them ignores them.
+                w.WriteInt32( description.Roles.Length );
+                foreach( var role in description.Roles ) w.WriteString( role );
                 w.Commit();
             } ) );
         }
@@ -291,13 +294,26 @@ public sealed partial class CrisChannelFeature
                     if( name.Length == 0 || !path.StartsWith( '/' ) ) error ??= $"Invalid client application '{name}' ('{path}').";
                     else apps.Add( new ClientApplicationDescription( name, path ) );
                 }
+                // A peer that doesn't send its roles has none.
+                List<string>? roles = null;
+                if( !r.GetAfterHead().IsEmpty )
+                {
+                    int roleCount = r.ReadInt32();
+                    roles = new List<string>( roleCount );
+                    for( int i = 0; i < roleCount; ++i )
+                    {
+                        var role = r.ReadString();
+                        if( string.IsNullOrWhiteSpace( role ) ) error ??= "Invalid empty role.";
+                        else roles.Add( role );
+                    }
+                }
                 if( error != null )
                 {
                     monitor.Error( $"Invalid description announced by '{_feature.Party.FullName}' (ignored): {error}" );
                 }
                 else
                 {
-                    description = new PartyDescription( url, apps.MoveToImmutable() );
+                    description = new PartyDescription( url, apps.MoveToImmutable(), roles );
                 }
             }
             _feature.OnAccepted( monitor, names, description );

@@ -1,11 +1,11 @@
 # CK.AppIdentity.AuthCenter.Local
 
-The Local side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **this application is the
-Authentication Center** of its local parties (the root and its tenant domains). Its
+The Local side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **a local party is its own
+Authentication Center** (the root or a tenant domain). Its
 [`LocalAuthCenterFeatureDriver`](LocalAuthCenterFeatureDriver.cs) adds a [`LocalAuthCenter`](LocalAuthCenter.cs) to every
 local party that allows `"AuthCenter"` (in its `"Local"`, or in a `"Defaults"` above it): this local party is its own
-Authentication Center, and its remotes that allow `"AuthCenterRemote"` are its remotes. An application has one role: a
-remote of an Authentication Center references CK.AppIdentity.AuthCenter.Remote.
+Authentication Center, and its remotes that allow `"AuthCenterRemote"` use it. A local party that doesn't allow it is
+ignored: CK.AppIdentity.AuthCenter.Remote handles it, and the two packages can be referenced by the same application.
 
 ```jsonc
 "CK-AppIdentity": {

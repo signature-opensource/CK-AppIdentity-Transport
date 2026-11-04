@@ -9,63 +9,62 @@ authentication concern.
 
 ## The two sides
 
-The Authentication Center is a singleton within its domain: one party implements it, the other ones use it. The feature
-is split accordingly, and **an application has one role**, given by the package it references. The two sides are
-implemented in packages that depend on this one:
+The AuthCenter is a **singleton asymmetric feature** (see
+[the asymmetric features of CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/Features/README.md#asymmetric-features)):
+one party implements it, the other ones relay the authentication to it, and there is one Authentication Center in a
+tenant (a documented property: nothing checks it). The two sides are implemented in packages that depend on this one:
 
-| Package | Role | Feature added to each local party |
+| Package | Content | Feature added to a local party |
 |---|---|---|
-| this one (core) | The Authentication Center of each local party, the reading of its tokens. Referenced by both sides. | [`CrisAuthCenter`](CrisAuthCenter.cs) |
-| [CK.AppIdentity.AuthCenter.Local](../CK.AppIdentity.AuthCenter.Local/README.md) | This application **is** the Authentication Center: settings, sessions, signing, the session operations, the policy for its remotes. | `LocalAuthCenter` |
-| [CK.AppIdentity.AuthCenter.Remote](../CK.AppIdentity.AuthCenter.Remote/README.md) | This application is a **remote** of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. | `RemoteAuthCenter` |
+| this one (core) | The Authentication Center of a local party ([`CrisAuthCenter`](CrisAuthCenter.cs), shared by the two sides), the reading of its tokens, the checks shared by the two sides ([`AuthCenterFeature`](AuthCenterFeature.cs)). No feature driver. | |
+| [CK.AppIdentity.AuthCenter.Local](../CK.AppIdentity.AuthCenter.Local/README.md) | A local party that allows "AuthCenter" **is** the Authentication Center: settings, sessions, signing, the session operations, the policy for its remotes. | `CrisAuthCenter`, `LocalAuthCenter` |
+| [CK.AppIdentity.AuthCenter.Remote](../CK.AppIdentity.AuthCenter.Remote/README.md) | A local party that doesn't allow it uses **the** remote that is its Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. | `CrisAuthCenter`, `RemoteAuthCenter` |
 
-The three drivers manage the same "AuthCenter" feature. The role is chosen by the installed packages (the DI
-composition), never by a configuration key nor by a runtime check: a remote has no operation handler at all. An
-application that allows the feature but references neither side fails to start. The Local and Remote packages cannot be
-both referenced (see
-[the CK.AppIdentity feature drivers](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/Features/README.md)).
+The two drivers manage the same "AuthCenter" feature. The installed packages give the possible roles, the configuration
+of each local party its actual role: the two packages can be referenced by the same application (a tenant can be its
+own Authentication Center while another one uses a remote one). A side that is not installed ignores the configuration
+of its role (a remote has no operation handler at all).
 
 ## Configuration
 
-The feature is opt-in, and its `"AllowFeatures"` name what a party is: `"AuthCenter"` on the party that is the
-Authentication Center, `"AuthCenterRemote"` on the parties that are its remotes. They are in the `"Local"` of a local
-party, on its remotes concerned, or in a `"Defaults"` that applies to them (see
+The feature is opt-in. Its name is `"AuthCenter"` in the `"Local"` of a local party and `"AuthCenterRemote"` on a remote
+(in their `"AllowFeatures"`, or in a `"Defaults"` that applies to them, see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
-There is no designation key: the Authentication Center of a local party is given by the role of the application:
+There is no designation key: the `"AuthCenter"` of the `"Local"` gives the role of the local party:
 
-| | CK.AppIdentity.AuthCenter.Local | CK.AppIdentity.AuthCenter.Remote |
+| The local party | Its role | Its remotes that allow `"AuthCenterRemote"` |
 |---|---|---|
-| The `"Local"` | `"AuthCenter"`: the local party **is** its own Authentication Center. | `"AuthCenterRemote"`: the local party is a remote of an Authentication Center, it delegates its authentication to it. |
-| A remote | `"AuthCenterRemote"`: one of its remotes (they share its `CrisAuthCenter`). | `"AuthCenter"`: **the** Authentication Center of the local party. |
+| allows `"AuthCenter"` | It **is** its own Authentication Center (CK.AppIdentity.AuthCenter.Local). | They use it (they share its `CrisAuthCenter`): a `"Defaults"` that allows `"AuthCenterRemote"` lets all of them use it. |
+| doesn't allow it | It relays its authentication to a remote Authentication Center (CK.AppIdentity.AuthCenter.Remote). | **The** remote that is its Authentication Center: at most one. |
 
-A party that allows only the name of the other role (the configuration of the other role) is a configuration error.
-Allowing both names is not: a `"Defaults"` that applies to a `"Local"` and to its remotes may allow both.
+A `"Local"` that allows only `"AuthCenterRemote"`, or a remote that allows only `"AuthCenter"`, is a configuration error
+(this was the configuration of a remote of an Authentication Center before the asymmetric features). Allowing both names
+is not: a `"Defaults"` that applies to a `"Local"` and to its remotes may allow both.
 
 The settings of a local Authentication Center are the `"AuthCenter"` section of its `"Local"` (see
-[CK.AppIdentity.AuthCenter.Local](../CK.AppIdentity.AuthCenter.Local/README.md)). A tenant domain has an
-Authentication Center only when the feature is allowed for it, in its `"Local"` or in a `"Defaults"` above it.
+[CK.AppIdentity.AuthCenter.Local](../CK.AppIdentity.AuthCenter.Local/README.md)). A tenant domain is an Authentication
+Center only when the feature is allowed for it, in its `"Local"` or in a `"Defaults"` above it.
 
 A remote of an Authentication Center (it references CK.AppIdentity.AuthCenter.Remote):
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Front",
-  "Local": { "AllowFeatures": "AuthCenterRemote" },        // The application is a remote of...
   "Parties": [
-    { "PartyName": "Center", "AllowFeatures": "AuthCenter" }, // ...this Authentication Center.
+    { "PartyName": "Center", "AllowFeatures": "AuthCenterRemote" }, // The Authentication Center.
     { "PartyName": "Box" }
   ]
 }
 ```
 
-An Authentication Center (it references CK.AppIdentity.AuthCenter.Local) whose remotes all have the feature:
+An Authentication Center (it references CK.AppIdentity.AuthCenter.Local) whose remotes all use it:
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Center",
-  "Defaults": { "AllowFeatures": "AuthCenterRemote" },      // All its remotes are remotes of...
+  "Defaults": { "AllowFeatures": "AuthCenterRemote" },      // All its remotes use...
   "Local": {
-    "AllowFeatures": "AuthCenter",                          // ...the application: it is the Authentication Center.
+    "AllowFeatures": "AuthCenter",                          // ...this local party: it is the Authentication Center.
     "AuthCenter": { "TokenLifetime": "00:05:00" }
   },
   "Parties": [
@@ -77,7 +76,7 @@ An Authentication Center (it references CK.AppIdentity.AuthCenter.Local) whose r
 ## The feature
 
 A single [`CrisAuthCenter`](CrisAuthCenter.cs) ([`ICrisAuthCenter`](ICrisAuthCenter.cs)) is shared by the local party
-and all its remotes that have the feature. It exposes the `AuthCenter` party, its `Owner` local party and whether
+and its remotes that allow `"AuthCenterRemote"`. It exposes the `AuthCenter` party, its `Owner` local party and whether
 it `IsAvailable`.
 
 `Verify` checks a token signed by the Authentication Center. It is the same call whether the Authentication Center is
@@ -86,27 +85,28 @@ The purpose is fixed (`ICrisAuthCenter.TokenPurpose`, "CK.AuthCenter.Token"): no
 Center can be taken for a token. It fails closed when the feature is not `IsAvailable`. Signing is not here: only a
 local Authentication Center signs, with its `ILocalKeys`.
 
-## Rules ([`AuthCenterFeatureDriver`](AuthCenterFeatureDriver.cs))
+## Rules (the two side drivers, [`AuthCenterFeature`](AuthCenterFeature.cs))
 
-- **Names:** a party that allows only the name of the other role is a configuration error (checked by CK.AppIdentity
-  before the setup of the side).
-- **Uniqueness:** on the Remote side, more than one remote that allows `"AuthCenter"` in the same local party is a
-  configuration error (a `"Defaults"` that allows it applies to every remote below it).
+- **Names:** a `"Local"` that allows only `"AuthCenterRemote"`, or a remote that allows only `"AuthCenter"`, is a
+  configuration error (checked by CK.AppIdentity).
+- **Uniqueness:** a local party that is not the Authentication Center uses at most one remote that allows
+  `"AuthCenterRemote"`: more than one is a configuration error (a `"Defaults"` that allows it applies to every remote
+  below it).
+- **Announced:** the description of a local party that is the Authentication Center announces it (its roles). A local
+  party that relays its authentication to a remote checks that the remote announces being the Authentication Center: the
+  forgotten `"AuthCenter"` in the `"Local"` of the Authentication Center is an error when it announces its description.
 - **Keys:** the Authentication Center must have the "KeyManagement" feature (its keys verify the tokens). A remote
   Authentication Center that is not pinned yet is accepted: `Verify` refuses until it is.
 - **No designation:** an `"AuthCenter"` key on a remote, or an `"AuthCenter"` value that is not a section in a `"Local"`
-  (like `true`), is a configuration error. Remotes that allow the feature while their local party doesn't, or (on the
-  Remote side) a local party that allows `"AuthCenterRemote"` while none of its remotes allows `"AuthCenter"`, is a
-  warning: that local party has no authentication.
-- **Defined with its local party:** the Authentication Center is set when its local party is set up (at start, or when
-  a tenant domain is added with its remotes). A remote added later cannot be the Authentication Center: on the Remote
-  side, its setup fails when it allows `"AuthCenter"` and its local party allows `"AuthCenterRemote"` (it is ignored,
-  with a warning, when its local party doesn't); on the Local side, it receives the existing feature when it allows
-  `"AuthCenterRemote"`.
-- **Lifetime:** features cannot be removed. When a remote Authentication Center is destroyed (a remote of a dynamic
-  tenant domain), its local party has no more authentication: the feature stays, is no more `IsAvailable`, and an
-  error is logged. It fails closed. Destroying a tenant domain takes its Authentication Center with it.
-
+  (like `true`), is a configuration error. A local party that is not the Authentication Center and has no remote that
+  allows `"AuthCenterRemote"` has no authentication.
+- **Remotes added later:** a remote added later can be the Authentication Center of a local party that has none (Remote
+  side); a second one is an error. On the Local side, a remote added later that allows `"AuthCenterRemote"` receives the
+  existing feature.
+- **Lifetime:** features cannot be removed. When a remote Authentication Center is destroyed (a remote added later, or a
+  remote of a dynamic tenant domain), its local party has no more authentication: the feature stays, is no more
+  `IsAvailable`, and an error is logged. It fails closed. Destroying a tenant domain takes its Authentication Center
+  with it.
 
 ## Tokens ([`AuthCenterToken`](AuthCenterToken.cs))
 

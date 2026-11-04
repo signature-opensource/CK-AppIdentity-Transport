@@ -1,3 +1,4 @@
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,13 +7,11 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The Local side of the "AuthCenter" feature: this application is the Authentication Center of its local parties. It
-/// adds a <see cref="LocalAuthCenter"/> to every local party that has an Authentication Center (see <see cref="AuthCenterFeatureDriver"/>),
-/// the dynamic tenants included, with the settings of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>).
-/// <para>
-/// An application has one role: with this package, a local party that allows the feature is its own Authentication Center
-/// (a remote of an AuthCenter references CK.AppIdentity.AuthCenter.Remote instead).
-/// </para>
+/// The Local side of the "AuthCenter" asymmetric feature (see <see cref="AuthCenterFeature"/>): a local party that allows
+/// "AuthCenter" (in its "Local") is its own Authentication Center. It gets a <see cref="CrisAuthCenter"/>, shared with its
+/// remotes that allow "AuthCenterRemote" (the dynamic ones included), and a <see cref="LocalAuthCenter"/> with the settings
+/// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't allow "AuthCenter" is
+/// ignored (CK.AppIdentity.AuthCenter.Remote handles it).
 /// </summary>
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
@@ -22,12 +21,14 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     /// Initializes a new <see cref="LocalAuthCenterFeatureDriver"/>.
     /// </summary>
     /// <param name="s">The application identity service.</param>
-    /// <param name="authCenter">The AuthCenter feature driver (it must be set up before this one).</param>
+    /// <param name="keys">
+    /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
+    /// </param>
     /// <param name="schemeConfigurations">The configuration sub-sections declared by the installed scheme families.</param>
     public LocalAuthCenterFeatureDriver( ApplicationIdentityService s,
-                                         AuthCenterFeatureDriver authCenter,
+                                         KeyManagementFeatureDriver keys,
                                          IEnumerable<IAuthCenterSchemeConfiguration> schemeConfigurations )
-        : base( s, AuthCenterFeatureDriver.ConfigurationKey, isAllowedByDefault: false )
+        : base( s, AuthCenterFeature.Name )
     {
         _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
     }
@@ -46,7 +47,19 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     /// <inheritdoc />
     protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
-        return Task.FromResult( party is not ILocalParty local || Plug( context.Monitor, local ) );
+        if( party is ILocalParty local )
+        {
+            return Task.FromResult( Plug( context.Monitor, local ) );
+        }
+        var remote = (IRemoteParty)party;
+        if( !IsAllowedFeature( remote.Owner ) ) return Task.FromResult( true );
+        if( !AuthCenterFeature.CheckNoAuthCenterKey( context.Monitor, remote ) ) return Task.FromResult( false );
+        // A remote added later that uses the local AuthCenter.
+        if( IsAllowedFeature( remote ) && remote.Owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter f )
+        {
+            remote.AddFeature( f );
+        }
+        return Task.FromResult( true );
     }
 
     /// <inheritdoc />
@@ -69,14 +82,24 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
 
     bool Plug( IActivityMonitor monitor, ILocalParty local )
     {
-        var center = local.GetFeature<CrisAuthCenter>();
-        if( center == null ) return true;
-        Throw.DebugAssert( "The role is resolved by the core driver.", center.AuthCenter == local );
+        if( !IsAllowedFeature( local ) ) return true;
+        bool success = AuthCenterFeature.CheckNoAuthCenterKey( monitor, local );
+        foreach( var r in local.Remotes )
+        {
+            success &= AuthCenterFeature.CheckNoAuthCenterKey( monitor, r );
+        }
+        if( !success ) return false;
         // The settings are the local party's own "AuthCenter" section, in its "Local".
-        var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeatureDriver.ConfigurationKey );
+        var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeature.Name );
         if( settings != null && !settings.GetChildren().Any() ) settings = null;
         var options = AuthCenterOptions.Read( monitor, settings, _schemeKeys );
         if( options == null ) return false;
+        var center = CrisAuthCenter.TryCreate( monitor, local, local );
+        if( center == null ) return false;
+        foreach( var r in local.Remotes )
+        {
+            if( IsAllowedFeature( r ) ) r.AddFeature( center );
+        }
         local.AddFeature( new LocalAuthCenter( monitor, center, options, settings ) );
         return true;
     }

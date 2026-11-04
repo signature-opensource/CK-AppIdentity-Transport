@@ -51,7 +51,6 @@ public class RemoteAuthCenterTests
 
     static readonly Type[] _common = [typeof( CurrentLocalParty ),
                                       typeof( CurrentLocalPartyDefaultProvider ),
-                                      typeof( AuthCenterFeatureDriver ),
                                       typeof( IAuthenticationSessionEndpoint ),
                                       typeof( CrisAuthenticationService ),
                                       typeof( AuthenticationInfo ),
@@ -210,10 +209,9 @@ public class RemoteAuthCenterTests
         // The AuthCenter (the listener) is started first: the remote connects at once.
         var (remote, center) = await RunningApplication.CreatePairAsync( TestHelper.Monitor, c =>
         {
-            c["Local:AllowFeatures"] = "AuthCenterRemote";
             // The remote announces its public URL: the AuthCenter derives the accepted passkey origins and OIDC callbacks.
             c["Local:PublicUrl"] = "https://front.example.com";
-            c["Parties:0:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, remoteTypes, c =>
         {

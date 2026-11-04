@@ -53,7 +53,6 @@ public class PartyActorIdsTests
 
     static readonly Type[] _types = [typeof( CurrentLocalParty ),
                                      typeof( CurrentLocalPartyDefaultProvider ),
-                                     typeof( AuthCenterFeatureDriver ),
                                      typeof( IGetPartyActorIdsQCommand ),
                                      typeof( IPartyActorIds ),
                                      typeof( RawCrisExecutor ),
@@ -70,8 +69,7 @@ public class PartyActorIdsTests
         // The remote's AuthCenter is its remote "$Listener".
         return RunningApplication.CreateAsync( TestHelper.Monitor, true, c =>
         {
-            c["Local:AllowFeatures"] = "AuthCenterRemote";
-            c["Parties:0:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, withHeartBeat ? RunningApplication.WithHeartBeat() : null, [.. _types, typeof( RemoteAuthCenterFeatureDriver )] );
     }
