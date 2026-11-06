@@ -65,27 +65,34 @@ sealed class AuthCenterEncryptionKeys
         _keys = new List<Key>();
         if( Directory.Exists( _folder ) )
         {
-            foreach( var file in Directory.EnumerateFiles( _folder ) )
+            foreach( var file in Directory.GetFiles( _folder ) )
             {
-                var k = TryLoad( monitor, file );
+                var k = TryLoad( monitor, file, out bool invalid );
                 if( k != null ) _keys.Add( k );
-                else _store.TryTrash( monitor, file, immediateDelete: true );
+                else if( invalid ) _store.TryTrash( monitor, file, immediateDelete: true );
             }
             _keys.Sort( ( a, b ) => a.Created.CompareTo( b.Created ) );
         }
     }
 
-    Key? TryLoad( IActivityMonitor monitor, NormalizedPath path )
+    // Only an invalid key file is deleted: a key that can't be read now (an IO error) or that is gone (another
+    // instance of this party trashed it) is not. Deleting a readable key loses the data it encrypts.
+    Key? TryLoad( IActivityMonitor monitor, NormalizedPath path, out bool invalid )
     {
+        invalid = false;
+        byte[]? protectedBytes;
         try
         {
-            byte[] protectedBytes;
-            using( var s = _store.OpenReadStream( path ) )
-            using( var m = new MemoryStream() )
-            {
-                s.CopyTo( m );
-                protectedBytes = m.ToArray();
-            }
+            protectedBytes = _store.TryReadAllBytes( path );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to read the AuthCenter encryption key '{path}': it is not used (and kept).", ex );
+            return null;
+        }
+        if( protectedBytes == null ) return null;
+        try
+        {
             var bytes = _protector.Unprotect( protectedBytes );
             try
             {
@@ -102,7 +109,8 @@ sealed class AuthCenterEncryptionKeys
         }
         catch( Exception ex )
         {
-            monitor.Warn( $"Unable to load the AuthCenter encryption key '{path}': it is deleted.", ex );
+            monitor.Warn( $"Invalid AuthCenter encryption key '{path}': it is deleted.", ex );
+            invalid = true;
             return null;
         }
     }

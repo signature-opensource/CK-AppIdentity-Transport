@@ -88,4 +88,47 @@ public class EncryptionKeysTests
         // These keys are in the future: the other tests must not use them.
         System.IO.Directory.Delete( folder, recursive: true );
     }
+
+    [Test]
+    public async System.Threading.Tasks.Task only_an_invalid_key_file_is_deleted_Async()
+    {
+        byte[] Id( string publicKey ) => AuthCenterFieldEncryption.GetKeyId( System.Buffers.Text.Base64Url.DecodeFromChars( publicKey ) );
+        var utcNow = DateTime.UtcNow.AddDays( 3 );
+        string published;
+        NormalizedPath folder;
+        await using( var app = await AuthCenterApp.StartAsync() )
+        {
+            folder = app.Identity.LocalFileStore.FolderPath.Combine( "AuthCenter/EncryptionKeys" );
+            var signer = app.Identity.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>();
+            published = app.LocalCenter.EncryptionKeys.GetPublished( TestHelper.Monitor, signer, utcNow ).PublicKey;
+        }
+        var keyFile = System.IO.Directory.GetFiles( folder ).ShouldHaveSingleItem();
+        try
+        {
+            // A key file that can't be read (here, opened exclusively by another process) is not used, but it is kept:
+            // deleting it would lose the data it encrypts.
+            using( System.IO.File.Open( keyFile, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.None ) )
+            {
+                await using var app = await AuthCenterApp.StartAsync();
+                app.LocalCenter.EncryptionKeys.Find( Id( published ), utcNow ).ShouldBeNull();
+            }
+            System.IO.File.Exists( keyFile ).ShouldBeTrue( "A key that can't be read is kept." );
+            await using( var app = await AuthCenterApp.StartAsync() )
+            {
+                app.LocalCenter.EncryptionKeys.Find( Id( published ), utcNow ).ShouldNotBeNull( "Once readable, it is used." );
+            }
+            // An invalid key file is deleted.
+            System.IO.File.WriteAllBytes( keyFile, [1, 2, 3] );
+            await using( var app = await AuthCenterApp.StartAsync() )
+            {
+                app.LocalCenter.EncryptionKeys.Find( Id( published ), utcNow ).ShouldBeNull();
+            }
+            System.IO.File.Exists( keyFile ).ShouldBeFalse( "An invalid key is deleted." );
+        }
+        finally
+        {
+            // These keys are in the future: the other tests must not use them.
+            System.IO.Directory.Delete( folder, recursive: true );
+        }
+    }
 }
