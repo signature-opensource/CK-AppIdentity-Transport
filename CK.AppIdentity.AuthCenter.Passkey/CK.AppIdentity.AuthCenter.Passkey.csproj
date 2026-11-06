@@ -7,8 +7,8 @@
     <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.cris-auth.0.ci.14" />
-    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.cris-auth.0.ci.53" />
+    <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.cris-auth.1" />
+    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.cris-auth.1" />
     <PackageReference Include="Fido2" Version="4.3.2" />
   </ItemGroup>
   <ItemGroup>
