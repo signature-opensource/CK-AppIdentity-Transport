@@ -50,6 +50,11 @@ sealed partial class RemoteKeys
         /// Loads the most recent pin. Two processes sharing this folder may each have written theirs:
         /// the highest sequence wins and the others go to the '$TrashBin', like any file this loader
         /// does not keep.
+        /// <para>
+        /// Another process may pin meanwhile: it writes its new pin, then trashes the previous one. A listed file can then be
+        /// gone when it is read: it is not an invalid file (that would be trashed), the folder is listed again. Concluding
+        /// "no pin" from a pin that has just been replaced would trust the next key the remote presents (see <see cref="AutoTrustKey"/>).
+        /// </para>
         /// </summary>
         KeyEvent? LoadPin( IActivityMonitor monitor )
         {
@@ -61,11 +66,36 @@ sealed partial class RemoteKeys
                 monitor.Info( $"Trashing '{f}': a trusted identity is now a key event ('{TrustFilePattern}')." );
                 _store.TryTrash( monitor, f );
             }
+            for( int attempt = 1; ; ++attempt )
+            {
+                var best = LoadPin( monitor, folder, out bool goneFile );
+                if( !goneFile ) return best;
+                // Pinning is rare: the folder can't keep changing. This is a defense against an endless loop.
+                if( attempt == MaxLoadPinAttempts )
+                {
+                    Throw.CKException( $"The trusted identity files of remote '{_remote}' keep changing while they are read ({attempt} attempts)." );
+                }
+                monitor.Trace( $"A trusted identity file of remote '{_remote}' has been replaced while it was read. Reading them again." );
+            }
+        }
+
+        const int MaxLoadPinAttempts = 10;
+
+        /// <summary>
+        /// Test only: called with the path of a listed trusted identity file before it is read.
+        /// </summary>
+        internal static Action<NormalizedPath>? OnReadingPin;
+
+        KeyEvent? LoadPin( IActivityMonitor monitor, NormalizedPath folder, out bool goneFile )
+        {
+            goneFile = false;
             KeyEvent? best = null;
             NormalizedPath bestPath = default;
-            foreach( var f in Directory.EnumerateFiles( folder, TrustFilePattern ) )
+            // A snapshot: the files that are not kept are trashed during the loop.
+            foreach( var f in Directory.GetFiles( folder, TrustFilePattern ) )
             {
                 NormalizedPath path = f;
+                OnReadingPin?.Invoke( path );
                 var name = Path.GetFileNameWithoutExtension( path.LastPart );
                 KeyEvent? e = null;
                 try
@@ -74,7 +104,13 @@ sealed partial class RemoteKeys
                     Throw.CheckData( "The file name must be 'Identity.{Seq}.trust'.",
                                      name.StartsWith( "Identity.", StringComparison.Ordinal )
                                      && int.TryParse( name.AsSpan( 9 ), NumberStyles.None, CultureInfo.InvariantCulture, out seq ) );
-                    e = KeyEvent.Read( _store.ReadAllBytes( path ) );
+                    var bytes = _store.TryReadAllBytes( path );
+                    if( bytes == null )
+                    {
+                        goneFile = true;
+                        continue;
+                    }
+                    e = KeyEvent.Read( bytes );
                     Throw.CheckData( "The file name must be the sequence of the event it holds.", e.Seq == seq );
                     Throw.CheckData( "The event must be signed by the key it reveals, for this remote.", e.VerifySignature( _remote.FullName ) );
                 }

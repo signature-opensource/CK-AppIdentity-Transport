@@ -122,6 +122,51 @@ public class TrustMutationTests
     }
 
     [Test, CancelAfter( 60000 )]
+    public async Task A_pin_replaced_by_another_process_while_it_is_loaded_is_found_Async( CancellationToken token )
+    {
+        // Another process sharing the store pins the next event while this one starts: it writes Identity.1.trust,
+        // then trashes Identity.0.trust, that this process has just listed. The listed file is gone, not invalid:
+        // concluding "no pin" would trust the next key the remote presents.
+        var (service, keys, remote) = await CreateRemoteAsync( "M15Load", token );
+        using var peer = PeerIdentity.Create( remote );
+        await using( service )
+        {
+            keys.SetTrustedIdentity( TestHelper.Monitor.ParallelLogger, peer.Head ).ShouldBeTrue();
+        }
+        var folder = keys.Party.SharedFileStore.FolderPath;
+        peer.Rotate();
+        var e1 = peer.Head;
+        e1.Seq.ShouldBe( 1 );
+
+        int replaced = 0;
+        RemoteKeys.Builder.OnReadingPin = path =>
+        {
+            if( path.LastPart == "Identity.0.trust" && path.RemoveLastPart() == folder && Interlocked.Exchange( ref replaced, 1 ) == 0 )
+            {
+                File.WriteAllBytes( folder.AppendPart( "Identity.1.trust" ), e1.Encoded.ToArray() );
+                File.Delete( path );
+            }
+        };
+        try
+        {
+            var name = "M15Load";
+            await using var restarted = await TestHelper.CreateApplicationServiceAsync( c =>
+            {
+                c["FullName"] = $"Test/${name}";
+                c["Parties:0:PartyName"] = $"${name}Peer";
+            }, ConfigureFastClock, token: token );
+            replaced.ShouldBe( 1, "The pin has been replaced while it was loaded." );
+            var reloaded = restarted.AllRemotes.Single().GetRequiredFeature<IRemoteKeys>();
+            reloaded.TrustedEvent.ShouldNotBeNull( "The pin that replaced the listed one is found." ).Seq.ShouldBe( 1 );
+            TrustFiles( reloaded ).ShouldBe( ["Identity.1.trust"] );
+        }
+        finally
+        {
+            RemoteKeys.Builder.OnReadingPin = null;
+        }
+    }
+
+    [Test, CancelAfter( 60000 )]
     public async Task Clearing_the_pin_removes_its_file_Async( CancellationToken token )
     {
         var (service, keys, remote) = await CreateRemoteAsync( "M15Clear", token );
