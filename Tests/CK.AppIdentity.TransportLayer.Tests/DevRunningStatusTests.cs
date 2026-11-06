@@ -51,9 +51,11 @@ public class DevRunningStatusTests
     {
         for(; ; )
         {
-            if( File.Exists( path ) )
+            // Read like the store reads it: this never prevents the party from rewriting the file.
+            var bytes = StoreFileReader.TryReadAllBytes( path );
+            if( bytes != null )
             {
-                var e = JsonDocument.Parse( File.ReadAllText( path ) ).RootElement.Clone();
+                var e = JsonDocument.Parse( bytes ).RootElement.Clone();
                 if( condition( e ) ) return e;
             }
             await Task.Delay( 100, cancel );

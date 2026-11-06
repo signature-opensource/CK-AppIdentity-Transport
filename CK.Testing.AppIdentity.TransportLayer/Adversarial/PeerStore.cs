@@ -1,7 +1,6 @@
 using CK.Core;
 using System.IO;
 using System.Linq;
-using System.Threading;
 
 namespace CK.AppIdentity.TransportLayer.Testing.Adversarial;
 
@@ -58,28 +57,19 @@ public static class PeerStore
     /// <summary>
     /// Reads the event pinned for a remote, or null when nothing is pinned.
     /// <para>
-    /// A running party may be pinning at the same time: its atomic write renames the file (and trashes the previous
-    /// one) and, on Windows, a file being renamed can't be opened. The read shares everything (it never makes the
-    /// party's write fail) and retries while the file is being replaced.
+    /// A running party may be pinning at the same time: it writes the new pin, then trashes the previous one.
+    /// The file is read like the store reads it (<see cref="StoreFileReader"/>): this never prevents the party from
+    /// replacing or trashing it, and a file that is gone when it is read is looked up again.
     /// </para>
     /// </summary>
     public static CK.AppIdentity.KeyManagement.KeyEvent? ReadTrustedIdentity( string remoteFullName )
     {
-        for( int retry = 0; ; ++retry )
+        for(; ; )
         {
-            try
-            {
-                var f = FindTrustedIdentityFile( remoteFullName );
-                if( f == null ) return null;
-                using var s = new FileStream( f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete );
-                var bytes = new byte[s.Length];
-                s.ReadExactly( bytes );
-                return CK.AppIdentity.KeyManagement.KeyEvent.Read( bytes );
-            }
-            catch( IOException ) when( retry < 50 )
-            {
-                Thread.Sleep( 10 );
-            }
+            var f = FindTrustedIdentityFile( remoteFullName );
+            if( f == null ) return null;
+            var bytes = StoreFileReader.TryReadAllBytes( f );
+            if( bytes != null ) return CK.AppIdentity.KeyManagement.KeyEvent.Read( bytes );
         }
     }
 
