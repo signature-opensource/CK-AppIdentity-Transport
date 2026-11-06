@@ -109,6 +109,8 @@ sealed class AuthCenterEncryptionKeys
         }
         catch( Exception ex )
         {
+            // A file that can't be unprotected is invalid, even when the cause is the data protection key ring (lost
+            // or changed) rather than the file: such a key is useless and it is deleted. This is accepted.
             monitor.Warn( $"Invalid AuthCenter encryption key '{path}': it is deleted.", ex );
             invalid = true;
             return null;

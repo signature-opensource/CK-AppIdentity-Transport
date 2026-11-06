@@ -143,6 +143,10 @@ sealed partial class RemoteKeys
         /// <summary>
         /// Loads the events the pin moved past: walking back from the pin, each one must link to the
         /// next. The first gap or broken link ends the history; whatever else is there is removed.
+        /// <para>
+        /// A history file that another process trashes while it is loaded (a concurrent prune) is a gap: the history is
+        /// shorter, the pin is unaffected. This is accepted.
+        /// </para>
         /// </summary>
         List<KeyEvent> LoadHistory( IActivityMonitor monitor, KeyEvent? pinned )
         {
