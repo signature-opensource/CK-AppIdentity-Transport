@@ -9,8 +9,8 @@ packages, for instance) run their server with it.
 ## The engine configuration
 
 `AddAuthCenterApplication()` (an extension of `BinPathConfiguration`, in the `CK.Testing` namespace) adds the
-`AuthCenterApplicationAssemblies` to the BinPath: `CK.AppIdentity.AuthCenter.Local` and
-`CK.Cris.AspNet.Authentication` (the engine finds the rest through their references).
+`AuthCenterApplicationAssemblies` to the BinPath: `CK.AppIdentity.AuthCenter.Local`, `CK.Cris.AspNet.Authentication`
+and `CK.AppIdentity.HttpEndpoint` (the engine finds the rest through their references).
 
 The test adds what is specific to it:
 
@@ -24,15 +24,18 @@ The test adds what is specific to it:
 
 ## The running application
 
-`CreateRunningAuthCenterApplicationAsync( map, identity, configureApplication )` (an extension of
-`WebApplicationBuilder`) creates and starts the application:
+`CreateRunningAuthCenterApplicationAsync( identity, configureHost, configureEndpoint )` (an extension of `IStObjMap`)
+creates and starts the application, a party: the `IStObjMap.CreateRunningAspNetServerAsync` of
+[CK.Testing.AspNetServer](https://github.com/signature-opensource/CK-AspNet/blob/stable/CK.Testing.AspNetServer/README.md)
+(a Generic Host whose web application is the "Main" endpoint of its "HttpEndpoint" feature, on a random port):
 
 - its identity: `DefaultIdentity` ("Test/$AuthCenter", whose root is its own Authentication Center:
   `"Local": { "AllowFeatures": "AuthCenter" }`, with the default settings) unless the `identity` callback configures another one;
 - the data protection is the `FakeProtector`
   (see [CK.Testing.AppIdentity.TransportLayer](../CK.Testing.AppIdentity.TransportLayer/README.md)): the identity keys
   are not really protected at rest;
-- `AddCrisAuthentication()`, then the `configureApplication` callback, `UseCrisAuthentication()` and `UseCris()`.
+- the Cris authentication and Cris middlewares are the contributions of their packages to the endpoint
+  (`EnableCrisAuthentication`, `EnableCris`): the test calls nothing.
 
 The returned `RunningAspNetServer` (CK.Testing.AspNetServer) is ready: its identity service is initialized. Its `Client`
 keeps the cookies, so a session opened on `/.cris/auth` works with the token of the `ISessionResult`: a client sets the

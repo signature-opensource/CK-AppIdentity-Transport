@@ -66,7 +66,7 @@ public class SingleApplicationTests
                                                                  typeof( ILogoutSessionCommand ),
                                                                  typeof( INormalWhoAmIQCommand ) );
         var map = (await engine.RunSuccessfullyAsync()).LoadMap();
-        return await WebApplication.CreateSlimBuilder().CreateRunningAuthCenterApplicationAsync( map );
+        return await map.CreateRunningAuthCenterApplicationAsync();
     }
 
     static string ToJson( RunningAspNetServer server, IPoco command )
