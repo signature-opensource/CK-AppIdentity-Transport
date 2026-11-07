@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
-    <PackageReference Include="CK.Testing.NUnit" Version="18.0.0-0.cris-auth" />
+    <PackageReference Include="CK.Testing.NUnit" Version="18.0.0-0.cris-auth.0.ci.6" />
   </ItemGroup>
 
   <ItemGroup>
