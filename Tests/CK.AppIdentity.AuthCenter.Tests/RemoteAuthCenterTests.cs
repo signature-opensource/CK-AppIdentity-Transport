@@ -185,7 +185,8 @@ public class RemoteAuthCenterTests
                                         bool withRegistrar = true,
                                         bool remoteEncrypts = true,
                                         bool passkeys = false,
-                                        Action<MutableConfigurationSection>? oidcSettings = null )
+                                        Action<MutableConfigurationSection>? oidcSettings = null,
+                                        string? centerPublicUrl = null )
     {
         // The remote's AuthCenter is its remote "$Listener".
         Type[] remoteTypes = [.. _common, .. _remoteTypes,
@@ -218,6 +219,7 @@ public class RemoteAuthCenterTests
             c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter,AuthCenterRemote";
+            if( centerPublicUrl != null ) c["Local:PublicUrl"] = centerPublicUrl;
             // A settings section designates the local party as its own AuthCenter, like "true".
             if( passkeys )
             {
@@ -402,5 +404,59 @@ public class RemoteAuthCenterTests
 
         // The login schemes are the AuthCenter's ones (dispatched: the remote has no handler).
         (await p.RequestAsync( pocos => pocos.Create<IGetLoginSchemesQCommand>() )).ShouldBeAssignableTo<IList<ILoginSchemeInfo>>()!.Select( s => s.Name ).ShouldContain( "Oidc.Test" );
+    }
+    [Test]
+    public async Task a_remote_cannot_relay_a_login_on_the_origin_of_another_party_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var p = await StartAsync( passkeys: true,
+                                              oidcSettings: c =>
+                                              {
+                                                  c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+                                                  c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+                                                  c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+                                              },
+                                              centerPublicUrl: "https://center.example.com" );
+        // The AuthCenter is a party (it announces its public URL), but the remote relays: only the remote's origin is accepted.
+        p.Browser.RemoteLoginCallbackUrl = "https://center.example.com/.auth/oidc/callback";
+        var start = await p.RequestAsync( pocos => pocos.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) );
+        start.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Select( e => e.Text )
+             .ShouldContain( "The callback 'https://center.example.com/.auth/oidc/callback' is not allowed for the scheme 'Oidc.Test'." );
+        p.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
+
+        p.Browser.WebOrigin = "https://center.example.com";
+        (await p.RequestAsync( pocos => pocos.Create<IStartPasskeyLoginCommand>() )).ShouldBeAssignableTo<ICrisResultError>()!
+            .Errors.Select( e => e.Text ).ShouldContain( "The origin 'https://center.example.com' is not allowed for passkeys." );
+    }
+
+    [Test]
+    public async Task a_login_started_through_a_remote_is_completed_through_it_only_Async()
+    {
+        using var idp = new FakeIdentityProvider();
+        await using var p = await StartAsync( oidcSettings: c =>
+                                              {
+                                                  c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
+                                                  c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
+                                                  c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+                                              },
+                                              centerPublicUrl: "https://center.example.com" );
+        var start = (await p.RequestAsync( pocos => pocos.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) )).ShouldBeOfType<RedirectedUrl>();
+        var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
+
+        // The same completion (state, code and correlation) executed by the AuthCenter itself (another party) is refused.
+        using var scope = p.Center.CreateScopeServices();
+        var hub = scope.ServiceProvider.GetRequiredService<AmbientServiceHub>().CleanClone();
+        var op = p.Center.PocoDirectory.Create<ICompleteRemoteLoginOperationCommand>( c =>
+        {
+            c.Callback = p.Center.PocoDirectory.Create<IRemoteLoginCallbackCommand>( cb => { cb.State = state; cb.Code = code; } );
+            c.PresentedCorrelationHash = p.Browser.RemoteLoginCorrelation;
+        } );
+        var executing = p.Center.Services.GetRequiredService<CrisBackgroundExecutorService>().Submit( TestHelper.Monitor, op, hub );
+        var r = (await executing.ExecutedCommand.WaitAsync( _timeout )).Result
+                    .ShouldBeAssignableTo<ISessionOperationResult>()!.Result.ShouldNotBeNull();
+        r.Success.ShouldBeFalse();
+        r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RemoteLoginCorrelation" );
+        // The pending login is consumed (one use): the remote can't complete it anymore.
+        p.LocalCenter.PendingRemoteLogins.Count.ShouldBe( 0 );
     }
 }

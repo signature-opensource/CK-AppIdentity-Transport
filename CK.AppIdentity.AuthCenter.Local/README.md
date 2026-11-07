@@ -141,14 +141,15 @@ with two operations handled here: the local Authentication Center keeps the **pe
 only runs its protocol.
 
 1. **`IStartRemoteLoginOperationCommand`**: the scheme must belong to a remote family, the endpoint must be able to
-   receive remote logins with a callback that the family allows for the scheme and that is on the origin of a party
-   (see below), the `ReturnUrl` must be a relative path.
+   receive remote logins with a callback that the family allows for the scheme and that is on the origin of the party
+   that relays the start (see below), the `ReturnUrl` must be a relative path.
    The core chooses the state, the family returns the URL and its private data, and the pending login keeps them with the
    scheme, the callback, the hash of the endpoint's correlation secret, `RememberMe` and an immutable copy of the
    `UserData`.
 2. **`ICompleteRemoteLoginOperationCommand`** (it carries the callback built by the endpoint): the pending login is
-   consumed (one use), its expiry is checked, and the correlation presented by the endpoint must be the one of the start
-   (**login CSRF**: only the caller that started a login can complete it). The family completes the login with the payload
+   consumed (one use), its expiry is checked, the correlation presented by the endpoint must be the one of the start
+   (**login CSRF**: only the caller that started a login can complete it), and the login is completed through the party
+   that started it (the callback of the start is on the origin of the party that relays the completion). The family completes the login with the payload
    of its login provider, and the session is opened with the **user data of the start**: the callback never carries them.
 
 **Binding an identity** (`IStartLoginCommand.BindToCurrentActor`): a logged in user adds a remote identity to its account.
@@ -161,11 +162,13 @@ no account is ever created and the successful result issues no session (`Authent
 
 The `Code` of the callback is `[Sensitive]`: from a remote, it travels encrypted for the Authentication Center.
 
-**The origins of the parties** ([`PartyOrigins`](PartyOrigins.cs)): the URLs that a remote relays (the callback of a
-remote login, the origin of a passkey ceremony) must be on the origin of the public URL of the Authentication Center's
-party or of one of its remotes: their `IParty.Description`, announced by the remotes with their accepted commands (see
-[CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)). They are derived from what the parties state about themselves:
-the Authentication Center configures none of them.
+**The origins of the parties** ([`PartyOrigins`](PartyOrigins.cs)): the URLs that a party relays (the callback of a
+remote login, the origin of a passkey ceremony) must be on the origin of the public URL of **that** party, the caller party
+of the operation (`AuthenticationInfo.CallerPartyId`, see `CallerPartyExtensions.FindCallerParty`): the Authentication
+Center's party for its own endpoints, the remote that relays the operation otherwise. A party can't start or complete a
+login on another party's origin. The public URLs are the `IParty.Description`, announced by the remotes with their
+accepted commands (see [CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)): they are derived from what the parties
+state about themselves, the Authentication Center configures none of them.
 
 ## The commands from its remotes
 

@@ -19,8 +19,9 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// commands are executed by the endpoint that receives them (CK.Cris.Authentication.Passkey), which executes these
 /// operations, locally or dispatched.
 /// <list type="bullet">
-///   <item>A ceremony is accepted only from an endpoint whose web origin (carried by the operation) is one of the
-///   configured origins, and the origin signed by the browser must be this one.</item>
+///   <item>A ceremony is accepted only from an endpoint whose web origin (carried by the operation) is the origin of the
+///   party that relays it (the caller party), and the origin signed by the browser must be this one. A ceremony is
+///   finished from the origin that started it.</item>
 ///   <item>The user is always verified (PIN, biometrics): <c>userVerification: "required"</c>, and the UV flag is checked.</item>
 ///   <item>The login is usernameless: the options list no credential.</item>
 ///   <item>A registration requires the Critical level, not impersonated, and must be completed by the session that
@@ -39,14 +40,16 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
     // receiving endpoint runs it.
 
     /// <summary>
-    /// Checks that passkeys are available and that the endpoint's origin is accepted.
+    /// Checks that passkeys are available and that the endpoint's origin is accepted (the origin of the caller party).
     /// </summary>
     [CommandHandlingValidator]
-    public void Validate( UserMessageCollector c, IStartPasskeyLoginOperationCommand op, CurrentLocalParty localParty ) => Check( c, localParty, op.WebOrigin );
+    public void Validate( UserMessageCollector c, IStartPasskeyLoginOperationCommand op, CurrentLocalParty localParty, AuthenticationInfo authentication )
+        => Check( c, localParty, authentication, op.WebOrigin );
 
-    /// <inheritdoc cref="Validate(UserMessageCollector, IStartPasskeyLoginOperationCommand, CurrentLocalParty)"/>
+    /// <inheritdoc cref="Validate(UserMessageCollector, IStartPasskeyLoginOperationCommand, CurrentLocalParty, AuthenticationInfo)"/>
     [CommandHandlingValidator]
-    public void Validate( UserMessageCollector c, IFinishPasskeyLoginOperationCommand op, CurrentLocalParty localParty ) => Check( c, localParty, op.WebOrigin );
+    public void Validate( UserMessageCollector c, IFinishPasskeyLoginOperationCommand op, CurrentLocalParty localParty, AuthenticationInfo authentication )
+        => Check( c, localParty, authentication, op.WebOrigin );
 
     /// <summary>
     /// Checks that passkeys are available, that the endpoint's origin is accepted, and that the authentication is at the
@@ -58,7 +61,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
                           CurrentLocalParty localParty,
                           AuthenticationInfo authentication )
     {
-        Check( c, localParty, op.WebOrigin );
+        Check( c, localParty, authentication, op.WebOrigin );
         if( authentication.IsImpersonated )
         {
             c.Error( "This is refused while impersonating.", "Authentication.Impersonated" );
@@ -69,18 +72,19 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
         }
     }
 
-    /// <inheritdoc cref="Validate(UserMessageCollector, IStartPasskeyLoginOperationCommand, CurrentLocalParty)"/>
+    /// <inheritdoc cref="Validate(UserMessageCollector, IStartPasskeyLoginOperationCommand, CurrentLocalParty, AuthenticationInfo)"/>
     [CommandHandlingValidator]
-    public void Validate( UserMessageCollector c, IFinishPasskeyRegistrationOperationCommand op, CurrentLocalParty localParty ) => Check( c, localParty, op.WebOrigin );
+    public void Validate( UserMessageCollector c, IFinishPasskeyRegistrationOperationCommand op, CurrentLocalParty localParty, AuthenticationInfo authentication )
+        => Check( c, localParty, authentication, op.WebOrigin );
 
-    static void Check( UserMessageCollector c, CurrentLocalParty localParty, string? webOrigin )
+    static void Check( UserMessageCollector c, CurrentLocalParty localParty, AuthenticationInfo authentication, string? webOrigin )
     {
         var family = FindFamily( localParty );
         if( family == null )
         {
             c.Error( "Passkeys are not available.", "Authentication.UnknownScheme" );
         }
-        else if( !family.Options!.IsAllowedOrigin( localParty.LocalParty, webOrigin ) )
+        else if( !family.Options!.IsAllowedOrigin( localParty.LocalParty, authentication.CallerPartyId, webOrigin ) )
         {
             c.Error( string.IsNullOrEmpty( webOrigin )
                         ? "This endpoint cannot serve passkeys."

@@ -31,9 +31,9 @@ provider name.
 
 ## The rules ([`AuthCenterPasskeyHandlers`](AuthCenterPasskeyHandlers.cs))
 
-- **Origins:** a ceremony is accepted only from an endpoint whose `WebOrigin` is the origin of the public URL of a party
-  of the AuthCenter, itself or one of its remotes (`PartyOrigins`: derived from what the parties announce, never
-  configured), https (http only on a loopback address), on the `RpId` or one of its sub-domains (a remote's endpoint
+- **Origins:** a ceremony is accepted only from an endpoint whose `WebOrigin` is the origin of the public URL of the
+  party that relays it, the AuthCenter itself or one of its remotes (`PartyOrigins`: derived from what the parties
+  announce, never configured), https (http only on a loopback address), on the `RpId` or one of its sub-domains (a remote's endpoint
   sends its checked origin with the operation), and the origin signed by the browser must be this one: a phishing page signs its own origin and is
   refused. The relying party hash must be the `RpId`'s.
 - **User verification required** (PIN, biometrics), at registration and at login: `userVerification: "required"` is

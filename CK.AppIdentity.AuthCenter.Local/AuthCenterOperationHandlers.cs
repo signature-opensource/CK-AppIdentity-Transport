@@ -116,7 +116,8 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
 
     /// <summary>
     /// Validates the start of a remote login: the scheme belongs to a remote family, the receiving endpoint's callback is
-    /// allowed for it, the return URL is relative, a binding is at the Critical level and not impersonated.
+    /// allowed for it and is on the origin of the party that relays the start (the caller party), the return URL is
+    /// relative, a binding is at the Critical level and not impersonated.
     /// </summary>
     [CommandHandlingValidator]
     public void Validate( UserMessageCollector c, IStartRemoteLoginOperationCommand op, CurrentLocalParty localParty, AuthenticationInfo authentication )
@@ -151,8 +152,8 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             c.Error( "This endpoint cannot receive remote logins.", "Authentication.NoRemoteLogin" );
         }
         else if( !family.IsAllowedCallback( login.Scheme, op.CallbackUrl )
-                 // The callback is an endpoint of a party: on the origin of its public URL (its announcement).
-                 || !PartyOrigins.IsPartyUrl( localParty.LocalParty, op.CallbackUrl ) )
+                 // The callback is an endpoint of the party that relays the start: on the origin of its public URL (its announcement).
+                 || !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyId, op.CallbackUrl ) )
         {
             c.Error( $"The callback '{op.CallbackUrl}' is not allowed for the scheme '{login.Scheme}'.", "Authentication.CallbackNotAllowed" );
         }
@@ -215,8 +216,9 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
     }
 
     /// <summary>
-    /// Completes a remote login: the pending login is consumed (one use), its expiry and its correlation with the caller
-    /// that started it are checked, its family completes it and the session is opened with the user data of its start.
+    /// Completes a remote login: the pending login is consumed (one use), its expiry, its correlation with the caller
+    /// that started it and its party (the callback of the start is on the origin of the party that relays the
+    /// completion) are checked, its family completes it and the session is opened with the user data of its start.
     /// A binding (<see cref="IStartLoginCommand.BindToCurrentActor"/>) binds the identity to the actor of the session that
     /// started it, through the <see cref="IAutoBindingAccountService"/>: its successful result issues no session.
     /// </summary>
@@ -225,7 +227,8 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                                                             ICompleteRemoteLoginOperationCommand op,
                                                             CurrentLocalParty localParty,
                                                             IServiceProvider services,
-                                                            PocoDirectory pocos )
+                                                            PocoDirectory pocos,
+                                                            AuthenticationInfo authentication )
     {
         var endpoint = new OperationSessionEndpoint( op );
         return endpoint.ToResult( pocos, await CompleteAsync().ConfigureAwait( false ) );
@@ -254,6 +257,12 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                 || !CryptographicOperations.FixedTimeEquals( Encoding.ASCII.GetBytes( presented ), Encoding.ASCII.GetBytes( pending.CorrelationHash ) ) )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{pending.Scheme}' login completed by a caller that didn't start it." );
+                return AuthCenterResults.Failure( monitor, command, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );
+            }
+            // A login started through a party is completed through the same party.
+            if( !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyId, pending.CallbackUrl ) )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{pending.Scheme}' login started with the callback '{pending.CallbackUrl}' completed through another party." );
                 return AuthCenterResults.Failure( monitor, command, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );
             }
             var providerName = pending.Family.ProviderName;

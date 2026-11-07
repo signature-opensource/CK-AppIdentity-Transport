@@ -41,7 +41,7 @@ none: the family still hides the "Oidc" provider name in the scheme listing). `A
 pending logins, this package runs the protocol.
 
 1. **Start:** the callback of the endpoint must be an https URL (http only on a loopback address) on the origin of the
-   public URL of a party of the AuthCenter: itself or one of its remotes (`PartyOrigins` of
+   public URL of the party that relays the start: the AuthCenter itself or one of its remotes (`PartyOrigins` of
    [CK.AppIdentity.AuthCenter.Local](../CK.AppIdentity.AuthCenter.Local/README.md): derived from what the
    parties announce, never configured; the redirect URIs registered at the provider stay its configuration). The nonce and the PKCE verifier are
    generated here and kept with the pending login; the result is the authorization URL. A Critical login

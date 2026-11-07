@@ -99,7 +99,7 @@ public sealed partial class OidcSchemeOptions
 
     /// <summary>
     /// Gets whether a callback URL (the redirect URI of a login) is well formed: an absolute https URL (http only on a
-    /// loopback address) without query nor fragment. Its origin must also be the one of a party of the AuthCenter
+    /// loopback address) without query nor fragment. Its origin must also be the one of the party that relays the login
     /// (<see cref="PartyOrigins"/>): the callback URLs are derived from the public URLs of the parties, never configured.
     /// </summary>
     /// <param name="callbackUrl">The callback URL.</param>

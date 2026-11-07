@@ -48,19 +48,21 @@ public sealed class AuthCenterPasskeyOptions
     }
 
     /// <summary>
-    /// Gets whether the origin of a passkey ceremony is accepted: it is the origin of the public URL of the local party
-    /// or of one of its remotes (<see cref="PartyOrigins"/>: derived from what the parties state about themselves, never
-    /// configured), https (http only on a loopback address), on the <see cref="RpId"/> or one of its sub-domains.
+    /// Gets whether the origin of a passkey ceremony is accepted: it is the origin of the public URL of the party that
+    /// relays the ceremony, the local party or one of its remotes (<see cref="PartyOrigins.IsCallerPartyUrl"/>: derived
+    /// from what the parties state about themselves, never configured), https (http only on a loopback address), on the
+    /// <see cref="RpId"/> or one of its sub-domains.
     /// </summary>
     /// <param name="local">The local party (the AuthCenter).</param>
+    /// <param name="callerPartyId">The caller party identifier (<see cref="CK.Auth.AuthenticationInfo.CallerPartyId"/>).</param>
     /// <param name="origin">The origin of the endpoint that serves the ceremony.</param>
     /// <returns>True if the origin is accepted.</returns>
-    public bool IsAllowedOrigin( ILocalParty local, string? origin )
+    public bool IsAllowedOrigin( ILocalParty local, int callerPartyId, string? origin )
     {
         if( NormalizeOrigin( origin ) is not string o ) return false;
         var host = new Uri( o ).Host;
         return (host == RpId || host.EndsWith( "." + RpId, StringComparison.Ordinal ))
-               && PartyOrigins.IsPartyUrl( local, o );
+               && PartyOrigins.IsCallerPartyUrl( local, callerPartyId, o );
     }
 
     internal static AuthCenterPasskeyOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection section )
