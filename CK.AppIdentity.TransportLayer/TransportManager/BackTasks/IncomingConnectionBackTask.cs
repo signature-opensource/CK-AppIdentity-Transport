@@ -333,7 +333,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                         // was taken over, this is how it learns it.
                         await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming, conflict.Value.Keys,
                                                                               ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict,
-                                                                              null, null, conflict.Value.Nonce ).ConfigureAwait( false );
+                                                                              null, null, null, conflict.Value.Nonce ).ConfigureAwait( false );
                         return null;
                     }
                     // We have read the first part of the message.
@@ -395,6 +395,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             Throw.CheckData( lenEphemeral > 0 && lenEphemeral <= RunPhaseProtection.MaxEphemeralPublicKeyLength );
             var remoteEphemeral = r.ReadBytes( lenEphemeral );
             byte remoteMacCapabilities = r.ReadByte();
+            // The commitment to its nonce of the approval code (see ApprovalSession).
+            var approvalCommitment = r.ReadBytes( ApprovalSession.NonceLength );
 
             // What the initiator states about the certificate it presented. Read now because it sits
             // inside the signed region; checked below, once the signature says whose statement it is.
@@ -508,7 +510,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        clockOffset,
                                        block,
                                        remoteEphemeral,
-                                       remoteMacCapabilities );
+                                       remoteMacCapabilities,
+                                       approvalCommitment );
         }
     }
 
@@ -631,6 +634,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                      or PeeringIssueKind.RequiresBothApproval
                                 ? transportManager.GetEnlistRemoteUrl( existingParty, initialMessage.DomainName )
                                 : null;
+        // The approval issues carry our nonce of the approval code for the initiator's key: its item keeps it
+        // across the attempts (see ApprovalSession).
+        bool isApproval = issue is PeeringIssueKind.RequiresLocalApproval
+                                   or PeeringIssueKind.RequiresRemoteApproval
+                                   or PeeringIssueKind.RequiresBothApproval;
+        byte[]? approvalNonce = isApproval && remote != null
+                                    ? remote.Approval.OnInitial( initialMessage.RemoteHead,
+                                                                 initialMessage.ApprovalCommitment,
+                                                                 transportManager.SystemClock.UtcNow )
+                                    : null;
         var messageSent = await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming,
                                                                                 remote?.RemoteKeys,
                                                                                 pIssue,
@@ -638,14 +651,15 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                                     ? initialMessage.ClockOffset
                                                                                     : null,
                                                                                 enlistUrl,
+                                                                                approvalNonce,
                                                                                 initialMessage.Nonce ).ConfigureAwait( false );
         if( !messageSent ) return;
         // Only if the transport has not been condemned.
         string? remoteEnlistUrl = null;
-        if( issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval )
+        if( approvalNonce != null )
         {
-            // Consider 3 bytes per Utf16 char... This is more than enough.
-            using var enlistReplyMessage = await incoming.ReadNextAsync( 10 + 3 * ZeroProtocol.MaxEnlistUrlLength ).ConfigureAwait( false );
+            Throw.DebugAssert( remote != null );
+            using var enlistReplyMessage = await incoming.ReadNextAsync( ZeroProtocol.RequiredEnlistUrlMaxLength ).ConfigureAwait( false );
             if( !enlistReplyMessage.IsValid
                 || enlistReplyMessage.Protocol != MessageProtocol.ZeroProtocol
                 || enlistReplyMessage.Message.FirstSpan.Length == 0
@@ -658,12 +672,34 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 || !ZeroProtocol.ReadRequiredEnlistUrlMessage( enlistReplyMessage,
                                                                initialMessage.Nonce,
                                                                initiatorKey,
-                                                               out remoteEnlistUrl ) )
+                                                               out remoteEnlistUrl,
+                                                               out var revealed ) )
             {
                 // Weird...
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                $"Signature or nonce check failed for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}'." );
                 return;
+            }
+            // Our own URL is not useful to an initiator that we trust: only an issue that requires our approval
+            // keeps it (see PeeringIssue.EnlistUrl).
+            if( issue is PeeringIssueKind.RequiresRemoteApproval ) remoteEnlistUrl = null;
+            if( revealed != null )
+            {
+                if( remote.Approval.OnReveal( initialMessage.RemoteHead, revealed ) )
+                {
+                    var code = remote.Approval.GetListenerCodeToLog( initialMessage.FullName,
+                                                                     initialMessage.RemoteHead,
+                                                                     remote.Party.Owner.FullName,
+                                                                     remote.RemoteKeys.LocalKeys.State.Tail[^1] );
+                    if( code != null )
+                    {
+                        transportManager.Logger.Info( $"The approval code between '{initialMessage.FullName}' and us is {code}." );
+                    }
+                }
+                else
+                {
+                    transportManager.Logger.Warn( $"The revealed approval nonce of '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' doesn't match its commitment." );
+                }
             }
         }
         transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl );

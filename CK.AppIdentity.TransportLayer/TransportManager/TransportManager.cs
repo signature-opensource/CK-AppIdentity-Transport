@@ -312,6 +312,8 @@ sealed partial class TransportManager : MicroAgent
                                      GoodbyeMessage.Evicted? evictionMessage )
     {
         Throw.DebugAssert( (evictionMessage != null) == (transport.Listener != null) );
+        // Connected: the approval code with this remote is over.
+        remote.GetFeature<TransportFeature>()?.Approval.Clear();
         PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockOffset, evictionMessage ) );
     }
 

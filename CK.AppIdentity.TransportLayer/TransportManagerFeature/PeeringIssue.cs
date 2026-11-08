@@ -226,6 +226,103 @@ public sealed class PeeringIssue
     }
 
     /// <summary>
+    /// Gets the approval code of this relationship ("1234-5678"), or null when there is none yet: a short code that
+    /// both parties compute from their names, their identity keys and a nonce of each side, exchanged by the
+    /// connection attempts (it is also logged when it appears). It is available for the approval issues
+    /// (<see cref="PeeringIssueKind.RequiresLocalApproval"/>, <see cref="PeeringIssueKind.RequiresRemoteApproval"/> and
+    /// <see cref="PeeringIssueKind.RequiresBothApproval"/>) once an attempt has exchanged the nonces.
+    /// <para>
+    /// The code shown by a party is the one that an operator of the <b>other</b> party enters to approve it (see
+    /// <see cref="TryApprove(IActivityMonitor, string)"/>): reading it on the party itself is the out of band check.
+    /// An attacker can't compute a key whose code matches: the nonces are committed before being revealed, so each
+    /// pending key is one chance in 10^8.
+    /// </para>
+    /// </summary>
+    public string? ApprovalCode
+    {
+        get
+        {
+            if( _cloneSource != null ) return _cloneSource.ApprovalCode;
+            var remote = _remote;
+            if( remote == null || _kind is not (PeeringIssueKind.RequiresLocalApproval
+                                                or PeeringIssueKind.RequiresRemoteApproval
+                                                or PeeringIssueKind.RequiresBothApproval) )
+            {
+                return null;
+            }
+            var localHead = remote.RemoteKeys.LocalKeys.State.Tail[^1];
+            if( IsListener )
+            {
+                return _initialMessage != null
+                        ? remote.Approval.GetListenerCode( _fullName, _initialMessage.RemoteHead, remote.Party.Owner.FullName, localHead )
+                        : null;
+            }
+            // The key our nonce has been revealed to: the key to approve, or the trusted one (RequiresRemoteApproval).
+            return remote.Approval.GetInitiatorCode( remote.Party.Owner.FullName, localHead, _fullName, _remoteKeyForApproval );
+        }
+    }
+
+    /// <summary>
+    /// Approves the remote with the <see cref="ApprovalCode"/> read on the remote party itself: when the code matches
+    /// a key that the remote presented, this key becomes its trusted identity (like <see cref="AcceptRemoteIdentity(IActivityMonitor)"/>).
+    /// <para>
+    /// This applies to <see cref="PeeringIssueKind.RequiresLocalApproval"/> and <see cref="PeeringIssueKind.RequiresBothApproval"/>.
+    /// The separators of the code (spaces, dashes) are ignored.
+    /// </para>
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="code">The code read on the remote party.</param>
+    /// <returns>True when the code matched and the key is now trusted, false otherwise (this is logged).</returns>
+    public bool TryApprove( IActivityMonitor monitor, string code )
+    {
+        if( _cloneSource != null ) return _cloneSource.TryApprove( monitor, code );
+        lock( _lock )
+        {
+            var remote = _remote;
+            if( remote == null || _kind is not (PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval) )
+            {
+                monitor.Warn( $"No approval is expected from '{_fullName}' (issue: {_kind})." );
+                return false;
+            }
+            if( !ApprovalSession.TryNormalize( code, out var normalized ) )
+            {
+                monitor.Warn( $"Invalid approval code '{code}': 8 digits are expected." );
+                return false;
+            }
+            var localHead = remote.RemoteKeys.LocalKeys.State.Tail[^1];
+            KeyEvent? key;
+            bool notReady = false;
+            if( IsListener )
+            {
+                key = remote.Approval.FindListenerApproval( normalized,
+                                                            _fullName,
+                                                            remote.Party.Owner.FullName,
+                                                            localHead,
+                                                            remote.Party.ApplicationIdentityService.SystemClock.UtcNow,
+                                                            out notReady );
+            }
+            else
+            {
+                Throw.DebugAssert( _remoteKeyForApproval != null );
+                key = remote.Approval.GetInitiatorCode( remote.Party.Owner.FullName, localHead, _fullName, _remoteKeyForApproval ) == normalized
+                        ? _remoteKeyForApproval
+                        : null;
+                notReady = key == null && ApprovalCode == null;
+            }
+            if( key == null )
+            {
+                monitor.Warn( notReady
+                                ? $"The approval code with '{_fullName}' is not ready yet: retry once the next connection attempt has exchanged it."
+                                : $"The approval code '{normalized}' doesn't match any key presented by '{_fullName}'." );
+                return false;
+            }
+            remote.RemoteKeys.SetTrustedIdentity( monitor, key );
+            monitor.Info( $"'{_fullName}' is approved with its approval code: its key '{PublicKeyFingerprint.Compute( key.Spki.Span )}' is now trusted." );
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Gets whether this issue is an immutable <see cref="Clone"/>.
     /// </summary>
     public bool IsClone => _cloneSource != null;

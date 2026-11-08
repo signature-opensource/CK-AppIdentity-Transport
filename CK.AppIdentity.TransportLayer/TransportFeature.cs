@@ -616,6 +616,11 @@ public sealed class TransportFeature
         }
     }
 
+    /// <summary>
+    /// Gets the state of the approval code with this remote, kept across the connection attempts.
+    /// </summary>
+    internal ApprovalSession Approval { get; } = new ApprovalSession();
+
     internal void InitializeOutgoingAndInitiateConnection()
     {
         Throw.DebugAssert( _target != null );

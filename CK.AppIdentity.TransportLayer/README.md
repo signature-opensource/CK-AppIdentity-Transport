@@ -223,6 +223,16 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
   presented (`RemoteIdentityForApproval`). `AcceptRemoteIdentity` pins it. Nothing in the protocol proves that this key
   belongs to the named party: an approval UI must show `RemoteKeyFingerprintForApproval` and have it compared out of band.
+- **Approving with a code.** The approval issues (`RequiresLocalApproval`, `RequiresRemoteApproval`,
+  `RequiresBothApproval`) expose an `ApprovalCode` ("1234-5678"), also logged when it appears. Both parties compute the
+  same code from their full names, their identity keys and a nonce of each side, exchanged by the connection attempts.
+  An operator reads it on the remote party itself and enters it on the party that must approve:
+  `TryApprove( monitor, code )` pins the key whose code matches.
+  - The initiator commits to its nonce in its initial message, the listener answers its own in its rejection, and the
+    initiator reveals its nonce in its reply: nobody chooses its values once it knows the other's, so an attacker can't
+    compute a key whose code matches. Each pending key is one chance in 10^8.
+  - The nonces are kept across the attempts (by the remote's `TransportFeature`, in memory): the code doesn't change
+    while the parties retry. A listener keeps at most 4 pending keys per remote, for an hour; a restart gives a new code.
 - **Enlisting.** `EnlistUrl` is the URL the other side sent so that it can enlist us. `IsEnlistUrlAuthenticated` is false
   when it came in a reply that is not signed by a key we trust: following it is then a trust decision, never automatic.
 

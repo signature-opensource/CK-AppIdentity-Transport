@@ -36,6 +36,7 @@ sealed class InitialMessage : IIncomingRequest
                                + 1 // RemoteTrustInfo.CanAutoTrust?
                                + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
                                + 1 // Its MAC capabilities.
+                               + ApprovalSession.NonceLength // The commitment to its nonce of the approval code.
                                + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.
                                + 8 + 8 // The timed nonce: creation time and value.
                                + ZeroProtocol.IdentityBlockMaxLength;
@@ -72,6 +73,8 @@ sealed class InitialMessage : IIncomingRequest
     // cached on the TransportFeature and reused across connection attempts.
     readonly byte[] _remoteEphemeralPublicKey;
     readonly byte _remoteMacCapabilities;
+    // Incoming only: the initiator's commitment to its nonce of the approval code (see ApprovalSession).
+    readonly byte[] _approvalCommitment;
 
     sealed class ProtocolAdapter : IReadOnlyCollection<string>
     {
@@ -110,6 +113,7 @@ sealed class InitialMessage : IIncomingRequest
         // Outgoing: the ephemeral belongs to the Transport, not here — this object is cached and
         // reused across connection attempts, and a reused ephemeral would reuse the session key.
         _remoteEphemeralPublicKey = Array.Empty<byte>();
+        _approvalCommitment = Array.Empty<byte>();
     }
 
     /// <summary>
@@ -131,7 +135,8 @@ sealed class InitialMessage : IIncomingRequest
                            TimeSpan clockOffset,
                            IdentityBlock block,
                            byte[] remoteEphemeralPublicKey,
-                           byte remoteMacCapabilities )
+                           byte remoteMacCapabilities,
+                           byte[] approvalCommitment )
     {
         _endPointDescription = endPointDescription;
         _remoteEndPointDescription = remoteEndPointDescription;
@@ -150,7 +155,13 @@ sealed class InitialMessage : IIncomingRequest
         _block = block;
         _remoteEphemeralPublicKey = remoteEphemeralPublicKey;
         _remoteMacCapabilities = remoteMacCapabilities;
+        _approvalCommitment = approvalCommitment;
     }
+
+    /// <summary>
+    /// Gets the initiator's commitment to its nonce of the approval code (incoming messages only).
+    /// </summary>
+    internal byte[] ApprovalCommitment => _approvalCommitment;
 
     /// <summary>
     /// Gets the initiator's ephemeral ECDH public key (incoming messages only).

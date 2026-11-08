@@ -60,8 +60,11 @@ public static class PeerMessages
                                          PeerIdentity signWith,
                                          PeerStatement? statement = null,
                                          bool canAutoTrust = false,
-                                         byte[]? certificateBinding = null )
+                                         byte[]? certificateBinding = null,
+                                         byte[]? approvalCommitment = null )
     {
+        // The commitment to a nonce of the approval code: a random one when none is given.
+        approvalCommitment ??= System.Security.Cryptography.RandomNumberGenerator.GetBytes( 32 );
         return Build( ( ref FastByteWriter w ) =>
         {
             w.WriteBytes( PeerInitialMessage.Prefix );
@@ -76,6 +79,8 @@ public static class PeerMessages
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );
             w.WriteByte( macCapabilities );
+            // The commitment to its nonce of the approval code, inside the signed region.
+            w.WriteBytes( approvalCommitment );
             // What this side states about the certificate it is presenting, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
             // The timed nonce.
@@ -218,7 +223,8 @@ public static class PeerMessages
                                        TimeSpan? clockOffset,
                                        string? enlistUrl,
                                        PeerIdentity? signWith,
-                                       PeerStatement? statement = null )
+                                       PeerStatement? statement = null,
+                                       byte[]? approvalNonce = null )
     {
         return Build( ( ref FastByteWriter w ) =>
         {
@@ -227,6 +233,9 @@ public static class PeerMessages
             w.WriteByte( issue );
             w.WriteNullableTimeSpan( clockOffset );
             w.WriteString( enlistUrl ?? string.Empty );
+            // The listener's nonce of the approval code (the approval issues only): length then bytes.
+            w.WriteSmallUInt32( (uint)(approvalNonce?.Length ?? 0) );
+            if( approvalNonce != null ) w.WriteBytes( approvalNonce );
             // The bool says whether an identity block follows.
             w.WriteBool( signWith != null );
         }, signWith, statement );

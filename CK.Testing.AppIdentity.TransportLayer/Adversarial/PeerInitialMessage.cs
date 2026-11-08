@@ -37,6 +37,11 @@ public sealed class PeerInitialMessage
     public required byte MacCapabilities { get; init; }
 
     /// <summary>
+    /// The initiator's commitment to its nonce of the approval code (32 bytes, the SHA-256 of the nonce).
+    /// </summary>
+    public required byte[] ApprovalCommitment { get; init; }
+
+    /// <summary>
     /// What the initiator states about the certificate it is presenting: the SHA-256 of its DER, or
     /// null when it presents none — which is every cleartext connection.
     /// </summary>
@@ -97,6 +102,8 @@ public sealed class PeerInitialMessage
         uint lenEphemeral = r.ReadSmallUInt32();
         var ephemeral = r.ReadBytes( lenEphemeral );
         byte macCaps = r.ReadByte();
+        // The commitment to its nonce of the approval code.
+        var approvalCommitment = r.ReadBytes( 32 );
 
         // What the initiator states about the certificate it presented, still inside the signed
         // region: length then bytes, 0 meaning none.
@@ -138,6 +145,7 @@ public sealed class PeerInitialMessage
             CanAutoTrust = canAutoTrust,
             EphemeralPublicKey = ephemeral,
             MacCapabilities = macCaps,
+            ApprovalCommitment = approvalCommitment,
             CertificateBinding = certificateBinding,
             NonceCreationTime = nonceTime,
             Nonce = nonce,

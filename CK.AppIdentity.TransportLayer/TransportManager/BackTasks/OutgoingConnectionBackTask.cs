@@ -282,7 +282,9 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             // go into the transcript rather than the local CurrentVersion constant.
             int sentVersion = ZeroProtocol.CurrentVersion;
             // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
-            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities );
+            // The commitment to our nonce of the approval code, kept across the attempts (see ApprovalSession).
+            var sentCommitment = remote.Approval.GetCommitment();
+            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities, sentCommitment );
             if( !sentNonce.HasValue )
             {
                 // If we are canceled, let the finally kill the new transport.
@@ -325,6 +327,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                                     out ZeroProtocol.ConfigurationOrTrustIssue pIssue,
                                                                     out TimeSpan? clockOffset,
                                                                     out string? enlistUrl,
+                                                                    out byte[]? approvalNonce,
                                                                     out IdentityBlock? block,
                                                                     out SignatureCheck signatureCheck );
                         var currentKeyData = block?.HeadKeyData;
@@ -416,16 +419,33 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                            $"The remote '{remote.Party}' pins for us an identity our log does not extend. Retrying in 30 seconds." );
                             return 30;
                         }
-                        // Thanks to the InitialMessage.RemoteTrustInfo, the remote has detected that we won't be able to trust him:
-                        // we must provide him our EnlistUrl (even if it is null).
+                        // An approval issue: we reply with the reveal of our nonce of the approval code (when it can be
+                        // revealed to this listener's key, see ApprovalSession) and, when the listener must approve
+                        // us, with our EnlistUrl (even if it is null).
                         if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
+                                      or ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
                                       or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
                         {
+                            Throw.DebugAssert( block != null );
                             // This is our EnlistUrl for him: its "{DomainName}" is his domain.
-                            var hisEnlistUrl = transportManager.GetEnlistRemoteUrl( remote.Party, remote.Party.DomainName );
+                            var hisEnlistUrl = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
+                                                ? null
+                                                : transportManager.GetEnlistRemoteUrl( remote.Party, remote.Party.DomainName );
+                            var reveal = remote.Approval.OnReply( block.Value.Head, approvalNonce, sentCommitment );
                             // We don't care if this is not sent.
                             Throw.DebugAssert( remote.RemoteKeys == transport.RemoteKeys );
-                            await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, sentNonce.Value );
+                            await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, reveal, sentNonce.Value );
+                            if( reveal != null )
+                            {
+                                var code = remote.Approval.GetInitiatorCodeToLog( remote.Party.Owner.FullName,
+                                                                                  remote.RemoteKeys.LocalKeys.State.Tail[^1],
+                                                                                  remote.Party.FullName,
+                                                                                  block.Value.Head );
+                                if( code != null )
+                                {
+                                    transportManager.Logger.Info( $"The approval code between us and '{remote.Party}' is {code}." );
+                                }
+                            }
                         }
 
                         issue = pIssue switch
@@ -494,7 +514,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( !retriedDowngrade )
                         {
                             sentVersion = otherVersion;
-                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities );
+                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities, sentCommitment );
                             if( !sentNonce.HasValue )
                             {
                                 if( !cancellation.IsCancellationRequested )
