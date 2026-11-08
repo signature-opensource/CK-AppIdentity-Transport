@@ -17,7 +17,7 @@ namespace CK.AppIdentity.Cris;
 /// <code>
 /// [description]                       a block
 ///     hasPublicUrl, the public URL
-///     count, then [client] per client application: its name, its request path
+///     count, then [client] per client application: its name, its request path, its facts
 ///     count, the roles
 /// </code>
 /// </summary>
@@ -40,6 +40,8 @@ public static class PartyDescriptionCodec
             var c = w.BeginBlock();
             w.WriteString( a.Name );
             w.WriteString( a.RequestPath );
+            // Its facts (a CKTrait): added at the end of the block, an older reader skips them.
+            w.WriteString( a.Facts.ToString() );
             w.EndBlock( c );
         }
         w.WriteInt32( description.Roles.Length );
@@ -68,8 +70,10 @@ public static class PartyDescriptionCodec
             var c = d.ReadBlock();
             var name = c.ReadString();
             var path = c.ReadString();
+            // An older writer doesn't write the facts.
+            var facts = c.IsEnd ? null : ClientApplicationDescription.FactContext.FindOrCreate( c.ReadString() );
             if( name.Length == 0 || !path.StartsWith( '/' ) ) error ??= $"Invalid client application '{name}' ('{path}').";
-            else apps.Add( new ClientApplicationDescription( name, path ) );
+            else apps.Add( new ClientApplicationDescription( name, path, facts ) );
         }
         int roleCount = d.ReadInt32();
         Throw.CheckData( "Invalid role count.", roleCount >= 0 );
