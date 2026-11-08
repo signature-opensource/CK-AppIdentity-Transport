@@ -36,8 +36,6 @@ public class DevRunningStatusTests
             services.AddSingleton<ApplicationIdentityService.ISystemClock>( new SystemClockTester( 50 ) );
             services.AddSingleton<DevRunningStatusFeatureDriver>();
             services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<DevRunningStatusFeatureDriver>() );
-            services.AddSingleton<TransportDevRunningStatusContributor>();
-            services.AddSingleton<IDevRunningStatusContributor>( sp => sp.GetRequiredService<TransportDevRunningStatusContributor>() );
         }, cancel );
         // Starts the static features (what a host does).
         await s.StartAndInitializeAsync().WaitAsync( cancel );

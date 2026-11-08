@@ -72,6 +72,8 @@ public static class TestHelperExtensions
         // (The KeyManagementFeatureDriver constructor parameter of the TransportFeatureDriver carries this dependency.)
         serviceBuilder.AddSingleton<TransportFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
+        // It contributes to the running status of a development party (the CK DI registers it).
+        serviceBuilder.AddSingleton<IDevRunningStatusContributor>( sp => sp.GetRequiredService<TransportFeatureDriver>() );
 
         serviceBuilder.AddSingleton<IDataProtectionProvider>( sp => FakeProtector.Fake );
         // Resolved lazily: a test that registers its own IDataProtectionProvider (the last registration

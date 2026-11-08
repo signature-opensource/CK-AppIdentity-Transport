@@ -207,8 +207,7 @@ when it connects or when the current connection closes. The `TransportManagerFea
 In a development solution, the "DevRunningStatus" feature of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity) writes the running status of the party
 (`#Dev/Store/.../DevRunningStatus.json`, read by the `#Dev/Start.ps1` launcher). The
-[`TransportDevRunningStatusContributor`](DevRunningStatus/TransportDevRunningStatusContributor.cs) adds a `Transport`
-section: the `Listeners` (their `EndPointDescription`, with the actual listening address when it differs) and the
+[`TransportFeatureDriver`](TransportFeatureDriver.DevRunningStatus.cs) adds a `Transport` section: the `Listeners` (their `EndPointDescription`, with the actual listening address when it differs) and the
 `Availability` of each remote. The party is `Ready` once every outgoing remote (with an `Address`) is `Connected`.
 
 ## Peering issues

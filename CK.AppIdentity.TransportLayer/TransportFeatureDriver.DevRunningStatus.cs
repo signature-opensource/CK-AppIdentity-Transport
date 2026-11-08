@@ -17,24 +17,12 @@ namespace CK.AppIdentity.TransportLayer;
 /// The party is ready when every outgoing remote (with a <see cref="TransportFeature.TargetAddress"/>) is
 /// <see cref="ConnectionAvailability.Connected"/>.
 /// </summary>
-public sealed class TransportDevRunningStatusContributor : IDevRunningStatusContributor
+public partial class TransportFeatureDriver : IDevRunningStatusContributor
 {
-    readonly ApplicationIdentityService _s;
-
-    /// <summary>
-    /// Initializes a new <see cref="TransportDevRunningStatusContributor"/>.
-    /// </summary>
-    /// <param name="s">The application identity service.</param>
-    public TransportDevRunningStatusContributor( ApplicationIdentityService s )
-    {
-        _s = s;
-    }
-
-    /// <inheritdoc />
-    public void Activate( IActivityMonitor monitor, Action onChanged )
+    void IDevRunningStatusContributor.Activate( IActivityMonitor monitor, Action onChanged )
     {
         // The transport feature may be disallowed.
-        var transport = _s.GetFeature<TransportManagerFeature>();
+        var transport = ApplicationIdentityService.GetFeature<TransportManagerFeature>();
         if( transport != null )
         {
             transport.ConnectionAvailabilityChanged.Sync += ( m, t ) => onChanged();
@@ -42,16 +30,14 @@ public sealed class TransportDevRunningStatusContributor : IDevRunningStatusCont
         }
     }
 
-    /// <inheritdoc />
-    public bool IsReady => GetTransports().All( t => t.TargetAddress == null || t.ConnectionAvailability == ConnectionAvailability.Connected );
+    bool IDevRunningStatusContributor.IsReady => GetRunningStatusTransports().All( t => t.TargetAddress == null || t.ConnectionAvailability == ConnectionAvailability.Connected );
 
-    /// <inheritdoc />
-    public void Write( Utf8JsonWriter writer )
+    void IDevRunningStatusContributor.Write( Utf8JsonWriter writer )
     {
-        var transports = GetTransports().ToList();
+        var transports = GetRunningStatusTransports().ToList();
         writer.WriteStartObject( "Transport" );
         writer.WriteStartArray( "Listeners" );
-        foreach( var l in GetListeners( transports ) )
+        foreach( var l in GetRunningStatusListeners( transports ) )
         {
             writer.WriteStringValue( l.EndPointDescription );
         }
@@ -68,14 +54,15 @@ public sealed class TransportDevRunningStatusContributor : IDevRunningStatusCont
         writer.WriteEndObject();
     }
 
-    IEnumerable<TransportFeature> GetTransports() => _s.AllRemotes.Select( r => r.GetFeature<TransportFeature>() ).Where( t => t != null )!;
+    IEnumerable<TransportFeature> GetRunningStatusTransports() => ApplicationIdentityService.AllRemotes.Select( r => r.GetFeature<TransportFeature>() ).Where( t => t != null )!;
 
     // The listeners of the remotes, and the "AlwaysListening" ones of the local parties.
-    IEnumerable<TransportListener> GetListeners( List<TransportFeature> transports )
+    IEnumerable<TransportListener> GetRunningStatusListeners( List<TransportFeature> transports )
     {
-        var alwaysListening = _s.TenantDomains.Cast<ILocalParty>()
-                                              .Prepend( _s )
-                                              .SelectMany( l => l.GetFeature<TransportListener[]>() ?? [] );
+        var s = ApplicationIdentityService;
+        var alwaysListening = s.TenantDomains.Cast<ILocalParty>()
+                                             .Prepend( s )
+                                             .SelectMany( l => l.GetFeature<TransportListener[]>() ?? [] );
         return transports.SelectMany( t => t.Listeners ?? [] )
                          .Concat( alwaysListening )
                          .Distinct();
