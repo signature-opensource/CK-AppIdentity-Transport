@@ -70,18 +70,8 @@ public sealed partial class CrisChannelFeature
                 w.WriteByte( DAccepted );
                 w.WriteInt32( names.Count );
                 foreach( var n in names ) w.WriteString( n );
-                // The description follows the names: a peer that reads only the names ignores it.
-                w.WriteBool( description.PublicUrl != null );
-                if( description.PublicUrl != null ) w.WriteString( description.PublicUrl.ToString() );
-                w.WriteInt32( description.ClientApplications.Length );
-                foreach( var a in description.ClientApplications )
-                {
-                    w.WriteString( a.Name );
-                    w.WriteString( a.RequestPath );
-                }
-                // The roles follow the client applications: a peer that doesn't read them ignores them.
-                w.WriteInt32( description.Roles.Length );
-                foreach( var role in description.Roles ) w.WriteString( role );
+                // The description follows the names, in length-prefixed blocks (see PartyDescriptionCodec).
+                PartyDescriptionCodec.Write( ref w, description );
                 w.Commit();
             } ) );
         }
@@ -278,43 +268,10 @@ public sealed partial class CrisChannelFeature
             int count = r.ReadInt32();
             var names = new HashSet<string>( count );
             for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
-            // A peer that doesn't send its description: its last known one is kept.
-            PartyDescription? description = null;
-            if( !r.GetAfterHead().IsEmpty )
+            var description = PartyDescriptionCodec.Read( ref r, out var error );
+            if( error != null )
             {
-                Uri? url = null;
-                string? error = null;
-                if( r.ReadBool() ) PartyDescription.TryParsePublicUrl( r.ReadString(), out url, out error );
-                int appCount = r.ReadInt32();
-                var apps = ImmutableArray.CreateBuilder<ClientApplicationDescription>( appCount );
-                for( int i = 0; i < appCount; ++i )
-                {
-                    var name = r.ReadString();
-                    var path = r.ReadString();
-                    if( name.Length == 0 || !path.StartsWith( '/' ) ) error ??= $"Invalid client application '{name}' ('{path}').";
-                    else apps.Add( new ClientApplicationDescription( name, path ) );
-                }
-                // A peer that doesn't send its roles has none.
-                List<string>? roles = null;
-                if( !r.GetAfterHead().IsEmpty )
-                {
-                    int roleCount = r.ReadInt32();
-                    roles = new List<string>( roleCount );
-                    for( int i = 0; i < roleCount; ++i )
-                    {
-                        var role = r.ReadString();
-                        if( string.IsNullOrWhiteSpace( role ) ) error ??= "Invalid empty role.";
-                        else roles.Add( role );
-                    }
-                }
-                if( error != null )
-                {
-                    monitor.Error( $"Invalid description announced by '{_feature.Party.FullName}' (ignored): {error}" );
-                }
-                else
-                {
-                    description = new PartyDescription( url, apps.MoveToImmutable(), roles );
-                }
+                monitor.Error( $"Invalid description announced by '{_feature.Party.FullName}' (ignored): {error}" );
             }
             _feature.OnAccepted( monitor, names, description );
         }

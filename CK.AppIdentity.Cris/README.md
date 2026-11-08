@@ -55,9 +55,13 @@ remote accepts from us (null until its first advertisement, see `WaitForAccepted
 
 The advertisement also carries the description of the party (`IParty.Description` of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md#the-description-of-a-party):
-its public URL and its client applications): the receiver sets it on its remote (`IRemoteParty.SetDescription`, persisted).
-It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know their URL
-once the host has started). A peer that sends only the command names keeps its last known description.
+its public URL, its client applications and its roles): the receiver sets it on its remote (`IRemoteParty.SetDescription`,
+persisted). It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know
+their URL once the host has started). An invalid description is logged and ignored: the remote keeps its last known one.
+
+Its binary form is [`PartyDescriptionCodec`](PartyDescriptionCodec.cs): the description and each client application are
+length-prefixed blocks (see the blocks of [CK.AppIdentity.TransportLayer](../CK.AppIdentity.TransportLayer/Buffering/README.md)),
+so that a field added at the end of a block is skipped by the readers that don't know it.
 
 ## Location-transparent dispatch
 

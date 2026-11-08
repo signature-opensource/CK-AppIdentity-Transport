@@ -45,3 +45,16 @@ is a `callvirt`).
 The `FastByteWriter.Commit()` method must be called before loosing the writer so that `IBufferWriter<bute>.Advance(int)` is called
 and whatever has been written to the current span is transfered to the `IBufferWriter<byte>`.
 
+## Length-prefixed blocks
+
+A structure that must stay extensible is written in a block: `FastByteWriter.BeginBlock()` reserves its length (4 bytes,
+little endian) and returns a `FastByteBlock`, `FastByteWriter.EndBlock( block )` writes the length of what has been
+written since. Blocks can be nested.
+
+`FastByteReader.ReadBlock()` returns a reader on the content of the block and moves the reader after it, whatever is
+read from the block's reader:
+- a reader reads the fields it knows and ignores the ones that a newer writer added at the end of the block;
+- a newer reader of an older block finds the block's end (`FastByteReader.IsEnd`) where its newer fields would be: they
+  keep their default.
+
+`FastByteReader.Skip( count )` skips bytes, across the segments.
