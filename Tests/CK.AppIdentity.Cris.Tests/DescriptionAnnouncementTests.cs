@@ -1,6 +1,6 @@
 using CK.Core;
 using CK.Testing.AppIdentity.Cris;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
@@ -22,17 +22,31 @@ public class DescriptionAnnouncementTests
     /// <summary>
     /// The listener's contribution: a client application, and a public URL that the test changes.
     /// </summary>
-    public sealed class TestDescriptionContributor : IPartyDescriptionContributor
+    public sealed class TestDescriptionFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public static Uri? PublicUrl;
 
-        public void Activate( IActivityMonitor monitor, Action onChanged ) { }
+        public TestDescriptionFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
 
-        public void Contribute( PartyDescription.Builder builder )
+        public Task ChangeAsync( Uri publicUrl )
+        {
+            PublicUrl = publicUrl;
+            return OnDescriptionChangedAsync( TestHelper.Monitor, ApplicationIdentityService );
+        }
+
+        protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
         {
             builder.PublicUrl ??= PublicUrl;
             builder.AddClientApplication( "App", "/" );
         }
+
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );
+
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.FromResult( true );
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.CompletedTask;
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
     }
 
     static async Task<PartyDescription> WaitForAsync( IRemoteParty remote, Func<PartyDescription, bool> condition )
@@ -48,12 +62,12 @@ public class DescriptionAnnouncementTests
     [Test]
     public async Task the_parties_announce_their_description_to_each_other_and_again_when_it_changes_Async()
     {
-        TestDescriptionContributor.PublicUrl = new Uri( "https://listener.example.com" );
+        TestDescriptionFeatureDriver.PublicUrl = new Uri( "https://listener.example.com" );
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                                          c => c["Local:PublicUrl"] = "https://sender.example.com",
                                                                          [],
                                                                          null,
-                                                                         [typeof( TestDescriptionContributor )] );
+                                                                         [typeof( TestDescriptionFeatureDriver )] );
         var (sender, listener) = pair;
         (await sender.CrisChannel.WaitForAcceptedCommandsAsync( _timeout )).ShouldBeTrue();
         var senderOnListener = listener.ApplicationIdentityService.Remotes.Single();
@@ -67,8 +81,7 @@ public class DescriptionAnnouncementTests
 
         // The listener's contribution changes (like the URL of an HTTP endpoint known once the host has started): it is
         // announced again.
-        TestDescriptionContributor.PublicUrl = new Uri( "https://other-listener.example.com" );
-        await ((IHostedLifecycleService)listener.ApplicationIdentityService).StartedAsync( default );
+        await listener.Services.GetRequiredService<TestDescriptionFeatureDriver>().ChangeAsync( new Uri( "https://other-listener.example.com" ) );
         var d = await WaitForAsync( listenerOnSender, d => d.PublicUrl?.Host == "other-listener.example.com" );
         d.GetClientApplicationUrl().ShouldBe( "https://other-listener.example.com" );
     }
