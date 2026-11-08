@@ -170,6 +170,35 @@ login on another party's origin. The public URLs are the `IParty.Description`, a
 accepted commands (see [CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)): they are derived from what the parties
 state about themselves, the Authentication Center configures none of them.
 
+## The footprint of the logins ([`AuthCenterPendingStore`](AuthCenterPendingStore.cs))
+
+A login that needs more than one request (a remote login, a passkey ceremony) leaves a **pending item** between its start
+and its completion. Its footprint is bounded in time and in memory, and nothing of it outlives the login.
+
+**Where:** only in the Authentication Center, in memory: each `LocalAuthCenter` (the root and every tenant that is its own
+Authentication Center) has its stores. A remote of an Authentication Center keeps nothing: its endpoint keeps only the
+correlation secret of a remote login on the caller's side (a cookie for an HTTP endpoint, see
+`IAuthenticationSessionEndpoint.PrepareRemoteLogin`), and the pending item keeps its hash.
+
+| Store | Item | Lifetime | Capacity |
+|---|---|---|---|
+| `LocalAuthCenter.PendingRemoteLogins` | [`PendingRemoteLogin`](PendingRemoteLogin.cs), under its state | `LocalAuthCenter.PendingRemoteLoginLifetime`: 10 minutes | `LocalAuthCenter.MaxPendingRemoteLogins`: 10,000 |
+
+A scheme family can have its own store of the same type (for an example in a package that depends on this one, see
+the ceremonies of [CK.AppIdentity.AuthCenter.Passkey](../CK.AppIdentity.AuthCenter.Passkey/README.md)).
+
+- **One use:** the completion takes the item (`TryTake`) before checking anything: success or failure (an expired login,
+  a wrong correlation, a failed provider), the item is gone.
+- **A full store refuses the start:** "Too many logins in progress. Please retry later." The logins are started
+  anonymously: the capacity is what bounds the memory.
+- **No timer:** the expired items are purged when an item is added (`TryAdd` calls `HasRoom`, that scans the store),
+  and `TryTake` drops an expired item it finds. An abandoned login stays in memory after its expiry, until the next
+  start: at most the capacity of the store.
+- **A restart cancels the logins in progress:** nothing is persisted.
+
+**What remains after a login** is the session itself, if one is opened (see "Sessions" above): a file of the
+`LocalFileStore` that holds the hashes of the secrets, deleted at its end by the hourly purge.
+
 ## The commands from its remotes
 
 Its remotes (CK.AppIdentity.AuthCenter.Remote) send it the operations of their endpoints and the commands it
