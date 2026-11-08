@@ -4,6 +4,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.cris-auth.1.ci.37" />
     <PackageReference Include="CK.DB.Tests.NUnit" Version="36.0.0-0.cris-auth.1.ci.46" />
     <PackageReference Include="CK.SqlServer.Dapper" Version="18.0.0-0.cris-auth.1.ci.29" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
