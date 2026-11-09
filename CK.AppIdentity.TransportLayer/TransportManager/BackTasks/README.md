@@ -58,8 +58,9 @@ protocols (one version each), the listener's ephemeral public key, the selected 
 capabilities, its certificate binding and its identity block. The listener has derived its session keys before sending
 it.
 
-When the listener requires a local approval, it waits for the initiator's **RequiredEnlistUrl** (discriminator 8): the
-initiator's own `EnlistRemoteUrl` for the listener, signed with the initiator's operational key. The issue then appears
+When an approval is required, the listener waits for the initiator's **RequiredEnlistUrl** (discriminator 8): the
+initiator's own enlistment URL (the target of its "Enlistment" route) when the listener must approve it, and the reveal
+of its nonce of the approval code, signed with the initiator's operational key. The issue then appears
 on both sides as a `PeeringIssue`.
 
 ### 3. Initiator: the final message

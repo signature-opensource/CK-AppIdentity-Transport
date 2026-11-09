@@ -10,44 +10,46 @@ namespace CK.AppIdentity.TransportLayer;
 sealed partial class TransportManager
 {
     /// <summary>
-    /// Tries to return the configured "EnlistRemoteUrl" that can be displayed on a remote and can be
-    /// used to enlist a not yet known remote into one of our local parties.
-    /// If the IRemoteParty has been found (we have it, it's its TrustedIdentity that is missing), we use
-    /// its Owner local to find the "closest" url pattern.
-    /// If the IRemoteParty is null, we use the DomainName to try to locate a domain that would better host
-    /// this remote than the Local one, and fall back to the Local one.
-    /// The "EnlistRemoteUrl" is the one of the remote, or of the "Local" of the tenant domain (or of the application), otherwise
-    /// the one of the nearest "Defaults" above it.
+    /// Gets the enlistment URL that a local party hands to a party that doesn't trust it yet (or that it doesn't know):
+    /// the <see cref="PartyRoute.Target"/> of its "Enlistment" route (see <see cref="TransportFeatureDriver.EnlistmentRouteName"/>),
+    /// derived from the System, never configured. Null when the local party knows no approval page.
     /// </summary>
-    /// <param name="party">The remote party if we already know it.</param>
-    /// <param name="domainName">The domain name of the remote: it replaces "{DomainName}" in the url.</param>
+    /// <param name="local">The local party concerned (see <see cref="GetEnlistingLocalParty"/>).</param>
     /// <returns>The enlistment url or null.</returns>
     /// <remarks>
-    /// This is reached for <c>PeeringIssueKind.IncomingUnknown</c>, i.e. for a peer we have never
-    /// heard of, and it selects the tenant by a domain name taken from that peer's own self-asserted
-    /// message. So any stranger can probe which domain names exist here and read each one's
-    /// "EnlistRemoteUrl". The name is charset-validated, so there is no injection vector - this is
-    /// disclosure, and for enlistment it is very likely the intent. Do not put anything in
-    /// "EnlistRemoteUrl" that is not meant to be handed to an unauthenticated caller.
+    /// This is reached for <c>PeeringIssueKind.IncomingUnknown</c>, i.e. for a peer we have never heard of, whose
+    /// local party is selected by a domain name taken from that peer's own self-asserted message. So any stranger can
+    /// probe which domain names exist here and read each one's enlistment URL. The name is charset-validated, so there
+    /// is no injection vector - this is disclosure, and for enlistment it is the intent: the URL of an approval page is
+    /// meant to be handed to an unauthenticated caller.
     /// </remarks>
-    internal string? GetEnlistRemoteUrl( IRemoteParty? party, string domainName )
+    internal string? GetEnlistRemoteUrl( ILocalParty local )
     {
-        IParty closest = party
-                         ?? _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName )
-                         ?? (IParty)_agent.ApplicationIdentityService;
-        var u = TransportFeatureDriver.PartyConfiguration( closest ).TryResolveValue( "EnlistRemoteUrl" );
-        if( u != null ) u = u.Replace( "{DomainName}", domainName );
-        // The value is raw configuration and travels inside messages whose maximum length is budgeted
-        // term by term (ZeroProtocol.FirstAnswerMaxLength). Without a bound here a long or non-ASCII
-        // URL simply makes the reply exceed its budget and be dropped as Invalid - the operator gets
-        // no enlistment link and no explanation. Refusing it at the source says why.
+        var u = local.Description.Routes.GetValueOrDefault( TransportFeatureDriver.EnlistmentRouteName )?.Target;
+        // The URL travels inside messages whose maximum length is budgeted term by term (ZeroProtocol.FirstAnswerMaxLength).
+        // Without a bound here a long or non-ASCII URL simply makes the reply exceed its budget and be dropped as Invalid -
+        // the operator gets no enlistment link and no explanation. Refusing it at the source says why.
         if( u != null && Encoding.UTF8.GetByteCount( u ) > ZeroProtocol.MaxEnlistRemoteUrlLength )
         {
-            Logger.Error( $"'EnlistRemoteUrl' resolves to {Encoding.UTF8.GetByteCount( u )} bytes, " +
+            Logger.Error( $"The enlistment URL of '{local.FullName}' has {Encoding.UTF8.GetByteCount( u )} bytes, " +
                           $"more than the {ZeroProtocol.MaxEnlistRemoteUrlLength} bytes that fit in a negotiation message. Ignored." );
             return null;
         }
         return u;
+    }
+
+    /// <summary>
+    /// Gets the local party concerned by a caller: the owner of the remote when it is known, otherwise the tenant domain
+    /// whose domain name the caller claims, otherwise the root.
+    /// </summary>
+    /// <param name="party">The remote party if we already know it.</param>
+    /// <param name="domainName">The domain name the caller claims.</param>
+    /// <returns>The local party.</returns>
+    internal ILocalParty GetEnlistingLocalParty( IRemoteParty? party, string domainName )
+    {
+        return party?.Owner
+               ?? _agent.ApplicationIdentityService.TenantDomains.FirstOrDefault( d => d.DomainName == domainName )
+               ?? (ILocalParty)_agent.ApplicationIdentityService;
     }
 
     /// <summary>

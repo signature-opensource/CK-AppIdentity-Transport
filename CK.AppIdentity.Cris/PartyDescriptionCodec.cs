@@ -3,6 +3,7 @@ using CK.Core;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace CK.AppIdentity.Cris;
 
@@ -19,6 +20,8 @@ namespace CK.AppIdentity.Cris;
 ///     hasPublicUrl, the public URL
 ///     count, then [client] per client application: its name, its request path, its facts
 ///     count, the roles
+///     count, then the data announcements: name, value
+///     count, then the routes: name, target, count, the full names of the path
 /// </code>
 /// </summary>
 public static class PartyDescriptionCodec
@@ -46,6 +49,21 @@ public static class PartyDescriptionCodec
         }
         w.WriteInt32( description.Roles.Length );
         foreach( var role in description.Roles ) w.WriteString( role );
+        // The data announcements and the routes: added at the end of the block, an older reader skips them.
+        w.WriteInt32( description.Data.Count );
+        foreach( var (name, value) in description.Data )
+        {
+            w.WriteString( name );
+            w.WriteString( value );
+        }
+        w.WriteInt32( description.Routes.Count );
+        foreach( var (name, route) in description.Routes )
+        {
+            w.WriteString( name );
+            w.WriteString( route.Target );
+            w.WriteInt32( route.Path.Length );
+            foreach( var p in route.Path ) w.WriteString( p );
+        }
         w.EndBlock( d );
     }
 
@@ -84,6 +102,47 @@ public static class PartyDescriptionCodec
             if( string.IsNullOrWhiteSpace( role ) ) error ??= "Invalid empty role.";
             else roles.Add( role );
         }
-        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles ) : null;
+        // An older writer doesn't write the data announcements nor the routes.
+        var data = new List<KeyValuePair<string, string>>();
+        if( !d.IsEnd )
+        {
+            int dataCount = d.ReadInt32();
+            Throw.CheckData( "Invalid data count.", dataCount >= 0 );
+            for( int i = 0; i < dataCount; ++i )
+            {
+                var name = d.ReadString();
+                var value = d.ReadString();
+                if( !PartyDescription.IsValidName( name ) ) error ??= $"Invalid data announcement name '{name}'.";
+                else data.Add( new KeyValuePair<string, string>( name, value ) );
+            }
+        }
+        var routes = new List<KeyValuePair<string, PartyRoute>>();
+        if( !d.IsEnd )
+        {
+            int routeCount = d.ReadInt32();
+            Throw.CheckData( "Invalid route count.", routeCount >= 0 );
+            for( int i = 0; i < routeCount; ++i )
+            {
+                var name = d.ReadString();
+                var target = d.ReadString();
+                int pathLength = d.ReadInt32();
+                Throw.CheckData( "Invalid route length.", pathLength >= 0 && pathLength <= PartyRoute.MaxLength );
+                var path = new string[pathLength];
+                for( int j = 0; j < pathLength; ++j ) path[j] = d.ReadString();
+                if( !PartyDescription.IsValidName( name ) )
+                {
+                    error ??= $"Invalid route name '{name}'.";
+                }
+                else if( pathLength == 0 || path.Any( string.IsNullOrWhiteSpace ) || path.Distinct( StringComparer.Ordinal ).Count() != pathLength )
+                {
+                    error ??= $"Invalid path of the route '{name}': 1 to {PartyRoute.MaxLength} distinct full names are expected.";
+                }
+                else
+                {
+                    routes.Add( new KeyValuePair<string, PartyRoute>( name, new PartyRoute( target, path ) ) );
+                }
+            }
+        }
+        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes ) : null;
     }
 }

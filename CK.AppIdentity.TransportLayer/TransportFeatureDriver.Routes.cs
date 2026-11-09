@@ -1,0 +1,104 @@
+using CK.Core;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace CK.AppIdentity.TransportLayer;
+
+/// <summary>
+/// The routes of the local parties (see <see cref="PartyRoute"/>): the transport layer knows which remotes are connected,
+/// so it computes, in the second phase of the description of each local party, the route of every name hosted here or
+/// announced by a connected remote of the System. It also hosts the "Enlistment" route: the approval page of the System.
+/// </summary>
+public partial class TransportFeatureDriver
+{
+    /// <summary>
+    /// The name of the route to the approval page of the System (see <see cref="PartyDescription.Routes"/>): its target is
+    /// the URL of the page, handed to the parties that must be approved (the enlistment URL).
+    /// </summary>
+    public const string EnlistmentRouteName = "Enlistment";
+
+    /// <summary>
+    /// The fact of a client application that is an approval page (see <see cref="ClientApplicationDescription.Facts"/>).
+    /// </summary>
+    public const string EnlistmentFact = "Enlistment";
+
+    /// <summary>
+    /// The suffix of the URL of the approval page, after the URL of its client application.
+    /// </summary>
+    public const string EnlistmentPageSuffix = "/app-identity/enlist";
+
+    void SubscribeRoutes( ILocalParty local ) => local.RemoteDescriptionChanged.Async += OnRemoteDescriptionChangedAsync;
+
+    void UnsubscribeRoutes( ILocalParty local ) => local.RemoteDescriptionChanged.Async -= OnRemoteDescriptionChangedAsync;
+
+    // A remote announced another description: its routes may have changed.
+    Task OnRemoteDescriptionChangedAsync( IActivityMonitor monitor, IRemoteParty remote, CancellationToken cancel )
+    {
+        return OnDescriptionChangedAsync( monitor, remote.Owner );
+    }
+
+    // A remote connects or disconnects: its routes count or not.
+    Task OnConnectionAvailabilityChangedAsync( IActivityMonitor monitor, TransportFeature transport, CancellationToken cancel )
+    {
+        return OnDescriptionChangedAsync( monitor, transport.Party.Owner );
+    }
+
+    /// <summary>
+    /// Computes the routes of the local party: for each route name hosted here (the hosted routes of the first phase, and
+    /// the "Enlistment" route when a client application has the <see cref="EnlistmentFact"/>) or announced by a connected
+    /// remote of the System, the hosted route, or the best route of the remotes, extended with the local party.
+    /// </summary>
+    /// <param name="party">The local party.</param>
+    /// <param name="builder">The second phase of its description.</param>
+    protected override void ContributeDerivedDescription( ILocalParty party, PartyDescription.DerivedBuilder builder )
+    {
+        string local = party.FullName;
+        var hosted = new Dictionary<string, string>( builder.HostedRoutes, StringComparer.Ordinal );
+        var pageUrl = GetEnlistmentPageUrl( builder );
+        if( pageUrl != null ) hosted[EnlistmentRouteName] = pageUrl;
+
+        // The connected remotes of the System: the routes of the others don't count.
+        var remotes = party.Remotes.Where( r => r.DomainName == party.DomainName
+                                                && r.EnvironmentName == party.EnvironmentName
+                                                && r.GetFeature<TransportFeature>()?.ConnectionAvailability == ConnectionAvailability.Connected )
+                                   .ToList();
+        var names = new SortedSet<string>( hosted.Keys, StringComparer.Ordinal );
+        foreach( var r in remotes ) names.UnionWith( r.Description.Routes.Keys );
+        foreach( var name in names )
+        {
+            if( hosted.TryGetValue( name, out var target ) )
+            {
+                builder.SetRoute( name, PartyRoute.Hosted( target, local ) );
+                continue;
+            }
+            var accepted = new List<PartyRoute>();
+            foreach( var r in remotes )
+            {
+                if( r.Description.Routes.TryGetValue( name, out var route ) )
+                {
+                    if( route.TryAccept( r.FullName, local, out var reason ) ) accepted.Add( route );
+                    else ActivityMonitor.StaticLogger.Trace( $"Route '{name}' of '{r.FullName}' ignored by '{local}': {reason}." );
+                }
+            }
+            builder.SetRoute( name, PartyRoute.SelectBest( accepted )?.Extend( local ) );
+        }
+    }
+
+    /// <summary>
+    /// Gets the URL of the approval page of the party, or null: the URL of its client application that has the
+    /// <see cref="EnlistmentFact"/>, followed by the <see cref="EnlistmentPageSuffix"/>. A party without public URL hosts
+    /// no page: never a URL that can't be reached.
+    /// </summary>
+    static string? GetEnlistmentPageUrl( PartyDescription.DerivedBuilder builder )
+    {
+        if( builder.PublicUrl == null ) return null;
+        var fact = ClientApplicationDescription.FactContext.FindOrCreate( EnlistmentFact );
+        var page = builder.ClientApplications.FirstOrDefault( c => c.Facts.IsSupersetOf( fact ) );
+        return page != null
+                ? builder.PublicUrl.GetLeftPart( UriPartial.Authority ) + page.RequestPath.TrimEnd( '/' ) + EnlistmentPageSuffix
+                : null;
+    }
+}

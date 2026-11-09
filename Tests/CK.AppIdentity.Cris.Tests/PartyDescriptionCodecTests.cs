@@ -13,7 +13,10 @@ public class PartyDescriptionCodecTests
     static PartyDescription Sample() => new PartyDescription( new Uri( "https://front.example.com" ),
                                                               [new ClientApplicationDescription( "App", "/", ClientApplicationDescription.FactContext.FindOrCreate( "Enlistment|Other" ) ),
                                                                new ClientApplicationDescription( "Admin", "/admin" )],
-                                                              ["Manager", "Operator"] );
+                                                              ["Manager", "Operator"],
+                                                              [new( "Region", "eu-west" )],
+                                                              [new( "Enlistment", new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", ["Test/$Front/#Dev", "Test/$Admin/#Dev"] ) ),
+                                                               new( "Other", PartyRoute.Hosted( "Some.Command", "Test/$Front/#Dev" ) )] );
 
     [Test]
     public void a_description_round_trips()
@@ -52,6 +55,8 @@ public class PartyDescriptionCodecTests
         w.EndBlock( c );
         w.WriteInt32( 1 );
         w.WriteString( "Manager" );
+        w.WriteInt32( 0 ); // No data announcement.
+        w.WriteInt32( 0 ); // No route.
         w.WriteString( "a newer section of the description" );
         w.EndBlock( d );
         w.WriteByte( 42 );

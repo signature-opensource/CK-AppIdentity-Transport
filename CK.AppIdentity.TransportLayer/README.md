@@ -57,7 +57,6 @@ Other keys (each one is the party's own key, in its `"Local"` for a local party,
 | `AlwaysListening` | A local party (its `"Local"`) | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
 | `DisallowEviction` | A listened remote | `true` refuses a new incoming connection from this remote while one is alive. By default, a new connection replaces (evicts) the current one. |
 | `NegotiationTimeout` | A remote we connect to | How long an outgoing connection attempt may take, in seconds (1 to 600). Defaults to `TransportManagerFeature.DefaultOutgoingNegotiationTimeout` (15 seconds). |
-| `EnlistRemoteUrl` | A remote or a local party (its `"Local"`) | A URL sent to a party that is unknown here, or that does not trust us, so that it can be enlisted. It is read from the remote, or for an unknown caller from the `"Local"` of the tenant domain that has its domain name (or of the application when no tenant domain has it), then from the `"Defaults"` above. `{DomainName}` is replaced by the domain name of the party it is sent to. It is handed to unauthenticated callers. |
 
 The "Transport" feature itself is allowed by default and requires the "KeyManagement" one on the remote.
 
@@ -209,6 +208,26 @@ In a development solution, the "DevRunningStatus" feature of
 (`#Dev/Store/.../DevRunningStatus.json`, read by the `#Dev/Start.ps1` launcher). The
 [`TransportFeatureDriver`](TransportFeatureDriver.DevRunningStatus.cs) adds a `Transport` section: the `Listeners` (their `EndPointDescription`, with the actual listening address when it differs) and the
 `Availability` of each remote. The party is `Ready` once every outgoing remote (with an `Address`) is `Connected`.
+
+## The routes and the enlistment URL
+
+The transport layer knows which remotes are connected: it computes the routes of each local party
+(`PartyDescription.Routes`, see [`PartyRoute`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/PartyRoute.cs) in
+CK.AppIdentity), in the second phase of its description
+([`TransportFeatureDriver.Routes`](TransportFeatureDriver.Routes.cs)):
+
+- **Every route name hosted here or announced by a connected remote of the System** (same domain and environment)
+  gets a route: the hosted one (`PartyRoute.Hosted`), or the best route of the remotes (`SelectBest` of the accepted
+  ones) extended with the local party. A route counts only from a connected remote: when a remote disconnects, its
+  routes are withdrawn. The routes are computed again when a remote connects or disconnects and when a remote
+  announces another description (`ILocalParty.RemoteDescriptionChanged`).
+- **The "Enlistment" route is the approval page of the System** (`EnlistmentRouteName`): a local party hosts it when
+  one of its client applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its target is
+  the URL of that client application followed by `/app-identity/enlist` (`EnlistmentPageSuffix`).
+- **The enlistment URL is the target of the "Enlistment" route** of the local party concerned (the owner of a known
+  remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
+  that is unknown here, or that does not trust us, so that it can be enlisted. It is handed to unauthenticated
+  callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
 
 ## Peering issues
 

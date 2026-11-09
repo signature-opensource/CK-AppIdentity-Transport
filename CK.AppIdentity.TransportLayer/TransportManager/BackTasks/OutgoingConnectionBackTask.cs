@@ -427,10 +427,10 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                       or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
                         {
                             Throw.DebugAssert( block != null );
-                            // This is our EnlistUrl for him: its "{DomainName}" is his domain.
+                            // Our enlistment URL (the target of our "Enlistment" route), for a listener that must approve us.
                             var hisEnlistUrl = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
                                                 ? null
-                                                : transportManager.GetEnlistRemoteUrl( remote.Party, remote.Party.DomainName );
+                                                : transportManager.GetEnlistRemoteUrl( remote.Party.Owner );
                             var reveal = remote.Approval.OnReply( block.Value.Head, approvalNonce, sentCommitment );
                             // We don't care if this is not sent.
                             Throw.DebugAssert( remote.RemoteKeys == transport.RemoteKeys );

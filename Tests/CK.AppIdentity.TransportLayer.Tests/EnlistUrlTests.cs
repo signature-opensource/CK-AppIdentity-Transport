@@ -12,34 +12,62 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// Finding M8: the enlistment URL offered to a party the listener does not know.
+/// Finding M8: the enlistment URL offered to a party the listener does not know (or doesn't trust).
 /// <para>
-/// Remote parties can be created dynamically, so an unknown party knocking in the hope of being
-/// accepted is the intended onboarding flow, and answering it with "here is where you enlist" is the
-/// point. The disclosure half of M8 is therefore by design.
+/// The enlistment URL is the target of the "Enlistment" route of the local party concerned: the URL of an approval page
+/// (a client application with the "Enlistment" fact), derived from the System, never configured.
 /// </para>
 /// <para>
-/// What is not by design: that reply is unsigned (<c>ZeroProtocol.Negotiation.cs:371</c> writes false
-/// for the signature when the listener has no local keys to sign with, which is exactly the unknown
-/// case), so the URL an operator is invited to act on arrives unauthenticated.
+/// Remote parties can be created dynamically, so an unknown party knocking in the hope of being accepted is the intended
+/// onboarding flow, and answering it with "here is where you enlist" is the point. The disclosure half of M8 is therefore
+/// by design. What is not by design: that reply is unsigned (the listener has no local keys to sign with when it doesn't
+/// know the party at all), so the URL an operator is invited to act on arrives unauthenticated.
 /// </para>
 /// </summary>
 [TestFixture]
 public class EnlistUrlTests
 {
-    const string EnlistUrl = "https://enlist.example.test/{DomainName}/join";
-    const string ExpectedUrl = "https://enlist.example.test/Ghost/join";
-
     readonly SystemClockTester _systemClock = new SystemClockTester( 50 );
 
-    void ConfigureFastClock( ServiceCollection services )
-        => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+    /// <summary>
+    /// Gives every local party an approval page: a client application "Admin" with the "Enlistment" fact. A local party
+    /// hosts the "Enlistment" route when it also has a public URL.
+    /// </summary>
+    public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
+    {
+        public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+
+        protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
+        {
+            builder.AddClientApplication( new ClientApplicationDescription( "Admin",
+                                                                            "/admin",
+                                                                            ClientApplicationDescription.FactContext.FindOrCreate( TransportFeatureDriver.EnlistmentFact ) ) );
+        }
+
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );
+
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.FromResult( true );
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.CompletedTask;
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
+    }
+
+    void ConfigureServices( ServiceCollection services )
+    {
+        services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
+        services.AddSingleton<PartyDescriptionFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<PartyDescriptionFeatureDriver>() );
+        services.AddSingleton<ApprovalPageFeatureDriver>();
+        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<ApprovalPageFeatureDriver>() );
+    }
+
+    const string RootPage = "https://root.example.test/admin/app-identity/enlist";
+    const string GhostPage = "https://ghost.example.test/admin/app-identity/enlist";
 
     /// <summary>
-    /// A listener that hosts a tenant domain "Ghost" carrying an EnlistRemoteUrl, and does not know
-    /// anybody in it. GetEnlistRemoteUrl resolves an unknown party's URL through
-    /// TenantDomains.FirstOrDefault( d =&gt; d.DomainName == domainName ), so without this tenant (and
-    /// without an EnlistRemoteUrl on the local party) the URL is null and nothing is offered at all.
+    /// A listener with an approval page, that hosts a tenant domain "Ghost" with its own approval page, and does not know
+    /// anybody in it.
     /// </summary>
     Task<ApplicationIdentityService> CreateListenerAsync( string name, CancellationToken token )
         => TestHelper.CreateApplicationServiceAsync( c =>
@@ -47,19 +75,20 @@ public class EnlistUrlTests
             c["FullName"] = $"Test/${name}";
             c["Defaults:AlwaysListening"] = "True";
             c["Defaults:AutoTrustKey"] = "Never";
+            c["Local:PublicUrl"] = "https://root.example.test";
             c["Parties:0:FullName"] = "Ghost/$Ghost";
-            c["Parties:0:Local:EnlistRemoteUrl"] = EnlistUrl;
-        }, ConfigureFastClock, token: token );
+            c["Parties:0:Local:PublicUrl"] = "https://ghost.example.test";
+        }, ConfigureServices, token: token );
 
-    /// <summary>A party in the "Ghost" domain that the listener has never heard of.</summary>
-    Task<ApplicationIdentityService> CreateStrangerAsync( string name, string listenerName, CancellationToken token )
+    /// <summary>A party in a domain that the listener has never heard of.</summary>
+    Task<ApplicationIdentityService> CreateStrangerAsync( string domain, string name, string listenerName, CancellationToken token )
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
-            c["FullName"] = $"Ghost/${name}";
+            c["FullName"] = $"{domain}/${name}";
             c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:FullName"] = $"Test/${listenerName}";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
-        }, ConfigureFastClock, token: token );
+        }, services => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
 
     static async Task<PeeringIssue?> WaitForIssueAsync( TransportManagerFeature f, int seconds, CancellationToken token )
     {
@@ -77,69 +106,62 @@ public class EnlistUrlTests
     public async Task An_unknown_party_is_told_where_to_enlist_Async( CancellationToken token )
     {
         // The onboarding flow, end to end: a party nobody configured knocks, and must come away with
-        // the enlistment URL surfaced as a peering issue an operator can act on.
+        // the enlistment URL of its domain surfaced as a peering issue an operator can act on.
         using var logs = GrandOutput.Default!.CreateMemoryCollector( 2000 );
         await using var listener = await CreateListenerAsync( "M8Listen", token );
-        await using var stranger = await CreateStrangerAsync( "M8Stranger", "M8Listen", token );
+        await using var stranger = await CreateStrangerAsync( "Ghost", "M8Stranger", "M8Listen", token );
 
         var f = stranger.GetRequiredFeature<TransportManagerFeature>();
         var issue = await WaitForIssueAsync( f, 40, token );
 
         issue.ShouldNotBeNull( "The stranger must learn that it is unknown." );
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteCreation );
-        issue.EnlistUrl.ShouldBe( ExpectedUrl,
-            "The listener resolved an enlistment URL for the Ghost tenant domain and sent it: the " +
-            "whole point of answering an unknown party is to tell it where to enlist." );
+        issue.EnlistUrl.ShouldBe( GhostPage,
+            "The caller claims the Ghost domain: the enlistment URL is the one of the approval page of the Ghost tenant domain." );
 
         logs.ExtractCurrentTexts().ShouldNotContain( t => t.Contains( "Protocol error" ),
-            "Configuring an EnlistRemoteUrl must not itself BE the protocol error: requiring an " +
-            "unsigned reply to carry a null URL rejects exactly the reply that carries this one." );
+            "An enlistment URL must not itself BE the protocol error: requiring an unsigned reply to carry a null URL " +
+            "rejects exactly the reply that carries this one." );
     }
 
     [Test, CancelAfter( 90000 )]
     public async Task An_unknown_party_from_an_unknown_domain_gets_the_enlist_url_of_the_local_party_Async( CancellationToken token )
     {
-        // No "Ghost" tenant domain here: the "EnlistRemoteUrl" is looked up from the local party.
-        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
-        {
-            c["FullName"] = "Test/$M8RootListen";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
-            c["Defaults:EnlistRemoteUrl"] = EnlistUrl;
-        }, ConfigureFastClock, token: token );
-        await using var stranger = await CreateStrangerAsync( "M8RootStranger", "M8RootListen", token );
+        // No tenant domain of the caller's domain here: the root's approval page.
+        await using var listener = await CreateListenerAsync( "M8RootListen", token );
+        await using var stranger = await CreateStrangerAsync( "Elsewhere", "M8RootStranger", "M8RootListen", token );
 
         var issue = await WaitForIssueAsync( stranger.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteCreation );
-        issue.EnlistUrl.ShouldBe( ExpectedUrl );
+        issue.EnlistUrl.ShouldBe( RootPage );
     }
 
     [Test, CancelAfter( 90000 )]
-    public async Task The_initiator_enlist_url_is_for_the_domain_of_the_listener_Async( CancellationToken token )
+    public async Task The_initiator_sends_its_enlist_url_to_the_listener_Async( CancellationToken token )
     {
         // Both parties know each other but trust nobody: both require an approval, and the initiator
-        // sends its EnlistRemoteUrl to the listener (that records it). "{DomainName}" is the listener's.
+        // sends its enlistment URL (its approval page) to the listener, that records it.
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothListen";
             c["Defaults:AlwaysListening"] = "True";
             c["Defaults:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = "$M8BothInit";
-        }, ConfigureFastClock, token: token );
+        }, services => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
         await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothInit";
             c["Defaults:AutoTrustKey"] = "Never";
+            c["Local:PublicUrl"] = "https://init.example.test";
             c["Parties:0:PartyName"] = "$M8BothListen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
-            c["Parties:0:EnlistRemoteUrl"] = EnlistUrl;
-        }, ConfigureFastClock, token: token );
+        }, ConfigureServices, token: token );
 
         var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresBothApproval );
-        issue.EnlistUrl.ShouldBe( "https://enlist.example.test/Test/join" );
+        issue.EnlistUrl.ShouldBe( "https://init.example.test/admin/app-identity/enlist" );
     }
 
     [Test, CancelAfter( 90000 )]
@@ -149,11 +171,11 @@ public class EnlistUrlTests
         // carries it is unsigned — the listener has no local keys to sign with precisely because it
         // does not know us — so the URL is a claim by whoever answered the connection.
         await using var listener = await CreateListenerAsync( "M8AuthListen", token );
-        await using var stranger = await CreateStrangerAsync( "M8AuthStranger", "M8AuthListen", token );
+        await using var stranger = await CreateStrangerAsync( "Ghost", "M8AuthStranger", "M8AuthListen", token );
 
         var issue = await WaitForIssueAsync( stranger.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
-        issue!.EnlistUrl.ShouldBe( ExpectedUrl );
+        issue!.EnlistUrl.ShouldBe( GhostPage );
         issue.IsEnlistUrlAuthenticated.ShouldBeFalse(
             "Nothing authenticated this URL. An on-path attacker, or anyone who wins the race to the " +
             "port, substitutes their own and the operator enlists with them. Following it is a trust " +
@@ -165,15 +187,25 @@ public class EnlistUrlTests
     {
         // PeeringIssue.EnlistUrl always means "where to go so that the OTHER side accepts us". The
         // listener sends its own URL, it does not record it: the URL it would record is the one the
-        // remote replies with, and that reply is only requested for RequiresLocal/BothApproval.
-        // Pinning this because it is the natural thing to get wrong when reading the finding.
+        // remote replies with, and that reply is only requested for the approval issues.
         await using var listener = await CreateListenerAsync( "M8SelfListen", token );
-        await using var stranger = await CreateStrangerAsync( "M8SelfStranger", "M8SelfListen", token );
+        await using var stranger = await CreateStrangerAsync( "Ghost", "M8SelfStranger", "M8SelfListen", token );
 
         var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull( "The listener records the stranger as an unknown incoming." );
         issue!.Kind.ShouldBe( PeeringIssueKind.IncomingUnknown );
         issue.EnlistUrl.ShouldBeNull(
             "The listener sent its URL to the stranger; it has no URL of the stranger's to record." );
+    }
+
+    [Test, CancelAfter( 90000 )]
+    public async Task A_configured_EnlistRemoteUrl_fails_the_setup_Async( CancellationToken token )
+    {
+        // The enlistment URL is derived from the System: the former configuration is an error, not silently ignored.
+        await Should.ThrowAsync<Exception>( () => TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8Configured";
+            c["Defaults:EnlistRemoteUrl"] = "https://enlist.example.test/join";
+        }, ConfigureServices, token: token ) );
     }
 }

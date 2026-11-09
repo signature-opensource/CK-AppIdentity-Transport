@@ -71,6 +71,13 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // Even if initialization fails, register the feature: it may be required by others.
         ApplicationIdentityService.AddFeature( _transportManager.Feature );
         _keyManagement.KeyEventAppended.Async += OnKeyEventAppendedAsync;
+        // The routes of the local parties follow the connections and the remotes' announcements.
+        _transportManager.Feature.ConnectionAvailabilityChanged.Async += OnConnectionAvailabilityChangedAsync;
+        foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
+        {
+            SubscribeRoutes( local );
+        }
+        success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
         // Local and External remote parties have no Transport.
         // Locals hold the Listeners.
         // Starts by creating the remotes.
@@ -100,8 +107,26 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         if( party is ILocalParty local )
         {
             success &= EnsureAlwaysListeningListeners( context, local, releaseOnError.Add );
+            SubscribeRoutes( local );
         }
+        success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
         return Task.FromResult( success );
+    }
+
+    // The "EnlistRemoteUrl" configuration is gone: the enlistment URL is the target of the "Enlistment" route.
+    static bool CheckNoEnlistRemoteUrl( IActivityMonitor monitor, IEnumerable<IParty> parties )
+    {
+        bool success = true;
+        foreach( var p in parties )
+        {
+            if( PartyConfiguration( p ).TryResolveValue( "EnlistRemoteUrl" ) != null )
+            {
+                monitor.Error( $"'{p}' configures an \"EnlistRemoteUrl\": it is no more supported. The enlistment URL is derived " +
+                               $"from the System (the approval page of a client application with the \"{EnlistmentFact}\" fact): remove it." );
+                success = false;
+            }
+        }
+        return success;
     }
 
     protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
@@ -118,6 +143,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // Handles the potential "AlwaysListening" on the local.
         if( party is ILocalParty local )
         {
+            UnsubscribeRoutes( local );
             var listeners = local.GetFeature<TransportListener[]>();
             if( listeners != null ) await ReleaseListenersAsync( context.Monitor, listeners );
         }
@@ -127,6 +153,11 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
         Throw.DebugAssert( _transportManager != null );
         _keyManagement.KeyEventAppended.Async -= OnKeyEventAppendedAsync;
+        _transportManager.Feature.ConnectionAvailabilityChanged.Async -= OnConnectionAvailabilityChangedAsync;
+        foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
+        {
+            UnsubscribeRoutes( local );
+        }
         foreach( var r in context.GetAllRemotes() )
         {
             var t = r.GetFeature<TransportFeature>();
