@@ -23,7 +23,7 @@ public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
 {
     readonly ICommandPresentedSession? _presented;
     readonly ICommandNextSessionSecrets? _next;
-    readonly string? _correlationHash;
+    readonly byte[]? _correlationHash;
 
     /// <summary>
     /// Initializes a new operation endpoint.
