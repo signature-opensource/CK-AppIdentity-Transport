@@ -33,6 +33,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     readonly CrisDirectory _crisDirectory;
     readonly ICrisChannelReceptionHandler? _receptionHandler;
     readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
+    readonly IEnumerable<ICrisForwardedEnvelopeFilter> _forwardedEnvelopeFilters;
     // The envelopes of the commands not yet sent.
     readonly ConcurrentDictionary<ActivityMonitor.LogKey, ICrisCallEnvelope> _envelopes;
     // The command names the remote accepts from us: null until its first advertisement.
@@ -59,10 +60,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                                  IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
                                  CrisDirectory crisDirectory,
                                  ICrisChannelReceptionHandler? receptionHandler,
-                                 IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers )
+                                 IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers,
+                                 IEnumerable<ICrisForwardedEnvelopeFilter> forwardedEnvelopeFilters )
         : base( transportFeature )
     {
         _incomingTransformers = incomingTransformers;
+        _forwardedEnvelopeFilters = forwardedEnvelopeFilters;
         _pocoDirectory = pocoDirectory;
         _crisDirectory = crisDirectory;
         _receptionHandler = receptionHandler;

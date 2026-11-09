@@ -36,8 +36,8 @@ this remote vouches for it, and in an interactive request it also sends the user
 
 ## The user's proof
 
-The proof is sent to any party of the System, and verified here by asking the Authentication Center
-(`RemoteAuthCenter.CheckProofAsync`): see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof).
+The proof is sent to any party of the System, read here with the Authentication Center's keys, and its liveness is
+asked to the Authentication Center (`RemoteAuthCenter.CheckLivenessAsync`): see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof).
 
 ## The sensitive fields ([`AuthCenterFieldEncryptor`](AuthCenterFieldEncryptor.cs))
 

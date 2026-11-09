@@ -38,6 +38,26 @@ public interface ICrisCallEnvelopeContributor : ISingletonAutoService
 }
 
 /// <summary>
+/// Checks the <see cref="ICrisCallEnvelope"/> of a <see cref="IPartyRoutedCommand"/> that this party forwards to its next
+/// hop: the counterpart of the <see cref="ICrisCallEnvelopeContributor"/> for the envelope that a hop relays. A party
+/// never relays what it can't vouch for: a filter clears the extensions it can't verify (for instance a user's proof).
+/// </summary>
+[IsMultiple]
+public interface ICrisForwardedEnvelopeFilter : ISingletonAutoService
+{
+    /// <summary>
+    /// Checks the envelope of a routed command before it is forwarded, and clears in place what must not be relayed.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="sender">The remote that sent the routed command.</param>
+    /// <param name="target">The next hop, that will receive it.</param>
+    /// <param name="routed">The routed command.</param>
+    /// <param name="envelope">The received envelope, forwarded as is after the filters.</param>
+    /// <returns>The awaitable.</returns>
+    ValueTask FilterAsync( IActivityMonitor monitor, IRemoteParty sender, IRemoteParty target, IPartyRoutedCommand routed, ICrisCallEnvelope envelope );
+}
+
+/// <summary>
 /// Optional service that configures the ambient services of a command received from a remote (typically the identity
 /// derived from the caller party: see CK.AppIdentity.Cris.Authentication). It is called before the incoming validation;
 /// never for an endpoint-only command (it executes in the channel scope, with its <see cref="IRemoteParty"/>).

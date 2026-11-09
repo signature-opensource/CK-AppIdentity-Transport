@@ -57,6 +57,20 @@ public class RoutedCommandTests
         }
     }
 
+    // On a hop: the envelope of a forwarded routed command is filtered before it is relayed.
+    public sealed class ForwardFilter : ICrisForwardedEnvelopeFilter
+    {
+        public static readonly ConcurrentQueue<string> Forwarded = new();
+
+        public ValueTask FilterAsync( IActivityMonitor monitor, IRemoteParty sender, IRemoteParty target, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+        {
+            var e = (ReceptionTests.ITestEnvelope)envelope;
+            Forwarded.Enqueue( $"{e.CultureName} from {sender.FullName} to {target.FullName}" );
+            if( e.CultureName != null ) e.CultureName = "en";
+            return ValueTask.CompletedTask;
+        }
+    }
+
     public sealed class RouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public RouteHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
@@ -145,6 +159,37 @@ public class RoutedCommandTests
         // A path that doesn't lead to the receiver.
         r = await SendAsync( a, ( s, sp ) => s.SendAlongPathAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), [bName, cName] ) );
         r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "doesn't lead to" );
+    }
+
+    [Test]
+    public async Task a_hop_filters_the_envelope_it_forwards_Async()
+    {
+        RecordingReceptionHandler.Callers.Clear();
+        ForwardFilter.Forwarded.Clear();
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( RoutedEnvelopeContributor )],
+                                                                         listenerConfiguration: c =>
+                                                                         {
+                                                                             c["Parties:1:PartyName"] = "$C";
+                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                         },
+                                                                         listenerTypes: [.. _common, typeof( ForwardFilter )] );
+        var (a, b) = pair;
+        await using var c = await RunningApplication.CreateAsync( TestHelper.Monitor,
+                                                                  isSender: true,
+                                                                  c => c["FullName"] = "Test/$C",
+                                                                  null,
+                                                                  [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver )] );
+        string aName = a.ApplicationIdentityService.FullName;
+        string bName = b.ApplicationIdentityService.FullName;
+        string cName = c.ApplicationIdentityService.FullName;
+        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
+
+        var r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed" ) );
+        r.ShouldBe( cName );
+        // The hop saw the origin's envelope, the destination received the filtered one.
+        ForwardFilter.Forwarded.ShouldContain( $"fr from {aName} to {cName}" );
+        RecordingReceptionHandler.Callers.ShouldContain( $"IWhereRoutedCommand from {aName} (via {bName}) [en]" );
     }
 
     [Test]

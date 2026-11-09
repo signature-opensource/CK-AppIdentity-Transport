@@ -139,13 +139,21 @@ A command that carries an identity is received with the identity vouched for by 
 (see [CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md)). The user's proof lets it keep
 its level, `Critical` included, across any number of parties of the System:
 
-- **Sending it** ([`AuthCenterProofContributor`](AuthCenterProofContributor.cs)): in an interactive request, the token and
-  the binding secret hash presented to the endpoint are put in the envelope (`IAuthenticationCallEnvelope`) of every
-  command that carries an identity, sent to any remote **inside the System** (the same domain and environment). A proof is
-  a bearer credential: it never leaves the System. A deferred execution has no presented proof: the caller party alone
-  vouches, at most at `Normal`.
-- **Verifying it** ([`AuthCenterProofVerifier`](AuthCenterProofVerifier.cs)): the receiving local party asks its
-  [`IAuthCenterProofChecker`](IAuthCenterProofChecker.cs). The token must be valid, its session alive and still the
+- **A party relays only a proof it verified.** So a proof that doesn't verify is evidence against the party that sent it
+  (the channel authenticates it): a `SecurityCritical` warning names it. The local reading
+  (`CrisAuthCenter.ReadProofAsync`: the token with the Authentication Center's keys, and its binding) needs no round trip.
+- **Sending it** ([`AuthCenterProofContributor`](AuthCenterProofContributor.cs)): in an interactive request, the token
+  **accepted** by the endpoint (`IAuthenticationSessionEndpoint.AcceptedToken`: a token it refused, or couldn't read, is
+  never sent) and the binding secret hash presented with it are put in the envelope (`IAuthenticationCallEnvelope`) of
+  every command that carries an identity, sent to any remote **inside the System** (the same domain and environment). A
+  proof is a bearer credential: it never leaves the System. A deferred execution has no presented proof: the caller
+  party alone vouches, at most at `Normal`.
+- **Forwarding it** ([`AuthCenterProofForwardFilter`](AuthCenterProofForwardFilter.cs)): a party that forwards a routed
+  command reads its proof first. A proof that doesn't verify is removed (and logged against the sender); a party without
+  Authentication Center can't read it and removes it: the routed command arrives without proof.
+- **Verifying it** ([`AuthCenterProofVerifier`](AuthCenterProofVerifier.cs)): the receiving local party reads it (a
+  failure is evidence against the sender), then asks its [`IAuthCenterProofChecker`](IAuthCenterProofChecker.cs) for the
+  liveness (a session that ended is not evidence: a logout may happen while a command travels). The token must be valid, its session alive and still the
   token's one (the same binding, the same actor: a logout, a revocation or an impersonation takes effect at once, not
   after the token's lifetime). The Authentication Center itself (`LocalAuthCenter`) checks its session store; any of its
   remotes (`RemoteAuthCenter`) reads the token with the pinned keys, then asks the Authentication Center for the liveness

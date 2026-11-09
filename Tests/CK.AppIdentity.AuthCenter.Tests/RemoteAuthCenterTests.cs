@@ -294,6 +294,74 @@ public class RemoteAuthCenterTests
     }
 
     [Test]
+    public async Task a_proof_that_does_not_verify_is_evidence_against_its_sender_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+        // On the AuthCenter, the proofs sent by its remote.
+        var sender = p.Center.ApplicationIdentityService.Remotes.Single();
+        var verifier = new AuthCenterProofVerifier();
+        using var scope = p.Center.CreateScopeServices();
+
+        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, token, binding ) )).ShouldNotBeNull()
+            .UnsafeActor.ActorName.ShouldBe( "Albert" );
+        foreach( var (t, b) in new[] { ("garbage", binding), (token, "another-binding"), (token, null) } )
+        {
+            using( TestHelper.Monitor.CollectTexts( out var texts ) )
+            {
+                (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, t, b ) )).ShouldBeNull();
+                texts.ShouldContain( x => x.Contains( $"'{sender}' sent a user's proof that doesn't verify" ) );
+            }
+        }
+        // A session that ended is not evidence: a logout may happen while a command travels.
+        await p.RequestAsync( pocos => pocos.Create<ILogoutSessionCommand>() );
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, token, binding ) )).ShouldBeNull();
+            texts.ShouldNotContain( x => x.Contains( "doesn't verify" ) );
+        }
+    }
+
+    [Test]
+    public async Task a_routed_proof_is_relayed_only_when_it_verifies_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+        // The remote forwards: it reads the proof with the AuthCenter's keys (no round trip).
+        var sender = p.Remote.ApplicationIdentityService.Remotes.Single();
+        var filter = new AuthCenterProofForwardFilter();
+
+        var valid = Proof( p.Remote, token, binding );
+        await filter.FilterAsync( TestHelper.Monitor, sender, sender, null!, valid );
+        valid.Token.ShouldBe( token );
+        valid.BindingSecretHash.ShouldBe( binding );
+
+        foreach( var (t, b) in new[] { ("garbage", binding), (token, "another-binding"), (token, null) } )
+        {
+            var bad = Proof( p.Remote, t, b );
+            using( TestHelper.Monitor.CollectTexts( out var texts ) )
+            {
+                await filter.FilterAsync( TestHelper.Monitor, sender, sender, null!, bad );
+                texts.ShouldContain( x => x.Contains( $"'{sender}' sent a user's proof that doesn't verify: it is not relayed" ) );
+            }
+            bad.Token.ShouldBeNull();
+            bad.BindingSecretHash.ShouldBeNull();
+        }
+    }
+
+    static IAuthenticationCallEnvelope Proof( RunningApplication app, string token, string? binding )
+    {
+        var e = (IAuthenticationCallEnvelope)app.PocoDirectory.Create<ICrisCallEnvelope>();
+        e.Token = token;
+        e.BindingSecretHash = binding;
+        return e;
+    }
+
+    [Test]
     public async Task when_the_AuthCenter_cannot_be_reached_a_relayed_proof_is_not_verified_Async()
     {
         var p = await StartAsync();

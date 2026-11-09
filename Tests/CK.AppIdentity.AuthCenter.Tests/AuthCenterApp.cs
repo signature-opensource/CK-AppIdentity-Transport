@@ -137,6 +137,9 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public string? PresentedToken => _browser.Token;
 
+        // The browser keeps only a token it could read (like the HTTP front accepts a token): it is the accepted one.
+        public string? AcceptedToken => _browser.Token;
+
         public (string RefreshSecretHash, string BindingSecretHash) PrepareSecrets() => _browser.PrepareSecrets();
 
         public AuthenticationSessionProof Issue( string sessionKey, bool rememberMe, DateTime refreshExpires ) => _browser.Issue( sessionKey, rememberMe, refreshExpires );

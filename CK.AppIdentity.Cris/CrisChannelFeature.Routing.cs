@@ -131,8 +131,8 @@ public sealed partial class CrisChannelFeature
         return (channel, null);
     }
 
-    // Forwards the routed command and sends its answers back to the remote that sent it: the received envelope (and the
-    // user's proof it may carry) travels unchanged.
+    // Forwards the routed command and sends its answers back to the remote that sent it: the received envelope travels
+    // unchanged, once the forwarded envelope filters cleared what this party can't vouch for (a user's proof it can't verify).
     async Task ForwardAsync( Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope, string next )
     {
         var monitor = new ActivityMonitor( $"Forwarding a routed command from '{Party.FullName}' to '{next}'." );
@@ -144,6 +144,10 @@ public sealed partial class CrisChannelFeature
                 monitor.Warn( error! );
                 handler.SendError( monitor, token.Key, error! );
                 return;
+            }
+            foreach( var f in _forwardedEnvelopeFilters )
+            {
+                await f.FilterAsync( monitor, Party, channel.Party, routed, envelope ).ConfigureAwait( false );
             }
             var executing = channel.SendCommand( monitor, routed, envelope: envelope );
             executing.ImmediateEvents.Added.Async += ( m, e, cancel ) =>

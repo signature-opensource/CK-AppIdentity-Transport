@@ -115,6 +115,38 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         return verdict == SignatureVerdict.Valid ? new AuthCenterTokenContent( info!, sessionId!, bindingSecretHash! ) : null;
     }
 
+    /// <summary>
+    /// Reads a user's proof (a token and the hash of the binding secret presented with it): the token is read (see
+    /// <see cref="ReadTokenAsync"/>) and the binding secret must be the one of its session. This is local: the liveness
+    /// of the session is not checked (see <see cref="IAuthCenterProofChecker"/>).
+    /// <para>
+    /// A party relays a proof only after this reading: a proof that fails it is evidence against the party that sent it.
+    /// </para>
+    /// </summary>
+    /// <param name="logger">Receives the reason of a refusal.</param>
+    /// <param name="token">The token.</param>
+    /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <returns>The token content, or null if the proof is refused.</returns>
+    public async ValueTask<AuthCenterTokenContent?> ReadProofAsync( IActivityLineEmitter logger, string token, string? bindingSecretHash, DateTime utcNow )
+    {
+        Throw.CheckNotNullArgument( token );
+        if( bindingSecretHash == null )
+        {
+            logger.Warn( "A user's token without the binding secret of its session is refused." );
+            return null;
+        }
+        var read = await ReadTokenAsync( logger, token, utcNow ).ConfigureAwait( false );
+        if( read == null ) return null;
+        if( !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( bindingSecretHash ),
+                                                                                   System.Text.Encoding.ASCII.GetBytes( read.BindingSecretHash ) ) )
+        {
+            logger.Warn( "A user's token with another binding secret than the one of its session is refused." );
+            return null;
+        }
+        return read;
+    }
+
     // Checks a signature of the AuthCenter for a purpose, with the safety net of a remote AuthCenter (see ReadTokenAsync).
     internal async ValueTask<SignatureVerdict> CheckWithKeyEventsAsync( IActivityLineEmitter logger, string purpose, byte[] data, ApplicationSignature signature )
     {

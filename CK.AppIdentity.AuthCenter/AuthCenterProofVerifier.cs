@@ -14,6 +14,12 @@ namespace CK.AppIdentity.AuthCenter;
 /// (its session store) or on any of its remotes (they ask the Authentication Center). The proved identity keeps its level:
 /// this is how a Critical command crosses a party boundary.
 /// <para>
+/// A party relays only a proof it verified (see <see cref="AuthCenterProofContributor"/> and
+/// <see cref="AuthCenterProofForwardFilter"/>): a proof that fails the local reading (its token, its binding) is evidence
+/// against the party that sent it (a <see cref="ActivityMonitor.Tags.SecurityCritical"/> warning that names it). A proof
+/// whose session ended or changed is not: a logout may happen while a command travels.
+/// </para>
+/// <para>
 /// A local party without Authentication Center (no checker) ignores the proof: the received identity is the one vouched
 /// for by the caller party, capped.
 /// </para>
@@ -21,20 +27,22 @@ namespace CK.AppIdentity.AuthCenter;
 public sealed class AuthCenterProofVerifier : ICallerProofVerifier
 {
     /// <inheritdoc />
-    public ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IAuthenticationCallEnvelope proof )
+    public async ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IAuthenticationCallEnvelope proof )
     {
         var checker = caller.Owner.GetFeature<IAuthCenterProofChecker>();
-        if( checker == null || proof.Token == null )
+        var center = caller.Owner.GetFeature<CrisAuthCenter>();
+        if( checker == null || center == null || proof.Token == null )
         {
             monitor.Warn( $"'{caller.Owner}' has no Authentication Center: the user's proof sent by '{caller}' is ignored." );
-            return ValueTask.FromResult<AuthenticationInfo?>( null );
+            return null;
         }
-        if( proof.BindingSecretHash == null )
+        var read = await center.ReadProofAsync( monitor, proof.Token, proof.BindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
+        if( read == null )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's token without the binding secret of its session: it is ignored." );
-            return ValueTask.FromResult<AuthenticationInfo?>( null );
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof that doesn't verify: it is ignored." );
+            return null;
         }
-        return checker.CheckProofAsync( monitor, proof.Token, proof.BindingSecretHash );
+        return await checker.CheckLivenessAsync( monitor, proof.Token, read ).ConfigureAwait( false );
     }
 
     /// <summary>

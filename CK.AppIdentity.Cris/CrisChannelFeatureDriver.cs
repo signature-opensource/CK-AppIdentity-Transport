@@ -20,6 +20,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
     readonly CrisDirectory _crisDirectory;
     readonly ICrisChannelReceptionHandler? _receptionHandler;
     readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
+    readonly IEnumerable<ICrisForwardedEnvelopeFilter> _forwardedEnvelopeFilters;
 
     public CrisChannelFeatureDriver( TransportFeatureDriver transport,
                                      PocoDirectory pocoDirectory,
@@ -29,12 +30,14 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
                                      CrisExecutionHost executionHost,
                                      CrisDirectory crisDirectory,
                                      IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers,
+                                     IEnumerable<ICrisForwardedEnvelopeFilter> forwardedEnvelopeFilters,
                                      ICrisChannelReceptionHandler? receptionHandler = null )
         : base( transport, isAllowedByDefault: true )
     {
         _crisDirectory = crisDirectory;
         _receptionHandler = receptionHandler;
         _incomingTransformers = incomingTransformers;
+        _forwardedEnvelopeFilters = forwardedEnvelopeFilters;
         _pocoDirectory = pocoDirectory;
         _errorFactory = errorFactory;
         _callResultFactory = callResultFactory;
@@ -44,7 +47,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers, _forwardedEnvelopeFilters );
         return true;
     }
 }
