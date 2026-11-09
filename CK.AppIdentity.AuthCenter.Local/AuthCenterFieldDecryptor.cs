@@ -1,4 +1,5 @@
 using CK.AppIdentity.Cris;
+using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using CK.Cris;
 using System;
@@ -17,7 +18,7 @@ public sealed class AuthCenterFieldDecryptor : ICrisIncomingCommandTransformer
     public bool Transform( IActivityMonitor monitor, IRemoteParty caller, IAbstractCommand command )
     {
         if( !command.CrisPocoModel.HasSensitiveData ) return true;
-        var local = AuthCenterEncryptionKeyHandler.GetLocal( caller );
+        var local = LocalAuthCenter.GetLocal( caller );
         if( local == null )
         {
             // No sensitive value at all (the transformer only sees the non null values) is fine.
@@ -26,10 +27,12 @@ public sealed class AuthCenterFieldDecryptor : ICrisIncomingCommandTransformer
             return false;
         }
         var utcNow = DateTime.UtcNow;
+        // The encryption keys of the Authentication Center's party (published in its description).
+        var keys = local.Party.GetRequiredFeature<ILocalKeys>();
         bool success = command.CrisPocoModel.TransformSensitiveStrings( command, ( owner, property, value ) =>
             AuthCenterFieldEncryption.TryDecrypt( monitor,
                                                   value,
-                                                  id => local.EncryptionKeys.Find( id, utcNow ),
+                                                  id => keys.FindEncryptionKey( id, utcNow ),
                                                   AuthCenterFieldEncryption.GetContext( local.Party.FullName, caller.FullName, owner.CrisPocoModel.PocoName, property ),
                                                   utcNow,
                                                   out var clear )

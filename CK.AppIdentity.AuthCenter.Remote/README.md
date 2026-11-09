@@ -49,6 +49,6 @@ no value is sent as is.
 ## The tokens and the encryption key of the Authentication Center
 
 The tokens are verified with the pinned keys of the Authentication Center (see the key events safety net in the core
-package). The `RemoteAuthCenter` gets the current encryption key of the Authentication Center with
-`IGetAuthCenterEncryptionKeyQCommand`, verifies its signature ("CK.AuthCenter.EncryptionKey" purpose, with the same
-safety net as the tokens) and caches it until its signature expires.
+package). The `RemoteAuthCenter` reads the current encryption key of the Authentication Center in its description
+(`PartyDescription.EncryptionKey`), verifies its signature (`PartyEncryption.KeyPurpose`, with the same safety net as
+the tokens) and caches it until it changes or its signature expires.

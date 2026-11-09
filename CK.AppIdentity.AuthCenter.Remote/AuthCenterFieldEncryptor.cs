@@ -14,17 +14,6 @@ namespace CK.AppIdentity.AuthCenter;
 /// </summary>
 public sealed class AuthCenterFieldEncryptor : ICrisOutgoingCommandTransformer
 {
-    readonly PocoDirectory _pocos;
-
-    /// <summary>
-    /// Initializes a new <see cref="AuthCenterFieldEncryptor"/>.
-    /// </summary>
-    /// <param name="pocos">The poco directory.</param>
-    public AuthCenterFieldEncryptor( PocoDirectory pocos )
-    {
-        _pocos = pocos;
-    }
-
     /// <inheritdoc />
     public async ValueTask<IAbstractCommand?> TransformAsync( IActivityMonitor monitor, CrisChannelFeature channel, IAbstractCommand command )
     {
@@ -38,7 +27,7 @@ public sealed class AuthCenterFieldEncryptor : ICrisOutgoingCommandTransformer
         var remote = channel.Party.Owner.GetFeature<RemoteAuthCenter>();
         // Only for the Authentication Center (the generalization to any receiving party is not done).
         if( remote == null || remote.Center.AuthCenter != channel.Party ) return command;
-        var spki = await remote.GetEncryptionKeyAsync( monitor, channel, _pocos ).ConfigureAwait( false );
+        var spki = await remote.GetEncryptionKeyAsync( monitor ).ConfigureAwait( false );
         if( spki == null ) return null;
         var copy = Copy( monitor, command );
         if( copy == null ) return null;

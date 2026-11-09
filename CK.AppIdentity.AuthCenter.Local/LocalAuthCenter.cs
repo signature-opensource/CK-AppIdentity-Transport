@@ -18,7 +18,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     readonly ILocalParty _party;
     readonly AuthCenterOptions _options;
     readonly AuthCenterSessionStore _sessions;
-    readonly AuthCenterEncryptionKeys _encryptionKeys;
     readonly AuthCenterPendingStore<PendingRemoteLogin> _pendingRemoteLogins;
 
     readonly ImmutableConfigurationSection? _settings;
@@ -31,7 +30,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
         _options = options;
         _settings = settings;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
-        _encryptionKeys = new AuthCenterEncryptionKeys( monitor, party );
         _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
@@ -90,7 +88,18 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
         return Task.CompletedTask;
     }
 
-    internal AuthCenterEncryptionKeys EncryptionKeys => _encryptionKeys;
+    /// <summary>
+    /// Gets the local Authentication Center of a remote: the caller is a remote of a local party that is its own
+    /// Authentication Center, and it allows "AuthCenterRemote" (it then shares its <see cref="CrisAuthCenter"/>).
+    /// </summary>
+    /// <param name="caller">The remote.</param>
+    /// <returns>The local Authentication Center or null.</returns>
+    public static LocalAuthCenter? GetLocal( IRemoteParty caller )
+    {
+        return caller.GetFeature<CrisAuthCenter>() is { } center && center.Owner == caller.Owner
+                ? caller.Owner.GetFeature<LocalAuthCenter>()
+                : null;
+    }
 
     internal void OnTeardown() => _party.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
 

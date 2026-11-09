@@ -185,15 +185,15 @@ So any party of the System can relay a proof, and any local party that has an Au
 The sensitive fields ([Sensitive] strings, like the Basic login password) of the commands that a remote sends to its
 Authentication Center are **encrypted** by the remote (in a copy of the command, Remote side) for the Authentication
 Center (Local side), so a `tcp:` channel stays acceptable:
-- HPKE-like: ephemeral ECDH P-256 with the Authentication Center's encryption key, HKDF-SHA256, AES-256-GCM. A value
-  becomes `"ckenc1:..."`. The sent command carries the ciphertext, never the clear value.
+- With the encryption key of the Authentication Center's party: the one it publishes in its description
+  (`PartyDescription.EncryptionKey`, see CK.AppIdentity.KeyManagement's `PartyEncryption`: HPKE-like, ephemeral ECDH
+  P-256, HKDF-SHA256, AES-256-GCM). A value becomes `"ckenc1:..."`. The sent command carries the ciphertext, never the
+  clear value.
 - The associated data binds a ciphertext to the Authentication Center, the remote, the command type, the property and
   its creation time: it cannot be moved to another field, command or remote, and one older than 5 minutes is refused.
 - The Authentication Center decrypts before validating and executing, and **refuses a clear value**.
-- The encryption keys (`AuthCenterEncryptionKeys`, Local side) are in the `LocalFileStore`
-  ("AuthCenter/EncryptionKeys"), protected by the local party's data protector. One is published for a day (a new
-  one 10 minutes before its end), the previous one still decrypts for 10 more minutes.
-- A remote gets the current key with `IGetAuthCenterEncryptionKeyQCommand`: it is signed by the Authentication Center
-  for the "CK.AuthCenter.EncryptionKey" purpose (verified like a token, with the same safety net) and cached until
-  its signature expires.
+- The keys are the party's (CK.AppIdentity.KeyManagement): one published for a day, the next one 10 minutes before its
+  end, the previous one still decrypts for 10 more minutes. A remote reads the current one in the Authentication
+  Center's description, verifies its signature by the Authentication Center (with the same safety net as the tokens)
+  and caches it until it changes or its signature expires.
 

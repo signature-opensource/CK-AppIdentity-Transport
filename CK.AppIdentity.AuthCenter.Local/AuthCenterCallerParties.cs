@@ -28,7 +28,7 @@ public sealed class AuthCenterCallerPartyService : ICallerPartyService
     {
         foreach( var remote in _identity.AllRemotes )
         {
-            if( remote.FullName.Path == callerPartyFullName && AuthCenterEncryptionKeyHandler.GetLocal( remote ) != null )
+            if( remote.FullName.Path == callerPartyFullName && LocalAuthCenter.GetLocal( remote ) != null )
             {
                 return ValueTask.FromResult( AuthLevel.Normal );
             }

@@ -20,8 +20,8 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
 
     readonly CrisAuthCenter _center;
-    // The encryption key of the Authentication Center, until the expiration of its signature.
-    (byte[] Spki, DateTime Expires)? _encryptionKey;
+    // The verified encryption key of the Authentication Center (as published), until the expiration of its signature.
+    (PartyEncryptionKey Published, byte[] Spki, DateTime Expires)? _encryptionKey;
 
     internal RemoteAuthCenter( CrisAuthCenter center )
     {
@@ -36,46 +36,35 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
     public CrisAuthCenter Center => _center;
 
     /// <summary>
-    /// Gets the current encryption key of the Authentication Center: it is asked for over the Cris channel, its signature
-    /// is verified (with the same safety net as the tokens) and it is cached until it expires.
+    /// Gets the current encryption key of the Authentication Center: the one its party publishes in its description (see
+    /// <see cref="PartyDescription.EncryptionKey"/>), whose signature is verified (with the same safety net as the tokens).
+    /// The verified key is cached until it changes or expires.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="channel">The Cris channel to the Authentication Center.</param>
-    /// <param name="pocos">The poco directory.</param>
     /// <returns>The SubjectPublicKeyInfo of the key, or null if it cannot be obtained (the reason is logged).</returns>
-    internal async ValueTask<byte[]?> GetEncryptionKeyAsync( IActivityMonitor monitor, CrisChannelFeature channel, PocoDirectory pocos )
+    internal async ValueTask<byte[]?> GetEncryptionKeyAsync( IActivityMonitor monitor )
     {
+        var published = _center.AuthCenter.Description.EncryptionKey;
+        if( published == null )
+        {
+            monitor.Warn( $"The AuthCenter '{_center.AuthCenter}' publishes no encryption key (it is not connected yet, or it has no key management)." );
+            return null;
+        }
         var cached = _encryptionKey;
-        if( cached.HasValue && cached.Value.Expires - TimeSpan.FromMinutes( 1 ) > DateTime.UtcNow ) return cached.Value.Spki;
-        IAuthCenterEncryptionKey published;
-        try
+        if( cached.HasValue
+            && cached.Value.Published.Equals( published )
+            && cached.Value.Expires - TimeSpan.FromMinutes( 1 ) > DateTime.UtcNow )
         {
-            published = await channel.SendCommand( monitor, pocos.Create<IGetAuthCenterEncryptionKeyQCommand>() )
-                                     .WithResult<IAuthCenterEncryptionKey>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
+            return cached.Value.Spki;
         }
-        catch( Exception ex )
-        {
-            monitor.Error( $"Unable to get the encryption key of the AuthCenter '{_center.AuthCenter}'.", ex );
-            return null;
-        }
-        byte[] spki, encodedSignature;
-        try
-        {
-            spki = System.Buffers.Text.Base64Url.DecodeFromChars( published.PublicKey );
-            encodedSignature = System.Buffers.Text.Base64Url.DecodeFromChars( published.Signature );
-        }
-        catch( FormatException )
-        {
-            monitor.Warn( $"The encryption key of the AuthCenter '{_center.AuthCenter}' is malformed." );
-            return null;
-        }
-        if( !ApplicationSignature.TryRead( encodedSignature, out var signature )
-            || await _center.CheckWithKeyEventsAsync( monitor, AuthCenterFieldEncryption.EncryptionKeyPurpose, spki, signature ).ConfigureAwait( false ) != SignatureVerdict.Valid )
+        if( !ApplicationSignature.TryRead( published.Signature.Span, out var signature )
+            || await _center.CheckWithKeyEventsAsync( monitor, PartyEncryption.KeyPurpose, published.PublicKey.ToArray(), signature ).ConfigureAwait( false ) != SignatureVerdict.Valid )
         {
             monitor.Warn( $"The encryption key of the AuthCenter '{_center.AuthCenter}' is refused." );
             return null;
         }
-        _encryptionKey = (spki, signature.Expiration);
+        var spki = published.PublicKey.ToArray();
+        _encryptionKey = (published, spki, signature.Expiration);
         return spki;
     }
 

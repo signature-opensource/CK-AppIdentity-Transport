@@ -7,4 +7,4 @@ sides.
 
 | Query | Result | Purpose |
 |---|---|---|
-| [`IGetAuthCenterEncryptionKeyQCommand`](IGetAuthCenterEncryptionKeyQCommand.cs) | [`IAuthCenterEncryptionKey`](IAuthCenterEncryptionKey.cs) | The current public encryption key of the Authentication Center, signed by it: a remote encrypts with it the sensitive fields of the commands it sends to it. |
+| [`IVerifyCallerProofCommand`](IVerifyCallerProofCommand.cs) | `IAuthenticationInfoPoco?` | The verification of a user's proof relayed by another party (and of the seal of a routed command): the identity proved by the Authentication Center, or null. |

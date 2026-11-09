@@ -222,10 +222,8 @@ handles, over the Cris channel. The identity of their users is established by
   identity keeps its level. An invalid proof is ignored: the remote then only vouches, at most at `Normal`.
 - **The sensitive fields** ([`AuthCenterFieldDecryptor`](AuthCenterFieldDecryptor.cs)) are decrypted on reception, before
   the validation and the execution. A clear value is refused, and so is a sensitive value from a party that is not one of
-  its remotes. The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the
-  `LocalFileStore` ("AuthCenter/EncryptionKeys"), protected by the local party's data protector; the current one is
-  published, signed, to its remotes (`IGetAuthCenterEncryptionKeyQCommand`,
-  [`AuthCenterEncryptionKeyHandler`](AuthCenterEncryptionKeyHandler.cs)).
+  its remotes. The encryption keys are the ones of the Authentication Center's party (`ILocalKeys.FindEncryptionKey`,
+  CK.AppIdentity.KeyManagement): the party publishes the current one in its description.
 
 A compromised remote can act only for the users it vouches for, at most at `Normal`: the high-value actions are
 `Critical` and need the user's live proof.
