@@ -75,10 +75,9 @@ public class SessionCommandsTests
         (await app.LoginAsync( "Albert" )).Success.ShouldBeTrue();
         (await ReadSessionAsync( app )).ShouldNotBeNull().SessionParty.ShouldBe( app.Identity.FullName.Path );
         var cookies = app.Caller.Cookies.ShouldNotBeNull();
-        var current = app.Caller.Current;
 
         // The same cookies presented through another party: they have been stolen. The session is revoked.
-        app.Caller.Current = current.WithCallerParty( "Test/$Other" );
+        app.Caller.CallerParty = "Test/$Other";
         using( TestHelper.Monitor.CollectTexts( out var texts ) )
         {
             var r = await RefreshAsync( app );
@@ -89,7 +88,7 @@ public class SessionCommandsTests
         (await ReadSessionAsync( app )).ShouldBeNull();
 
         // Even the legitimate party lost the session.
-        app.Caller.Current = current;
+        app.Caller.CallerParty = null;
         app.Caller.Cookies = cookies;
         (await RefreshAsync( app )).Success.ShouldBeFalse();
     }

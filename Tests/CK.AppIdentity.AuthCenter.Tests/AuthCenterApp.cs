@@ -83,6 +83,12 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public AuthenticationInfo Current { get; set; } = AuthenticationInfo.None;
 
+        /// <summary>
+        /// The party through which the requests enter: null for this application's party (a direct request), another
+        /// full name to emulate a request relayed by that party.
+        /// </summary>
+        public string? CallerParty { get; set; }
+
         public string? Token { get; set; }
 
         (string, string)? _prepared;
@@ -266,7 +272,11 @@ public sealed class AuthCenterApp : IAsyncDisposable
             services.AddSingleton<Browser>();
             services.AddScoped<IAuthenticationSessionEndpoint, FakeEndpoint>();
             // A direct reception (like the HTTP middleware): the caller party is the local party.
-            services.AddScoped( sp => sp.GetRequiredService<Browser>().Current.WithCallerParty( sp.GetRequiredService<ApplicationIdentityService>().FullName ) );
+            services.AddScoped( sp =>
+            {
+                var b = sp.GetRequiredService<Browser>();
+                return b.Current.WithCallerParty( b.CallerParty ?? sp.GetRequiredService<ApplicationIdentityService>().FullName.Path );
+            } );
             services.AddScoped<IActivityMonitor>( sp => TestHelper.Monitor );
             services.AddScoped( sp => new CurrentLocalParty( sp.GetRequiredService<ApplicationIdentityService>() ) );
         } );

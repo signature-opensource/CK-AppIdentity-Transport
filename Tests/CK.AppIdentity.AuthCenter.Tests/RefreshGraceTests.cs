@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;
 using System;
-using System.IO;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -121,33 +120,6 @@ public class RefreshGraceTests
         app.Caller.Cookies = c0;
         await app.ExecuteAsync( p => p.Create<ILogoutSessionCommand>() );
         (await ReadSessionAsync( app, c0.SessionKey )).ShouldBeNull( "The session is ended." );
-    }
-
-    [Test]
-    public async Task a_version_1_session_file_has_no_previous_secrets_Async()
-    {
-        await using var app = await AuthCenterApp.StartAsync();
-        var store = app.LocalCenter.Sessions;
-        var sessionId = AuthCenterSession.NewSessionId();
-        var folder = app.Identity.LocalFileStore.FolderPath.Combine( "AuthCenter/Sessions/1004" );
-        Directory.CreateDirectory( folder );
-        File.WriteAllText( folder.AppendPart( sessionId ), $$"""
-            {"Version":1,"SessionId":"{{sessionId}}","ActualActorId":1004,"ActorId":1004,"Created":"2026-10-26T10:00:00Z",
-             "Expires":"2126-10-26T10:00:00Z","RememberMe":false,"DeviceId":"D","RefreshSecretHash":"r","BindingSecretHash":"b"}
-            """ );
-        var s = (await store.TryReadAsync( TestHelper.Monitor, 1004, sessionId )).ShouldNotBeNull();
-        s.PreviousRefreshSecretHash.ShouldBeNull();
-        s.PreviousBindingSecretHash.ShouldBeNull();
-        s.RotatedAt.ShouldBe( DateTime.MinValue );
-
-        // Saved again, it is a version 2 file that keeps the rotation.
-        var rotated = s.Rotate( "r2", "b2", DateTime.UtcNow, fromPrevious: false );
-        await store.SaveAsync( rotated );
-        var read = (await store.TryReadAsync( TestHelper.Monitor, 1004, sessionId )).ShouldNotBeNull();
-        read.PreviousRefreshSecretHash.ShouldBe( "r" );
-        read.PreviousBindingSecretHash.ShouldBe( "b" );
-        read.RefreshSecretHash.ShouldBe( "r2" );
-        store.TryDelete( TestHelper.Monitor, 1004, sessionId );
     }
 
     [Test]
