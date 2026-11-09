@@ -9,7 +9,8 @@ namespace CK.AppIdentity.Cris;
 /// <summary>
 /// Sends a command to a party of the System that is not a remote, in a <see cref="IPartyRoutedCommand"/>: toward the
 /// host of a route, or along an explicit path. The local party is the originating party: the caller party of the command
-/// on the destination. The <see cref="ICrisCallEnvelopeContributor"/> fill its envelope (the user's proof), the
+/// on the destination. The command is serialized here (<see cref="IPartyRoutedCommand.SealedCommand"/>), then the
+/// <see cref="ICrisCallEnvelopeContributor"/> fill its envelope (the user's proof and its seal), the
 /// <see cref="ICrisOutgoingCommandTransformer"/> are not applied (they prepare a command for the remote that receives it,
 /// not for the destination).
 /// <para>
@@ -72,7 +73,7 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         Throw.CheckArgument( "A routed command never carries another one.", command is not IPartyRoutedCommand );
         var routed = _pocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
-            r.Command = command;
+            r.SealedCommand = CrisChannelFeature.Seal( _pocoDirectory, command );
             address( r );
         } );
         if( !CrisChannelFeature.TryGetNextHop( origin, routed, out var next, out var error ) )
@@ -93,7 +94,7 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         var envelope = _pocoDirectory.Create<ICrisCallEnvelope>();
         foreach( var c in _contributors )
         {
-            c.Contribute( monitor, services, channel.Party, routed, envelope );
+            c.Contribute( monitor, services, channel.Party, command, routed, envelope );
         }
         monitor.Info( $"Sending '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{next}'." );
         try

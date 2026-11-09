@@ -166,7 +166,20 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     /// <param name="token">The user's token.</param>
     /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
-    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash )
+    public ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash )
+        => CheckProofAsync( monitor, token, bindingSecretHash, null, _party.FullName.Path );
+
+    /// <summary>
+    /// Checks a user's proof (see <see cref="CheckProofAsync(IActivityMonitor, string, string)"/>) and, for the proof of a
+    /// routed command, its seal: the session party sealed the command for the <paramref name="destination"/>.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="token">The user's token.</param>
+    /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
+    /// <param name="seal">The seal of the routed command that carried the proof, null for a proof received directly.</param>
+    /// <param name="destination">The full name of the party that received the proof: the destination of a routed command.</param>
+    /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
+    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash, RoutedProofSeal? seal, string destination )
     {
         var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
         if( read == null )
@@ -174,20 +187,30 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
             monitor.Warn( "An invalid user's proof is ignored." );
             return null;
         }
-        return await CheckLivenessAsync( monitor, token, read ).ConfigureAwait( false );
+        return await CheckAsync( monitor, token, read, seal, destination ).ConfigureAwait( false );
     }
 
     /// <summary>
-    /// Checks that the session of a proof that has been read is alive and is still the token's (see
-    /// <see cref="IAuthCenterProofChecker.CheckLivenessAsync"/>): this Authentication Center reads its session store.
+    /// Checks that the session of a proof that has been read is alive and is still the token's and, for the proof of a
+    /// routed command received here, its seal (see <see cref="IAuthCenterProofChecker.CheckLivenessAsync"/>): this
+    /// Authentication Center reads its session store and has the keys of the session party.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="token">The user's token (unused here: the read content is enough).</param>
+    /// <param name="token">The user's token.</param>
     /// <param name="read">The content of the token, read with its binding secret.</param>
-    /// <returns>The proved identity, or null when the session ended or changed (the reason is logged).</returns>
-    public async ValueTask<AuthenticationInfo?> CheckLivenessAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read )
+    /// <param name="seal">The seal of the routed command that carried the proof, null for a proof received directly.</param>
+    /// <returns>The proved identity, or null when the session ended or changed, or the seal is invalid (the reason is logged).</returns>
+    public ValueTask<AuthenticationInfo?> CheckLivenessAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal? seal )
+        => CheckAsync( monitor, token, read, seal, _party.FullName.Path );
+
+    async ValueTask<AuthenticationInfo?> CheckAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal? seal, string destination )
     {
+        Throw.CheckNotNullArgument( token );
         Throw.CheckNotNullArgument( read );
+        if( seal != null && !await CheckSealAsync( monitor, token, read, seal, destination ).ConfigureAwait( false ) )
+        {
+            return null;
+        }
         var utcNow = DateTime.UtcNow;
         var session = await _sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
         if( session == null
@@ -199,6 +222,65 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
             return null;
         }
         return read.Info;
+    }
+
+    // The nonces of the seals that have been used, until the end of their lifetime.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _sealNonces = new();
+
+    // Checks the seal of a routed command: made by the session party, for this destination, with this proof, used once.
+    async ValueTask<bool> CheckSealAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal seal, string destination )
+    {
+        var utcNow = DateTime.UtcNow;
+        bool valid = RoutedCommandSeal.CheckHeader( monitor, seal.Header, destination, token, utcNow, out var nonce, out var created );
+        if( valid )
+        {
+            var signer = read.SessionParty == _party.FullName.Path
+                            ? _party
+                            : (IParty?)_party.Remotes.FirstOrDefault( r => r.FullName.Path == read.SessionParty );
+            var keys = signer?.GetFeature<IPartyKeys>();
+            if( keys == null || !ApplicationSignature.TryRead( seal.Signature, out var signature ) )
+            {
+                monitor.Warn( keys == null
+                                ? $"Routed command seal refused: the session party '{read.SessionParty}' is not known here."
+                                : "Routed command seal refused: its signature is malformed." );
+                valid = false;
+            }
+            else
+            {
+                var data = RoutedCommandSeal.GetSignedData( seal.Header, seal.PayloadDigest );
+                var verdict = keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature );
+                // The session party may have rotated its key: its key events are requested, once.
+                if( verdict == SignatureVerdict.UnknownIssuer
+                    && signer!.GetFeature<CK.AppIdentity.TransportLayer.TransportFeature>() is { } transport
+                    && await transport.RequestKeyEventsAsync( CrisAuthCenter.KeyEventsTimeout ).ConfigureAwait( false ) )
+                {
+                    verdict = keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature );
+                }
+                valid = verdict == SignatureVerdict.Valid;
+                if( valid && !TryUseNonce( nonce!, created + RoutedCommandSeal.Lifetime + RoutedCommandSeal.ClockSkew, utcNow ) )
+                {
+                    monitor.Warn( "Routed command seal refused: it has already been used." );
+                    valid = false;
+                }
+            }
+        }
+        if( !valid )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The seal of a command routed to '{destination}' with a proof of a session opened by '{read.SessionParty}' is invalid: the proof is refused." );
+        }
+        return valid;
+    }
+
+    bool TryUseNonce( string nonce, DateTime expires, DateTime utcNow )
+    {
+        if( _sealNonces.Count > 1024 )
+        {
+            foreach( var (n, e) in _sealNonces )
+            {
+                if( e <= utcNow ) _sealNonces.TryRemove( n, out _ );
+            }
+        }
+        return _sealNonces.TryAdd( nonce, expires );
     }
 
     static bool FixedTimeEquals( string a, string b ) => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( a ), System.Text.Encoding.ASCII.GetBytes( b ) );

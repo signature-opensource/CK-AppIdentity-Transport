@@ -53,7 +53,7 @@ public class ReceptionTests
     // On the sender: the culture to use travels in the envelope.
     public sealed class TestContributor : ICrisCallEnvelopeContributor
     {
-        public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope )
+        public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, IPartyRoutedCommand? routed, ICrisCallEnvelope envelope )
         {
             if( command is IWhereCommand ) ((ITestEnvelope)envelope).CultureName = "fr";
         }

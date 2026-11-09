@@ -216,7 +216,9 @@ handles, over the Cris channel. The identity of their users is established by
   command included); any other caller party is refused.
 - **The user's proof** (see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof)):
   `LocalAuthCenter.CheckProofAsync` checks it against the session store, for a proof received here and for the
-  `IVerifyCallerProofCommand` of any party of the System that relayed one (`VerifyCallerProofHandler`). The proved
+  `IVerifyCallerProofCommand` of any party of the System that relayed one (`VerifyCallerProofHandler`). For the proof of
+  a routed command, it also checks its seal: signed by the session party (whose keys it has: it opened the session as
+  its remote), for the asking party, with this proof, not replayed. The proved
   identity keeps its level. An invalid proof is ignored: the remote then only vouches, at most at `Normal`.
 - **The sensitive fields** ([`AuthCenterFieldDecryptor`](AuthCenterFieldDecryptor.cs)) are decrypted on reception, before
   the validation and the execution. A clear value is refused, and so is a sensitive value from a party that is not one of

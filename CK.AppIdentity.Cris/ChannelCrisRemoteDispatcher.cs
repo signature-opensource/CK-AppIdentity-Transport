@@ -196,7 +196,7 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
         var envelope = services.GetRequiredService<PocoDirectory>().Create<ICrisCallEnvelope>();
         foreach( var c in _contributors )
         {
-            c.Contribute( monitor, services, target, command, envelope );
+            c.Contribute( monitor, services, target, command, null, envelope );
         }
         return envelope;
     }

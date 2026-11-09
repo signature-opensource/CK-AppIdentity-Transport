@@ -103,18 +103,21 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
             monitor.Warn( "An invalid user's proof is ignored." );
             return null;
         }
-        return await CheckLivenessAsync( monitor, token, read ).ConfigureAwait( false );
+        return await CheckLivenessAsync( monitor, token, read, null ).ConfigureAwait( false );
     }
 
     /// <summary>
     /// Asks the Authentication Center whether the session of a proof that has been read here is alive and is still the
-    /// token's (<see cref="IVerifyCallerProofCommand"/>). It can't be reached: the proof is not verified (fail closed).
+    /// token's (<see cref="IVerifyCallerProofCommand"/>) and, for the proof of a routed command, whether the session party
+    /// sealed it for this local party (the Authentication Center has its keys). It can't be reached: the proof is not
+    /// verified (fail closed).
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="token">The user's token.</param>
     /// <param name="read">The content of the token, read with its binding secret.</param>
-    /// <returns>The proved identity, or null when the session ended or changed, or can't be checked (the reason is logged).</returns>
-    public async ValueTask<AuthenticationInfo?> CheckLivenessAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read )
+    /// <param name="seal">The seal of the routed command that carried the proof, null for a proof received directly.</param>
+    /// <returns>The proved identity, or null when the session ended or changed, the seal is invalid, or it can't be checked (the reason is logged).</returns>
+    public async ValueTask<AuthenticationInfo?> CheckLivenessAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal? seal )
     {
         Throw.CheckNotNullArgument( token );
         Throw.CheckNotNullArgument( read );
@@ -133,6 +136,12 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
             {
                 c.Token = token;
                 c.BindingSecretHash = bindingSecretHash;
+                if( seal != null )
+                {
+                    c.RoutedSeal = seal.Header;
+                    c.RoutedPayloadDigest = seal.PayloadDigest;
+                    c.RoutedSignature = seal.Signature;
+                }
             } );
             answer = await channel.SendCommand( monitor, command )
                                   .WithResult<IAuthenticationInfoPoco?>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
@@ -144,7 +153,9 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
         }
         if( answer == null )
         {
-            monitor.Warn( $"The AuthCenter '{center}' refused a user's proof: its session ended or changed." );
+            monitor.Warn( seal == null
+                            ? $"The AuthCenter '{center}' refused a user's proof: its session ended or changed."
+                            : $"The AuthCenter '{center}' refused the user's proof of a routed command: its session ended or changed, or its seal is invalid." );
             return null;
         }
         return AuthCenterProofVerifier.FromAuthCenterAnswer( answer, DateTime.UtcNow );

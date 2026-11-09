@@ -28,6 +28,12 @@ namespace CK.AppIdentity.AuthCenter;
 /// party (it has no presented token): it is a <see cref="ActivityMonitor.Tags.SecurityCritical"/> warning.
 /// </para>
 /// <para>
+/// The proof of a routed command is valid only with its seal (<see cref="RoutedCommandSeal"/>): the session party, the
+/// origin of the route, signed the exact bytes of the command for this destination. A routed proof without a valid
+/// seal is ignored (a <see cref="ActivityMonitor.Tags.SecurityCritical"/> warning): the command is then executed with what
+/// its caller party vouches for.
+/// </para>
+/// <para>
 /// A local party without Authentication Center (no checker) ignores the proof: the received identity is the one vouched
 /// for by the caller party, capped.
 /// </para>
@@ -50,18 +56,33 @@ public sealed class AuthCenterProofVerifier : ICallerProofVerifier
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof that doesn't verify: it is ignored." );
             return null;
         }
-        var info = await checker.CheckLivenessAsync( monitor, proof.Token, read ).ConfigureAwait( false );
+        if( route != null )
+        {
+            // Through hops, the proof is valid only with the seal of the session party, the origin of the route.
+            var path = string.Join( " > ", route.Via );
+            if( proof.RoutedSeal == null || proof.RoutedSignature == null || route.SealedCommand == null )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The user's proof of a command routed by '{path}' has no seal: it is ignored." );
+                return null;
+            }
+            if( route.Via[0] != read.SessionParty )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The user's proof of a session opened by '{read.SessionParty}' is routed from '{path}': it is ignored." );
+                return null;
+            }
+            var seal = new RoutedProofSeal( proof.RoutedSeal, RoutedCommandSeal.GetPayloadDigest( route.SealedCommand ), proof.RoutedSignature );
+            var sealedInfo = await checker.CheckLivenessAsync( monitor, proof.Token, read, seal ).ConfigureAwait( false );
+            if( sealedInfo == null )
+            {
+                monitor.Warn( $"The user's proof of a command routed by '{path}' is ignored (its session or its seal, see above)." );
+            }
+            return sealedInfo;
+        }
+        var info = await checker.CheckLivenessAsync( monitor, proof.Token, read, null ).ConfigureAwait( false );
         if( info != null && caller.FullName.Path != read.SessionParty )
         {
             // Only the session party may present the proof at the Critical level.
-            if( route == null )
-            {
-                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof of a session opened by '{read.SessionParty}': its level is capped at Normal." );
-            }
-            else
-            {
-                monitor.Info( $"The user's proof of a session opened by '{read.SessionParty}' is routed by '{caller}': its level is capped at Normal." );
-            }
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof of a session opened by '{read.SessionParty}': its level is capped at Normal." );
             info = info.WithCriticalExpires( null, DateTime.UtcNow );
         }
         return info;

@@ -41,6 +41,8 @@ public sealed class AuthCenterProofForwardFilter : ICrisForwardedEnvelopeFilter
         {
             proof.Token = null;
             proof.BindingSecretHash = null;
+            proof.RoutedSeal = null;
+            proof.RoutedSignature = null;
         }
     }
 }

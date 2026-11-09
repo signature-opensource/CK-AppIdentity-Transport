@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using CK.Poco.Exc.Json;
 using CK.Testing.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -51,9 +52,9 @@ public class RoutedCommandTests
     // On the origin: the envelope of a routed command travels unchanged to the destination.
     public sealed class RoutedEnvelopeContributor : ICrisCallEnvelopeContributor
     {
-        public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope )
+        public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, IPartyRoutedCommand? routed, ICrisCallEnvelope envelope )
         {
-            if( command is IPartyRoutedCommand ) ((ReceptionTests.ITestEnvelope)envelope).CultureName = "fr";
+            if( routed != null ) ((ReceptionTests.ITestEnvelope)envelope).CultureName = "fr";
         }
     }
 
@@ -96,6 +97,41 @@ public class RoutedCommandTests
                                       typeof( RawCrisReceiver ),
                                       typeof( IWhereRoutedCommand ),
                                       typeof( ReceptionTests.ITestEnvelope )];
+
+    // Like the PartyRoutedCommandSender: the JSON of the command with its type, with the exchange options of the channels.
+    static byte[] Serialize( RunningApplication app, IAbstractCommand command )
+    {
+        var w = new System.Buffers.ArrayBufferWriter<byte>();
+        app.PocoDirectory.WriteJson( w, command, withType: true, new PocoJsonExportOptions( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" } );
+        return w.WrittenSpan.ToArray();
+    }
+
+    [Test]
+    public async Task the_destination_executes_the_command_read_from_the_bytes_of_the_origin_Async()
+    {
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: _common,
+                                                                         listenerTypes: [.. _common, typeof( WhereRoutedHandler )] );
+        var (a, b) = pair;
+        (await a.CrisChannel.WaitForAcceptedCommandsAsync( _timeout )).ShouldBeTrue();
+        string aName = a.ApplicationIdentityService.FullName;
+        string bName = b.ApplicationIdentityService.FullName;
+
+        var routed = a.PocoDirectory.Create<IPartyRoutedCommand>( r =>
+        {
+            r.SealedCommand = Serialize( a, a.PocoDirectory.Create<IWhereRoutedCommand>() );
+            r.Path.AddRange( [aName, bName] );
+            r.Via.Add( aName );
+            r.TargetPartyFullName = bName;
+        } );
+        var executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, routed ).ExecutedCommand.WaitAsync( _timeout );
+        executed.Result.ShouldBe( bName );
+
+        // Bytes that are not a command are refused.
+        routed.SealedCommand = [1, 2, 3];
+        executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, routed ).ExecutedCommand.WaitAsync( _timeout );
+        executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "its command cannot be read" );
+    }
 
     static async Task<bool> WaitForRouteAsync( ILocalParty local, string name )
     {
@@ -205,7 +241,7 @@ public class RoutedCommandTests
         // The origin is forged: the last hop is not the remote that sent it.
         var forged = a.PocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
-            r.Command = a.PocoDirectory.Create<IWhereRoutedCommand>();
+            r.SealedCommand = Serialize( a, a.PocoDirectory.Create<IWhereRoutedCommand>() );
             r.Path.AddRange( ["Test/$Evil", bName] );
             r.Via.Add( "Test/$Evil" );
             r.TargetPartyFullName = bName;
@@ -216,7 +252,7 @@ public class RoutedCommandTests
         // A routed command never carries another one.
         var nested = a.PocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
-            r.Command = a.PocoDirectory.Create<IPartyRoutedCommand>();
+            r.SealedCommand = Serialize( a, a.PocoDirectory.Create<IPartyRoutedCommand>() );
             r.Path.AddRange( [(string)a.ApplicationIdentityService.FullName, bName] );
             r.Via.Add( a.ApplicationIdentityService.FullName );
             r.TargetPartyFullName = bName;

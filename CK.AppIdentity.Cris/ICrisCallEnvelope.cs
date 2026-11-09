@@ -21,7 +21,8 @@ public interface ICrisCallEnvelope : IPoco
 }
 
 /// <summary>
-/// Fills the <see cref="ICrisCallEnvelope"/> of a command dispatched to a remote (see <see cref="ChannelCrisRemoteDispatcher"/>).
+/// Fills the <see cref="ICrisCallEnvelope"/> of a command dispatched to a remote (see <see cref="ChannelCrisRemoteDispatcher"/>),
+/// or sent along a route by its originating party (see <see cref="PartyRoutedCommandSender"/>).
 /// </summary>
 [IsMultiple]
 public interface ICrisCallEnvelopeContributor : ISingletonAutoService
@@ -31,10 +32,14 @@ public interface ICrisCallEnvelopeContributor : ISingletonAutoService
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the sending scope.</param>
-    /// <param name="target">The remote that will receive the command.</param>
-    /// <param name="command">The command (the envelope's <see cref="ICrisCallEnvelope.Command"/> is set when it is sent).</param>
+    /// <param name="target">The remote that will receive the command (the first hop of a routed command).</param>
+    /// <param name="command">The command (the inner command of a routed one).</param>
+    /// <param name="routed">
+    /// The routed command that carries the <paramref name="command"/> (its <see cref="IPartyRoutedCommand.SealedCommand"/>
+    /// is set), or null when the command is sent to the <paramref name="target"/> itself.
+    /// </param>
     /// <param name="envelope">The envelope to fill.</param>
-    void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope );
+    void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, IPartyRoutedCommand? routed, ICrisCallEnvelope envelope );
 }
 
 /// <summary>

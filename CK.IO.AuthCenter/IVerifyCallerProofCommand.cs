@@ -25,4 +25,22 @@ public interface IVerifyCallerProofCommand : ICommand<IAuthenticationInfoPoco?>,
     /// Gets or sets the hash of the binding secret presented with the token.
     /// </summary>
     string BindingSecretHash { get; set; }
+
+    /// <summary>
+    /// Gets or sets the header of the seal of the routed command that carried the proof (the asking party is its
+    /// destination), or null for a proof received directly. With <see cref="RoutedPayloadDigest"/> and
+    /// <see cref="RoutedSignature"/>, the Authentication Center verifies that the party that opened the session sealed the
+    /// command, without the command itself.
+    /// </summary>
+    byte[]? RoutedSeal { get; set; }
+
+    /// <summary>
+    /// Gets or sets the digest of the bytes of the routed command (see <see cref="RoutedSeal"/>).
+    /// </summary>
+    byte[]? RoutedPayloadDigest { get; set; }
+
+    /// <summary>
+    /// Gets or sets the signature of the <see cref="RoutedSeal"/>.
+    /// </summary>
+    byte[]? RoutedSignature { get; set; }
 }

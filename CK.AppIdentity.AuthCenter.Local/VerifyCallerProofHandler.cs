@@ -30,7 +30,18 @@ public sealed class VerifyCallerProofHandler : ISingletonAutoService
             monitor.Warn( $"'{caller}' asks '{caller.Owner}' to verify a user's proof: it is not an Authentication Center." );
             return null;
         }
-        var info = await center.CheckProofAsync( monitor, command.Token, command.BindingSecretHash ).ConfigureAwait( false );
+        RoutedProofSeal? seal = null;
+        if( command.RoutedSeal != null || command.RoutedPayloadDigest != null || command.RoutedSignature != null )
+        {
+            if( command.RoutedSeal == null || command.RoutedPayloadDigest == null || command.RoutedSignature == null )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' asks to verify the proof of a routed command with an incomplete seal." );
+                return null;
+            }
+            seal = new RoutedProofSeal( command.RoutedSeal, command.RoutedPayloadDigest, command.RoutedSignature );
+        }
+        // The asking party is the destination of a routed command.
+        var info = await center.CheckProofAsync( monitor, command.Token, command.BindingSecretHash, seal, caller.FullName.Path ).ConfigureAwait( false );
         if( info == null ) return null;
         monitor.Trace( $"A user's proof relayed by '{caller}' is verified: actor #{info.UnsafeActor.ActorId}." );
         return pocos.Create<IAuthenticationInfoPoco>( p => p.InitializeFrom( info ) );

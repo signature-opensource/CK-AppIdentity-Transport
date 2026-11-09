@@ -104,6 +104,11 @@ events before the result. A command that cannot be read is answered with an erro
 A command for a party of the System that is not a remote travels in an `IPartyRoutedCommand`, sent by the
 [`PartyRoutedCommandSender`](PartyRoutedCommandSender.cs) of the originating local party:
 
+- **The command travels as bytes** (`IPartyRoutedCommand.SealedCommand`): the JSON of the command with its type,
+  serialized once by the originating party with the exchange options of the channels. The hops never read it; the
+  destination executes the command read from these exact bytes. So an extension can bind them to the origin: the
+  envelope contributors receive the routed command (`ICrisCallEnvelopeContributor.Contribute`'s `routed`) and the
+  authentication packages sign the bytes with the user's proof.
 - **The destination** is the host of a route (`SendAsync( ..., routeName )`: each hop takes its next hop from its own
   `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path (`SendAlongPathAsync`: for an
   answer, the way back to the party a request came from).
@@ -113,8 +118,8 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   party to `Via` and forwards it with its envelope, on its own task (no runner is held). The envelope is relayed as
   received, once the `ICrisForwardedEnvelopeFilter` cleared what this party can't vouch for (the authentication packages
   remove a user's proof that the hop can't verify). The answers come back by the chain of calls.
-- **The destination** executes the inner command like a received one (incoming validation, then execution), as long as
-  it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), not another routed
+- **The destination** reads the command from its bytes (refused when they are not a command) and executes it like a
+  received one (incoming validation, then execution), as long as it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), not another routed
   command, and the party has an `ICrisChannelReceptionHandler`. The caller party is the originating one
   ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): the reception handler must configure its ambient
   services (the identity), or the command is refused. `Via` holds the full names of the parties: the full name is the

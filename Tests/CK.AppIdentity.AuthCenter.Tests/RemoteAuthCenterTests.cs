@@ -1,5 +1,6 @@
 using CK.Testing;
 using CK.AppIdentity.Cris;
+using CK.AppIdentity.KeyManagement;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
@@ -90,6 +91,7 @@ public class RemoteAuthCenterTests
                                       typeof( IWhoCallsCommand ),
                                       typeof( ICriticalWhoCallsCommand ),
                                       typeof( IAuthenticationCallEnvelope ),
+                                      typeof( IPartyRoutedCommand ),
                                       typeof( AuthenticationReceptionHandler ),
                                       typeof( ChannelCrisRemoteDispatcher ),
                                       typeof( CrisBackgroundExecutorService )];
@@ -353,6 +355,94 @@ public class RemoteAuthCenterTests
             capped.ActualActor.Level.ShouldBe( AuthLevel.Normal );
             texts.ShouldContain( t => t.Contains( $"'{fromCenter}' sent a user's proof of a session opened by '{fromRemote.FullName}': its level is capped at Normal" ) );
         }
+    }
+
+    // A routed command as received by its destination: the bytes of the command, the path from the origin.
+    static IPartyRoutedCommand Routed( RunningApplication destination, string origin, byte[] sealedCommand )
+    {
+        return destination.PocoDirectory.Create<IPartyRoutedCommand>( r =>
+        {
+            r.SealedCommand = sealedCommand;
+            r.Via.AddRange( [origin, "Test/$Hop"] );
+        } );
+    }
+
+    [Test]
+    public async Task the_proof_of_a_routed_command_needs_the_seal_of_the_session_party_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+        // The remote opened the session: it is the session party, the origin of the routes.
+        var sessionParty = p.Remote.ApplicationIdentityService;
+        var sessionKeys = sessionParty.GetRequiredFeature<ILocalKeys>();
+        string origin = sessionParty.FullName.Path;
+        string centerName = p.Center.ApplicationIdentityService.FullName.Path;
+        byte[] command = [1, 2, 3, 4];
+        var verifier = new AuthCenterProofVerifier();
+        // The sender of a routed command is its last hop: here, the remote as known by the AuthCenter.
+        var lastHop = p.Center.ApplicationIdentityService.Remotes.Single();
+        using var scope = p.Center.CreateScopeServices();
+
+        IAuthenticationCallEnvelope Sealed( string destination, byte[] sealedBytes )
+        {
+            var e = Proof( p.Center, token, binding );
+            (e.RoutedSeal, e.RoutedSignature) = RoutedCommandSeal.Create( sessionKeys, destination, token, sealedBytes, DateTime.UtcNow );
+            return e;
+        }
+        async Task RefusedAsync( IPartyRoutedCommand route, IAuthenticationCallEnvelope proof, string because )
+        {
+            using( TestHelper.Monitor.CollectTexts( out var texts ) )
+            {
+                (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldBeNull( because );
+                texts.ShouldContain( t => t.Contains( because ) );
+            }
+        }
+
+        // Sealed by the session party for the AuthCenter: the Critical level is kept.
+        var route = Routed( p.Center, origin, command );
+        var proof = Sealed( centerName, command );
+        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldNotBeNull()
+            .ActualActor.Level.ShouldBe( AuthLevel.Critical );
+        // A seal is used once.
+        await RefusedAsync( route, proof, "it has already been used" );
+        // No seal.
+        await RefusedAsync( route, Proof( p.Center, token, binding ), "has no seal" );
+        // Another command than the sealed one.
+        await RefusedAsync( Routed( p.Center, origin, [9, 9, 9] ), Sealed( centerName, command ), "is invalid: the proof is refused" );
+        // Sealed for another destination.
+        await RefusedAsync( route, Sealed( "Test/$Other", command ), "it has been made for 'Test/$Other'" );
+        // Another origin than the session party.
+        await RefusedAsync( Routed( p.Center, "Test/$Evil", command ), Sealed( centerName, command ), "is routed from 'Test/$Evil > Test/$Hop'" );
+    }
+
+    [Test]
+    public async Task a_remote_of_the_AuthCenter_has_the_seal_of_a_routed_proof_verified_by_the_AuthCenter_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+        // The destination is the remote: it can't verify the seal itself, the AuthCenter does (the remote asks it).
+        // The session party is the remote too (it opened the session): enough to exercise the verification by the AuthCenter.
+        var remote = p.Remote.ApplicationIdentityService;
+        var keys = remote.GetRequiredFeature<ILocalKeys>();
+        string remoteName = remote.FullName.Path;
+        byte[] command = [5, 6, 7];
+        var verifier = new AuthCenterProofVerifier();
+        var lastHop = remote.Remotes.Single();
+        using var scope = p.Remote.CreateScopeServices();
+
+        var proof = Proof( p.Remote, token, binding );
+        (proof.RoutedSeal, proof.RoutedSignature) = RoutedCommandSeal.Create( keys, remoteName, token, command, DateTime.UtcNow );
+        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, Routed( p.Remote, remoteName, command ), proof )).ShouldNotBeNull()
+            .ActualActor.Level.ShouldBe( AuthLevel.Critical );
+
+        // Sealed for another destination: the AuthCenter checks that the asking party is the destination.
+        var other = Proof( p.Remote, token, binding );
+        (other.RoutedSeal, other.RoutedSignature) = RoutedCommandSeal.Create( keys, "Test/$Other", token, command, DateTime.UtcNow );
+        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, Routed( p.Remote, remoteName, command ), other )).ShouldBeNull();
     }
 
     [Test]

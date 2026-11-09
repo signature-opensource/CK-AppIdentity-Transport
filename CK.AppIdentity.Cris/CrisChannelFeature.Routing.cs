@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using CK.Poco.Exc.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,17 +27,23 @@ public sealed partial class CrisChannelFeature
             handler.SendError( monitor, token.Key, $"The routed command is refused: {error}" );
             return null;
         }
-        var inner = routed.Command;
-        Throw.DebugAssert( inner != null );
         if( next != null )
         {
             routed.Via.Add( local.FullName );
             routed.TargetPartyFullName = next;
-            monitor.Info( $"Forwarding '{inner.CrisPocoModel.PocoName}' routed from '{routed.Via[0]}' to '{next}'." );
+            monitor.Info( $"Forwarding a command routed from '{routed.Via[0]}' to '{next}'." );
             _ = ForwardAsync( handler, token, routed, envelope, next );
             return null;
         }
-        // This is the destination.
+        // This is the destination: the command is the one read from the bytes of the origin.
+        var inner = Unseal( monitor, _pocoDirectory, routed.SealedCommand! );
+        if( inner == null || inner is IPartyRoutedCommand )
+        {
+            var reason = inner == null ? "its command cannot be read" : "it carries another routed command";
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Routed command received from '{Party.FullName}' is refused: {reason}." );
+            handler.SendError( monitor, token.Key, $"The routed command is refused: {reason}." );
+            return null;
+        }
         string? refused = null;
         var m = inner.CrisPocoModel;
         if( _receptionHandler == null ) refused = "this party has no reception handler (it cannot establish the identity of a routed command)";
@@ -53,12 +60,33 @@ public sealed partial class CrisChannelFeature
         return inner;
     }
 
+    // The routed command carries the exact bytes serialized by the origin (the JSON of the command with its type, with
+    // the exchange options of the channels): only the destination reads them.
+    internal static byte[] Seal( PocoDirectory pocoDirectory, IAbstractCommand command )
+    {
+        var w = new System.Buffers.ArrayBufferWriter<byte>();
+        pocoDirectory.WriteJson( w, command, withType: true, Protocol.ExchangeExportOptions );
+        return w.WrittenSpan.ToArray();
+    }
+
+    static IAbstractCommand? Unseal( IActivityMonitor monitor, PocoDirectory pocoDirectory, byte[] sealedCommand )
+    {
+        try
+        {
+            return pocoDirectory.ReadJson( sealedCommand, Protocol.ExchangeImportOptions ) as IAbstractCommand;
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( "Unable to read the command of a routed command.", ex );
+            return null;
+        }
+    }
+
     // Each hop vouches for its predecessor only: the last of Via is the sender. No loop, no nesting.
     static string? CheckChain( IRemoteParty sender, IPartyRoutedCommand routed )
     {
         var local = sender.Owner;
-        if( routed.Command == null ) return "it has no command.";
-        if( routed.Command is IPartyRoutedCommand ) return "it carries another routed command.";
+        if( routed.SealedCommand is not { Length: > 0 } ) return "it has no command.";
         if( routed.Via.Count == 0 ) return "its Via is empty.";
         var last = routed.Via[^1];
         if( last != sender.FullName.Path )

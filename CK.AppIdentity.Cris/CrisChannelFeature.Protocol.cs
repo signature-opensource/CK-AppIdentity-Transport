@@ -38,6 +38,10 @@ public sealed partial class CrisChannelFeature
         static readonly PocoJsonExportOptions _exportOptions = new( PocoJsonExportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
         static readonly PocoJsonImportOptions _importOptions = new( PocoJsonImportOptions.ToStringDefault ) { TypeFilterName = "AllExchangeable" };
 
+        // The exchange options, also used for the command of a routed command.
+        internal static PocoJsonExportOptions ExchangeExportOptions => _exportOptions;
+        internal static PocoJsonImportOptions ExchangeImportOptions => _importOptions;
+
         public Protocol( CrisChannelFeature feature, ref CreateParameters createParameters )
             : base( ref createParameters )
         {
