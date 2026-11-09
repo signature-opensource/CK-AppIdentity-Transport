@@ -12,7 +12,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// The feature of a local party whose Authentication Center is a remote party: this application is a remote of it.
 /// Added by the <see cref="RemoteAuthCenterFeatureDriver"/>.
 /// </summary>
-public sealed class RemoteAuthCenter : IAuthCenterProofChecker
+public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryptionKeyDirectory
 {
     /// <summary>
     /// The maximal time to wait for the remote Authentication Center: 30 seconds.
@@ -20,6 +20,8 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
 
     readonly CrisAuthCenter _center;
+    // The encryption keys of the other parties stated by the Authentication Center, until their end.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, (byte[] PublicKey, DateTime Expires)> _partyKeys = new();
     // The verified encryption key of the Authentication Center (as published), until the expiration of its signature.
     (PartyEncryptionKey Published, byte[] Spki, DateTime Expires)? _encryptionKey;
 
@@ -66,6 +68,66 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
         var spki = published.PublicKey.ToArray();
         _encryptionKey = (published, spki, signature.Expiration);
         return spki;
+    }
+
+    /// <summary>
+    /// Gets the verified encryption key of a party (see <see cref="IPartyEncryptionKeyDirectory"/>): the one the
+    /// Authentication Center publishes in its description for itself, the statement of the Authentication Center (the key
+    /// directory, <see cref="IGetRemoteEncryptionKeyQCommand"/>) for another party. A statement is cached until the key ends.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="partyFullName">The full name of the party.</param>
+    /// <returns>The public key and the end of its use, or null when it is unknown (the reason is logged).</returns>
+    public async ValueTask<(byte[] PublicKey, DateTime Expires)?> GetPartyEncryptionKeyAsync( IActivityMonitor monitor, string partyFullName )
+    {
+        Throw.CheckNotNullArgument( partyFullName );
+        var center = (IRemoteParty)_center.AuthCenter;
+        if( partyFullName == center.FullName.Path )
+        {
+            var spki = await GetEncryptionKeyAsync( monitor ).ConfigureAwait( false );
+            var cachedCenter = _encryptionKey;
+            return spki != null && cachedCenter.HasValue ? (spki, cachedCenter.Value.Expires) : null;
+        }
+        var utcNow = DateTime.UtcNow;
+        if( _partyKeys.TryGetValue( partyFullName, out var cached ) && cached.Expires - TimeSpan.FromMinutes( 1 ) > utcNow )
+        {
+            return cached;
+        }
+        var channel = center.GetFeature<CrisChannelFeature>();
+        if( channel == null )
+        {
+            monitor.Warn( $"No Cris channel to the AuthCenter '{center}': the encryption key of '{partyFullName}' can't be asked." );
+            return null;
+        }
+        IPartyEncryptionKeyStatement? statement;
+        try
+        {
+            statement = await channel.SendCommand( monitor, channel.PocoDirectory.Create<IGetRemoteEncryptionKeyQCommand>( c => c.PartyFullName = partyFullName ) )
+                                     .WithResult<IPartyEncryptionKeyStatement?>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to ask the AuthCenter '{center}' the encryption key of '{partyFullName}'.", ex );
+            return null;
+        }
+        if( statement == null )
+        {
+            monitor.Warn( $"The AuthCenter '{center}' doesn't know the encryption key of '{partyFullName}'." );
+            return null;
+        }
+        if( statement.PartyFullName != partyFullName
+            || !ApplicationSignature.TryRead( statement.Signature, out var signature )
+            || await _center.CheckWithKeyEventsAsync( monitor,
+                                                     PartyEncryptionKeyStatement.Purpose,
+                                                     PartyEncryptionKeyStatement.GetSignedData( partyFullName, statement.PublicKey ),
+                                                     signature ).ConfigureAwait( false ) != SignatureVerdict.Valid )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The statement of the AuthCenter '{center}' about the encryption key of '{partyFullName}' is invalid." );
+            return null;
+        }
+        var key = (statement.PublicKey, signature.Expiration);
+        _partyKeys[partyFullName] = key;
+        return key;
     }
 
     /// <summary>

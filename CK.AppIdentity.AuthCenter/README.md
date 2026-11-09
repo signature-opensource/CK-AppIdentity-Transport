@@ -180,6 +180,20 @@ its level, `Critical` included, across any number of parties of the System:
 So any party of the System can relay a proof, and any local party that has an Authentication Center can verify it: a
 `Critical` command (an impersonation, a passkey registration) executes wherever its handler is.
 
+## The key directory ([`IPartyEncryptionKeyDirectory`](IPartyEncryptionKeyDirectory.cs))
+
+A party encrypts for another one with the encryption key it publishes in its description (CK.AppIdentity.KeyManagement's
+`PartyEncryption`). For a party that is not one of its remotes, the key would come by an untrusted path: the
+Authentication Center vouches for it. It has pinned the keys of its remotes, and its remotes hold its keys.
+- **On the Authentication Center** (`LocalAuthCenter`): the key of one of its remotes is the one in its description,
+  verified with its pinned keys (its key events are requested once when the signer is unknown); its own key is its
+  party's.
+- **On a remote** (`RemoteAuthCenter`): the Authentication Center's key is the one in its description; the key of
+  another party is asked to the Authentication Center (`IGetRemoteEncryptionKeyQCommand`, handled by
+  `PartyEncryptionKeyDirectoryHandler` for its remotes only). It answers with a statement it signs
+  ([`PartyEncryptionKeyStatement`](IPartyEncryptionKeyDirectory.cs): the full name of the party and its key, until the
+  end of use of the key), verified like a token and cached until the key ends.
+
 ## The encryption of the sensitive fields ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs))
 
 The sensitive fields ([Sensitive] strings, like the Basic login password) of the commands that a remote sends to its

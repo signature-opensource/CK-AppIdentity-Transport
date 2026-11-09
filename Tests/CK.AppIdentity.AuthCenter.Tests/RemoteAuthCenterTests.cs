@@ -113,6 +113,8 @@ public class RemoteAuthCenterTests
                                       typeof( IImpersonateOperationCommand ),
                                       typeof( IClearImpersonationOperationCommand ),
                                       typeof( IVerifyCallerProofCommand ),
+                                      typeof( IGetRemoteEncryptionKeyQCommand ),
+                                      typeof( IPartyEncryptionKeyStatement ),
                                       typeof( IWhoCallsCommand ),
                                       typeof( ICriticalWhoCallsCommand ),
                                       typeof( IRelayCommand ),
@@ -140,6 +142,7 @@ public class RemoteAuthCenterTests
                                            typeof( AuthCenterCallerPartyService ),
                                            typeof( AuthCenterProofVerifier ),
                                            typeof( VerifyCallerProofHandler ),
+                                           typeof( PartyEncryptionKeyDirectoryHandler ),
                                            typeof( FakeWeakLoginProvider ),
                                            typeof( FakeBasicLoginProvider ),
                                            typeof( AuthCenterFieldDecryptor ),
@@ -393,6 +396,40 @@ public class RemoteAuthCenterTests
             r.SealedCommand = sealedCommand;
             r.Via.AddRange( [origin, "Test/$Hop"] );
         } );
+    }
+
+    [Test]
+    public async Task the_AuthCenter_is_the_key_directory_of_its_remotes_Async()
+    {
+        await using var p = await StartAsync();
+        var remote = p.Remote.ApplicationIdentityService;
+        var center = p.Center.ApplicationIdentityService;
+        string remoteName = remote.FullName.Path;
+        string centerName = center.FullName.Path;
+        // The descriptions (with the encryption keys) are exchanged on connection.
+        var remoteAtCenter = center.Remotes.Single();
+        var centerAtRemote = remote.Remotes.Single();
+        for( int i = 0; i < 100 && (remoteAtCenter.Description.EncryptionKey == null || centerAtRemote.Description.EncryptionKey == null); ++i )
+        {
+            await Task.Delay( 100 );
+        }
+        var remoteKey = remote.Description.EncryptionKey.ShouldNotBeNull().PublicKey.ToArray();
+        var centerKey = center.Description.EncryptionKey.ShouldNotBeNull().PublicKey.ToArray();
+
+        // On the AuthCenter: its own key and the ones of its remotes, from their descriptions (verified).
+        var local = center.GetRequiredFeature<LocalAuthCenter>();
+        (await local.GetPartyEncryptionKeyAsync( TestHelper.Monitor, remoteName )).ShouldNotBeNull().PublicKey.ShouldBe( remoteKey );
+        (await local.GetPartyEncryptionKeyAsync( TestHelper.Monitor, centerName )).ShouldNotBeNull().PublicKey.ShouldBe( centerKey );
+        (await local.GetPartyEncryptionKeyAsync( TestHelper.Monitor, "Test/$Unknown" )).ShouldBeNull();
+
+        // On its remote: the AuthCenter's key from its description, the key of another party from the statement of the
+        // AuthCenter (here, the remote itself: the AuthCenter vouches for its remotes).
+        var directory = remote.GetRequiredFeature<IPartyEncryptionKeyDirectory>();
+        (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, centerName )).ShouldNotBeNull().PublicKey.ShouldBe( centerKey );
+        var stated = (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, remoteName )).ShouldNotBeNull();
+        stated.PublicKey.ShouldBe( remoteKey );
+        stated.Expires.ShouldBeGreaterThan( DateTime.UtcNow );
+        (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, "Test/$Unknown" )).ShouldBeNull();
     }
 
     [Test]

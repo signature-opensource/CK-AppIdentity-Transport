@@ -12,7 +12,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// The feature of a local party that is its own Authentication Center: its settings, its sessions and the signing of its
 /// tokens. Added by the <see cref="LocalAuthCenterFeatureDriver"/>.
 /// </summary>
-public sealed class LocalAuthCenter : IAuthCenterProofChecker
+public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionKeyDirectory
 {
     readonly CrisAuthCenter _center;
     readonly ILocalParty _party;
@@ -231,6 +231,50 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
             return null;
         }
         return read.Info;
+    }
+
+    /// <summary>
+    /// Gets the verified encryption key of this Authentication Center's party or of one of its remotes (see
+    /// <see cref="IPartyEncryptionKeyDirectory"/>): the key a remote publishes in its description, verified with its
+    /// pinned keys (its key events are requested once when its signer is unknown here).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="partyFullName">The full name of the party.</param>
+    /// <returns>The public key and the end of its use, or null when it is unknown (the reason is logged).</returns>
+    public async ValueTask<(byte[] PublicKey, DateTime Expires)?> GetPartyEncryptionKeyAsync( IActivityMonitor monitor, string partyFullName )
+    {
+        Throw.CheckNotNullArgument( partyFullName );
+        var utcNow = DateTime.UtcNow;
+        if( partyFullName == _party.FullName.Path )
+        {
+            var own = _party.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( utcNow );
+            return ApplicationSignature.TryRead( own.Signature.Span, out var signature )
+                    ? (own.PublicKey.ToArray(), signature.Expiration)
+                    : null;
+        }
+        var remote = _party.Remotes.FirstOrDefault( r => r.FullName.Path == partyFullName );
+        var published = remote?.Description.EncryptionKey;
+        var keys = remote?.GetFeature<IPartyKeys>();
+        if( remote == null || published == null || keys == null )
+        {
+            monitor.Warn( remote == null
+                            ? $"'{partyFullName}' is not a remote of the Authentication Center '{_party}': its encryption key is unknown."
+                            : $"'{partyFullName}' publishes no encryption key (it is not connected, or it has no key management)." );
+            return null;
+        }
+        var verdict = PartyEncryption.Check( monitor, keys, published, out var publicKey, out var expires );
+        if( verdict == SignatureVerdict.UnknownIssuer
+            && remote.GetFeature<CK.AppIdentity.TransportLayer.TransportFeature>() is { } transport
+            && await transport.RequestKeyEventsAsync( CrisAuthCenter.KeyEventsTimeout ).ConfigureAwait( false ) )
+        {
+            verdict = PartyEncryption.Check( monitor, keys, published, out publicKey, out expires );
+        }
+        if( verdict != SignatureVerdict.Valid || expires <= utcNow )
+        {
+            monitor.Warn( $"The encryption key published by '{partyFullName}' is refused." );
+            return null;
+        }
+        return (publicKey!, expires);
     }
 
     // The nonces of the seals that have been used, until the end of their lifetime.
