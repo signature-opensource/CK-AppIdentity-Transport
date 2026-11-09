@@ -87,6 +87,7 @@ public class RemoteAuthCenterTests
                                       typeof( IGetPartyActorIdsQCommand ),
                                       typeof( IPartyActorIds ),
                                       typeof( IGetAuthCenterEncryptionKeyQCommand ),
+                                      typeof( IVerifyCallerProofCommand ),
                                       typeof( IAuthCenterEncryptionKey ),
                                       typeof( IWhoCallsCommand ),
                                       typeof( ICriticalWhoCallsCommand ),
@@ -112,6 +113,7 @@ public class RemoteAuthCenterTests
                                            typeof( AuthCenterEncryptionKeyHandler ),
                                            typeof( AuthCenterCallerPartyService ),
                                            typeof( AuthCenterProofVerifier ),
+                                           typeof( VerifyCallerProofHandler ),
                                            typeof( FakeWeakLoginProvider ),
                                            typeof( FakeBasicLoginProvider ),
                                            typeof( AuthCenterFieldDecryptor ),
@@ -275,6 +277,48 @@ public class RemoteAuthCenterTests
     }
 
     [Test]
+    public async Task a_remote_of_the_AuthCenter_verifies_a_relayed_proof_by_asking_it_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+
+        // The remote's checker reads the token with the AuthCenter's keys, then asks the AuthCenter for the liveness.
+        var checker = p.Remote.ApplicationIdentityService.GetRequiredFeature<IAuthCenterProofChecker>();
+        checker.ShouldBeOfType<RemoteAuthCenter>();
+        var proved = (await checker.CheckProofAsync( TestHelper.Monitor, token, binding )).ShouldNotBeNull();
+        proved.UnsafeActor.ActorName.ShouldBe( "Albert" );
+        proved.UnsafeActualActor.Level.ShouldBe( AuthLevel.Critical, "Just after the login: the proved level is kept." );
+
+        (await checker.CheckProofAsync( TestHelper.Monitor, token, "another-binding" )).ShouldBeNull( "The binding secret must be the session's." );
+        (await checker.CheckProofAsync( TestHelper.Monitor, "garbage", binding )).ShouldBeNull( "Refused locally, without asking." );
+
+        // The session ends: the AuthCenter refuses the proof.
+        await p.RequestAsync( pocos => pocos.Create<ILogoutSessionCommand>() );
+        (await checker.CheckProofAsync( TestHelper.Monitor, token, binding )).ShouldBeNull( "The session ended." );
+    }
+
+    [Test]
+    public async Task when_the_AuthCenter_cannot_be_reached_a_relayed_proof_is_not_verified_Async()
+    {
+        var p = await StartAsync();
+        try
+        {
+            (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+            var token = p.Browser.Token.ShouldNotBeNull();
+            var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+            var checker = p.Remote.ApplicationIdentityService.GetRequiredFeature<IAuthCenterProofChecker>();
+            await p.Center.DisposeAsync();
+            (await checker.CheckProofAsync( TestHelper.Monitor, token, binding )).ShouldBeNull( "Fail closed: the liveness can't be known." );
+        }
+        finally
+        {
+            await p.Remote.DisposeAsync();
+        }
+    }
+
+    [Test]
     public async Task the_impersonation_is_a_Critical_operation_that_needs_the_user_proof_Async()
     {
         await using var p = await StartAsync();
@@ -290,15 +334,16 @@ public class RemoteAuthCenterTests
     }
 
     [Test]
-    public async Task a_remote_without_the_AuthCenter_feature_cannot_be_a_caller_party_Async()
+    public async Task a_remote_without_the_AuthCenter_feature_cannot_be_a_caller_party_but_can_relay_a_proof_Async()
     {
         await using var p = await StartAsync( remoteIsAllowed: false );
         // The login is an anonymous operation: any party inside the System may ask for it.
         (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
         var albert = p.Browser.Current.UnsafeActor.ActorId;
-        // But the AuthCenter's policy refuses this remote as a caller party, and its user's proof is ignored.
+        // The AuthCenter's policy refuses this remote as a caller party: without a proof, nothing is vouched for.
         Refusal( await p.DeferAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = albert ) ) ).ShouldBe( "Authentication.CallerPartyRefused" );
-        Refusal( await p.RequestAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = albert ) ) ).ShouldBe( "Authentication.CallerPartyRefused" );
+        // But any party of the System can relay a user's proof: the AuthCenter verifies it, the proved level is kept.
+        (await p.RequestAsync( pocos => pocos.Create<ICriticalWhoCallsCommand>( c => c.ActorId = albert ) )).ShouldBe( $"Albert/Critical/{p.RemotePartyActorIdAtTheCenter}" );
     }
 
     [Test]

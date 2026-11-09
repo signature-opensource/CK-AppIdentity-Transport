@@ -6,7 +6,8 @@ namespace CK.Auth;
 /// Extends the <see cref="ICrisCallEnvelope"/> with the user's proof: the token and the hash of the binding secret
 /// presented to the sending endpoint by the user (an interactive request). A deferred execution has no proof.
 /// <para>
-/// A proof is a bearer credential: it must only be sent to a party that verifies it (an authentication center).
+/// A proof is a bearer credential: it must never leave the System (the parties of the same domain and environment),
+/// where any party can have it verified by its authentication center.
 /// </para>
 /// </summary>
 public interface IAuthenticationCallEnvelope : ICrisCallEnvelope

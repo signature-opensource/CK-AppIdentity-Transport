@@ -208,11 +208,10 @@ handles, over the Cris channel. The identity of their users is established by
 - **The caller party policy** ([`AuthCenterCallerPartyService`](AuthCenterCallerParties.cs)): its remotes (that have its
   "AuthCenter" feature: they allow `"AuthCenterRemote"`) may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
   command included); any other caller party is refused.
-- **The user's proof** ([`AuthCenterProofVerifier`](AuthCenterCallerParties.cs)): a token of this Authentication Center,
-  presented with the binding secret of its session, whose session is alive and is still the token's one (same binding,
-  same actor: a logout, a revocation or an impersonation takes effect at once, not after the token's lifetime). The
-  proved identity keeps its level: this is how a `Critical` command (an impersonation, a passkey registration) crosses a
-  party boundary. An invalid proof is ignored: the remote then only vouches, at most at `Normal`.
+- **The user's proof** (see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof)):
+  `LocalAuthCenter.CheckProofAsync` checks it against the session store, for a proof received here and for the
+  `IVerifyCallerProofCommand` of any party of the System that relayed one (`VerifyCallerProofHandler`). The proved
+  identity keeps its level. An invalid proof is ignored: the remote then only vouches, at most at `Normal`.
 - **The sensitive fields** ([`AuthCenterFieldDecryptor`](AuthCenterFieldDecryptor.cs)) are decrypted on reception, before
   the validation and the execution. A clear value is refused, and so is a sensitive value from a party that is not one of
   its remotes. The encryption keys ([`AuthCenterEncryptionKeys`](AuthCenterEncryptionKeys.cs)) are in the

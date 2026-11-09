@@ -9,8 +9,10 @@ namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
 /// Sends the user's proof (the token and the binding secret hash presented to this endpoint) with the commands that carry
-/// an identity, <b>only</b> to the Authentication Center of the current local party: a proof is a bearer credential, any
-/// other party could replay it. A deferred execution has no presented proof: its commands travel without one.
+/// an identity, to any remote inside the System of the current local party: any party of the System can relay a proof,
+/// and any party can have it verified (by its Authentication Center, see <see cref="AuthCenterProofVerifier"/>). A proof is
+/// a bearer credential: it never leaves the System. A deferred execution has no presented proof: its commands travel
+/// without one.
 /// </summary>
 public sealed class AuthCenterProofContributor : ICrisCallEnvelopeContributor
 {
@@ -18,7 +20,8 @@ public sealed class AuthCenterProofContributor : ICrisCallEnvelopeContributor
     public void Contribute( IActivityMonitor monitor, IServiceProvider services, IRemoteParty target, IAbstractCommand command, ICrisCallEnvelope envelope )
     {
         if( command is IAuthUnsafePart
-            && services.GetService<CurrentLocalParty>()?.LocalParty.GetFeature<RemoteAuthCenter>()?.Center.AuthCenter == target
+            && target.DomainName == target.Owner.DomainName
+            && target.EnvironmentName == target.Owner.EnvironmentName
             && services.GetService<IAuthenticationSessionEndpoint>() is { PresentedToken: { } token } endpoint )
         {
             var proof = (IAuthenticationCallEnvelope)envelope;

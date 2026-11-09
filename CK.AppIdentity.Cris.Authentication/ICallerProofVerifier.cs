@@ -7,7 +7,8 @@ namespace CK.Auth;
 
 /// <summary>
 /// Optional service that verifies the user's proof received with a command (see <see cref="IAuthenticationCallEnvelope"/>):
-/// only a party that can check it implements it (an authentication center: its tokens, their live session and binding).
+/// only a party that can check it implements it (an authentication center or any of its remotes, that asks it: the tokens,
+/// their live session and binding).
 /// Without it, a proof is ignored and the received identity is the one vouched for by the caller party, capped.
 /// </summary>
 public interface ICallerProofVerifier : ISingletonAutoService

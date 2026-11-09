@@ -133,6 +133,30 @@ key events to its connected remotes (the transport does it, see CK.AppIdentity.T
 uses `ReadTokenAsync`: when a token is refused because its issuer is not known (`SignatureVerdict.UnknownIssuer`), the key
 events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once.
 
+## The user's proof
+
+A command that carries an identity is received with the identity vouched for by its caller party, at most at `Normal`
+(see [CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md)). The user's proof lets it keep
+its level, `Critical` included, across any number of parties of the System:
+
+- **Sending it** ([`AuthCenterProofContributor`](AuthCenterProofContributor.cs)): in an interactive request, the token and
+  the binding secret hash presented to the endpoint are put in the envelope (`IAuthenticationCallEnvelope`) of every
+  command that carries an identity, sent to any remote **inside the System** (the same domain and environment). A proof is
+  a bearer credential: it never leaves the System. A deferred execution has no presented proof: the caller party alone
+  vouches, at most at `Normal`.
+- **Verifying it** ([`AuthCenterProofVerifier`](AuthCenterProofVerifier.cs)): the receiving local party asks its
+  [`IAuthCenterProofChecker`](IAuthCenterProofChecker.cs). The token must be valid, its session alive and still the
+  token's one (the same binding, the same actor: a logout, a revocation or an impersonation takes effect at once, not
+  after the token's lifetime). The Authentication Center itself (`LocalAuthCenter`) checks its session store; any of its
+  remotes (`RemoteAuthCenter`) reads the token with the pinned keys, then asks the Authentication Center for the liveness
+  (`IVerifyCallerProofCommand`, internal, handled by `VerifyCallerProofHandler`). The answer is the identity stated by the
+  Authentication Center: the one case where an `IAuthenticationInfoPoco` becomes a trusted authentication, because it is
+  the Authentication Center's own statement, received from it over the channel. It fails closed: an unreachable
+  Authentication Center or a refused proof gives no proved identity (the caller party then only vouches).
+
+So any party of the System can relay a proof, and any local party that has an Authentication Center can verify it: a
+`Critical` command (an impersonation, a passkey registration) executes wherever its handler is.
+
 ## The encryption of the sensitive fields ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs))
 
 The sensitive fields ([Sensitive] strings, like the Basic login password) of the commands that a remote sends to its

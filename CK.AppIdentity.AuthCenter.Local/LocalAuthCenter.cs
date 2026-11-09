@@ -12,7 +12,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// The feature of a local party that is its own Authentication Center: its settings, its sessions and the signing of its
 /// tokens. Added by the <see cref="LocalAuthCenterFeatureDriver"/>.
 /// </summary>
-public sealed class LocalAuthCenter
+public sealed class LocalAuthCenter : IAuthCenterProofChecker
 {
     readonly CrisAuthCenter _center;
     readonly ILocalParty _party;
@@ -152,4 +152,43 @@ public sealed class LocalAuthCenter
         if( info.Expires.HasValue && info.Expires.Value < expiration ) expiration = info.Expires.Value;
         return AuthCenterToken.Create( _party.GetRequiredFeature<ILocalKeys>(), _party.FullName, sessionId, bindingSecretHash, info, expiration );
     }
+
+    /// <summary>
+    /// Checks a user's proof (see <see cref="IAuthCenterProofChecker"/>): a token of this Authentication Center, presented
+    /// with the binding secret of its session, whose session is alive and is still the token's (the same binding and the
+    /// same actor: a refresh rotates the binding, a logout or a revocation deletes the session, an impersonation started
+    /// or ended since the token was issued changes the actor). Used for the proofs received here, and for the ones that
+    /// the remotes ask to verify (<c>IVerifyCallerProofCommand</c>).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="token">The user's token.</param>
+    /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
+    /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
+    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash )
+    {
+        var utcNow = DateTime.UtcNow;
+        var read = await _center.ReadTokenAsync( monitor, token, utcNow ).ConfigureAwait( false );
+        if( read == null )
+        {
+            monitor.Warn( "An invalid user's token is ignored." );
+            return null;
+        }
+        if( !FixedTimeEquals( bindingSecretHash, read.BindingSecretHash ) )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, "A user's token without the binding secret of its session is ignored." );
+            return null;
+        }
+        var session = await _sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
+        if( session == null
+            || session.Expires <= utcNow
+            || session.ActorId != read.Info.UnsafeActor.ActorId
+            || !FixedTimeEquals( session.BindingSecretHash, read.BindingSecretHash ) )
+        {
+            monitor.Warn( "The token of a session that ended or changed is ignored." );
+            return null;
+        }
+        return read.Info;
+    }
+
+    static bool FixedTimeEquals( string a, string b ) => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( a ), System.Text.Encoding.ASCII.GetBytes( b ) );
 }

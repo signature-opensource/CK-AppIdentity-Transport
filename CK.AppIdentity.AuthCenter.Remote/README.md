@@ -34,12 +34,10 @@ The commands handled by the Authentication Center (any command, an operation or 
 carry the identity of their user (see [CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md)):
 this remote vouches for it, and in an interactive request it also sends the user's proof.
 
-## The user's proof ([`AuthCenterProofContributor`](AuthCenterProofContributor.cs))
+## The user's proof
 
-For a command that carries an identity, sent to the Authentication Center of the current local party, it puts the token
-and the binding secret hash presented to this endpoint in the command's envelope (`IAuthenticationCallEnvelope`). A
-proof is a bearer credential: it is never sent to another party. A deferred execution has no presented proof: the remote
-alone vouches for the user, and the Authentication Center caps the level at Normal.
+The proof is sent to any party of the System, and verified here by asking the Authentication Center
+(`RemoteAuthCenter.CheckProofAsync`): see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof).
 
 ## The sensitive fields ([`AuthCenterFieldEncryptor`](AuthCenterFieldEncryptor.cs))
 
