@@ -517,7 +517,7 @@ public class RemoteAuthCenterTests
     }
 
     [Test]
-    public async Task a_remote_without_the_AuthCenter_feature_cannot_be_a_caller_party_but_can_relay_a_proof_Async()
+    public async Task a_remote_refused_as_caller_party_still_presents_the_proof_of_its_users_Async()
     {
         await using var p = await StartAsync( remoteIsAllowed: false );
         // The login is an anonymous operation: any party inside the System may ask for it.
@@ -525,7 +525,8 @@ public class RemoteAuthCenterTests
         var albert = p.Browser.Current.UnsafeActor.ActorId;
         // The AuthCenter's policy refuses this remote as a caller party: without a proof, nothing is vouched for.
         Refusal( await p.DeferAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = albert ) ) ).ShouldBe( "Authentication.CallerPartyRefused" );
-        // But any party of the System can relay a user's proof: the AuthCenter verifies it, the proved level is kept.
+        // But its users' proof is verified by the AuthCenter: the remote opened their session (it is the session party), the
+        // proved level is kept.
         (await p.RequestAsync( pocos => pocos.Create<ICriticalWhoCallsCommand>( c => c.ActorId = albert ) )).ShouldBe( $"Albert/Critical/{p.RemoteFullNameAtTheCenter}" );
     }
 
