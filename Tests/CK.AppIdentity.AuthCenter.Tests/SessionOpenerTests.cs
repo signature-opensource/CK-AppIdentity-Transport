@@ -33,7 +33,8 @@ public class SessionOpenerTests
         issued.RememberMe.ShouldBeFalse();
 
         // The token is read back by the AuthCenter (this is what a front does): it holds the session.
-        var (info, sessionId, bindingHash) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
+        var (info, sessionId, bindingHash, sessionParty) = (await center.ReadTokenAsync( TestHelper.Monitor, r.Token.ShouldNotBeNull(), DateTime.UtcNow )).ShouldNotBeNull();
+        sessionParty.ShouldBe( app.Identity.FullName.Path, "Received directly: the AuthCenter's party opened the session." );
         info.UnsafeActor.ActorId.ShouldBe( 42 );
         info.UnsafeActor.ActorName.ShouldBe( "Operator" );
         info.UnsafeActor.Level.ShouldBe( AuthLevel.Unsafe );
@@ -44,6 +45,7 @@ public class SessionOpenerTests
         var session = (await app.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, 42, sessionId )).ShouldNotBeNull();
         issued.SessionKey.ShouldBe( session.SessionKey );
         session.RefreshSecretHash.ShouldBe( "refresh-hash-1" );
+        session.SessionParty.ShouldBe( sessionParty );
         session.BindingSecretHash.ShouldBe( "binding-hash-1" );
         session.RememberMe.ShouldBeFalse();
         session.Expires.ShouldBe( issued.RefreshExpires );
@@ -119,10 +121,11 @@ public class SessionOpenerTests
         var utcNow = DateTime.UtcNow;
         var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Robert, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
         var sessionId = AuthCenterSession.NewSessionId();
-        var token = app.LocalCenter.CreateToken( sessionId, "the-binding-hash", auth, utcNow );
+        var token = app.LocalCenter.CreateToken( sessionId, "Some/$Front", "the-binding-hash", auth, utcNow );
 
-        var (info, readId, readBinding) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
+        var (info, readId, readBinding, readParty) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
         readBinding.ShouldBe( "the-binding-hash" );
+        readParty.ShouldBe( "Some/$Front" );
         readId.ShouldBe( sessionId );
         info.IsImpersonated.ShouldBeTrue();
         info.UnsafeActualActor.ActorName.ShouldBe( "Albert" );

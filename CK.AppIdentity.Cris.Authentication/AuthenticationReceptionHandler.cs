@@ -63,7 +63,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
             AuthenticationInfo? proved = null;
             if( _proofVerifier != null && envelope is IAuthenticationCallEnvelope { Token: not null } proof )
             {
-                proved = await _proofVerifier.VerifyAsync( monitor, services, caller.Sender, proof ).ConfigureAwait( false );
+                proved = await _proofVerifier.VerifyAsync( monitor, services, caller.Sender, caller.Route, proof ).ConfigureAwait( false );
             }
             if( proved != null )
             {

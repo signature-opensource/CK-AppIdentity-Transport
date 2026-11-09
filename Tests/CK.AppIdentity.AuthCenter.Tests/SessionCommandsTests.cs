@@ -69,6 +69,32 @@ public class SessionCommandsTests
     }
 
     [Test]
+    public async Task the_session_operations_are_accepted_only_from_the_party_that_opened_the_session_Async()
+    {
+        await using var app = await AuthCenterApp.StartAsync();
+        (await app.LoginAsync( "Albert" )).Success.ShouldBeTrue();
+        (await ReadSessionAsync( app )).ShouldNotBeNull().SessionParty.ShouldBe( app.Identity.FullName.Path );
+        var cookies = app.Caller.Cookies.ShouldNotBeNull();
+        var current = app.Caller.Current;
+
+        // The same cookies presented through another party: they have been stolen. The session is revoked.
+        app.Caller.Current = current.WithCallerParty( "Test/$Other" );
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            var r = await RefreshAsync( app );
+            r.Success.ShouldBeFalse();
+            r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.InvalidSession" );
+            texts.ShouldContain( t => t.Contains( "is presented by 'Test/$Other': the session is revoked" ) );
+        }
+        (await ReadSessionAsync( app )).ShouldBeNull();
+
+        // Even the legitimate party lost the session.
+        app.Caller.Current = current;
+        app.Caller.Cookies = cookies;
+        (await RefreshAsync( app )).Success.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task refresh_reads_the_actors_again_Async()
     {
         await using var app = await AuthCenterApp.StartAsync();
@@ -188,7 +214,7 @@ public class SessionPurgeTests
 
         async Task<AuthCenterSession> SaveAsync( int actorId, System.DateTime expires, System.DateTime lastWrite )
         {
-            var s = new AuthCenterSession( AuthCenterSession.NewSessionId(), actorId, actorId, utcNow, expires, false, "D", "r", "b" );
+            var s = new AuthCenterSession( AuthCenterSession.NewSessionId(), actorId, actorId, utcNow, expires, false, "D", "P", "r", "b" );
             await store.SaveAsync( s );
             System.IO.File.SetLastWriteTimeUtc( root.AppendPart( actorId.ToString() ).AppendPart( s.SessionId ), lastWrite );
             return s;

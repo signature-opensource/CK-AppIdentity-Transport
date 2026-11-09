@@ -50,6 +50,12 @@ The sessions are in the `LocalFileStore` of the local party: `AuthCenter/Session
 the sessions of an actor are in one folder. A session holds the **hashes** of the endpoint secrets, never the secrets.
 The session identifiers are random (16 bytes, base64url) and checked before being used as file names.
 
+**The session party.** A session stores the full name of the party that opened it: the caller party of the login (the
+remote that relays it), this Authentication Center's party for its own endpoints. The endpoint's secrets (its cookies)
+belong to the origin of that party: a session operation (refresh, logout, impersonation...) presented through another
+party means that they have been stolen. It is refused, and the session is revoked by the operations that revoke on a
+mismatch (a `SecurityCritical` warning). The session party is in the tokens of the session.
+
 **Rotation and reuse detection.** Every refresh, impersonation and end of impersonation rotates the secrets. A
 presented proof that matches neither the current secrets nor (below) the previous ones **revokes the session**: two
 parties hold the same cookies.
@@ -60,7 +66,7 @@ accepted **once**, within the window after the rotation, by the operations that 
 of impersonation) and by the logout; the rotation then clears them. An operation that doesn't rotate (the Critical-session
 check of a passkey registration) refuses them without revoking. If someone else used them (a thief within the window),
 the legitimate caller's secrets become orphaned and its next refresh revokes the session: the reuse detection is delayed,
-not lost. The session file keeps the previous hashes and the rotation time (version 2; a version 1 file has none).
+not lost. The session file keeps the previous hashes and the rotation time.
 
 **One operation at a time per session:** reading the session, checking the proof, rotating and saving are serialized per
 session in the Authentication Center (`AuthCenterSessionStore.LockAsync`): two concurrent rotations cannot both match.

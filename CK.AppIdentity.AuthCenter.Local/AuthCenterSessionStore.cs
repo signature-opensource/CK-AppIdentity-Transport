@@ -17,8 +17,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// </summary>
 public sealed class AuthCenterSessionStore
 {
-    // Version 2: the previous secrets and the rotation time (a version 1 file has none).
-    const int _version = 2;
+    const int _version = 0;
     readonly System.Collections.Generic.Dictionary<string, SessionLock> _locks = new();
     readonly IFileStore _store;
     readonly NormalizedPath _root;
@@ -72,6 +71,7 @@ public sealed class AuthCenterSessionStore
             w.WriteString( "Expires", session.Expires );
             w.WriteBoolean( "RememberMe", session.RememberMe );
             w.WriteString( "DeviceId", session.DeviceId );
+            w.WriteString( "SessionParty", session.SessionParty );
             w.WriteString( "RefreshSecretHash", session.RefreshSecretHash );
             w.WriteString( "BindingSecretHash", session.BindingSecretHash );
             if( session.PreviousRefreshSecretHash != null && session.PreviousBindingSecretHash != null )
@@ -103,7 +103,7 @@ public sealed class AuthCenterSessionStore
             using var d = await JsonDocument.ParseAsync( stream, cancellationToken: cancel ).ConfigureAwait( false );
             var o = d.RootElement;
             var version = o.GetProperty( "Version" ).GetInt32();
-            if( version is < 1 or > _version ) Throw.CKException( $"Unknown session version {version}." );
+            if( version != _version ) Throw.CKException( $"Unknown session version {version}." );
             var s = new AuthCenterSession( o.GetProperty( "SessionId" ).GetString()!,
                                            o.GetProperty( "ActualActorId" ).GetInt32(),
                                            o.GetProperty( "ActorId" ).GetInt32(),
@@ -111,12 +111,13 @@ public sealed class AuthCenterSessionStore
                                            o.GetProperty( "Expires" ).GetDateTime(),
                                            o.GetProperty( "RememberMe" ).GetBoolean(),
                                            o.GetProperty( "DeviceId" ).GetString()!,
+                                           o.GetProperty( "SessionParty" ).GetString()!,
                                            o.GetProperty( "RefreshSecretHash" ).GetString()!,
                                            o.GetProperty( "BindingSecretHash" ).GetString()! )
             {
                 PreviousRefreshSecretHash = o.TryGetProperty( "PreviousRefreshSecretHash", out var pr ) ? pr.GetString() : null,
                 PreviousBindingSecretHash = o.TryGetProperty( "PreviousBindingSecretHash", out var pb ) ? pb.GetString() : null,
-                RotatedAt = o.TryGetProperty( "RotatedAt", out var r ) ? r.GetDateTime() : DateTime.MinValue
+                RotatedAt = o.GetProperty( "RotatedAt" ).GetDateTime()
             };
             if( s.SessionId != sessionId || s.ActualActorId != actualActorId ) Throw.CKException( "The session doesn't match its file." );
             return s;

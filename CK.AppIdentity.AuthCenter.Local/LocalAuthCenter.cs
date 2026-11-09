@@ -139,18 +139,20 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     /// the authentication if it ends before.
     /// </summary>
     /// <param name="sessionId">The session identifier.</param>
+    /// <param name="sessionParty">The full name of the party that opened the session (see <see cref="AuthCenterSession.SessionParty"/>).</param>
     /// <param name="bindingSecretHash">The hash of the binding secret of the session: the endpoints check that the caller presents it.</param>
     /// <param name="bindingSecretHash">The hash of the binding secret of the session: the endpoints check that the caller presents it.</param>
     /// <param name="info">The authentication.</param>
     /// <param name="utcNow">The current time.</param>
     /// <returns>The token.</returns>
-    public string CreateToken( string sessionId, string bindingSecretHash, AuthenticationInfo info, DateTime utcNow )
+    public string CreateToken( string sessionId, string sessionParty, string bindingSecretHash, AuthenticationInfo info, DateTime utcNow )
     {
         Throw.CheckArgument( AuthCenterSession.IsValidSessionId( sessionId ) );
+        Throw.CheckNotNullOrEmptyArgument( sessionParty );
         Throw.CheckArgument( !info.UnsafeActualActor.IsAnonymous );
         var expiration = utcNow + _options.TokenLifetime;
         if( info.Expires.HasValue && info.Expires.Value < expiration ) expiration = info.Expires.Value;
-        return AuthCenterToken.Create( _party.GetRequiredFeature<ILocalKeys>(), _party.FullName, sessionId, bindingSecretHash, info, expiration );
+        return AuthCenterToken.Create( _party.GetRequiredFeature<ILocalKeys>(), _party.FullName, sessionParty, sessionId, bindingSecretHash, info, expiration );
     }
 
     /// <summary>

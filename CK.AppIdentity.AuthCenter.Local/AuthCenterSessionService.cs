@@ -98,6 +98,22 @@ public sealed class AuthCenterSessionService
             store.TryDelete( monitor, actualActorId, sessionId );
             return (null, "The session expired.", "Authentication.SessionExpired");
         }
+        // The endpoint's secrets belong to the origin of the party that opened the session: presented through another
+        // party, they have been stolen.
+        var callerParty = _current.CallerPartyFullName ?? center.Party.FullName.Path;
+        if( callerParty != session.SessionParty )
+        {
+            if( revokeOnMismatch )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': the session is revoked." );
+                store.TryDelete( monitor, actualActorId, sessionId );
+            }
+            else
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': refused." );
+            }
+            return (null, "Invalid session.", "Authentication.InvalidSession");
+        }
         return (new Current( center, session, fromPrevious ), null, null);
     }
 
@@ -135,7 +151,7 @@ public sealed class AuthCenterSessionService
         var proof = _endpoint.Issue( s.SessionKey, s.RememberMe, expires );
         await c.Center.Sessions.SaveAsync( s.Rotate( proof.RefreshSecretHash, proof.BindingSecretHash, utcNow, c.FromPrevious ) with { ActorId = actorId, Expires = expires } )
                                .ConfigureAwait( false );
-        return AuthCenterResults.Success( source, info, c.Center.CreateToken( s.SessionId, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
+        return AuthCenterResults.Success( source, info, c.Center.CreateToken( s.SessionId, s.SessionParty, proof.BindingSecretHash, info, utcNow ), s.RememberMe );
     }
 
     /// <summary>

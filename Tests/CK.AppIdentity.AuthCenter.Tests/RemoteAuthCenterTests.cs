@@ -305,13 +305,13 @@ public class RemoteAuthCenterTests
         var verifier = new AuthCenterProofVerifier();
         using var scope = p.Center.CreateScopeServices();
 
-        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, token, binding ) )).ShouldNotBeNull()
+        (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, null, Proof( p.Center, token, binding ) )).ShouldNotBeNull()
             .UnsafeActor.ActorName.ShouldBe( "Albert" );
         foreach( var (t, b) in new[] { ("garbage", binding), (token, "another-binding"), (token, null) } )
         {
             using( TestHelper.Monitor.CollectTexts( out var texts ) )
             {
-                (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, t, b ) )).ShouldBeNull();
+                (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, null, Proof( p.Center, t, b ) )).ShouldBeNull();
                 texts.ShouldContain( x => x.Contains( $"'{sender}' sent a user's proof that doesn't verify" ) );
             }
         }
@@ -319,8 +319,39 @@ public class RemoteAuthCenterTests
         await p.RequestAsync( pocos => pocos.Create<ILogoutSessionCommand>() );
         using( TestHelper.Monitor.CollectTexts( out var texts ) )
         {
-            (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, Proof( p.Center, token, binding ) )).ShouldBeNull();
+            (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, null, Proof( p.Center, token, binding ) )).ShouldBeNull();
             texts.ShouldNotContain( x => x.Contains( "doesn't verify" ) );
+        }
+    }
+
+    [Test]
+    public async Task only_the_party_that_opened_the_session_presents_its_proof_at_the_Critical_level_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        var token = p.Browser.Token.ShouldNotBeNull();
+        var binding = p.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
+        // The session has been opened through the remote: it is the session party.
+        var center = p.Center.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>();
+        var fromRemote = p.Center.ApplicationIdentityService.Remotes.Single();
+        (await center.ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldNotBeNull().SessionParty.ShouldBe( fromRemote.FullName.Path );
+        var verifier = new AuthCenterProofVerifier();
+
+        // On the AuthCenter, the proof sent by the session party keeps the Critical level.
+        using( var scope = p.Center.CreateScopeServices() )
+        {
+            (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, fromRemote, null, Proof( p.Center, token, binding ) )).ShouldNotBeNull()
+                .ActualActor.Level.ShouldBe( AuthLevel.Critical );
+        }
+        // On the remote, the same proof sent by the AuthCenter (another party than the session party) is capped at Normal.
+        var fromCenter = p.Remote.ApplicationIdentityService.Remotes.Single();
+        using( var scope = p.Remote.CreateScopeServices() )
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            var capped = (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, fromCenter, null, Proof( p.Remote, token, binding ) )).ShouldNotBeNull();
+            capped.UnsafeActor.ActorName.ShouldBe( "Albert" );
+            capped.ActualActor.Level.ShouldBe( AuthLevel.Normal );
+            texts.ShouldContain( t => t.Contains( $"'{fromCenter}' sent a user's proof of a session opened by '{fromRemote.FullName}': its level is capped at Normal" ) );
         }
     }
 

@@ -1,3 +1,4 @@
+using CK.AppIdentity.Cris;
 using CK.Auth;
 using CK.Core;
 using CK.IO.Authentication;
@@ -20,6 +21,13 @@ namespace CK.AppIdentity.AuthCenter;
 /// whose session ended or changed is not: a logout may happen while a command travels.
 /// </para>
 /// <para>
+/// Only the party that opened the session (<see cref="AuthCenterTokenContent.SessionParty"/>, the one that serves the
+/// user's client application) may present a proof at the Critical level: the proved identity of a proof sent by another
+/// party is capped at <see cref="AuthLevel.Normal"/>. A party that received the proof (a backend, a hop) can't reuse it at
+/// the Critical level. A proof received directly from another party than the session party is not relayed by an honest
+/// party (it has no presented token): it is a <see cref="ActivityMonitor.Tags.SecurityCritical"/> warning.
+/// </para>
+/// <para>
 /// A local party without Authentication Center (no checker) ignores the proof: the received identity is the one vouched
 /// for by the caller party, capped.
 /// </para>
@@ -27,7 +35,7 @@ namespace CK.AppIdentity.AuthCenter;
 public sealed class AuthCenterProofVerifier : ICallerProofVerifier
 {
     /// <inheritdoc />
-    public async ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IAuthenticationCallEnvelope proof )
+    public async ValueTask<AuthenticationInfo?> VerifyAsync( IActivityMonitor monitor, IServiceProvider services, IRemoteParty caller, IPartyRoutedCommand? route, IAuthenticationCallEnvelope proof )
     {
         var checker = caller.Owner.GetFeature<IAuthCenterProofChecker>();
         var center = caller.Owner.GetFeature<CrisAuthCenter>();
@@ -42,7 +50,21 @@ public sealed class AuthCenterProofVerifier : ICallerProofVerifier
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof that doesn't verify: it is ignored." );
             return null;
         }
-        return await checker.CheckLivenessAsync( monitor, proof.Token, read ).ConfigureAwait( false );
+        var info = await checker.CheckLivenessAsync( monitor, proof.Token, read ).ConfigureAwait( false );
+        if( info != null && caller.FullName.Path != read.SessionParty )
+        {
+            // Only the session party may present the proof at the Critical level.
+            if( route == null )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof of a session opened by '{read.SessionParty}': its level is capped at Normal." );
+            }
+            else
+            {
+                monitor.Info( $"The user's proof of a session opened by '{read.SessionParty}' is routed by '{caller}': its level is capped at Normal." );
+            }
+            info = info.WithCriticalExpires( null, DateTime.UtcNow );
+        }
+        return info;
     }
 
     /// <summary>

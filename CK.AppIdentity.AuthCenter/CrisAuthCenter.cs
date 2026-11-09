@@ -105,14 +105,14 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     public async ValueTask<AuthCenterTokenContent?> ReadTokenAsync( IActivityLineEmitter logger, string token, DateTime utcNow )
     {
         Throw.CheckNotNullArgument( token );
-        var verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out var info, out var sessionId, out var bindingSecretHash );
+        var verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out var info, out var sessionParty, out var sessionId, out var bindingSecretHash );
         if( verdict == SignatureVerdict.UnknownIssuer
             && _authCenter.GetFeature<TransportFeature>() is TransportFeature transport
             && await transport.RequestKeyEventsAsync( KeyEventsTimeout ).ConfigureAwait( false ) )
         {
-            verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionId, out bindingSecretHash );
+            verdict = AuthCenterToken.Read( logger, this, _authCenter.FullName, token, utcNow, out info, out sessionParty, out sessionId, out bindingSecretHash );
         }
-        return verdict == SignatureVerdict.Valid ? new AuthCenterTokenContent( info!, sessionId!, bindingSecretHash! ) : null;
+        return verdict == SignatureVerdict.Valid ? new AuthCenterTokenContent( info!, sessionId!, bindingSecretHash!, sessionParty! ) : null;
     }
 
     /// <summary>

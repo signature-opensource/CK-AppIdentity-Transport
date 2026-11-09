@@ -120,6 +120,9 @@ The endpoints read the tokens through `IAuthenticationTokenReader` (CK.Cris.Auth
 
 - **The signature is verified first**, then the audience: the full name of the local party. A token of a tenant domain
   is refused by another one (that also has other keys).
+- **The session party:** the full name of the party that opened the session (the one that serves the user's client
+  application, see `AuthCenterTokenContent.SessionParty`). Only this party may present the token at the `Critical` level
+  to another party (see "The user's proof").
 - **The authentication cannot outlive the token:** its dates are clamped to the token expiration.
 - **Revocation:** tokens are verified locally, without the session store, so a revoked session stays usable until its
   token expires: at most `TokenLifetime`. The client refreshes its token with `IRefreshSessionCommand`.
@@ -151,6 +154,10 @@ its level, `Critical` included, across any number of parties of the System:
 - **Forwarding it** ([`AuthCenterProofForwardFilter`](AuthCenterProofForwardFilter.cs)): a party that forwards a routed
   command reads its proof first. A proof that doesn't verify is removed (and logged against the sender); a party without
   Authentication Center can't read it and removes it: the routed command arrives without proof.
+- **Only the session party presents it at the `Critical` level:** a proof sent by another party than the token's
+  session party gives the proved identity capped at `Normal`. A party that received the proof (a backend, a hop) can't
+  reuse it at the `Critical` level toward a third party. Received directly, such a proof is a `SecurityCritical` warning
+  (an honest party relays only the token presented to its own endpoint).
 - **Verifying it** ([`AuthCenterProofVerifier`](AuthCenterProofVerifier.cs)): the receiving local party reads it (a
   failure is evidence against the sender), then asks its [`IAuthCenterProofChecker`](IAuthCenterProofChecker.cs) for the
   liveness (a session that ended is not evidence: a logout may happen while a command travels). The token must be valid, its session alive and still the

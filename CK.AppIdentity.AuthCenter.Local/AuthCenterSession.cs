@@ -16,6 +16,12 @@ namespace CK.AppIdentity.AuthCenter;
 /// <param name="Expires">The end of the session (Utc).</param>
 /// <param name="RememberMe">Whether the session survives the end of the caller session.</param>
 /// <param name="DeviceId">The device identifier.</param>
+/// <param name="SessionParty">
+/// The full name of the party that opened the session: the party that serves the user's client application (the caller
+/// party of the login operation, this Authentication Center's party for its own endpoints). The session operations
+/// (refresh, logout, impersonation...) are accepted only from it: the endpoint's cookies belong to its origin. It is in
+/// the tokens of the session: only this party may present them at the Critical level to another party.
+/// </param>
 /// <param name="RefreshSecretHash">The hash of the refresh secret of the endpoint.</param>
 /// <param name="BindingSecretHash">The hash of the binding secret of the endpoint.</param>
 public sealed record AuthCenterSession( string SessionId,
@@ -25,6 +31,7 @@ public sealed record AuthCenterSession( string SessionId,
                                         DateTime Expires,
                                         bool RememberMe,
                                         string DeviceId,
+                                        string SessionParty,
                                         string RefreshSecretHash,
                                         string BindingSecretHash )
 {

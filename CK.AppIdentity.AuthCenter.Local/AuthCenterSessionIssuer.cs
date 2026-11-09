@@ -184,6 +184,9 @@ public sealed class AuthCenterSessionIssuer
         var deviceId = _initial.DeviceId.Length > 0 ? _initial.DeviceId : Base64Url.EncodeToString( RandomNumberGenerator.GetBytes( 16 ) );
         var info = AuthenticationInfo.Create( actor, expires, criticalExpires, deviceId, utcNow );
 
+        // The party that opened the session: the caller party of the login (the remote that relays it), this
+        // Authentication Center's party when it is received directly.
+        var sessionParty = _initial.CallerPartyFullName ?? center.Party.FullName.Path;
         var sessionId = AuthCenterSession.NewSessionId();
         var proof = _endpoint.Issue( AuthCenterSession.GetSessionKey( actor.ActorId, sessionId ), rememberMe, expires );
         await center.Sessions.SaveAsync( new AuthCenterSession( sessionId,
@@ -193,10 +196,11 @@ public sealed class AuthCenterSessionIssuer
                                                                 expires,
                                                                 rememberMe,
                                                                 deviceId,
+                                                                sessionParty,
                                                                 proof.RefreshSecretHash,
                                                                 proof.BindingSecretHash ) ).ConfigureAwait( false );
-        var token = center.CreateToken( sessionId, proof.BindingSecretHash, info, utcNow );
-        monitor.Info( $"Session opened for {actor} in '{center.Party}'." );
+        var token = center.CreateToken( sessionId, sessionParty, proof.BindingSecretHash, info, utcNow );
+        monitor.Info( $"Session opened for {actor} in '{center.Party}' by '{sessionParty}'." );
         return AuthCenterResults.Success( command, info, token, rememberMe );
     }
 
