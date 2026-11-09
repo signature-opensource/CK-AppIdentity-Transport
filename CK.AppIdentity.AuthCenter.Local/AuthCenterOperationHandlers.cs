@@ -254,7 +254,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             }
             var presented = op.PresentedCorrelationHash;
             if( presented == null
-                || !CryptographicOperations.FixedTimeEquals( Encoding.ASCII.GetBytes( presented ), Encoding.ASCII.GetBytes( pending.CorrelationHash ) ) )
+                || !CryptographicOperations.FixedTimeEquals( presented, pending.CorrelationHash ) )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{pending.Scheme}' login completed by a caller that didn't start it." );
                 return AuthCenterResults.Failure( monitor, command, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );

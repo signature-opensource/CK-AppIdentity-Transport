@@ -91,7 +91,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public string? Token { get; set; }
 
-        (string, string)? _prepared;
+        (byte[], byte[])? _prepared;
 
         /// <summary>
         /// The callback URL of this browser's endpoint for the remote logins (null: it cannot receive them).
@@ -106,14 +106,14 @@ public sealed class AuthCenterApp : IAsyncDisposable
         /// <summary>
         /// The hash of the remote login correlation secret (the "cookie" of a starting remote login).
         /// </summary>
-        public string? RemoteLoginCorrelation { get; set; }
+        public byte[]? RemoteLoginCorrelation { get; set; }
 
-        internal string PrepareRemoteLogin() => RemoteLoginCorrelation = "correlation-hash-" + (++_count);
+        internal byte[] PrepareRemoteLogin() => RemoteLoginCorrelation = Hash( "correlation-hash-" + (++_count) );
 
-        internal (string, string) PrepareSecrets()
+        internal (byte[], byte[]) PrepareSecrets()
         {
             ++_count;
-            var p = ("refresh-hash-" + _count, "binding-hash-" + _count);
+            var p = (Hash( "refresh-hash-" + _count ), Hash( "binding-hash-" + _count ));
             _prepared = p;
             return p;
         }
@@ -146,7 +146,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
         // The browser keeps only a token it could read (like the HTTP front accepts a token): it is the accepted one.
         public string? AcceptedToken => _browser.Token;
 
-        public (string RefreshSecretHash, string BindingSecretHash) PrepareSecrets() => _browser.PrepareSecrets();
+        public (byte[] RefreshSecretHash, byte[] BindingSecretHash) PrepareSecrets() => _browser.PrepareSecrets();
 
         public AuthenticationSessionProof Issue( string sessionKey, bool rememberMe, DateTime refreshExpires ) => _browser.Issue( sessionKey, rememberMe, refreshExpires );
 
@@ -154,12 +154,17 @@ public sealed class AuthCenterApp : IAsyncDisposable
 
         public string? RemoteLoginCallbackUrl => _browser.RemoteLoginCallbackUrl;
 
-        public string PrepareRemoteLogin() => _browser.PrepareRemoteLogin();
+        public byte[] PrepareRemoteLogin() => _browser.PrepareRemoteLogin();
 
-        public string? PresentedRemoteLoginHash => _browser.RemoteLoginCorrelation;
+        public byte[]? PresentedRemoteLoginHash => _browser.RemoteLoginCorrelation;
 
         public string? WebOrigin => _browser.WebOrigin;
     }
+
+    /// <summary>
+    /// A fake hash: the bytes of a readable text.
+    /// </summary>
+    public static byte[] Hash( string text ) => System.Text.Encoding.UTF8.GetBytes( text );
 
     public required AutomaticServices Services { get; init; }
     public required ApplicationIdentityService Identity { get; init; }

@@ -20,7 +20,7 @@ public interface IAuthenticationCallEnvelope : ICrisCallEnvelope
     /// <summary>
     /// Gets or sets the hash of the binding secret presented with the token.
     /// </summary>
-    string? BindingSecretHash { get; set; }
+    byte[]? BindingSecretHash { get; set; }
 
     /// <summary>
     /// Gets or sets the header of the seal of a routed command: the proof of a routed command is valid only with the

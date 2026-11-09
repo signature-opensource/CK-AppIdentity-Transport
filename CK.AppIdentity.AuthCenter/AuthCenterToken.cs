@@ -27,7 +27,7 @@ static class AuthCenterToken
 {
     const byte _version = 0;
 
-    internal static string Create( ILocalKeys keys, NormalizedPath audience, string sessionParty, string sessionId, string bindingSecretHash, AuthenticationInfo info, DateTime expiration )
+    internal static string Create( ILocalKeys keys, NormalizedPath audience, string sessionParty, string sessionId, byte[] bindingSecretHash, AuthenticationInfo info, DateTime expiration )
     {
         var data = Write( audience, sessionParty, sessionId, bindingSecretHash, info );
         var signature = keys.Sign( ICrisAuthCenter.TokenPurpose, data, expiration );
@@ -39,7 +39,7 @@ static class AuthCenterToken
         return Base64Url.EncodeToString( all );
     }
 
-    static byte[] Write( NormalizedPath audience, string sessionParty, string sessionId, string bindingSecretHash, AuthenticationInfo info )
+    static byte[] Write( NormalizedPath audience, string sessionParty, string sessionId, byte[] bindingSecretHash, AuthenticationInfo info )
     {
         var m = new MemoryStream();
         using( var w = new BinaryWriter( m, Encoding.UTF8, leaveOpen: true ) )
@@ -48,6 +48,7 @@ static class AuthCenterToken
             w.Write( audience.Path );
             w.Write( sessionParty );
             w.Write( sessionId );
+            w.Write7BitEncodedInt( bindingSecretHash.Length );
             w.Write( bindingSecretHash );
             w.Write( info.DeviceId );
             w.Write( info.Expires?.Ticks ?? 0L );
@@ -74,7 +75,7 @@ static class AuthCenterToken
                                   out AuthenticationInfo? info,
                                   out string? sessionParty,
                                   out string? sessionId,
-                                  out string? bindingSecretHash )
+                                  out byte[]? bindingSecretHash )
     {
         info = null;
         sessionParty = null;
@@ -120,7 +121,10 @@ static class AuthCenterToken
             }
             sessionParty = r.ReadString();
             sessionId = r.ReadString();
-            bindingSecretHash = r.ReadString();
+            var bindingLength = r.Read7BitEncodedInt();
+            if( bindingLength is <= 0 or > 64 ) return Malformed( logger );
+            bindingSecretHash = r.ReadBytes( bindingLength );
+            if( bindingSecretHash.Length != bindingLength ) return Malformed( logger );
             var deviceId = r.ReadString();
             var expires = ReadDate( r );
             var criticalExpires = ReadDate( r );

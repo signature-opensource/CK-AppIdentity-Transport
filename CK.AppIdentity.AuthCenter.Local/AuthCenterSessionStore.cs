@@ -72,12 +72,12 @@ public sealed class AuthCenterSessionStore
             w.WriteBoolean( "RememberMe", session.RememberMe );
             w.WriteString( "DeviceId", session.DeviceId );
             w.WriteString( "SessionParty", session.SessionParty );
-            w.WriteString( "RefreshSecretHash", session.RefreshSecretHash );
-            w.WriteString( "BindingSecretHash", session.BindingSecretHash );
+            w.WriteBase64String( "RefreshSecretHash", session.RefreshSecretHash );
+            w.WriteBase64String( "BindingSecretHash", session.BindingSecretHash );
             if( session.PreviousRefreshSecretHash != null && session.PreviousBindingSecretHash != null )
             {
-                w.WriteString( "PreviousRefreshSecretHash", session.PreviousRefreshSecretHash );
-                w.WriteString( "PreviousBindingSecretHash", session.PreviousBindingSecretHash );
+                w.WriteBase64String( "PreviousRefreshSecretHash", session.PreviousRefreshSecretHash );
+                w.WriteBase64String( "PreviousBindingSecretHash", session.PreviousBindingSecretHash );
             }
             w.WriteString( "RotatedAt", session.RotatedAt );
             w.WriteEndObject();
@@ -112,11 +112,11 @@ public sealed class AuthCenterSessionStore
                                            o.GetProperty( "RememberMe" ).GetBoolean(),
                                            o.GetProperty( "DeviceId" ).GetString()!,
                                            o.GetProperty( "SessionParty" ).GetString()!,
-                                           o.GetProperty( "RefreshSecretHash" ).GetString()!,
-                                           o.GetProperty( "BindingSecretHash" ).GetString()! )
+                                           o.GetProperty( "RefreshSecretHash" ).GetBytesFromBase64(),
+                                           o.GetProperty( "BindingSecretHash" ).GetBytesFromBase64() )
             {
-                PreviousRefreshSecretHash = o.TryGetProperty( "PreviousRefreshSecretHash", out var pr ) ? pr.GetString() : null,
-                PreviousBindingSecretHash = o.TryGetProperty( "PreviousBindingSecretHash", out var pb ) ? pb.GetString() : null,
+                PreviousRefreshSecretHash = o.TryGetProperty( "PreviousRefreshSecretHash", out var pr ) ? pr.GetBytesFromBase64() : null,
+                PreviousBindingSecretHash = o.TryGetProperty( "PreviousBindingSecretHash", out var pb ) ? pb.GetBytesFromBase64() : null,
                 RotatedAt = o.GetProperty( "RotatedAt" ).GetDateTime()
             };
             if( s.SessionId != sessionId || s.ActualActorId != actualActorId ) Throw.CKException( "The session doesn't match its file." );

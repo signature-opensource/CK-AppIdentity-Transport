@@ -145,7 +145,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     /// <param name="info">The authentication.</param>
     /// <param name="utcNow">The current time.</param>
     /// <returns>The token.</returns>
-    public string CreateToken( string sessionId, string sessionParty, string bindingSecretHash, AuthenticationInfo info, DateTime utcNow )
+    public string CreateToken( string sessionId, string sessionParty, byte[] bindingSecretHash, AuthenticationInfo info, DateTime utcNow )
     {
         Throw.CheckArgument( AuthCenterSession.IsValidSessionId( sessionId ) );
         Throw.CheckNotNullOrEmptyArgument( sessionParty );
@@ -166,11 +166,11 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     /// <param name="token">The user's token.</param>
     /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
-    public ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash )
+    public ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash )
         => CheckProofAsync( monitor, token, bindingSecretHash, null, _party.FullName.Path );
 
     /// <summary>
-    /// Checks a user's proof (see <see cref="CheckProofAsync(IActivityMonitor, string, string)"/>) and, for the proof of a
+    /// Checks a user's proof (see <see cref="CheckProofAsync(IActivityMonitor, string, byte[])"/>) and, for the proof of a
     /// routed command, its seal: the session party sealed the command for the <paramref name="destination"/>.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
@@ -179,7 +179,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
     /// <param name="seal">The seal of the routed command that carried the proof, null for a proof received directly.</param>
     /// <param name="destination">The full name of the party that received the proof: the destination of a routed command.</param>
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
-    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash, RoutedProofSeal? seal, string destination )
+    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash, RoutedProofSeal? seal, string destination )
     {
         var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
         if( read == null )
@@ -216,7 +216,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
         if( session == null
             || session.Expires <= utcNow
             || session.ActorId != read.Info.UnsafeActor.ActorId
-            || !FixedTimeEquals( session.BindingSecretHash, read.BindingSecretHash ) )
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( session.BindingSecretHash, read.BindingSecretHash ) )
         {
             monitor.Warn( "The token of a session that ended or changed is ignored." );
             return null;
@@ -283,5 +283,4 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker
         return _sealNonces.TryAdd( nonce, expires );
     }
 
-    static bool FixedTimeEquals( string a, string b ) => System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( a ), System.Text.Encoding.ASCII.GetBytes( b ) );
 }

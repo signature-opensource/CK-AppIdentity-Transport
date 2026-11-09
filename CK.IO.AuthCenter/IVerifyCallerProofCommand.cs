@@ -24,7 +24,7 @@ public interface IVerifyCallerProofCommand : ICommand<IAuthenticationInfoPoco?>,
     /// <summary>
     /// Gets or sets the hash of the binding secret presented with the token.
     /// </summary>
-    string BindingSecretHash { get; set; }
+    byte[] BindingSecretHash { get; set; }
 
     /// <summary>
     /// Gets or sets the header of the seal of the routed command that carried the proof (the asking party is its

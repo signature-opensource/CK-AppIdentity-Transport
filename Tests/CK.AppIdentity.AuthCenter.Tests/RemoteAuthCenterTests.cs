@@ -287,7 +287,7 @@ public class RemoteAuthCenterTests
         proved.UnsafeActor.ActorName.ShouldBe( "Albert" );
         proved.UnsafeActualActor.Level.ShouldBe( AuthLevel.Critical, "Just after the login: the proved level is kept." );
 
-        (await checker.CheckProofAsync( TestHelper.Monitor, token, "another-binding" )).ShouldBeNull( "The binding secret must be the session's." );
+        (await checker.CheckProofAsync( TestHelper.Monitor, token, AuthCenterApp.Hash( "another-binding" ) )).ShouldBeNull( "The binding secret must be the session's." );
         (await checker.CheckProofAsync( TestHelper.Monitor, "garbage", binding )).ShouldBeNull( "Refused locally, without asking." );
 
         // The session ends: the AuthCenter refuses the proof.
@@ -309,7 +309,7 @@ public class RemoteAuthCenterTests
 
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, sender, null, Proof( p.Center, token, binding ) )).ShouldNotBeNull()
             .UnsafeActor.ActorName.ShouldBe( "Albert" );
-        foreach( var (t, b) in new[] { ("garbage", binding), (token, "another-binding"), (token, null) } )
+        foreach( var (t, b) in new (string, byte[]?)[] { ("garbage", binding), (token, AuthCenterApp.Hash( "another-binding" )), (token, null) } )
         {
             using( TestHelper.Monitor.CollectTexts( out var texts ) )
             {
@@ -461,7 +461,7 @@ public class RemoteAuthCenterTests
         valid.Token.ShouldBe( token );
         valid.BindingSecretHash.ShouldBe( binding );
 
-        foreach( var (t, b) in new[] { ("garbage", binding), (token, "another-binding"), (token, null) } )
+        foreach( var (t, b) in new (string, byte[]?)[] { ("garbage", binding), (token, AuthCenterApp.Hash( "another-binding" )), (token, null) } )
         {
             var bad = Proof( p.Remote, t, b );
             using( TestHelper.Monitor.CollectTexts( out var texts ) )
@@ -474,7 +474,7 @@ public class RemoteAuthCenterTests
         }
     }
 
-    static IAuthenticationCallEnvelope Proof( RunningApplication app, string token, string? binding )
+    static IAuthenticationCallEnvelope Proof( RunningApplication app, string token, byte[]? binding )
     {
         var e = (IAuthenticationCallEnvelope)app.PocoDirectory.Create<ICrisCallEnvelope>();
         e.Token = token;

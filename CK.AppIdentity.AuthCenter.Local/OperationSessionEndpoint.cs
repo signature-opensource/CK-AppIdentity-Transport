@@ -35,8 +35,8 @@ public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
     /// <param name="webOrigin">The web origin checked by the receiving endpoint.</param>
     public OperationSessionEndpoint( object operation,
                                      string? remoteLoginCallbackUrl = null,
-                                     string? remoteLoginCorrelationHash = null,
-                                     string? presentedRemoteLoginHash = null,
+                                     byte[]? remoteLoginCorrelationHash = null,
+                                     byte[]? presentedRemoteLoginHash = null,
                                      string? webOrigin = null )
     {
         Throw.CheckNotNullArgument( operation );
@@ -52,8 +52,8 @@ public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
     public AuthenticationSessionProof? PresentedProof => _presented?.PresentedSessionKey == null
                                                             ? null
                                                             : new AuthenticationSessionProof( _presented.PresentedSessionKey,
-                                                                                              _presented.PresentedRefreshSecretHash ?? string.Empty,
-                                                                                              _presented.PresentedBindingSecretHash ?? string.Empty );
+                                                                                              _presented.PresentedRefreshSecretHash ?? [],
+                                                                                              _presented.PresentedBindingSecretHash ?? [] );
 
     /// <summary>
     /// Always null: the token was read by the receiving endpoint (and, across parties, by the identity bridge).
@@ -61,7 +61,7 @@ public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
     public string? PresentedToken => null;
 
     /// <inheritdoc />
-    public (string RefreshSecretHash, string BindingSecretHash) PrepareSecrets()
+    public (byte[] RefreshSecretHash, byte[] BindingSecretHash) PrepareSecrets()
     {
         if( _next == null ) Throw.InvalidOperationException( "This operation carries no prepared secrets." );
         return (_next.NextRefreshSecretHash, _next.NextBindingSecretHash);
@@ -109,11 +109,11 @@ public sealed class OperationSessionEndpoint : IAuthenticationSessionEndpoint
     public string? RemoteLoginCallbackUrl { get; }
 
     /// <inheritdoc />
-    public string PrepareRemoteLogin() => _correlationHash
-                                          ?? Throw.InvalidOperationException<string>( "The receiving endpoint did not prepare the remote login correlation." );
+    public byte[] PrepareRemoteLogin() => _correlationHash
+                                          ?? Throw.InvalidOperationException<byte[]>( "The receiving endpoint did not prepare the remote login correlation." );
 
     /// <inheritdoc />
-    public string? PresentedRemoteLoginHash { get; }
+    public byte[]? PresentedRemoteLoginHash { get; }
 
     /// <inheritdoc />
     public string? WebOrigin { get; }

@@ -121,7 +121,7 @@ public class SessionCommandsTests
         var cookies = app.Caller.Cookies.ShouldNotBeNull();
 
         // The session key is not a secret: with other secrets, a logout deletes nothing.
-        app.Caller.Cookies = cookies with { RefreshSecretHash = "forged", BindingSecretHash = "forged" };
+        app.Caller.Cookies = cookies with { RefreshSecretHash = AuthCenterApp.Hash( "forged" ), BindingSecretHash = AuthCenterApp.Hash( "forged" ) };
         await app.ExecuteAsync( p => p.Create<ILogoutSessionCommand>() );
         app.Caller.Cookies.ShouldBeNull();
         (await ReadSessionAsync( app )).ShouldNotBeNull();

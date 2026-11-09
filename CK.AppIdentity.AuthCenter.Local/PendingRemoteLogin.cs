@@ -12,7 +12,7 @@ public sealed class PendingRemoteLogin
     internal PendingRemoteLogin( IAuthCenterRemoteScheme family,
                                  string scheme,
                                  string callbackUrl,
-                                 string correlationHash,
+                                 byte[] correlationHash,
                                  bool rememberMe,
                                  IReadOnlyDictionary<string, string?> userData,
                                  object? schemeData,
@@ -45,7 +45,7 @@ public sealed class PendingRemoteLogin
     /// <summary>
     /// Gets the hash of the correlation secret of the browser that started the login.
     /// </summary>
-    public string CorrelationHash { get; }
+    public byte[] CorrelationHash { get; }
 
     /// <summary>
     /// Gets whether the session must be remembered.

@@ -19,7 +19,7 @@ public interface IAuthCenterProofChecker
     /// <param name="token">The user's token.</param>
     /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
-    ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash );
+    ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash );
 
     /// <summary>
     /// Checks that the session of a proof that has been read (see <see cref="CrisAuthCenter.ReadProofAsync"/>) is alive

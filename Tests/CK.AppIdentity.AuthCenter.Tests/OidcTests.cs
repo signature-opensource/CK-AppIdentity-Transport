@@ -209,7 +209,7 @@ public class OidcTests
         var (_, code, state) = idp.Authorize( start.Url, "albert-sub" );
 
         // Login CSRF: the code and the state of the attacker's login reach the victim's browser, that has another correlation.
-        app.Caller.RemoteLoginCorrelation = "another-browser";
+        app.Caller.RemoteLoginCorrelation = AuthCenterApp.Hash( "another-browser" );
         var r = await CallbackAsync( app, state, code );
         r.Success.ShouldBeFalse();
         r.UserMessages.ShouldHaveSingleItem().ResName.ShouldBe( "Authentication.RemoteLoginCorrelation" );

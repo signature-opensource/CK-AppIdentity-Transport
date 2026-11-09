@@ -32,8 +32,8 @@ public sealed record AuthCenterSession( string SessionId,
                                         bool RememberMe,
                                         string DeviceId,
                                         string SessionParty,
-                                        string RefreshSecretHash,
-                                        string BindingSecretHash )
+                                        byte[] RefreshSecretHash,
+                                        byte[] BindingSecretHash )
 {
     /// <summary>
     /// The length of a session identifier: 16 random bytes in base64url.
@@ -44,12 +44,12 @@ public sealed record AuthCenterSession( string SessionId,
     /// Gets the hash of the previous refresh secret: the one replaced by the last rotation. Null when there is none, or
     /// when it has been used (it is accepted once, see <see cref="MatchesPrevious"/>).
     /// </summary>
-    public string? PreviousRefreshSecretHash { get; init; }
+    public byte[]? PreviousRefreshSecretHash { get; init; }
 
     /// <summary>
     /// Gets the hash of the previous binding secret (see <see cref="PreviousRefreshSecretHash"/>).
     /// </summary>
-    public string? PreviousBindingSecretHash { get; init; }
+    public byte[]? PreviousBindingSecretHash { get; init; }
 
     /// <summary>
     /// Gets the time of the last rotation of the secrets (Utc). <see cref="DateTime.MinValue"/> before the first one.
@@ -135,7 +135,7 @@ public sealed record AuthCenterSession( string SessionId,
     /// <param name="utcNow">The current time.</param>
     /// <param name="fromPrevious">True when the caller presented the previous secrets (see <see cref="MatchesPrevious"/>).</param>
     /// <returns>The rotated session.</returns>
-    public AuthCenterSession Rotate( string refreshSecretHash, string bindingSecretHash, DateTime utcNow, bool fromPrevious )
+    public AuthCenterSession Rotate( byte[] refreshSecretHash, byte[] bindingSecretHash, DateTime utcNow, bool fromPrevious )
     {
         return this with
         {
@@ -147,8 +147,7 @@ public sealed record AuthCenterSession( string SessionId,
         };
     }
 
-    static bool FixedTimeEquals( string a, string b )
-        => CryptographicOperations.FixedTimeEquals( System.Text.Encoding.UTF8.GetBytes( a ), System.Text.Encoding.UTF8.GetBytes( b ) );
+    static bool FixedTimeEquals( byte[] a, byte[] b ) => CryptographicOperations.FixedTimeEquals( a, b );
 
     /// <summary>
     /// Creates a new random session identifier.

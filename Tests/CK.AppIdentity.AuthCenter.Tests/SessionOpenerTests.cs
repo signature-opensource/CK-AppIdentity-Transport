@@ -44,9 +44,9 @@ public class SessionOpenerTests
         // The session is stored with the hashes of the endpoint secrets, the endpoint keeps the session key.
         var session = (await app.LocalCenter.Sessions.TryReadAsync( TestHelper.Monitor, 42, sessionId )).ShouldNotBeNull();
         issued.SessionKey.ShouldBe( session.SessionKey );
-        session.RefreshSecretHash.ShouldBe( "refresh-hash-1" );
+        session.RefreshSecretHash.ShouldBe( AuthCenterApp.Hash( "refresh-hash-1" ) );
         session.SessionParty.ShouldBe( sessionParty );
-        session.BindingSecretHash.ShouldBe( "binding-hash-1" );
+        session.BindingSecretHash.ShouldBe( AuthCenterApp.Hash( "binding-hash-1" ) );
         session.RememberMe.ShouldBeFalse();
         session.Expires.ShouldBe( issued.RefreshExpires );
         session.Matches( app.Caller.Cookies.ShouldNotBeNull() ).ShouldBeTrue();
@@ -121,10 +121,10 @@ public class SessionOpenerTests
         var utcNow = DateTime.UtcNow;
         var auth = AuthenticationInfo.Create( AuthCenterApp.Albert, AuthCenterApp.Robert, utcNow.AddDays( 1 ), utcNow.AddHours( 1 ), "Device", utcNow );
         var sessionId = AuthCenterSession.NewSessionId();
-        var token = app.LocalCenter.CreateToken( sessionId, "Some/$Front", "the-binding-hash", auth, utcNow );
+        var token = app.LocalCenter.CreateToken( sessionId, "Some/$Front", AuthCenterApp.Hash( "the-binding-hash" ), auth, utcNow );
 
         var (info, readId, readBinding, readParty) = (await root.ReadTokenAsync( TestHelper.Monitor, token, utcNow )).ShouldNotBeNull();
-        readBinding.ShouldBe( "the-binding-hash" );
+        readBinding.ShouldBe( AuthCenterApp.Hash( "the-binding-hash" ) );
         readParty.ShouldBe( "Some/$Front" );
         readId.ShouldBe( sessionId );
         info.IsImpersonated.ShouldBeTrue();

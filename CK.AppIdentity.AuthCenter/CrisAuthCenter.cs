@@ -128,7 +128,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
     /// <param name="utcNow">The current time.</param>
     /// <returns>The token content, or null if the proof is refused.</returns>
-    public async ValueTask<AuthCenterTokenContent?> ReadProofAsync( IActivityLineEmitter logger, string token, string? bindingSecretHash, DateTime utcNow )
+    public async ValueTask<AuthCenterTokenContent?> ReadProofAsync( IActivityLineEmitter logger, string token, byte[]? bindingSecretHash, DateTime utcNow )
     {
         Throw.CheckNotNullArgument( token );
         if( bindingSecretHash == null )
@@ -138,8 +138,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         }
         var read = await ReadTokenAsync( logger, token, utcNow ).ConfigureAwait( false );
         if( read == null ) return null;
-        if( !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( System.Text.Encoding.ASCII.GetBytes( bindingSecretHash ),
-                                                                                   System.Text.Encoding.ASCII.GetBytes( read.BindingSecretHash ) ) )
+        if( !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals( bindingSecretHash, read.BindingSecretHash ) )
         {
             logger.Warn( "A user's token with another binding secret than the one of its session is refused." );
             return null;

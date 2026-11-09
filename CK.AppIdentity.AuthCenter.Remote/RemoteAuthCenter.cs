@@ -95,7 +95,7 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker
     /// <param name="token">The user's token.</param>
     /// <param name="bindingSecretHash">The hash of the binding secret presented with the token.</param>
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
-    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, string bindingSecretHash )
+    public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash )
     {
         var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
         if( read == null )
