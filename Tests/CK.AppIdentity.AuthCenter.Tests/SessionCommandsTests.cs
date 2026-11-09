@@ -213,7 +213,7 @@ public class SessionPurgeTests
 
         async Task<AuthCenterSession> SaveAsync( int actorId, System.DateTime expires, System.DateTime lastWrite )
         {
-            var s = new AuthCenterSession( AuthCenterSession.NewSessionId(), actorId, actorId, utcNow, expires, false, "D", "P", "r", "b" );
+            var s = new AuthCenterSession( AuthCenterSession.NewSessionId(), actorId, actorId, utcNow, expires, false, "D", "P", AuthCenterApp.Hash( "r" ), AuthCenterApp.Hash( "b" ) );
             await store.SaveAsync( s );
             System.IO.File.SetLastWriteTimeUtc( root.AppendPart( actorId.ToString() ).AppendPart( s.SessionId ), lastWrite );
             return s;
