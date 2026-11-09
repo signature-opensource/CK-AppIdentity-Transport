@@ -7,7 +7,7 @@
     <ItemGroup>
         <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.cris-auth.1.ci.43" />
         <PackageReference Include="CK.AuthenticationInfo" Version="15.0.0-0.cris-auth.1.ci.17" />
-        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.1.ci.104" />
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.1.ci.106" />
         <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.cris-auth.1.ci.39" />
         <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.1.ci.39" />
     </ItemGroup>
