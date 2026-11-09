@@ -41,6 +41,33 @@ public class RemoteAuthCenterTests
     {
     }
 
+    // Sent by the remote to the AuthCenter: its handler dispatches an IEchoCommand back to the remote, from a channel
+    // scope (no endpoint there: the user's proof contributor must not fail).
+    public interface IRelayCommand : ICommand<string>
+    {
+    }
+
+    // An anonymous unsafe command (an identity part, no identity): the proof contributor considers it.
+    public interface IEchoCommand : ICommand<string>, ICommandAuthUnsafe
+    {
+    }
+
+    public sealed class RelayHandler : ISingletonAutoService
+    {
+        [CommandHandler]
+        public async Task<string?> HandleAsync( IRelayCommand c, IServiceProvider services, RawCrisExecutor executor, PocoDirectory pocos )
+        {
+            var r = await executor.RawExecuteAsync( services, pocos.Create<IEchoCommand>( e => e.ActorId = 0 ) );
+            return r.Result as string ?? $"Echo failed: {r.Result}";
+        }
+    }
+
+    public sealed class EchoHandler : ISingletonAutoService
+    {
+        [CommandHandler]
+        public string Handle( IEchoCommand c, CurrentLocalParty party ) => $"Echo from {party.LocalParty.FullName}";
+    }
+
     public sealed class CenterHandlers : ISingletonAutoService
     {
         [CommandHandler]
@@ -90,6 +117,8 @@ public class RemoteAuthCenterTests
                                       typeof( IAuthCenterEncryptionKey ),
                                       typeof( IWhoCallsCommand ),
                                       typeof( ICriticalWhoCallsCommand ),
+                                      typeof( IRelayCommand ),
+                                      typeof( IEchoCommand ),
                                       typeof( IAuthenticationCallEnvelope ),
                                       typeof( IPartyRoutedCommand ),
                                       typeof( AuthenticationReceptionHandler ),
@@ -103,7 +132,8 @@ public class RemoteAuthCenterTests
                                            typeof( AuthenticationSessionEndpointService ),
                                            typeof( AuthenticationSessionHandlers ),
                                            typeof( WeakLoginHandler ),
-                                           typeof( BasicLoginHandler )];
+                                           typeof( BasicLoginHandler ),
+                                           typeof( EchoHandler )];
 
     // The AuthCenter: the operations, the policy for its remotes, the verifier of the user's proofs.
     static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
@@ -117,7 +147,8 @@ public class RemoteAuthCenterTests
                                            typeof( FakeBasicLoginProvider ),
                                            typeof( AuthCenterFieldDecryptor ),
                                            typeof( AuthCenterApp.AllowImpersonation ),
-                                           typeof( CenterHandlers )];
+                                           typeof( CenterHandlers ),
+                                           typeof( RelayHandler )];
 
     static readonly Type[] _passkeyCommands = [typeof( IStartPasskeyLoginCommand ),
                                                typeof( IPasskeyLoginCommand ),
@@ -365,6 +396,16 @@ public class RemoteAuthCenterTests
             r.SealedCommand = sealedCommand;
             r.Via.AddRange( [origin, "Test/$Hop"] );
         } );
+    }
+
+    [Test]
+    public async Task a_command_dispatched_from_a_channel_scope_carries_no_proof_Async()
+    {
+        await using var p = await StartAsync();
+        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
+        // The relay is received by the AuthCenter on its channel: its handler dispatches the echo to the remote from the
+        // channel scope, where no endpoint presents a token.
+        (await p.RequestAsync( pocos => pocos.Create<IRelayCommand>() )).ShouldBe( $"Echo from {p.Remote.ApplicationIdentityService.FullName}" );
     }
 
     [Test]
