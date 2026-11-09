@@ -117,6 +117,24 @@ Any party checks a signature with `IPartyKeys.Verify` or `IPartyKeys.Check`, who
 tells an `UnknownIssuer` (the signer rotated and this party has not seen its new key events yet: moving the pin may make
 it valid) from a `Refused` signature.
 
+## Encryption keys
+
+Each local party has encryption keys (ECDH P-256): the other parties encrypt for it with the current one
+([`PartyEncryption`](PartyEncryption.cs)).
+
+- **Published in its description** (`PartyDescription.EncryptionKey`): the public key and its signature by the party
+  (an application signature, purpose `PartyEncryption.KeyPurpose`), whose expiration is the end of use of the key. A
+  remote reads it with `PartyEncryption.Check`, against the party's keys: the key can travel by any path.
+- **Rotated daily:** a key is published for `PartyEncryption.KeyLifetime` (1 day), the next one `KeyOverlap` (10 minutes)
+  before its end (the feature driver contributes the description again from the heartbeat), and an ended key still
+  decrypts for `KeyOverlap` more. `ILocalKeys.GetEncryptionKey` gives the current one, `ILocalKeys.FindEncryptionKey` a
+  private key by its identifier.
+- **Persisted** in the `LocalFileStore` of the party ("KeyManagement/EncryptionKeys"), protected by its data protector.
+- **HPKE-like:** an ephemeral key agreement, HKDF-SHA256, AES-256-GCM. The associated data binds a ciphertext to its
+  context and its creation time (`TryDecrypt` refuses one out of its freshness window). The shared secret also gives a
+  response key: the recipient encrypts its answer with it (`EncryptResponse`), only the sender reads it
+  (`TryDecryptResponse`).
+
 ## Alerts
 
 An [`IdentityAlert`](IdentityAlert.cs) says that an identity is in doubt, even when everything keeps working. It is

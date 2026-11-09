@@ -41,8 +41,36 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
     /// </summary>
     public PerfectEvent<ILocalKeys> KeyEventAppended => _keyEventAppended.PerfectEvent;
 
+    /// <summary>
+    /// Publishes the encryption key of each local party in its description (see <see cref="ILocalKeys.GetEncryptionKey"/>).
+    /// </summary>
+    /// <param name="party">The local party.</param>
+    /// <param name="builder">The description builder.</param>
+    protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
+    {
+        if( party.GetFeature<LocalKeys>() is { } keys )
+        {
+            builder.EncryptionKey = keys.GetEncryptionKey( ApplicationIdentityService.SystemClock.UtcNow );
+        }
+    }
+
+    // A new encryption key is published before the end of the current one: the description is contributed again.
+    async Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, System.Threading.CancellationToken cancel )
+    {
+        var utcNow = ApplicationIdentityService.SystemClock.UtcNow;
+        var locals = ((IEnumerable<ILocalParty>)ApplicationIdentityService.TenantDomains).Prepend( ApplicationIdentityService );
+        foreach( var local in locals )
+        {
+            if( local.GetFeature<LocalKeys>() is { } keys && keys.IsNewEncryptionKeyDue( utcNow, local.Description.EncryptionKey ) )
+            {
+                await OnDescriptionChangedAsync( monitor, local ).ConfigureAwait( false );
+            }
+        }
+    }
+
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
+        ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
         var locals = ((IEnumerable<ILocalParty>)ApplicationIdentityService.TenantDomains).Prepend( ApplicationIdentityService );
         foreach( var local in locals )
         {
@@ -81,6 +109,7 @@ public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 
     protected override Task TeardownAsync( FeatureLifetimeContext context )
     {
+        ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
         var locals = ((IEnumerable<ILocalParty>)ApplicationIdentityService.TenantDomains).Prepend( ApplicationIdentityService );
         foreach( var local in locals )
         {

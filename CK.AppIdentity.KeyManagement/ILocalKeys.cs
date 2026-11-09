@@ -268,4 +268,23 @@ public interface ILocalKeys : IPartyKeys
     /// This should be used to protect tokens-like data (small blocks).
     /// </summary>
     IDataProtector Protector { get; }
+
+    /// <summary>
+    /// Gets the current encryption key of this party, signed by it: what it publishes in its description (see
+    /// <see cref="PartyDescription.EncryptionKey"/> and <see cref="PartyEncryption"/>). A new key is created when the
+    /// current one ends in less than <see cref="PartyEncryption.KeyOverlap"/>: the key management re-announces the
+    /// description then.
+    /// </summary>
+    /// <param name="utcNow">The current time.</param>
+    /// <returns>The published encryption key.</returns>
+    PartyEncryptionKey GetEncryptionKey( DateTime utcNow );
+
+    /// <summary>
+    /// Finds a private encryption key of this party by its identifier (see <see cref="PartyEncryption.GetKeyId"/>): the
+    /// current one, or a previous one that is still usable (see <see cref="PartyEncryption.KeyOverlap"/>).
+    /// </summary>
+    /// <param name="keyId">The identifier of the key.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <returns>The private key or null.</returns>
+    System.Security.Cryptography.ECDiffieHellman? FindEncryptionKey( ReadOnlySpan<byte> keyId, DateTime utcNow );
 }

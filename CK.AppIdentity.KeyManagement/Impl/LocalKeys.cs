@@ -55,6 +55,7 @@ sealed partial class LocalKeys : ILocalKeys
     KeyEvent _announcedHead;
     // The driver's event, raised after ours: one place for an application to subscribe for every local party.
     readonly PerfectEventSender<IdentityAlert>? _driverAlertRaised;
+    readonly LocalEncryptionKeys _encryption;
 
     LocalKeys( ILocalParty local,
                IDataProtector protector,
@@ -83,8 +84,16 @@ sealed partial class LocalKeys : ILocalKeys
         _keyEventAppended = new PerfectEventSender<LocalIdentityState>();
         _announcedHead = _state.Log[^1];
         _driverAlertRaised = driverAlertRaised;
+        _encryption = new LocalEncryptionKeys( ActivityMonitor.StaticLogger, local, protector );
         local.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
     }
+
+    public PartyEncryptionKey GetEncryptionKey( DateTime utcNow ) => _encryption.GetPublished( ActivityMonitor.StaticLogger, this, utcNow );
+
+    public ECDiffieHellman? FindEncryptionKey( ReadOnlySpan<byte> keyId, DateTime utcNow ) => _encryption.Find( keyId, utcNow );
+
+    // Whether the published encryption key must change: the description is then contributed again.
+    internal bool IsNewEncryptionKeyDue( DateTime utcNow, PartyEncryptionKey? published ) => _encryption.IsNewKeyDue( utcNow, published );
 
     public IReadOnlyList<IdentityAlert> Alerts => _alerts.Alerts;
 
@@ -665,5 +674,6 @@ sealed partial class LocalKeys : ILocalKeys
         last.Operational.OnTeardown();
         lock( _signLock ) _application?.OnTeardown();
         last.Key.OnTeardown();
+        _encryption.OnTeardown();
     }
 }
