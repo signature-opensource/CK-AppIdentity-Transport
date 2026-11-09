@@ -99,6 +99,30 @@ always validated as an incoming command, then executed by the `CrisExecutionHost
 The caller-only events and the final result are sent back on the high priority queue of the transport, the final
 events before the result. A command that cannot be read is answered with an error result.
 
+## Routed commands ([`IPartyRoutedCommand`](IPartyRoutedCommand.cs))
+
+A command for a party of the System that is not a remote travels in an `IPartyRoutedCommand`, sent by the
+[`PartyRoutedCommandSender`](PartyRoutedCommandSender.cs) of the originating local party:
+
+- **The destination** is the host of a route (`SendAsync( ..., routeName )`: each hop takes its next hop from its own
+  `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path (`SendAlongPathAsync`: for an
+  answer, the way back to the party a request came from).
+- **Each hop** is a party command (`ICommandTargetParty`): its target is the next hop, so the usual reception checks
+  apply (it is `[Internal]`: inside the System only). The channel handles it, never a command handler: it checks the
+  chain (the last of `Via` is the remote that sent it, no loop, at most `PartyRoute.MaxLength` parties), adds the local
+  party to `Via` and forwards it with its envelope unchanged (the user's proof included), on its own task (no runner is
+  held). The answers come back by the chain of calls.
+- **The destination** executes the inner command like a received one (incoming validation, then execution), as long as
+  it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), not another routed
+  command, and the party has an `ICrisChannelReceptionHandler`. The caller party is the originating one
+  ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): the reception handler must configure its ambient
+  services (the identity), or the command is refused. When the originating party is also a remote of the destination,
+  its `PartyActorId` must be the known one.
+
+The destination believes the chain: each hop authenticated its predecessor, inside the System. The outgoing transformers
+(`ICrisOutgoingCommandTransformer`) are not applied: a routed command's sensitive fields can't be encrypted for its
+destination.
+
 ## The protocol
 
 A message starts with a discriminator byte, read by [`CrisChannelFeature.Protocol`](CrisChannelFeature.Protocol.cs):

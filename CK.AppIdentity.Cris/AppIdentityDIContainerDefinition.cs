@@ -22,6 +22,8 @@ public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<A
         internal readonly IRemoteParty _remoteParty;
         [AllowNull]
         internal ICrisCallEnvelope _envelope;
+        // The routed command that carried the command, if any (its originating party is the caller party).
+        internal IPartyRoutedCommand? _route;
 
         public Data( IRemoteParty remoteParty )
         {

@@ -64,7 +64,7 @@ public class ReceptionTests
     {
         public ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureAsync( IActivityMonitor monitor,
                                                                                            IServiceProvider services,
-                                                                                           IRemoteParty caller,
+                                                                                           CrisCallerParty caller,
                                                                                            IAbstractCommand command,
                                                                                            ICrisCallEnvelope envelope )
         {

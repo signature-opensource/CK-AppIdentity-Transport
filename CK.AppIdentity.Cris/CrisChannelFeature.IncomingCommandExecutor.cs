@@ -23,9 +23,9 @@ public sealed partial class CrisChannelFeature
             _feature = crisChannelFeature;
         }
 
-        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallEnvelope envelope )
+        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallEnvelope envelope, IPartyRoutedCommand? route = null )
         {
-            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _envelope = envelope };
+            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _envelope = envelope, _route = route };
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,
@@ -45,14 +45,25 @@ public sealed partial class CrisChannelFeature
         // The reception handler (the identity derived from the caller) configures the ambient services, except for an
         // endpoint-only command: it executes in the channel scope (its handlers may need the IRemoteParty). The current
         // local party of the configured scope is the owner of the remote, as in the channel scope.
+        // The inner command of a routed command requires a configured scope: its IRemoteParty would be the last hop.
         protected override async ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureReceptionAsync( IActivityMonitor monitor,
                                                                                                                           CrisJob job,
                                                                                                                           System.IServiceProvider services )
         {
             var handler = _feature._receptionHandler;
-            if( handler == null || job.Command is ICommandEndpointOnly ) return (null, null);
             var data = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData );
-            var (error, hub) = await handler.ConfigureAsync( monitor, services, data._remoteParty, job.Command, data._envelope ).ConfigureAwait( false );
+            if( handler == null || job.Command is ICommandEndpointOnly )
+            {
+                // Checked by the reception of the routed command: this is a safety net.
+                return data._route == null ? (null, null) : (_feature.CreateError( "A routed command requires a reception handler." ), null);
+            }
+            var caller = new CrisCallerParty( data._remoteParty, data._route );
+            var (error, hub) = await handler.ConfigureAsync( monitor, services, caller, job.Command, data._envelope ).ConfigureAwait( false );
+            if( error == null && hub == null && data._route != null )
+            {
+                monitor.Error( $"The reception handler didn't configure '{job.Command.CrisPocoModel.PocoName}' routed from '{caller}': it is refused." );
+                return (_feature.CreateError( "A routed command must be configured by the reception handler." ), null);
+            }
             hub?.Override( new CurrentLocalParty( data._remoteParty.Owner ) );
             return (error, hub);
         }

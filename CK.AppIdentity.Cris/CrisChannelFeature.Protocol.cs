@@ -118,7 +118,7 @@ public sealed partial class CrisChannelFeature
             Enqueue( monitor, message );
         }
 
-        void SendError( IActivityMonitor monitor, ActivityMonitor.LogKey key, string error )
+        internal void SendError( IActivityMonitor monitor, ActivityMonitor.LogKey key, string error )
         {
             Enqueue( monitor, CreateExecutedMessage( key, CreateError( error ) ) );
         }
@@ -230,6 +230,15 @@ public sealed partial class CrisChannelFeature
                 SendError( monitor, token.Key, $"Party command '{command.CrisPocoModel.PocoName}' doesn't target this party." );
                 return;
             }
+            Throw.DebugAssert( envelope != null );
+            IPartyRoutedCommand? route = null;
+            if( command is IPartyRoutedCommand routed )
+            {
+                // Forwarded to the next hop, or its inner command is the one to execute here.
+                command = _feature.HandleRouted( monitor, this, token, routed, envelope );
+                if( command == null ) return;
+                route = routed;
+            }
             foreach( var t in _feature._incomingTransformers )
             {
                 if( !t.Transform( monitor, _feature.Party, command ) )
@@ -238,8 +247,7 @@ public sealed partial class CrisChannelFeature
                     return;
                 }
             }
-            Throw.DebugAssert( envelope != null );
-            _feature._executor.Execute( this, command, token, envelope );
+            _feature._executor.Execute( this, command, token, envelope, route );
         }
 
         void HandleFinalEvent( IActivityMonitor monitor, ref FastByteReader r )

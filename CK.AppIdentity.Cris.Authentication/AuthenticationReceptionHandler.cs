@@ -12,7 +12,8 @@ namespace CK.Auth;
 /// Gives a command received from a remote party the identity of its user, vouched for by that caller party:
 /// <list type="bullet">
 ///   <item>
-///   The <see cref="AuthenticationInfo.CallerPartyId"/> is the <see cref="IParty.PartyActorId"/> of the caller.
+///   The <see cref="AuthenticationInfo.CallerPartyId"/> is the <see cref="IParty.PartyActorId"/> of the caller (see
+///   <see cref="CrisCallerParty"/>: the originating party of a <see cref="IPartyRoutedCommand"/>).
 ///   A command that carries an identity (an <see cref="IAuthUnsafePart"/> with a non anonymous actor) is refused when
 ///   the caller has no PartyActorId (0); an anonymous command executes as the anonymous.
 ///   </item>
@@ -52,7 +53,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
     /// <inheritdoc />
     public async ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureAsync( IActivityMonitor monitor,
                                                                                              IServiceProvider services,
-                                                                                             IRemoteParty caller,
+                                                                                             CrisCallerParty caller,
                                                                                              IAbstractCommand command,
                                                                                              ICrisCallEnvelope envelope )
     {
@@ -67,7 +68,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
             AuthenticationInfo? proved = null;
             if( _proofVerifier != null && envelope is IAuthenticationCallEnvelope { Token: not null } proof )
             {
-                proved = await _proofVerifier.VerifyAsync( monitor, services, caller, proof ).ConfigureAwait( false );
+                proved = await _proofVerifier.VerifyAsync( monitor, services, caller.Sender, proof ).ConfigureAwait( false );
             }
             if( proved != null )
             {

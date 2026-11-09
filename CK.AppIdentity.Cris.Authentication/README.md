@@ -10,7 +10,9 @@ This package implements the channel's `ICrisChannelReceptionHandler`. For a rece
 one, which keeps the channel scope):
 
 - `AuthenticationInfo.CallerPartyId` is the `PartyActorId` of the calling remote (see
-  [CK.AppIdentity.Abstractions](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/README.md)).
+  [CK.AppIdentity.Abstractions](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/README.md)),
+  or of the originating party of a routed command (`IPartyRoutedCommand`: the caller policy applies to it, its proof
+  is verified the same way).
 - An anonymous command executes as the anonymous.
 - A command that carries an identity (an `IAuthUnsafePart` whose actor is not the anonymous) is refused when the caller
   has no `PartyActorId` (0).

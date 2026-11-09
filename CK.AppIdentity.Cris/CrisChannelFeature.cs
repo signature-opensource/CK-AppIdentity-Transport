@@ -120,12 +120,15 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// <summary>
     /// Gets whether a command can be received from the remote: it is a command handled here, not <see cref="CrisExposure.Private"/>
     /// and, when it is <see cref="CrisExposure.Internal"/>, the remote is inside the System (see <see cref="IsRemoteInsideSystem"/>).
-    /// Endpoint-only commands are accepted (they are sent explicitly, never dispatched).
+    /// Endpoint-only commands are accepted (they are sent explicitly, never dispatched). The <see cref="IPartyRoutedCommand"/>
+    /// is accepted from inside the System: the channel handles it.
     /// </summary>
     /// <param name="model">The command model.</param>
     /// <returns>True if the remote may send it.</returns>
     public bool IsAcceptedFromRemote( ICrisPocoModel model )
     {
+        // The routed command has no handler: the channel handles it (see IPartyRoutedCommand). It is [Internal].
+        if( typeof( IPartyRoutedCommand ).IsAssignableFrom( model.CommandType ) ) return IsRemoteInsideSystem;
         return model.Kind is CrisPocoKind.Command or CrisPocoKind.CommandWithResult
                && model.IsHandled
                && model.Exposure switch
@@ -298,11 +301,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         }
     }
 
-    bool SetError( ActivityMonitor.LogKey key, string message )
+    bool SetError( ActivityMonitor.LogKey key, string message ) => Complete( key, CreateError( message ), ImmutableArray<UserMessage>.Empty );
+
+    internal ICrisResultError CreateError( string message )
     {
-        var error = _errorFactory.Create( e => e.Errors.Add( new UserMessage( UserMessageLevel.Error,
-                                                                              MCString.CreateNonTranslatable( NormalizedCultureInfo.CodeDefault, message ) ) ) );
-        return Complete( key, error, ImmutableArray<UserMessage>.Empty );
+        return _errorFactory.Create( e => e.Errors.Add( new UserMessage( UserMessageLevel.Error,
+                                                                         MCString.CreateNonTranslatable( NormalizedCultureInfo.CodeDefault, message ) ) ) );
     }
 
     bool Complete( ActivityMonitor.LogKey key, object? result, ImmutableArray<UserMessage> validationMessages )
