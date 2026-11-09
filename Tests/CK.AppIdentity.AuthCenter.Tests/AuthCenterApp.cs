@@ -262,7 +262,8 @@ public sealed class AuthCenterApp : IAsyncDisposable
             services.AddSingleton<IDataProtectionProvider>( FakeProtector.Fake );
             services.AddSingleton<Browser>();
             services.AddScoped<IAuthenticationSessionEndpoint, FakeEndpoint>();
-            services.AddScoped( sp => sp.GetRequiredService<Browser>().Current );
+            // A direct reception (like the HTTP middleware): the caller party is the local party.
+            services.AddScoped( sp => sp.GetRequiredService<Browser>().Current.WithCallerParty( sp.GetRequiredService<ApplicationIdentityService>().FullName ) );
             services.AddScoped<IActivityMonitor>( sp => TestHelper.Monitor );
             services.AddScoped( sp => new CurrentLocalParty( sp.GetRequiredService<ApplicationIdentityService>() ) );
         } );
