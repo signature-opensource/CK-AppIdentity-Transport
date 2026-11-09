@@ -16,7 +16,8 @@ public class PartyDescriptionCodecTests
                                                               ["Manager", "Operator"],
                                                               [new( "Region", "eu-west" )],
                                                               [new( "Enlistment", new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", ["Test/$Front/#Dev", "Test/$Admin/#Dev"] ) ),
-                                                               new( "Other", PartyRoute.Hosted( "Some.Command", "Test/$Front/#Dev" ) )] );
+                                                               new( "Other", PartyRoute.Hosted( "Some.Command", "Test/$Front/#Dev" ) )],
+                                                              new PartyEncryptionKey( [1, 2, 3, 4], [5, 6, 7] ) );
 
     [Test]
     public void a_description_round_trips()
@@ -57,6 +58,7 @@ public class PartyDescriptionCodecTests
         w.WriteString( "Manager" );
         w.WriteInt32( 0 ); // No data announcement.
         w.WriteInt32( 0 ); // No route.
+        w.WriteBool( false ); // No encryption key.
         w.WriteString( "a newer section of the description" );
         w.EndBlock( d );
         w.WriteByte( 42 );

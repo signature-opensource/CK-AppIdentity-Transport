@@ -22,6 +22,7 @@ namespace CK.AppIdentity.Cris;
 ///     count, the roles
 ///     count, then the data announcements: name, value
 ///     count, then the routes: name, target, count, the full names of the path
+///     hasEncryptionKey, the public key and the signature (each one: its length, its bytes)
 /// </code>
 /// </summary>
 public static class PartyDescriptionCodec
@@ -64,8 +65,23 @@ public static class PartyDescriptionCodec
             w.WriteInt32( route.Path.Length );
             foreach( var p in route.Path ) w.WriteString( p );
         }
+        // The encryption key: added at the end of the block, an older reader skips it.
+        var key = description.EncryptionKey;
+        w.WriteBool( key != null );
+        if( key != null )
+        {
+            w.WriteSmallUInt32( (uint)key.PublicKey.Length );
+            w.WriteBytes( key.PublicKey.Span );
+            w.WriteSmallUInt32( (uint)key.Signature.Length );
+            w.WriteBytes( key.Signature.Span );
+        }
         w.EndBlock( d );
     }
+
+    /// <summary>
+    /// The maximal length of the public key and of the signature of an encryption key.
+    /// </summary>
+    public const int MaxEncryptionKeyLength = 8192;
 
     /// <summary>
     /// Reads a description written by <see cref="Write(ref FastByteWriter, PartyDescription)"/>. The reader is always
@@ -143,6 +159,22 @@ public static class PartyDescriptionCodec
                 }
             }
         }
-        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes ) : null;
+        // An older writer doesn't write the encryption key.
+        PartyEncryptionKey? encryptionKey = null;
+        if( !d.IsEnd && d.ReadBool() )
+        {
+            var publicKey = ReadKeyBytes( ref d );
+            var signature = ReadKeyBytes( ref d );
+            if( publicKey.Length == 0 || signature.Length == 0 ) error ??= "Invalid empty encryption key.";
+            else encryptionKey = new PartyEncryptionKey( publicKey, signature );
+        }
+        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes, encryptionKey ) : null;
+
+        static byte[] ReadKeyBytes( ref FastByteReader r )
+        {
+            var length = r.ReadSmallUInt32();
+            Throw.CheckData( "Invalid encryption key length.", length <= MaxEncryptionKeyLength );
+            return r.ReadBytes( length );
+        }
     }
 }
