@@ -17,13 +17,13 @@ public static class PartyOrigins
     /// the operation.
     /// </summary>
     /// <param name="local">The local party (the AuthCenter).</param>
-    /// <param name="callerPartyId">The caller party identifier (<see cref="CK.Auth.AuthenticationInfo.CallerPartyId"/>).</param>
+    /// <param name="callerPartyFullName">The full name of the caller party (<see cref="CK.Auth.AuthenticationInfo.CallerPartyFullName"/>).</param>
     /// <param name="url">The URL to check.</param>
     /// <returns>True if the URL is on the origin of the caller party.</returns>
-    public static bool IsCallerPartyUrl( ILocalParty local, int callerPartyId, string? url )
+    public static bool IsCallerPartyUrl( ILocalParty local, string? callerPartyFullName, string? url )
     {
         if( !Uri.TryCreate( url, UriKind.Absolute, out var u ) ) return false;
-        var publicUrl = local.FindCallerParty( callerPartyId )?.Description.PublicUrl;
+        var publicUrl = local.FindCallerParty( callerPartyFullName )?.Description.PublicUrl;
         return publicUrl != null
                && string.Equals( publicUrl.GetLeftPart( UriPartial.Authority ), u.GetLeftPart( UriPartial.Authority ), StringComparison.OrdinalIgnoreCase );
     }

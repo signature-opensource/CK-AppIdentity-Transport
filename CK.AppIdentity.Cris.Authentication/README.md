@@ -9,13 +9,11 @@ user (it is the *caller party*), or sends the user's **proof**.
 This package implements the channel's `ICrisChannelReceptionHandler`. For a received command (never an endpoint-only
 one, which keeps the channel scope):
 
-- `AuthenticationInfo.CallerPartyId` is the `PartyActorId` of the calling remote (see
+- `AuthenticationInfo.CallerPartyFullName` is the `FullName` of the calling remote (see
   [CK.AppIdentity.Abstractions](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/README.md)),
   or of the originating party of a routed command (`IPartyRoutedCommand`: the caller policy applies to it, its proof
   is verified the same way).
 - An anonymous command executes as the anonymous.
-- A command that carries an identity (an `IAuthUnsafePart` whose actor is not the anonymous) is refused when the caller
-  has no `PartyActorId` (0).
 - With the user's proof and an [`ICallerProofVerifier`](ICallerProofVerifier.cs) that accepts it, the identity is the
   proved one, with its level.
 - Otherwise, the actors are read from the command's identifiers (`CrisAuthenticationService.ReadActorsAsync`) and the

@@ -84,7 +84,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
         {
             c.Error( "Passkeys are not available.", "Authentication.UnknownScheme" );
         }
-        else if( !family.Options!.IsAllowedOrigin( localParty.LocalParty, authentication.CallerPartyId, webOrigin ) )
+        else if( !family.Options!.IsAllowedOrigin( localParty.LocalParty, authentication.CallerPartyFullName, webOrigin ) )
         {
             c.Error( string.IsNullOrEmpty( webOrigin )
                         ? "This endpoint cannot serve passkeys."

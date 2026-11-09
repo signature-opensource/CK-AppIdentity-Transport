@@ -164,7 +164,7 @@ The `Code` of the callback is `[Sensitive]`: from a remote, it travels encrypted
 
 **The origins of the parties** ([`PartyOrigins`](PartyOrigins.cs)): the URLs that a party relays (the callback of a
 remote login, the origin of a passkey ceremony) must be on the origin of the public URL of **that** party, the caller party
-of the operation (`AuthenticationInfo.CallerPartyId`, see `CallerPartyExtensions.FindCallerParty`): the Authentication
+of the operation (`AuthenticationInfo.CallerPartyFullName`, see `CallerPartyExtensions.FindCallerParty`): the Authentication
 Center's party for its own endpoints, the remote that relays the operation otherwise. A party can't start or complete a
 login on another party's origin. The public URLs are the `IParty.Description`, announced by the remotes with their
 accepted commands (see [CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md)): they are derived from what the parties
@@ -221,10 +221,3 @@ handles, over the Cris channel. The identity of their users is established by
 
 A compromised remote can act only for the users it vouches for, at most at `Normal`: the high-value actions are
 `Critical` and need the user's live proof.
-
-## The PartyActor identifiers ([`AuthCenterPartyActorIdsHandler`](AuthCenterPartyActorIdsHandler.cs))
-
-The Authentication Center answers `IGetPartyActorIdsQCommand` for a calling remote that has its "AuthCenter" feature:
-the `PartyActorId` of the caller and of its local party. They are set by the PartyActor registrar of
-[CK.DB.AppIdentity](../CK.DB.AppIdentity/README.md), that an Authentication Center is expected to install: without it,
-they are 0 (logged as a warning) and the remote keeps 0.

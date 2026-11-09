@@ -23,7 +23,7 @@ namespace CK.AppIdentity.AuthCenter.Tests;
 /// <summary>
 /// A remote of an Authentication Center (CK.AppIdentity.AuthCenter.Remote) and its AuthCenter: the session commands
 /// are executed by the remote's endpoint, their operations are dispatched to the AuthCenter; the commands handled by the
-/// AuthCenter carry the identity of their user, vouched for by the remote (its CallerPartyId) or proved by the user's
+/// AuthCenter carry the identity of their user, vouched for by the remote (its CallerPartyFullName) or proved by the user's
 /// token (CK.AppIdentity.Cris.Authentication).
 /// </summary>
 [TestFixture]
@@ -43,10 +43,10 @@ public class RemoteAuthCenterTests
     public sealed class CenterHandlers : ISingletonAutoService
     {
         [CommandHandler]
-        public string Handle( IWhoCallsCommand c, AuthenticationInfo info ) => $"{info.UnsafeActor.ActorName}/{info.UnsafeActualActor.Level}/{info.CallerPartyId}";
+        public string Handle( IWhoCallsCommand c, AuthenticationInfo info ) => $"{info.UnsafeActor.ActorName}/{info.UnsafeActualActor.Level}/{info.CallerPartyFullName}";
 
         [CommandHandler]
-        public string Handle( ICriticalWhoCallsCommand c, AuthenticationInfo info ) => $"{info.UnsafeActor.ActorName}/{info.UnsafeActualActor.Level}/{info.CallerPartyId}";
+        public string Handle( ICriticalWhoCallsCommand c, AuthenticationInfo info ) => $"{info.UnsafeActor.ActorName}/{info.UnsafeActualActor.Level}/{info.CallerPartyFullName}";
     }
 
     static readonly Type[] _common = [typeof( CurrentLocalParty ),
@@ -84,8 +84,6 @@ public class RemoteAuthCenterTests
                                       typeof( ILogoutSessionOperationCommand ),
                                       typeof( IImpersonateOperationCommand ),
                                       typeof( IClearImpersonationOperationCommand ),
-                                      typeof( IGetPartyActorIdsQCommand ),
-                                      typeof( IPartyActorIds ),
                                       typeof( IGetAuthCenterEncryptionKeyQCommand ),
                                       typeof( IVerifyCallerProofCommand ),
                                       typeof( IAuthCenterEncryptionKey ),
@@ -109,7 +107,6 @@ public class RemoteAuthCenterTests
     static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
                                            typeof( AuthCenterOperationHandlers ),
                                            typeof( AuthCenterCommandHandlers ),
-                                           typeof( AuthCenterPartyActorIdsHandler ),
                                            typeof( AuthCenterEncryptionKeyHandler ),
                                            typeof( AuthCenterCallerPartyService ),
                                            typeof( AuthCenterProofVerifier ),
@@ -138,7 +135,7 @@ public class RemoteAuthCenterTests
         public required RunningApplication Center { get; init; }
         public AuthCenterApp.Browser Browser => Remote.Services.GetRequiredService<AuthCenterApp.Browser>();
         public LocalAuthCenter LocalCenter => Center.ApplicationIdentityService.GetRequiredFeature<LocalAuthCenter>();
-        public int RemotePartyActorIdAtTheCenter => Center.ApplicationIdentityService.Remotes.Single().PartyActorId;
+        public string RemoteFullNameAtTheCenter => Center.ApplicationIdentityService.Remotes.Single().FullName;
 
         public async ValueTask DisposeAsync()
         {
@@ -184,7 +181,6 @@ public class RemoteAuthCenterTests
     }
 
     static async Task<Pair> StartAsync( bool remoteIsAllowed = true,
-                                        bool withRegistrar = true,
                                         bool remoteEncrypts = true,
                                         bool passkeys = false,
                                         Action<MutableConfigurationSection>? oidcSettings = null,
@@ -195,7 +191,6 @@ public class RemoteAuthCenterTests
                               .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
                               .. (passkeys ? [.. _passkeyCommands, typeof( PasskeyHandlers )] : Type.EmptyTypes)];
         Type[] centerTypes = [.. _common, .. _centerTypes,
-                              .. (withRegistrar ? [typeof( PartyActorIdsTests.FakePartyActorFeatureDriver )] : Type.EmptyTypes),
                               .. (passkeys
                                     ? [.. _passkeyCommands,
                                        typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
@@ -263,8 +258,7 @@ public class RemoteAuthCenterTests
         await using var p = await StartAsync();
         (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
         var albert = p.Browser.Current.UnsafeActor.ActorId;
-        var remoteId = p.RemotePartyActorIdAtTheCenter;
-        remoteId.ShouldBeGreaterThan( 0 );
+        var remoteId = p.RemoteFullNameAtTheCenter;
 
         // A request: the user's proof travels to the AuthCenter, the proved level is kept (Critical just after the login).
         (await p.RequestAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = albert ) )).ShouldBe( $"Albert/Critical/{remoteId}" );
@@ -343,18 +337,7 @@ public class RemoteAuthCenterTests
         // The AuthCenter's policy refuses this remote as a caller party: without a proof, nothing is vouched for.
         Refusal( await p.DeferAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = albert ) ) ).ShouldBe( "Authentication.CallerPartyRefused" );
         // But any party of the System can relay a user's proof: the AuthCenter verifies it, the proved level is kept.
-        (await p.RequestAsync( pocos => pocos.Create<ICriticalWhoCallsCommand>( c => c.ActorId = albert ) )).ShouldBe( $"Albert/Critical/{p.RemotePartyActorIdAtTheCenter}" );
-    }
-
-    [Test]
-    public async Task a_caller_without_PartyActorId_cannot_carry_an_identity_Async()
-    {
-        await using var p = await StartAsync( withRegistrar: false );
-        p.RemotePartyActorIdAtTheCenter.ShouldBe( 0 );
-        // An anonymous operation is accepted (the login).
-        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
-        // A command that carries an identity is refused.
-        Refusal( await p.DeferAsync( pocos => pocos.Create<IWhoCallsCommand>( c => c.ActorId = p.Browser.Current.UnsafeActor.ActorId ) ) ).ShouldBe( "Authentication.CallerPartyRefused" );
+        (await p.RequestAsync( pocos => pocos.Create<ICriticalWhoCallsCommand>( c => c.ActorId = albert ) )).ShouldBe( $"Albert/Critical/{p.RemoteFullNameAtTheCenter}" );
     }
 
     [Test]

@@ -88,7 +88,7 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         {
             return Error( monitor, $"Unable to route '{command.CrisPocoModel.PocoName}' from '{origin.FullName}': {channelError}" );
         }
-        routed.Via.Add( _pocoDirectory.Create<IPartyRouteHop>( h => { h.FullName = origin.FullName; h.PartyActorId = origin.PartyActorId; } ) );
+        routed.Via.Add( origin.FullName );
         routed.TargetPartyFullName = next;
         var envelope = _pocoDirectory.Create<ICrisCallEnvelope>();
         foreach( var c in _contributors )

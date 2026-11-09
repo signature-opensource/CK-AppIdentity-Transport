@@ -73,7 +73,6 @@ public class RoutedCommandTests
     }
 
     static readonly Type[] _common = [typeof( IPartyRoutedCommand ),
-                                      typeof( IPartyRouteHop ),
                                       typeof( PartyRoutedCommandSender ),
                                       typeof( RecordingReceptionHandler ),
                                       typeof( CurrentLocalParty ),
@@ -163,7 +162,7 @@ public class RoutedCommandTests
         {
             r.Command = a.PocoDirectory.Create<IWhereRoutedCommand>();
             r.Path.AddRange( ["Test/$Evil", bName] );
-            r.Via.Add( a.PocoDirectory.Create<IPartyRouteHop>( h => h.FullName = "Test/$Evil" ) );
+            r.Via.Add( "Test/$Evil" );
             r.TargetPartyFullName = bName;
         } );
         var executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, forged ).ExecutedCommand.WaitAsync( _timeout );
@@ -174,7 +173,7 @@ public class RoutedCommandTests
         {
             r.Command = a.PocoDirectory.Create<IPartyRoutedCommand>();
             r.Path.AddRange( [(string)a.ApplicationIdentityService.FullName, bName] );
-            r.Via.Add( a.PocoDirectory.Create<IPartyRouteHop>( h => h.FullName = a.ApplicationIdentityService.FullName ) );
+            r.Via.Add( a.ApplicationIdentityService.FullName );
             r.TargetPartyFullName = bName;
         } );
         executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, nested ).ExecutedCommand.WaitAsync( _timeout );

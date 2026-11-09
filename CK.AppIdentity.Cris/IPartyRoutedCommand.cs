@@ -45,23 +45,8 @@ public interface IPartyRoutedCommand : ICommand<object?>, ICommandTargetParty
     IList<string> Path { get; }
 
     /// <summary>
-    /// Gets the parties this command went through, the originating one first: each hop adds itself before forwarding it.
+    /// Gets the full names of the parties this command went through, the originating one first: each hop adds itself
+    /// before forwarding it.
     /// </summary>
-    IList<IPartyRouteHop> Via { get; }
-}
-
-/// <summary>
-/// A party that a <see cref="IPartyRoutedCommand"/> went through.
-/// </summary>
-public interface IPartyRouteHop : IPoco
-{
-    /// <summary>
-    /// Gets or sets the full name of the party.
-    /// </summary>
-    string FullName { get; set; }
-
-    /// <summary>
-    /// Gets or sets its <see cref="IParty.PartyActorId"/> (System-wide).
-    /// </summary>
-    int PartyActorId { get; set; }
+    IList<string> Via { get; }
 }

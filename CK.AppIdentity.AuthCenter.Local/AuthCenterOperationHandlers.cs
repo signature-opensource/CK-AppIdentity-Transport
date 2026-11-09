@@ -153,7 +153,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
         }
         else if( !family.IsAllowedCallback( login.Scheme, op.CallbackUrl )
                  // The callback is an endpoint of the party that relays the start: on the origin of its public URL (its announcement).
-                 || !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyId, op.CallbackUrl ) )
+                 || !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyFullName, op.CallbackUrl ) )
         {
             c.Error( $"The callback '{op.CallbackUrl}' is not allowed for the scheme '{login.Scheme}'.", "Authentication.CallbackNotAllowed" );
         }
@@ -260,7 +260,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                 return AuthCenterResults.Failure( monitor, command, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );
             }
             // A login started through a party is completed through the same party.
-            if( !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyId, pending.CallbackUrl ) )
+            if( !PartyOrigins.IsCallerPartyUrl( localParty.LocalParty, authentication.CallerPartyFullName, pending.CallbackUrl ) )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{pending.Scheme}' login started with the callback '{pending.CallbackUrl}' completed through another party." );
                 return AuthCenterResults.Failure( monitor, command, "This login has not been started here.", "Authentication.RemoteLoginCorrelation" );

@@ -54,15 +54,15 @@ public sealed class AuthCenterPasskeyOptions
     /// <see cref="RpId"/> or one of its sub-domains.
     /// </summary>
     /// <param name="local">The local party (the AuthCenter).</param>
-    /// <param name="callerPartyId">The caller party identifier (<see cref="CK.Auth.AuthenticationInfo.CallerPartyId"/>).</param>
+    /// <param name="callerPartyFullName">The full name of the caller party (<see cref="CK.Auth.AuthenticationInfo.CallerPartyFullName"/>).</param>
     /// <param name="origin">The origin of the endpoint that serves the ceremony.</param>
     /// <returns>True if the origin is accepted.</returns>
-    public bool IsAllowedOrigin( ILocalParty local, int callerPartyId, string? origin )
+    public bool IsAllowedOrigin( ILocalParty local, string? callerPartyFullName, string? origin )
     {
         if( NormalizeOrigin( origin ) is not string o ) return false;
         var host = new Uri( o ).Host;
         return (host == RpId || host.EndsWith( "." + RpId, StringComparison.Ordinal ))
-               && PartyOrigins.IsCallerPartyUrl( local, callerPartyId, o );
+               && PartyOrigins.IsCallerPartyUrl( local, callerPartyFullName, o );
     }
 
     internal static AuthCenterPasskeyOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection section )

@@ -116,8 +116,8 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), not another routed
   command, and the party has an `ICrisChannelReceptionHandler`. The caller party is the originating one
   ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): the reception handler must configure its ambient
-  services (the identity), or the command is refused. When the originating party is also a remote of the destination,
-  its `PartyActorId` must be the known one.
+  services (the identity), or the command is refused. `Via` holds the full names of the parties: the full name is the
+  identity of a party across the System.
 
 The destination believes the chain: each hop authenticated its predecessor, inside the System. The outgoing transformers
 (`ICrisOutgoingCommandTransformer`) are not applied: a routed command's sensitive fields can't be encrypted for its

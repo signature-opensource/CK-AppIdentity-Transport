@@ -30,9 +30,9 @@ public sealed partial class CrisChannelFeature
         Throw.DebugAssert( inner != null );
         if( next != null )
         {
-            routed.Via.Add( _pocoDirectory.Create<IPartyRouteHop>( h => { h.FullName = local.FullName; h.PartyActorId = local.PartyActorId; } ) );
+            routed.Via.Add( local.FullName );
             routed.TargetPartyFullName = next;
-            monitor.Info( $"Forwarding '{inner.CrisPocoModel.PocoName}' routed from '{routed.Via[0].FullName}' to '{next}'." );
+            monitor.Info( $"Forwarding '{inner.CrisPocoModel.PocoName}' routed from '{routed.Via[0]}' to '{next}'." );
             _ = ForwardAsync( handler, token, routed, envelope, next );
             return null;
         }
@@ -45,11 +45,11 @@ public sealed partial class CrisChannelFeature
         else if( inner is ICommandTargetParty p && p.TargetPartyFullName != local.FullName ) refused = $"party command '{m.PocoName}' doesn't target '{local.FullName}'";
         if( refused != null )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Command routed from '{routed.Via[0].FullName}' is refused: {refused}." );
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Command routed from '{routed.Via[0]}' is refused: {refused}." );
             handler.SendError( monitor, token.Key, $"The routed command is refused: {refused}." );
             return null;
         }
-        monitor.Info( $"Executing '{m.PocoName}' routed from '{routed.Via[0].FullName}' (via {string.Join( " > ", routed.Via.Select( h => h.FullName ) )})." );
+        monitor.Info( $"Executing '{m.PocoName}' routed from '{routed.Via[0]}' (via {string.Join( " > ", routed.Via )})." );
         return inner;
     }
 
@@ -61,21 +61,15 @@ public sealed partial class CrisChannelFeature
         if( routed.Command is IPartyRoutedCommand ) return "it carries another routed command.";
         if( routed.Via.Count == 0 ) return "its Via is empty.";
         var last = routed.Via[^1];
-        if( last.FullName != sender.FullName || last.PartyActorId != sender.PartyActorId )
+        if( last != sender.FullName.Path )
         {
-            return $"its last hop is '{last.FullName}' (#{last.PartyActorId}), not the remote that sent it ('{sender.FullName}' #{sender.PartyActorId}).";
+            return $"its last hop is '{last}', not the remote that sent it ('{sender.FullName}').";
         }
         if( routed.Via.Count >= PartyRoute.MaxLength ) return $"it went through {routed.Via.Count} parties.";
-        if( routed.Via.Select( h => h.FullName ).Distinct( StringComparer.Ordinal ).Count() != routed.Via.Count
-            || routed.Via.Any( h => h.FullName == local.FullName ) )
+        if( routed.Via.Distinct( StringComparer.Ordinal ).Count() != routed.Via.Count
+            || routed.Via.Any( h => h == local.FullName.Path ) )
         {
             return "its Via contains a loop.";
-        }
-        // When the originating party is a remote of this party, its PartyActorId is the one it announced.
-        var origin = routed.Via[0];
-        if( local.Remotes.FirstOrDefault( r => r.FullName == origin.FullName ) is { } known && known.PartyActorId != origin.PartyActorId )
-        {
-            return $"its origin '{origin.FullName}' is #{origin.PartyActorId}, not #{known.PartyActorId}.";
         }
         return null;
     }
@@ -112,9 +106,9 @@ public sealed partial class CrisChannelFeature
         int i = routed.Via.Count;
         if( i >= routed.Path.Count
             || routed.Path[i] != local.FullName
-            || !routed.Via.Select( h => h.FullName ).SequenceEqual( routed.Path.Take( i ), StringComparer.Ordinal ) )
+            || !routed.Via.SequenceEqual( routed.Path.Take( i ), StringComparer.Ordinal ) )
         {
-            error = $"its path '{string.Join( " > ", routed.Path )}' doesn't lead to '{local.FullName}' after '{string.Join( " > ", routed.Via.Select( h => h.FullName ) )}'.";
+            error = $"its path '{string.Join( " > ", routed.Path )}' doesn't lead to '{local.FullName}' after '{string.Join( " > ", routed.Via )}'.";
             return false;
         }
         next = i + 1 < routed.Path.Count ? routed.Path[i + 1] : null;

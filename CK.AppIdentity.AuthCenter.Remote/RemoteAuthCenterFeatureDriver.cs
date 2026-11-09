@@ -96,10 +96,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         var monitor = context.Monitor;
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
-        var remote = new RemoteAuthCenter( center );
-        local.AddFeature( remote );
-        // Once all the features are set up (the Cris channel to the AuthCenter, the PartyActor registrar if any).
-        context.Trampoline.OnSuccess( () => remote.StartPartyActorIdsResolution( context.Monitor ) );
+        local.AddFeature( new RemoteAuthCenter( center ) );
         return true;
     }
 }

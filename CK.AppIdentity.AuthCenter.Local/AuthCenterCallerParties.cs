@@ -24,11 +24,11 @@ public sealed class AuthCenterCallerPartyService : ICallerPartyService
     }
 
     /// <inheritdoc />
-    public ValueTask<AuthLevel> GetMaxLevelAsync( IActivityMonitor monitor, int callerPartyId, ActorInfo actualActor, ActorInfo actor )
+    public ValueTask<AuthLevel> GetMaxLevelAsync( IActivityMonitor monitor, string callerPartyFullName, ActorInfo actualActor, ActorInfo actor )
     {
         foreach( var remote in _identity.AllRemotes )
         {
-            if( remote.PartyActorId == callerPartyId && AuthCenterEncryptionKeyHandler.GetLocal( remote ) != null )
+            if( remote.FullName.Path == callerPartyFullName && AuthCenterEncryptionKeyHandler.GetLocal( remote ) != null )
             {
                 return ValueTask.FromResult( AuthLevel.Normal );
             }

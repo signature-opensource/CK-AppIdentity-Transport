@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>The identity across the CK-AppIdentity Cris channels: a received command executes with the identity of its user, vouched for by the calling party (its CallerPartyId), capped by the receiver's ICallerPartyService, or proved by the user's token when a proof verifier exists.</Description>
+    <Description>The identity across the CK-AppIdentity Cris channels: a received command executes with the identity of its user, vouched for by the calling party (its CallerPartyFullName), capped by the receiver's ICallerPartyService, or proved by the user's token when a proof verifier exists.</Description>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.cris-auth.1.ci.101" />

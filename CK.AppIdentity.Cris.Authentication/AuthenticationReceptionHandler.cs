@@ -12,10 +12,9 @@ namespace CK.Auth;
 /// Gives a command received from a remote party the identity of its user, vouched for by that caller party:
 /// <list type="bullet">
 ///   <item>
-///   The <see cref="AuthenticationInfo.CallerPartyId"/> is the <see cref="IParty.PartyActorId"/> of the caller (see
+///   The <see cref="AuthenticationInfo.CallerPartyFullName"/> is the <see cref="IParty.FullName"/> of the caller (see
 ///   <see cref="CrisCallerParty"/>: the originating party of a <see cref="IPartyRoutedCommand"/>).
-///   A command that carries an identity (an <see cref="IAuthUnsafePart"/> with a non anonymous actor) is refused when
-///   the caller has no PartyActorId (0); an anonymous command executes as the anonymous.
+///   An anonymous command executes as the anonymous.
 ///   </item>
 ///   <item>
 ///   With the user's proof (see <see cref="IAuthenticationCallEnvelope"/>) and a <see cref="ICallerProofVerifier"/> that
@@ -57,14 +56,10 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
                                                                                              IAbstractCommand command,
                                                                                              ICrisCallEnvelope envelope )
     {
-        int callerId = caller.PartyActorId;
+        string callerName = caller.FullName;
         AuthenticationInfo info = AuthenticationInfo.None;
         if( command is IAuthUnsafePart part && CarriesIdentity( part ) )
         {
-            if( callerId == 0 )
-            {
-                return Refuse( monitor, services, $"'{caller}' has no PartyActorId: it cannot be the caller party of '{command.CrisPocoModel.PocoName}'." );
-            }
             AuthenticationInfo? proved = null;
             if( _proofVerifier != null && envelope is IAuthenticationCallEnvelope { Token: not null } proof )
             {
@@ -88,7 +83,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
                 }
                 var required = CrisAuthenticationService.GetRequiredLevel( part );
                 var granted = _callerPolicy != null
-                                ? await _callerPolicy.GetMaxLevelAsync( monitor, callerId, actualActor, actor ).ConfigureAwait( false )
+                                ? await _callerPolicy.GetMaxLevelAsync( monitor, callerName, actualActor, actor ).ConfigureAwait( false )
                                 : AuthLevel.None;
                 // A caller party alone never reaches Critical.
                 var level = Min( Min( required, granted ), AuthLevel.Normal );
@@ -100,7 +95,7 @@ public sealed class AuthenticationReceptionHandler : ICrisChannelReceptionHandle
             }
         }
         var hub = services.GetRequiredService<AmbientServiceHub>().CleanClone();
-        hub.Override( info.WithCallerParty( callerId ) );
+        hub.Override( info.WithCallerParty( callerName ) );
         return (null, hub);
     }
 

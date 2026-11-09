@@ -29,18 +29,13 @@ public sealed class CrisCallerParty
     /// <summary>
     /// Gets the full name of the caller party.
     /// </summary>
-    public string FullName => Route != null ? Route.Via[0].FullName : Sender.FullName;
-
-    /// <summary>
-    /// Gets the <see cref="IParty.PartyActorId"/> of the caller party.
-    /// </summary>
-    public int PartyActorId => Route != null ? Route.Via[0].PartyActorId : Sender.PartyActorId;
+    public string FullName => Route != null ? Route.Via[0] : Sender.FullName;
 
     /// <summary>
     /// Returns the sender or "'Origin' (via A > B)".
     /// </summary>
     /// <returns>A readable string.</returns>
     public override string ToString() => Route is { Via.Count: > 1 }
-                                            ? $"{FullName} (via {string.Join( " > ", Route.Via.Skip( 1 ).Select( h => h.FullName ) )})"
+                                            ? $"{FullName} (via {string.Join( " > ", Route.Via.Skip( 1 ) )})"
                                             : FullName;
 }
