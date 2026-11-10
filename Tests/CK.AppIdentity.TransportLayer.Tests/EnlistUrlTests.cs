@@ -90,6 +90,9 @@ public class EnlistUrlTests
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, services => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
 
+    // The enlistment URL selects the pending approval of the party that receives it.
+    static string ForParty( string page, ApplicationIdentityService party ) => $"{page}?party={Uri.EscapeDataString( party.FullName )}";
+
     static async Task<PeeringIssue?> WaitForIssueAsync( TransportManagerFeature f, int seconds, CancellationToken token )
     {
         var deadline = DateTime.UtcNow.AddSeconds( seconds );
@@ -116,7 +119,7 @@ public class EnlistUrlTests
 
         issue.ShouldNotBeNull( "The stranger must learn that it is unknown." );
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteCreation );
-        issue.EnlistUrl.ShouldBe( GhostPage,
+        issue.EnlistUrl.ShouldBe( ForParty( GhostPage, stranger ),
             "The caller claims the Ghost domain: the enlistment URL is the one of the approval page of the Ghost tenant domain." );
 
         logs.ExtractCurrentTexts().ShouldNotContain( t => t.Contains( "Protocol error" ),
@@ -134,7 +137,7 @@ public class EnlistUrlTests
         var issue = await WaitForIssueAsync( stranger.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteCreation );
-        issue.EnlistUrl.ShouldBe( RootPage );
+        issue.EnlistUrl.ShouldBe( ForParty( RootPage, stranger ) );
     }
 
     [Test, CancelAfter( 90000 )]
@@ -161,7 +164,8 @@ public class EnlistUrlTests
         var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
         issue!.Kind.ShouldBe( PeeringIssueKind.RequiresBothApproval );
-        issue.EnlistUrl.ShouldBe( "https://init.example.test/admin/app-identity/enlist" );
+        issue.EnlistUrl.ShouldBe( ForParty( "https://init.example.test/admin/app-identity/enlist", listener ),
+                                  "The URL selects the pending approval of the party that receives it." );
     }
 
     [Test, CancelAfter( 90000 )]
@@ -175,7 +179,7 @@ public class EnlistUrlTests
 
         var issue = await WaitForIssueAsync( stranger.GetRequiredFeature<TransportManagerFeature>(), 40, token );
         issue.ShouldNotBeNull();
-        issue!.EnlistUrl.ShouldBe( GhostPage );
+        issue!.EnlistUrl.ShouldBe( ForParty( GhostPage, stranger ) );
         issue.IsEnlistUrlAuthenticated.ShouldBeFalse(
             "Nothing authenticated this URL. An on-path attacker, or anyone who wins the race to the " +
             "port, substitutes their own and the operator enlists with them. Following it is a trust " +

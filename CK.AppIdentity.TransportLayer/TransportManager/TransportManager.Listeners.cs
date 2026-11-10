@@ -14,7 +14,12 @@ sealed partial class TransportManager
     /// the <see cref="PartyRoute.Target"/> of its "Enlistment" route (see <see cref="TransportFeatureDriver.EnlistmentRouteName"/>),
     /// derived from the System, never configured. Null when the local party knows no approval page.
     /// </summary>
+    /// <para>
+    /// The URL selects the pending approval of the party to approve on the approval page: <c>?party={its full name}</c>
+    /// is appended (escaped). When the URL would be too long with it, it is sent without it.
+    /// </para>
     /// <param name="local">The local party concerned (see <see cref="GetEnlistingLocalParty"/>).</param>
+    /// <param name="partyFullName">The full name of the party to approve (the one that receives the URL).</param>
     /// <returns>The enlistment url or null.</returns>
     /// <remarks>
     /// This is reached for <c>PeeringIssueKind.IncomingUnknown</c>, i.e. for a peer we have never heard of, whose
@@ -23,9 +28,15 @@ sealed partial class TransportManager
     /// is no injection vector - this is disclosure, and for enlistment it is the intent: the URL of an approval page is
     /// meant to be handed to an unauthenticated caller.
     /// </remarks>
-    internal string? GetEnlistRemoteUrl( ILocalParty local )
+    internal string? GetEnlistRemoteUrl( ILocalParty local, string partyFullName )
     {
         var u = local.Description.Routes.GetValueOrDefault( TransportFeatureDriver.EnlistmentRouteName )?.Target;
+        if( u != null )
+        {
+            var withParty = u + (u.Contains( '?' ) ? '&' : '?') + "party=" + System.Uri.EscapeDataString( partyFullName );
+            if( Encoding.UTF8.GetByteCount( withParty ) <= ZeroProtocol.MaxEnlistRemoteUrlLength ) u = withParty;
+            else Logger.Warn( $"The enlistment URL of '{local.FullName}' for '{partyFullName}' is too long with the party: sent without it." );
+        }
         // The URL travels inside messages whose maximum length is budgeted term by term (ZeroProtocol.FirstAnswerMaxLength).
         // Without a bound here a long or non-ASCII URL simply makes the reply exceed its budget and be dropped as Invalid -
         // the operator gets no enlistment link and no explanation. Refusing it at the source says why.

@@ -226,8 +226,9 @@ CK.AppIdentity), in the second phase of its description
   the URL of that client application followed by `/app-identity/enlist` (`EnlistmentPageSuffix`).
 - **The enlistment URL is the target of the "Enlistment" route** of the local party concerned (the owner of a known
   remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
-  that is unknown here, or that does not trust us, so that it can be enlisted. It is handed to unauthenticated
-  callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
+  that is unknown here, or that does not trust us, so that it can be enlisted, followed by `?party={its full name}`
+  (escaped: it selects its pending approval on the page; omitted when the URL would exceed `MaxEnlistRemoteUrlLength`).
+  It is handed to unauthenticated callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
 - **The pending approvals travel the "Enlistment" route up to its host** (`PartyDescription.Collected`, see
   [`CollectedItem`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/CollectedItem.cs)
   in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each

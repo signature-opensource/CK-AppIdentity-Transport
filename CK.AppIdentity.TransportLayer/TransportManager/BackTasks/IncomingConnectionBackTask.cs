@@ -632,7 +632,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         string? enlistUrl = issue is PeeringIssueKind.IncomingUnknown
                                      or PeeringIssueKind.RequiresRemoteApproval
                                      or PeeringIssueKind.RequiresBothApproval
-                                ? transportManager.GetEnlistRemoteUrl( transportManager.GetEnlistingLocalParty( existingParty, initialMessage.DomainName ) )
+                                ? transportManager.GetEnlistRemoteUrl( transportManager.GetEnlistingLocalParty( existingParty, initialMessage.DomainName ), initialMessage.FullName )
                                 : null;
         // The approval issues carry our nonce of the approval code for the initiator's key: its item keeps it
         // across the attempts (see ApprovalSession).
