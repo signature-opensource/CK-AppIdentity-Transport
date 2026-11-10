@@ -9,6 +9,8 @@ They are handled by [CK.AppIdentity.Enlistment](../CK.AppIdentity.Enlistment/REA
 | Type | Role |
 |---|---|
 | [`IApprovePartyCommand`](IApprovePartyCommand.cs) | Sent by the approval page (`ICommandAuthCritical`): the `PartyFullName` of the party to approve and the `Codes` read on it (one per party it waits on). Its result has one `IPartyApprovalOutcome` per holder of a pending approval of the party: empty when there is none. |
+| [`IGetPendingApprovalsQCommand`](IGetPendingApprovalsQCommand.cs) | Lists the pending approvals that reach the page (`ICommandAuthCritical`: the list exposes the names of the parties): one `IPendingApproval` per item. The operator chooses a party here rather than following a link. |
+| [`IPendingApproval`](IGetPendingApprovalsQCommand.cs) | The `PartyFullName`, the `HolderFullName`, the `KeyFingerprint`, the `Kind` ("Local" or "Both") and `Since`. A party that waits on several holders has one per holder. |
 | [`IPartyApprovalOutcome`](IApprovePartyCommand.cs) | The `HolderFullName` and the `PartyApprovalStatus` of the approval on that holder. |
 | [`PartyApprovalStatus`](IApprovePartyCommand.cs) | `Approved`, `CodeMismatch`, `NotReady` (the code is not exchanged yet), `NoPendingApproval`, `Unreachable`, `Refused`. |
 | [`IApprovePendingPartyCommand`](IApprovePendingPartyCommand.cs) | `[Internal]`: sent by the host of the page to the holder, down the way the pending approval came: the `Statement` and the `Codes` (beside it, never in it). |

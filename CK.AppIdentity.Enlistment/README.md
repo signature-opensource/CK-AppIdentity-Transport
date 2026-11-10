@@ -12,6 +12,10 @@ package sends the approval back down. The commands are in
 
 ## On the host of the approval page
 
+[`PartyApprovalHandlers`](PartyApprovalHandlers.cs) answers the `IGetPendingApprovalsQCommand`: the pending approvals
+collected along the "Enlistment" route by the current local party (read with
+`TransportFeatureDriver.TryReadPendingApprovalValue`), the oldest first.
+
 [`PartyApprovalHandlers`](PartyApprovalHandlers.cs) handles the `IApprovePartyCommand` (validated by `ICommandAuthCritical`,
 refused while impersonating: the operator approves as itself). For each pending approval of the party collected along
 the "Enlistment" route of the current local party:

@@ -51,6 +51,8 @@ public class EnlistmentTests
                                       typeof( IPartyApprovalOutcome ),
                                       typeof( IApprovePendingPartyCommand ),
                                       typeof( IPartyApprovalStatement ),
+                                      typeof( IGetPendingApprovalsQCommand ),
+                                      typeof( IPendingApproval ),
                                       typeof( PartyApprovalHandlers )];
 
     static readonly AuthenticationInfo _operator = AuthenticationInfo.CreateRestored( new ActorInfo( 3712, "Operator", AuthLevel.Critical ),
@@ -116,6 +118,17 @@ public class EnlistmentTests
         (await WaitForAsync( () => a.ApplicationIdentityService.Description.Collected.TryGetValue( route, out var items ) && items.Length == 1 ? "reached" : null ))
             .ShouldNotBeNull( "The pending approval reached the host." );
 
+        // The approval page lists the pending approval: D waits on B (the host doesn't need to follow a link).
+        var handlers = a.Services.GetRequiredService<PartyApprovalHandlers>();
+        var aLocal = new CurrentLocalParty( a.ApplicationIdentityService );
+        var pending = handlers.Handle( a.PocoDirectory.Create<IGetPendingApprovalsQCommand>(), aLocal, a.PocoDirectory ).ShouldHaveSingleItem();
+        pending.PartyFullName.ShouldBe( dName );
+        pending.HolderFullName.ShouldBe( bName );
+        pending.Kind.ShouldBe( "Local" );
+        var bIssue = b.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().Single( i => i.FullName == dName );
+        pending.KeyFingerprint.ShouldBe( bIssue.RemoteKeyFingerprintForApproval );
+        pending.Since.ShouldBe( bIssue.ApprovalPendingSince!.Value );
+
         // The code read on D (the attempts exchange it).
         var code = await WaitForAsync( () => d.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().FirstOrDefault()?.ApprovalCode );
         code.ShouldNotBeNull();
@@ -175,5 +188,6 @@ public class EnlistmentTests
             .ShouldNotBeNull( "D's key is trusted by B: they connect." );
         (await WaitForAsync( () => a.ApplicationIdentityService.Description.Collected.Count == 0 ? "gone" : null )).ShouldNotBeNull();
         (await ApproveAsync( a, dName, code )).ShouldBeEmpty( "Nothing to approve anymore." );
+        handlers.Handle( a.PocoDirectory.Create<IGetPendingApprovalsQCommand>(), aLocal, a.PocoDirectory ).ShouldBeEmpty();
     }
 }

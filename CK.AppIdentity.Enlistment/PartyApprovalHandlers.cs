@@ -55,6 +55,37 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
     }
 
     /// <summary>
+    /// Lists the pending approvals collected along the "Enlistment" route by the local party (the host of the approval
+    /// page), the oldest first.
+    /// </summary>
+    /// <param name="command">The query.</param>
+    /// <param name="current">The local party: the host of the approval page.</param>
+    /// <param name="pocos">The poco directory.</param>
+    /// <returns>The pending approvals (one per holder of a party).</returns>
+    [CommandHandler]
+    public IList<IPendingApproval> Handle( IGetPendingApprovalsQCommand command, CurrentLocalParty current, PocoDirectory pocos )
+    {
+        var result = new List<IPendingApproval>();
+        if( current.LocalParty.Description.Collected.TryGetValue( TransportFeatureDriver.EnlistmentRouteName, out var items ) )
+        {
+            foreach( var item in items )
+            {
+                if( !TransportFeatureDriver.TryReadPendingApprovalValue( item.Value, out var pending ) ) continue;
+                result.Add( pocos.Create<IPendingApproval>( a =>
+                {
+                    a.PartyFullName = pending.PartyFullName;
+                    a.HolderFullName = item.Holder;
+                    a.KeyFingerprint = pending.Fingerprint;
+                    a.Kind = pending.Kind;
+                    a.Since = pending.Since;
+                } ) );
+            }
+        }
+        result.Sort( ( a, b ) => a.Since.CompareTo( b.Since ) );
+        return result;
+    }
+
+    /// <summary>
     /// Sends the approval of a party to every party that holds a pending approval of it.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
@@ -79,11 +110,13 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
             var keys = host.GetRequiredFeature<ILocalKeys>();
             foreach( var item in items )
             {
-                if( !TransportFeatureDriver.TryReadPendingApprovalValue( item.Value, out var party, out var fingerprint )
-                    || party != command.PartyFullName )
+                if( !TransportFeatureDriver.TryReadPendingApprovalValue( item.Value, out var pending )
+                    || pending.PartyFullName != command.PartyFullName )
                 {
                     continue;
                 }
+                var party = pending.PartyFullName;
+                var fingerprint = pending.Fingerprint;
                 var statement = pocos.Create<IPartyApprovalStatement>( s =>
                 {
                     s.PartyFullName = party;
