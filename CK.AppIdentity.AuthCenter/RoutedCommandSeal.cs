@@ -17,9 +17,10 @@ namespace CK.AppIdentity.AuthCenter;
 /// The header is: version(1) ‖ destination ‖ tokenDigest(32) ‖ ticks(8) ‖ nonce(16) ‖ encrypted(1), where the destination
 /// is the full name of the party that executes the command, the token digest the SHA-256 of the token's UTF-8 bytes (the
 /// seal is bound to the proof it travels with), the ticks the creation time (Utc) and the nonce random (a seal is used
-/// once). The encrypted flag is reserved for the encryption of the command (not supported yet: a sealed command is in
-/// clear). The signature (<see cref="Purpose"/>) covers the header followed by the SHA-256 of the command's bytes: the
-/// Authentication Center verifies it without the command.
+/// once). The encrypted flag tells that the bytes are the encryption of the user's proof and of the command for the
+/// destination (with the header as associated data, see <see cref="AuthCenterRoutedCommandSeal"/>). The signature
+/// (<see cref="Purpose"/>) covers the header followed by the SHA-256 of the bytes (encrypt, then sign): the Authentication
+/// Center verifies it without the command.
 /// </para>
 /// </summary>
 public static class RoutedCommandSeal
@@ -61,6 +62,15 @@ public static class RoutedCommandSeal
     /// <returns>The header and the encoded signature.</returns>
     internal static (byte[] Header, byte[] Signature) Create( ILocalKeys keys, string destination, string token, ReadOnlySpan<byte> sealedCommand, DateTime utcNow )
     {
+        var header = CreateHeader( destination, token, utcNow, encrypted: false );
+        return (header, Sign( keys, header, sealedCommand, utcNow ));
+    }
+
+    /// <summary>
+    /// Creates the header of a seal.
+    /// </summary>
+    internal static byte[] CreateHeader( string destination, string token, DateTime utcNow, bool encrypted )
+    {
         var m = new MemoryStream();
         using( var w = new BinaryWriter( m, Encoding.UTF8, leaveOpen: true ) )
         {
@@ -69,12 +79,22 @@ public static class RoutedCommandSeal
             w.Write( GetTokenDigest( token ) );
             w.Write( utcNow.Ticks );
             w.Write( RandomNumberGenerator.GetBytes( _nonceLength ) );
-            w.Write( false );
+            w.Write( encrypted );
         }
-        var header = m.ToArray();
-        var signature = keys.Sign( Purpose, GetSignedData( header, GetPayloadDigest( sealedCommand ) ), utcNow + Lifetime );
-        return (header, signature.Encoded.ToArray());
+        return m.ToArray();
     }
+
+    /// <summary>
+    /// Signs a header and the bytes it seals: the encoded signature.
+    /// </summary>
+    internal static byte[] Sign( ILocalKeys keys, ReadOnlySpan<byte> header, ReadOnlySpan<byte> sealedCommand, DateTime utcNow )
+        => keys.Sign( Purpose, GetSignedData( header, GetPayloadDigest( sealedCommand ) ), utcNow + Lifetime ).Encoded.ToArray();
+
+    /// <summary>
+    /// Gets whether a header states that the bytes are encrypted. False for a header that can't be read (its checks
+    /// refuse it).
+    /// </summary>
+    internal static bool IsEncrypted( ReadOnlySpan<byte> header ) => header.Length > 0 && header[0] == _version && header[^1] == 1;
 
     /// <summary>
     /// Gets the data covered by the signature: the header followed by the digest of the command.
@@ -112,7 +132,7 @@ public static class RoutedCommandSeal
         string destination;
         byte[] tokenDigest;
         long ticks;
-        bool encrypted;
+        bool encrypted; // Read for the format: the encryption is the seal's business (AuthCenterRoutedCommandSeal).
         try
         {
             using var r = new BinaryReader( new MemoryStream( header.ToArray(), writable: false ), Encoding.UTF8 );
@@ -140,11 +160,6 @@ public static class RoutedCommandSeal
         catch( Exception ex ) when( ex is EndOfStreamException or FormatException or ArgumentException )
         {
             return Malformed( logger );
-        }
-        if( encrypted )
-        {
-            logger.Warn( "Routed command seal refused: an encrypted command is not supported." );
-            return false;
         }
         if( destination != expectedDestination )
         {

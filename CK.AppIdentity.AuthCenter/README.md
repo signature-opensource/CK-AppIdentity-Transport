@@ -159,7 +159,13 @@ its level, `Critical` included, across any number of parties of the System:
   the destination (`IVerifyCallerProofCommand`: the asking party must be the destination). A seal is used once (its
   nonce is kept for its 5 minutes lifetime). A routed proof without a valid seal, or routed from another origin than the
   session party, is ignored (a `SecurityCritical` warning): the hops can't alter the command, re-target it, nor use the
-  proof for another command. The command is in clear (its encryption is to come).
+  proof for another command.
+- **Encrypted for its destination** when its key is known (the origin's `IPartyEncryptionKeyDirectory`): the proof and
+  the command are encrypted with the header as associated data, then signed (encrypt, then sign). The envelope carries
+  the seal, not the proof: a hop sees neither the command nor the proof. The destination decrypts it with its
+  party's encryption keys, puts the proof back into the envelope and reads the command from the decrypted bytes. Without
+  a verified key for the destination, the command is signed only, in clear, with the proof in the envelope (a
+  warning).
 - **Forwarding it** ([`AuthCenterProofForwardFilter`](AuthCenterProofForwardFilter.cs)): a party that forwards a routed
   command reads its proof first. A proof that doesn't verify is removed (and logged against the sender); a party without
   Authentication Center can't read it and removes it: the routed command arrives without proof.

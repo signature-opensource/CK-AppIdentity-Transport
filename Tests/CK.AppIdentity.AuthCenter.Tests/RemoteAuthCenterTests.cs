@@ -459,6 +459,9 @@ public class RemoteAuthCenterTests
         // The sender of a routed command is its last hop: here, the remote as known by the AuthCenter.
         var lastHop = p.Center.ApplicationIdentityService.Remotes.Single();
         using var scope = p.Center.CreateScopeServices();
+        var seal = new AuthCenterRoutedCommandSeal();
+        // The session party encrypts for the AuthCenter with the key of its description.
+        for( int i = 0; i < 100 && sessionParty.Remotes.Single().Description.EncryptionKey == null; ++i ) await Task.Delay( 100 );
 
         IAuthenticationCallEnvelope Sealed( string destination, byte[] sealedBytes )
         {
@@ -470,7 +473,7 @@ public class RemoteAuthCenterTests
         async Task<IAuthenticationCallEnvelope> SealedByTheHookAsync( string destination, IPartyRoutedCommand routedAtOrigin )
         {
             var e = Proof( p.Center, token, binding );
-            (await new AuthCenterRoutedCommandSeal().SealAsync( TestHelper.Monitor, null!, sessionParty, destination, null!, routedAtOrigin, e )).ShouldBeTrue();
+            (await seal.SealAsync( TestHelper.Monitor, null!, sessionParty, destination, null!, routedAtOrigin, e )).ShouldBeTrue();
             e.RoutedSeal.ShouldNotBeNull();
             return e;
         }
@@ -483,11 +486,28 @@ public class RemoteAuthCenterTests
             }
         }
 
-        // Sealed by the session party (its hook) for the AuthCenter: the Critical level is kept.
+        // Sealed by the session party (its hook) for the AuthCenter: encrypted, a hop sees neither the command nor the proof.
         var route = Routed( p.Center, origin, command );
         var proof = await SealedByTheHookAsync( centerName, route );
+        route.SealedCommand.ShouldNotBe( command );
+        proof.Token.ShouldBeNull();
+        proof.BindingSecretHash.ShouldBeNull();
+        // An altered ciphertext can't be decrypted by the AuthCenter (the destination).
+        var altered = Routed( p.Center, origin, route.SealedCommand!.ToArray() );
+        altered.SealedCommand![^1] ^= 1;
+        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, altered, proof )).ShouldBeNull();
+        // The AuthCenter decrypts it: the command and the proof are back, the Critical level is kept.
+        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, route, proof )).ShouldBe( command );
+        proof.Token.ShouldBe( token );
+        proof.BindingSecretHash.ShouldBe( binding );
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldNotBeNull()
             .ActualActor.Level.ShouldBe( AuthLevel.Critical );
+        // No verified encryption key for the destination: signed only, in clear, the proof in the envelope.
+        var signedOnly = Routed( p.Center, origin, command );
+        var signedOnlyProof = await SealedByTheHookAsync( "Test/$Unknown", signedOnly );
+        signedOnly.SealedCommand.ShouldBe( command );
+        signedOnlyProof.Token.ShouldBe( token );
+        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, signedOnly, signedOnlyProof )).ShouldBe( command );
         // A seal is used once.
         await RefusedAsync( route, proof, "it has already been used" );
         // No seal.
