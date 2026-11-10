@@ -285,9 +285,22 @@ public sealed class PeeringIssue
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="code">The code read on the remote party.</param>
     /// <returns>True when the code matched and the key is now trusted, false otherwise (this is logged).</returns>
-    public bool TryApprove( IActivityMonitor monitor, string code )
+    public bool TryApprove( IActivityMonitor monitor, string code ) => TryApprove( monitor, code, null, out _ );
+
+    /// <summary>
+    /// Same as <see cref="TryApprove(IActivityMonitor, string)"/>, but approves only the key whose fingerprint is
+    /// <paramref name="expectedFingerprint"/> (see <see cref="RemoteKeyFingerprintForApproval"/>): a listener keeps several
+    /// keys presented by the same remote, a code that matches another one approves nothing.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="code">The code read on the remote party.</param>
+    /// <param name="expectedFingerprint">The fingerprint of the key to approve. Null for any key the remote presented.</param>
+    /// <param name="notReady">True when the code can't be checked yet: the next connection attempt exchanges it.</param>
+    /// <returns>True when the code matched the expected key and the key is now trusted, false otherwise (this is logged).</returns>
+    public bool TryApprove( IActivityMonitor monitor, string code, string? expectedFingerprint, out bool notReady )
     {
-        if( _cloneSource != null ) return _cloneSource.TryApprove( monitor, code );
+        notReady = false;
+        if( _cloneSource != null ) return _cloneSource.TryApprove( monitor, code, expectedFingerprint, out notReady );
         lock( _lock )
         {
             var remote = _remote;
@@ -303,7 +316,6 @@ public sealed class PeeringIssue
             }
             var localHead = remote.RemoteKeys.LocalKeys.State.Tail[^1];
             KeyEvent? key;
-            bool notReady = false;
             if( IsListener )
             {
                 key = remote.Approval.FindListenerApproval( normalized,
@@ -326,6 +338,11 @@ public sealed class PeeringIssue
                 monitor.Warn( notReady
                                 ? $"The approval code with '{_fullName}' is not ready yet: retry once the next connection attempt has exchanged it."
                                 : $"The approval code '{normalized}' doesn't match any key presented by '{_fullName}'." );
+                return false;
+            }
+            if( expectedFingerprint != null && PublicKeyFingerprint.Compute( key.Spki.Span ) != expectedFingerprint )
+            {
+                monitor.Warn( $"The approval code '{normalized}' matches a key presented by '{_fullName}' that is not the expected '{expectedFingerprint}'." );
                 return false;
             }
             remote.RemoteKeys.SetTrustedIdentity( monitor, key );

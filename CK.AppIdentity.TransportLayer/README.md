@@ -228,6 +228,14 @@ CK.AppIdentity), in the second phase of its description
   remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
   that is unknown here, or that does not trust us, so that it can be enlisted. It is handed to unauthenticated
   callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
+- **The pending approvals travel the "Enlistment" route up to its host** (`PartyDescription.Collected`, see
+  [`CollectedItem`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/CollectedItem.cs)
+  in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each
+  `RequiresLocalApproval` or `RequiresBothApproval` issue of a local party is an item of the route, whose value is a
+  JSON object (`GetPendingApprovalValue`, read by `TryReadPendingApprovalValue`): `{ "Party", "Fingerprint", "Kind"
+  ("Local" or "Both"), "Since" }`, never the approval code. Each party collects its own items and those of the
+  connected remotes whose route goes through it, so the host of the approval page knows every pending approval of the
+  System that reaches it, and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
 
 ## Peering issues
 
@@ -246,7 +254,10 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
   `RequiresBothApproval`) expose an `ApprovalCode` ("1234-5678"), also logged when it appears. Both parties compute the
   same code from their full names, their identity keys and a nonce of each side, exchanged by the connection attempts.
   An operator reads it on the remote party itself and enters it on the party that must approve:
-  `TryApprove( monitor, code )` pins the key whose code matches.
+  `TryApprove( monitor, code )` pins the key whose code matches. `TryApprove( monitor, code, expectedFingerprint, out notReady )`
+  pins it only when it is the expected key (a listener keeps several keys of the same remote), and says when the code
+  can't be checked yet. `ApprovalPendingSince` is when the key started to wait: it changes only when another key waits
+  (`LastUpdated` changes with each attempt).
   - The initiator commits to its nonce in its initial message, the listener answers its own in its rejection, and the
     initiator reveals its nonce in its reply: nobody chooses its values once it knows the other's, so an attacker can't
     compute a key whose code matches. Each pending key is one chance in 10^8.

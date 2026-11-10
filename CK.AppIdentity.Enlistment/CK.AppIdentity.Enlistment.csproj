@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The enlistment of a party in a System: the host of the approval page signs the approval of a pending party and sends it down to the party that holds the pending approval, which checks it and approves the key with the operator's code.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.Cris.Authentication\CK.AppIdentity.Cris.Authentication.csproj" />
+    <ProjectReference Include="..\CK.IO.AppIdentity.Enlistment\CK.IO.AppIdentity.Enlistment.csproj" />
+  </ItemGroup>
+</Project>

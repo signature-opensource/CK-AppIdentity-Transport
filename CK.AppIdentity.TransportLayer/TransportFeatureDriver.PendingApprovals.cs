@@ -1,5 +1,6 @@
 using CK.Core;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -64,5 +65,40 @@ public partial class TransportFeatureDriver
             w.WriteEndObject();
         }
         return Encoding.UTF8.GetString( buffer.WrittenSpan );
+    }
+
+    /// <summary>
+    /// Reads the value of a pending approval (see <see cref="GetPendingApprovalValue"/>): the party to approve and the
+    /// fingerprint of its key.
+    /// </summary>
+    /// <param name="value">The value of the collected item.</param>
+    /// <param name="partyFullName">The full name of the party to approve.</param>
+    /// <param name="fingerprint">The fingerprint of the key to approve.</param>
+    /// <returns>True on success, false when the value is not a pending approval.</returns>
+    public static bool TryReadPendingApprovalValue( string value,
+                                                    [NotNullWhen( true )] out string? partyFullName,
+                                                    [NotNullWhen( true )] out string? fingerprint )
+    {
+        partyFullName = null;
+        fingerprint = null;
+        try
+        {
+            using var doc = JsonDocument.Parse( value );
+            var e = doc.RootElement;
+            if( e.ValueKind == JsonValueKind.Object
+                && e.TryGetProperty( "Party", out var p ) && p.ValueKind == JsonValueKind.String
+                && e.TryGetProperty( "Fingerprint", out var f ) && f.ValueKind == JsonValueKind.String )
+            {
+                partyFullName = p.GetString()!;
+                fingerprint = f.GetString()!;
+                return partyFullName.Length > 0 && fingerprint.Length > 0;
+            }
+        }
+        catch( JsonException )
+        {
+        }
+        partyFullName = null;
+        fingerprint = null;
+        return false;
     }
 }

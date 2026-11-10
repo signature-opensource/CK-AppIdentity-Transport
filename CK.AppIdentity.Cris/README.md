@@ -55,8 +55,9 @@ remote accepts from us (null until its first advertisement, see `WaitForAccepted
 
 The advertisement also carries the description of the party (`IParty.Description` of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md#the-description-of-a-party):
-its public URL, its client applications and its roles): the receiver sets it on its remote (`IRemoteParty.SetDescription`,
-persisted). It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know
+its public URL, its client applications, its roles, its data announcements, its routes, the items collected along them
+and its encryption key): the receiver sets it on its remote (`IRemoteParty.SetDescription`, persisted but for the
+routes, the collected items and the key). It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know
 their URL once the host has started). An invalid description is logged and ignored: the remote keeps its last known one.
 
 Its binary form is [`PartyDescriptionCodec`](PartyDescriptionCodec.cs): the description and each client application are
