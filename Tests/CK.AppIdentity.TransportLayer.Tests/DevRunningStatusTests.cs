@@ -104,4 +104,34 @@ public class DevRunningStatusTests
         senderStatus = await WaitForAsync( GetStatusPath( sender ), e => !e.GetProperty( "Ready" ).GetBoolean(), cancel );
         senderStatus.GetProperty( "Transport" ).GetProperty( "Remotes" )[0].GetProperty( "Availability" ).GetString().ShouldNotBe( "Connected" );
     }
+
+    [Test]
+    [CancelAfter( 30000 )]
+    public async Task a_sender_that_waits_for_an_approval_is_ready_and_says_what_is_pending_Async( CancellationToken cancel )
+    {
+        TestHelper.CleanupFolder( TestHelper.TestProjectFolder.Combine( StorePath ) );
+        await using var listener = await StartAsync( c =>
+        {
+            c["FullName"] = "Test/$DevApprover";
+            c["Parties:0:PartyName"] = "$DevWaiting";
+            // The listener never trusts the sender automatically: an operator must approve it.
+            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Defaults:ListeningAddress:0"] = "tcp:127.0.0.1:37129";
+        }, cancel );
+        await using var sender = await StartAsync( c =>
+        {
+            c["FullName"] = "Test/$DevWaiting";
+            c["Parties:0:PartyName"] = "$DevApprover";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37129";
+        }, cancel );
+        // Not connected, but ready: its approval is pending (with the approval code once the attempts exchanged it).
+        var status = await WaitForAsync( GetStatusPath( sender ),
+                                         e => e.GetProperty( "Transport" ).TryGetProperty( "Pending", out var p )
+                                              && p.EnumerateArray().Any( m => m.GetString()!.Contains( "approval code" ) ),
+                                         cancel );
+        status.GetProperty( "Ready" ).GetBoolean().ShouldBeTrue();
+        status.GetProperty( "Transport" ).GetProperty( "Remotes" )[0].GetProperty( "Availability" ).GetString().ShouldNotBe( "Connected" );
+        status.GetProperty( "Transport" ).GetProperty( "Pending" ).EnumerateArray().Single().GetString()
+              .ShouldStartWith( "'Test/$DevApprover/#Dev' must accept this party: " );
+    }
 }

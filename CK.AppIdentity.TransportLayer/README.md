@@ -207,7 +207,10 @@ In a development solution, the "DevRunningStatus" feature of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity) writes the running status of the party
 (`#Dev/Store/.../DevRunningStatus.json`, read by the `#Dev/Start.ps1` launcher). The
 [`TransportFeatureDriver`](TransportFeatureDriver.DevRunningStatus.cs) adds a `Transport` section: the `Listeners` (their `EndPointDescription`, with the actual listening address when it differs) and the
-`Availability` of each remote. The party is `Ready` once every outgoing remote (with an `Address`) is `Connected`.
+`Availability` of each remote, and its `Pending` messages: for each remote that must accept the party
+(`RequiresRemoteApproval`, `RequiresBothApproval`, `RequiresRemoteCreation`), its enlistment URL and the approval code,
+printed by the launcher. The party is `Ready` once every outgoing remote (with an `Address`) is `Connected` or waits for
+an operator to accept the party.
 
 ## The routes and the enlistment URL
 

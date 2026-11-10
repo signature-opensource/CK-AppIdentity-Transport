@@ -13,9 +13,12 @@ namespace CK.AppIdentity.TransportLayer;
 ///     <item>"Listeners": the <see cref="TransportListener.EndPointDescription"/> of the listeners (with the actual listening
 ///     address when it differs from the configured one).</item>
 ///     <item>"Remotes": the <see cref="TransportFeature.ConnectionAvailability"/> of each remote that has a transport.</item>
+///     <item>"Pending": what an operator must do: for each remote that must accept this party (a peering issue
+///     <see cref="PeeringIssueKind.RequiresRemoteApproval"/>, <see cref="PeeringIssueKind.RequiresBothApproval"/> or
+///     <see cref="PeeringIssueKind.RequiresRemoteCreation"/>), its enlistment URL and the approval code.</item>
 /// </list>
 /// The party is ready when every outgoing remote (with a <see cref="TransportFeature.TargetAddress"/>) is
-/// <see cref="ConnectionAvailability.Connected"/>.
+/// <see cref="ConnectionAvailability.Connected"/> or waits for an operator to accept this party (it is "Pending").
 /// </summary>
 public partial class TransportFeatureDriver : IDevRunningStatusContributor
 {
@@ -27,10 +30,42 @@ public partial class TransportFeatureDriver : IDevRunningStatusContributor
         {
             transport.ConnectionAvailabilityChanged.Sync += ( m, t ) => onChanged();
             transport.TransportChanged.Sync += ( m, t ) => onChanged();
+            transport.PeeringIssueChanged.Sync += ( m, i ) => onChanged();
         }
     }
 
-    bool IDevRunningStatusContributor.IsReady => GetRunningStatusTransports().All( t => t.TargetAddress == null || t.ConnectionAvailability == ConnectionAvailability.Connected );
+    bool IDevRunningStatusContributor.IsReady
+    {
+        get
+        {
+            var waiting = GetRunningStatusWaitingIssues();
+            return GetRunningStatusTransports().All( t => t.TargetAddress == null
+                                                          || t.ConnectionAvailability == ConnectionAvailability.Connected
+                                                          || waiting.Any( i => i.Remote == t ) );
+        }
+    }
+
+    // The issues where a remote must accept us: an operator acts, the party is not stuck.
+    List<PeeringIssue> GetRunningStatusWaitingIssues()
+    {
+        return ApplicationIdentityService.GetFeature<TransportManagerFeature>()?
+                    .GetClonedPeeringIssues()
+                    .Where( i => i.Remote != null
+                                 && i.Kind is PeeringIssueKind.RequiresRemoteApproval
+                                              or PeeringIssueKind.RequiresBothApproval
+                                              or PeeringIssueKind.RequiresRemoteCreation )
+                    .ToList()
+               ?? [];
+    }
+
+    static string GetPendingMessage( PeeringIssue issue )
+    {
+        var remote = issue.Remote!.Party.FullName.Path;
+        var what = issue.EnlistUrl != null ? $"open {issue.EnlistUrl}" : "no approval page is known";
+        var code = issue.ApprovalCode != null ? $", the approval code is {issue.ApprovalCode}" : "";
+        var both = issue.Kind == PeeringIssueKind.RequiresBothApproval ? " (this party must also approve it, with the same code)" : "";
+        return $"'{remote}' must accept this party: {what}{code}{both}.";
+    }
 
     void IDevRunningStatusContributor.Write( Utf8JsonWriter writer )
     {
@@ -51,6 +86,13 @@ public partial class TransportFeatureDriver : IDevRunningStatusContributor
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+        var waiting = GetRunningStatusWaitingIssues();
+        if( waiting.Count > 0 )
+        {
+            writer.WriteStartArray( "Pending" );
+            foreach( var i in waiting ) writer.WriteStringValue( GetPendingMessage( i ) );
+            writer.WriteEndArray();
+        }
         writer.WriteEndObject();
     }
 
