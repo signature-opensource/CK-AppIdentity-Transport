@@ -72,6 +72,27 @@ public class RoutedCommandTests
         }
     }
 
+    // Seals at the origin (it marks the envelope with the destination), unseals at the destination (or refuses).
+    public sealed class TestSeal : ICrisRoutedCommandSeal
+    {
+        public static readonly ConcurrentQueue<string> Sealed = new();
+        public static readonly ConcurrentQueue<string> Unsealed = new();
+        public static volatile bool Refuse;
+
+        public ValueTask<bool> SealAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, string destination, IAbstractCommand command, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+        {
+            Sealed.Enqueue( $"{command.CrisPocoModel.PocoName.Split( '.' )[^1]} from {origin.FullName} to {destination}" );
+            ((ReceptionTests.ITestEnvelope)envelope).CultureName = "sealed";
+            return ValueTask.FromResult( true );
+        }
+
+        public ValueTask<byte[]?> UnsealAsync( IActivityMonitor monitor, IRemoteParty sender, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+        {
+            Unsealed.Enqueue( $"{((ReceptionTests.ITestEnvelope)envelope).CultureName} on {sender.Owner.FullName}" );
+            return ValueTask.FromResult( Refuse ? null : routed.SealedCommand );
+        }
+    }
+
     public sealed class RouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public RouteHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
@@ -195,6 +216,46 @@ public class RoutedCommandTests
         // A path that doesn't lead to the receiver.
         r = await SendAsync( a, ( s, sp ) => s.SendAlongPathAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), [bName, cName] ) );
         r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "doesn't lead to" );
+    }
+
+    [Test]
+    public async Task the_routed_command_is_sealed_at_its_origin_and_unsealed_at_its_destination_Async()
+    {
+        RecordingReceptionHandler.Callers.Clear();
+        TestSeal.Sealed.Clear();
+        TestSeal.Unsealed.Clear();
+        TestSeal.Refuse = false;
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( TestSeal )],
+                                                                         listenerConfiguration: c =>
+                                                                         {
+                                                                             c["Parties:1:PartyName"] = "$C";
+                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                         },
+                                                                         listenerTypes: _common );
+        var (a, b) = pair;
+        await using var c = await RunningApplication.CreateAsync( TestHelper.Monitor,
+                                                                  isSender: true,
+                                                                  c => c["FullName"] = "Test/$C",
+                                                                  null,
+                                                                  [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver ), typeof( TestSeal )] );
+        string aName = a.ApplicationIdentityService.FullName;
+        string bName = b.ApplicationIdentityService.FullName;
+        string cName = c.ApplicationIdentityService.FullName;
+        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
+
+        var r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed" ) );
+        r.ShouldBe( cName );
+        // Sealed for its destination (the host of the route), unsealed by it, before its execution.
+        TestSeal.Sealed.ShouldContain( $"IWhereRoutedCommand from {aName} to {cName}" );
+        TestSeal.Unsealed.ShouldContain( $"sealed on {cName}" );
+        RecordingReceptionHandler.Callers.ShouldContain( $"IWhereRoutedCommand from {aName} (via {bName}) [sealed]" );
+
+        // The destination refuses to unseal it.
+        TestSeal.Refuse = true;
+        r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed" ) );
+        r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "its command cannot be unsealed" );
+        TestSeal.Refuse = false;
     }
 
     [Test]

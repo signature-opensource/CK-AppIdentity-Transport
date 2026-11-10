@@ -9,8 +9,9 @@ namespace CK.AppIdentity.Cris;
 /// <summary>
 /// Sends a command to a party of the System that is not a remote, in a <see cref="IPartyRoutedCommand"/>: toward the
 /// host of a route, or along an explicit path. The local party is the originating party: the caller party of the command
-/// on the destination. The command is serialized here (<see cref="IPartyRoutedCommand.SealedCommand"/>), then the
-/// <see cref="ICrisCallEnvelopeContributor"/> fill its envelope (the user's proof and its seal), the
+/// on the destination. The command is serialized here (<see cref="IPartyRoutedCommand.SealedCommand"/>), the
+/// <see cref="ICrisCallEnvelopeContributor"/> fill its envelope (the user's proof), the optional
+/// <see cref="ICrisRoutedCommandSeal"/> seals it, the
 /// <see cref="ICrisOutgoingCommandTransformer"/> are not applied (they prepare a command for the remote that receives it,
 /// not for the destination).
 /// <para>
@@ -22,16 +23,19 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
 {
     readonly PocoDirectory _pocoDirectory;
     readonly IEnumerable<ICrisCallEnvelopeContributor> _contributors;
+    readonly ICrisRoutedCommandSeal? _seal;
 
     /// <summary>
     /// Initializes a new sender.
     /// </summary>
     /// <param name="pocoDirectory">The poco directory.</param>
     /// <param name="contributors">The contributors to the envelope.</param>
-    public PartyRoutedCommandSender( PocoDirectory pocoDirectory, IEnumerable<ICrisCallEnvelopeContributor> contributors )
+    /// <param name="seal">The optional seal of the routed commands.</param>
+    public PartyRoutedCommandSender( PocoDirectory pocoDirectory, IEnumerable<ICrisCallEnvelopeContributor> contributors, ICrisRoutedCommandSeal? seal = null )
     {
         _pocoDirectory = pocoDirectory;
         _contributors = contributors;
+        _seal = seal;
     }
 
     /// <summary>
@@ -95,6 +99,15 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         foreach( var c in _contributors )
         {
             c.Contribute( monitor, services, channel.Party, command, routed, envelope );
+        }
+        if( _seal != null )
+        {
+            // The destination: the last party of the path, or the host of the route (checked by TryGetNextHop).
+            var destination = routed.Path.Count > 0 ? routed.Path[^1] : origin.Description.Routes[routed.RouteName!].Host;
+            if( !await _seal.SealAsync( monitor, services, origin, destination, command, routed, envelope ).ConfigureAwait( false ) )
+            {
+                return Error( monitor, $"Unable to seal '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{destination}'." );
+            }
         }
         monitor.Info( $"Sending '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{next}'." );
         try

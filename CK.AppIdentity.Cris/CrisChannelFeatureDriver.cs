@@ -21,6 +21,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
     readonly ICrisChannelReceptionHandler? _receptionHandler;
     readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
     readonly IEnumerable<ICrisForwardedEnvelopeFilter> _forwardedEnvelopeFilters;
+    readonly ICrisRoutedCommandSeal? _routedCommandSeal;
 
     public CrisChannelFeatureDriver( TransportFeatureDriver transport,
                                      PocoDirectory pocoDirectory,
@@ -31,13 +32,15 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
                                      CrisDirectory crisDirectory,
                                      IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers,
                                      IEnumerable<ICrisForwardedEnvelopeFilter> forwardedEnvelopeFilters,
-                                     ICrisChannelReceptionHandler? receptionHandler = null )
+                                     ICrisChannelReceptionHandler? receptionHandler = null,
+                                     ICrisRoutedCommandSeal? routedCommandSeal = null )
         : base( transport, isAllowedByDefault: true )
     {
         _crisDirectory = crisDirectory;
         _receptionHandler = receptionHandler;
         _incomingTransformers = incomingTransformers;
         _forwardedEnvelopeFilters = forwardedEnvelopeFilters;
+        _routedCommandSeal = routedCommandSeal;
         _pocoDirectory = pocoDirectory;
         _errorFactory = errorFactory;
         _callResultFactory = callResultFactory;
@@ -47,7 +50,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers, _forwardedEnvelopeFilters );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers, _forwardedEnvelopeFilters, _routedCommandSeal );
         return true;
     }
 }

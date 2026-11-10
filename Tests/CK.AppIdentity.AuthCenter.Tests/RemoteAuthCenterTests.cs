@@ -466,6 +466,14 @@ public class RemoteAuthCenterTests
             (e.RoutedSeal, e.RoutedSignature) = RoutedCommandSeal.Create( sessionKeys, destination, token, sealedBytes, DateTime.UtcNow );
             return e;
         }
+        // The seal of the origin (the session party): its hook signs the routed command that carries the proof.
+        async Task<IAuthenticationCallEnvelope> SealedByTheHookAsync( string destination, IPartyRoutedCommand routedAtOrigin )
+        {
+            var e = Proof( p.Center, token, binding );
+            (await new AuthCenterRoutedCommandSeal().SealAsync( TestHelper.Monitor, null!, sessionParty, destination, null!, routedAtOrigin, e )).ShouldBeTrue();
+            e.RoutedSeal.ShouldNotBeNull();
+            return e;
+        }
         async Task RefusedAsync( IPartyRoutedCommand route, IAuthenticationCallEnvelope proof, string because )
         {
             using( TestHelper.Monitor.CollectTexts( out var texts ) )
@@ -475,9 +483,9 @@ public class RemoteAuthCenterTests
             }
         }
 
-        // Sealed by the session party for the AuthCenter: the Critical level is kept.
+        // Sealed by the session party (its hook) for the AuthCenter: the Critical level is kept.
         var route = Routed( p.Center, origin, command );
-        var proof = Sealed( centerName, command );
+        var proof = await SealedByTheHookAsync( centerName, route );
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldNotBeNull()
             .ActualActor.Level.ShouldBe( AuthLevel.Critical );
         // A seal is used once.

@@ -151,7 +151,8 @@ its level, `Critical` included, across any number of parties of the System:
   every command that carries an identity, sent to any remote **inside the System** (the same domain and environment). A
   proof is a bearer credential: it never leaves the System. A deferred execution has no presented proof: the caller
   party alone vouches, at most at `Normal`.
-- **Through hops, the session party seals the command** ([`RoutedCommandSeal`](RoutedCommandSeal.cs)): the proof of a
+- **Through hops, the session party seals the command** ([`RoutedCommandSeal`](RoutedCommandSeal.cs), by the
+  [`AuthCenterRoutedCommandSeal`](AuthCenterRoutedCommandSeal.cs), the `ICrisRoutedCommandSeal` of the routed commands): the proof of a
   routed command is sent with a seal, the signature by the session party (the origin of the route) of a header (the
   destination, the digest of the token, the time, a nonce) and of the digest of the exact bytes of the command. The
   Authentication Center verifies it without the command: for its own routed commands, or asked by its remote that is

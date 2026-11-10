@@ -235,23 +235,16 @@ public sealed partial class CrisChannelFeature
                 return;
             }
             Throw.DebugAssert( envelope != null );
-            IPartyRoutedCommand? route = null;
             if( command is IPartyRoutedCommand routed )
             {
-                // Forwarded to the next hop, or its inner command is the one to execute here.
-                command = _feature.HandleRouted( monitor, this, token, routed, envelope );
-                if( command == null ) return;
-                route = routed;
+                // Forwarded to its next hop, or received here (its command is unsealed, checked and executed): on its own task.
+                _feature.HandleRouted( monitor, this, token, routed, envelope );
+                return;
             }
-            foreach( var t in _feature._incomingTransformers )
+            if( _feature.TransformIncoming( monitor, this, token, command ) )
             {
-                if( !t.Transform( monitor, _feature.Party, command ) )
-                {
-                    SendError( monitor, token.Key, $"Command '{command.CrisPocoModel.PocoName}' is refused." );
-                    return;
-                }
+                _feature._executor.Execute( this, command, token, envelope );
             }
-            _feature._executor.Execute( this, command, token, envelope, route );
         }
 
         void HandleFinalEvent( IActivityMonitor monitor, ref FastByteReader r )

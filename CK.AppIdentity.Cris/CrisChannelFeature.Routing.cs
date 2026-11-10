@@ -10,12 +10,26 @@ namespace CK.AppIdentity.Cris;
 
 public sealed partial class CrisChannelFeature
 {
+    // Applies the incoming transformers to a received command. False when it is refused (an error has been sent).
+    internal bool TransformIncoming( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IAbstractCommand command )
+    {
+        foreach( var t in _incomingTransformers )
+        {
+            if( !t.Transform( monitor, Party, command ) )
+            {
+                handler.SendError( monitor, token.Key, $"Command '{command.CrisPocoModel.PocoName}' is refused." );
+                return false;
+            }
+        }
+        return true;
+    }
+
     /// <summary>
     /// Handles a <see cref="IPartyRoutedCommand"/> received from the remote (it is accepted and targets this party): checks
-    /// its chain, then forwards it to its next hop, or returns its inner command when this party is the destination.
+    /// its chain, then forwards it to its next hop, or receives it when this party is the destination (its command is
+    /// unsealed, read, checked and executed). Both run on their own task: an error is sent to the remote.
     /// </summary>
-    /// <returns>The inner command to execute here, or null (forwarded, or refused: an error has been sent).</returns>
-    internal IAbstractCommand? HandleRouted( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+    internal void HandleRouted( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
     {
         var local = Party.Owner;
         string? next = null;
@@ -25,7 +39,7 @@ public sealed partial class CrisChannelFeature
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Routed command received from '{Party.FullName}' is refused: {error}" );
             handler.SendError( monitor, token.Key, $"The routed command is refused: {error}" );
-            return null;
+            return;
         }
         if( next != null )
         {
@@ -33,13 +47,47 @@ public sealed partial class CrisChannelFeature
             routed.TargetPartyFullName = next;
             monitor.Info( $"Forwarding a command routed from '{routed.Via[0]}' to '{next}'." );
             _ = ForwardAsync( handler, token, routed, envelope, next );
-            return null;
+            return;
         }
-        // This is the destination: the command is the one read from the bytes of the origin.
-        var inner = Unseal( monitor, _pocoDirectory, routed.SealedCommand! );
+        _ = ReceiveRoutedAsync( handler, token, routed, envelope );
+    }
+
+    // This is the destination: the command is the one read from the bytes of the origin (unsealed by the seal, if any).
+    async Task ReceiveRoutedAsync( Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+    {
+        var monitor = new ActivityMonitor( $"Receiving a command routed from '{routed.Via[0]}' on '{Party.Owner.FullName}'." );
+        try
+        {
+            var inner = await ReceiveRoutedCommandAsync( monitor, handler, token, routed, envelope ).ConfigureAwait( false );
+            if( inner != null && TransformIncoming( monitor, handler, token, inner ) )
+            {
+                _executor.Execute( handler, inner, token, envelope, routed );
+            }
+        }
+        catch( Exception ex )
+        {
+            monitor.Error( ex );
+            handler.SendError( monitor, token.Key, "Unable to receive the routed command." );
+        }
+        finally
+        {
+            monitor.MonitorEnd();
+        }
+    }
+
+    // Unseals, reads and checks the command of a routed command. Null when it is refused (an error has been sent).
+    async Task<IAbstractCommand?> ReceiveRoutedCommandAsync( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+    {
+        var local = Party.Owner;
+        var bytes = _routedCommandSeal != null
+                        ? await _routedCommandSeal.UnsealAsync( monitor, Party, routed, envelope ).ConfigureAwait( false )
+                        : routed.SealedCommand;
+        var inner = bytes != null ? ReadCommand( monitor, _pocoDirectory, bytes ) : null;
         if( inner == null || inner is IPartyRoutedCommand )
         {
-            var reason = inner == null ? "its command cannot be read" : "it carries another routed command";
+            var reason = bytes == null
+                            ? "its command cannot be unsealed"
+                            : inner == null ? "its command cannot be read" : "it carries another routed command";
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Routed command received from '{Party.FullName}' is refused: {reason}." );
             handler.SendError( monitor, token.Key, $"The routed command is refused: {reason}." );
             return null;
@@ -69,7 +117,7 @@ public sealed partial class CrisChannelFeature
         return w.WrittenSpan.ToArray();
     }
 
-    static IAbstractCommand? Unseal( IActivityMonitor monitor, PocoDirectory pocoDirectory, byte[] sealedCommand )
+    static IAbstractCommand? ReadCommand( IActivityMonitor monitor, PocoDirectory pocoDirectory, byte[] sealedCommand )
     {
         try
         {
