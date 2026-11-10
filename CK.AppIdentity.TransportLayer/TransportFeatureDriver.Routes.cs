@@ -85,6 +85,62 @@ public partial class TransportFeatureDriver
             }
             builder.SetRoute( name, PartyRoute.SelectBest( accepted )?.Extend( local ) );
         }
+        CollectAlongRoutes( local, builder, remotes );
+    }
+
+    /// <summary>
+    /// Collects the items of each route of the local party (see <see cref="PartyDescription.Collected"/>): its own items
+    /// (stated by the first phase) and the items announced by the connected remotes whose route of the same name goes
+    /// through it (their next hop is the local party), extended with the local party. A party without a route of this
+    /// name collects nothing: there is nowhere to carry the items.
+    /// </summary>
+    static void CollectAlongRoutes( string local, PartyDescription.DerivedBuilder builder, List<IRemoteParty> remotes )
+    {
+        var names = new SortedSet<string>( builder.OwnCollected.Keys, StringComparer.Ordinal );
+        foreach( var r in remotes ) names.UnionWith( r.Description.Collected.Keys );
+        foreach( var name in names )
+        {
+            if( !builder.Routes.ContainsKey( name ) )
+            {
+                if( builder.OwnCollected.ContainsKey( name ) )
+                {
+                    ActivityMonitor.StaticLogger.Trace( $"'{local}' has items to collect along the route '{name}' but no such route." );
+                }
+                continue;
+            }
+            var own = builder.OwnCollected.TryGetValue( name, out var values )
+                        ? values.Select( v => CollectedItem.Own( v, local ) )
+                        : [];
+            var received = new List<CollectedItem>();
+            foreach( var r in remotes )
+            {
+                if( r.Description.Routes.TryGetValue( name, out var route )
+                    && route.NextHop == local
+                    && r.Description.Collected.TryGetValue( name, out var items ) )
+                {
+                    foreach( var item in items )
+                    {
+                        if( item.TryAccept( r.FullName, local, out var reason ) ) received.Add( item.Extend( local ) );
+                        else ActivityMonitor.StaticLogger.Trace( $"Item '{item}' collected along '{name}' by '{r.FullName}' ignored by '{local}': {reason}." );
+                    }
+                }
+            }
+            // The own items first, then the nearest ones: an item found twice keeps its shortest path, and the bound
+            // drops the farthest items.
+            var kept = new List<CollectedItem>();
+            int dropped = 0;
+            foreach( var item in own.Concat( received.OrderBy( i => i.Length ).ThenBy( i => i, CollectedItem.Comparer ) ) )
+            {
+                if( kept.Any( k => k.IsSameItem( item ) ) ) continue;
+                if( kept.Count == CollectedItem.MaxCount ) ++dropped;
+                else kept.Add( item );
+            }
+            if( dropped > 0 )
+            {
+                ActivityMonitor.StaticLogger.Warn( $"'{local}' collects at most {CollectedItem.MaxCount} items along the route '{name}': {dropped} item(s) dropped." );
+            }
+            builder.SetCollected( name, kept );
+        }
     }
 
     /// <summary>

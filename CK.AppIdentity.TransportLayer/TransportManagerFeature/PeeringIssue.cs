@@ -22,6 +22,7 @@ public sealed class PeeringIssue
     bool _enlistUrlIsAuthenticated;
     TimeSpan? _invalidClockOffset;
     KeyEvent? _remoteKeyForApproval;
+    DateTime? _approvalPendingSince;
     IReadOnlyList<string>? _localMissingProtocols;
     IReadOnlyList<string>? _remoteMissingProtocols;
     private GoodbyeMessage? _remoteOffMessage;
@@ -57,6 +58,7 @@ public sealed class PeeringIssue
         _enlistUrlIsAuthenticated = enlistUrlIsAuthenticated;
         _invalidClockOffset = invalidClockOffset;
         _remoteKeyForApproval = remoteKeyForApproval;
+        _approvalPendingSince = IsPendingApproval( kind, remoteKeyForApproval ) ? now : null;
         _localMissingProtocols = localMissingProtocols;
         _remoteMissingProtocols = remoteMissingProtocols;
         _lock = new object();
@@ -167,6 +169,16 @@ public sealed class PeeringIssue
     /// </para>
     /// </summary>
     public string? RemoteKeyFingerprintForApproval => _remoteKeyForApproval != null ? PublicKeyFingerprint.Compute( _remoteKeyForApproval.Spki.Span ) : null;
+
+    /// <summary>
+    /// Gets since when the key <see cref="RemoteKeyForApproval"/> waits for a local approval: not null when <see cref="Kind"/>
+    /// is <see cref="PeeringIssueKind.RequiresLocalApproval"/> or <see cref="PeeringIssueKind.RequiresBothApproval"/>.
+    /// Unlike <see cref="LastUpdated"/>, it doesn't change with the connection attempts: only when another key waits.
+    /// </summary>
+    public DateTime? ApprovalPendingSince => _approvalPendingSince;
+
+    static bool IsPendingApproval( PeeringIssueKind kind, [NotNullWhen( true )] KeyEvent? key )
+        => key != null && kind is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval;
 
     /// <summary>
     /// Gets the missing local protocols.
@@ -360,6 +372,14 @@ public sealed class PeeringIssue
         CheckInvariants( kind, message, remote, enlistUrl, invalidClockOffset, remoteKeyForApproval, localMissingProtocols, remoteMissingProtocols );
         lock( _lock )
         {
+            // The pending approval keeps its time while the key to approve is the same one.
+            if( !IsPendingApproval( kind, remoteKeyForApproval ) ) _approvalPendingSince = null;
+            else if( _approvalPendingSince == null
+                     || !IsPendingApproval( _kind, _remoteKeyForApproval )
+                     || !_remoteKeyForApproval.Spki.Span.SequenceEqual( remoteKeyForApproval.Spki.Span ) )
+            {
+                _approvalPendingSince = now;
+            }
             _time = now;
             _kind = kind;
             _initialMessage = message;
@@ -379,6 +399,7 @@ public sealed class PeeringIssue
         lock( _lock )
         {
             _kind = PeeringIssueKind.None;
+            _approvalPendingSince = null;
         }
     }
 

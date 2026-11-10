@@ -5,6 +5,7 @@ using NUnit.Framework;
 using Shouldly;
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
@@ -108,5 +109,57 @@ public class RouteTests
                                                                                     null,
                                                                                     [],
                                                                                     c => c["Defaults:EnlistRemoteUrl"] = "https://enlist.example.com" ) );
+    }
+
+    /// <summary>
+    /// The pending approvals travel the "Enlistment" route toward the approval page: A hosts the page, B is connected to A
+    /// and holds a pending approval of an unknown key of D.
+    /// </summary>
+    [Test]
+    public async Task a_pending_approval_is_collected_along_the_Enlistment_route_up_to_its_host_Async()
+    {
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         c => c["Local:PublicUrl"] = "https://admin.example.com",
+                                                                         [typeof( ApprovalPageFeatureDriver )],
+                                                                         listenerConfiguration: c =>
+                                                                         {
+                                                                             c["Parties:1:PartyName"] = "$D";
+                                                                             c["Parties:1:AutoTrustKey"] = "Never";
+                                                                         } );
+        var (a, b) = pair;
+        (await a.CrisChannel.WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 10 ) )).ShouldBeTrue();
+        string aName = a.ApplicationIdentityService.FullName;
+        string bName = b.ApplicationIdentityService.FullName;
+        var route = TransportFeatureDriver.EnlistmentRouteName;
+        (await WaitForAsync( b.ApplicationIdentityService, d => d.Routes.ContainsKey( route ) )).Routes[route].Host.ShouldBe( aName );
+
+        // D trusts B on first contact, B doesn't trust D: B must approve D's key (RequiresLocalApproval).
+        await using var d = await RunningApplication.CreateAsync( TestHelper.Monitor,
+                                                                  isSender: true,
+                                                                  c => c["FullName"] = "Test/$D",
+                                                                  RunningApplication.WithHeartBeat() );
+        string dName = d.ApplicationIdentityService.FullName;
+
+        var atHost = await WaitForAsync( a.ApplicationIdentityService, x => x.Collected.ContainsKey( route ) );
+        var item = atHost.Collected[route].ShouldHaveSingleItem();
+        item.Path.ShouldBe( [bName, aName], "The holder first, then each hop up to the host." );
+        item.Holder.ShouldBe( bName );
+        b.ApplicationIdentityService.Description.Collected[route].ShouldHaveSingleItem().ShouldBe( CollectedItem.Own( item.Value, bName ) );
+
+        var issue = b.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().Single( i => i.FullName == dName );
+        using( var json = JsonDocument.Parse( item.Value ) )
+        {
+            var v = json.RootElement;
+            v.GetProperty( "Party" ).GetString().ShouldBe( dName );
+            v.GetProperty( "Fingerprint" ).GetString().ShouldBe( issue.RemoteKeyFingerprintForApproval );
+            v.GetProperty( "Kind" ).GetString().ShouldBe( "Local" );
+            v.GetProperty( "Since" ).GetDateTime().ShouldBe( issue.ApprovalPendingSince!.Value );
+            v.EnumerateObject().Select( p => p.Name ).ShouldBe( ["Party", "Fingerprint", "Kind", "Since"], "Never the approval code." );
+        }
+
+        // Approved: D connects, the issue is resolved and the item disappears from the holder and from the host.
+        issue.AcceptRemoteIdentity( TestHelper.Monitor ).ShouldBeTrue();
+        (await WaitForAsync( a.ApplicationIdentityService, x => x.Collected.Count == 0 )).Collected.ShouldBeEmpty();
+        b.ApplicationIdentityService.Description.Collected.ShouldBeEmpty();
     }
 }

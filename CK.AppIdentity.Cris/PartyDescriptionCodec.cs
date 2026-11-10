@@ -23,6 +23,7 @@ namespace CK.AppIdentity.Cris;
 ///     count, then the data announcements: name, value
 ///     count, then the routes: name, target, count, the full names of the path
 ///     hasEncryptionKey, the public key and the signature (each one: its length, its bytes)
+///     count, then the collected items per route name: name, count, then per item: value, count, the full names of the path
 /// </code>
 /// </summary>
 public static class PartyDescriptionCodec
@@ -74,6 +75,19 @@ public static class PartyDescriptionCodec
             w.WriteBytes( key.PublicKey.Span );
             w.WriteSmallUInt32( (uint)key.Signature.Length );
             w.WriteBytes( key.Signature.Span );
+        }
+        // The collected items: added at the end of the block, an older reader skips them.
+        w.WriteInt32( description.Collected.Count );
+        foreach( var (name, items) in description.Collected )
+        {
+            w.WriteString( name );
+            w.WriteInt32( items.Length );
+            foreach( var item in items )
+            {
+                w.WriteString( item.Value );
+                w.WriteInt32( item.Path.Length );
+                foreach( var p in item.Path ) w.WriteString( p );
+            }
         }
         w.EndBlock( d );
     }
@@ -168,7 +182,36 @@ public static class PartyDescriptionCodec
             if( publicKey.Length == 0 || signature.Length == 0 ) error ??= "Invalid empty encryption key.";
             else encryptionKey = new PartyEncryptionKey( publicKey, signature );
         }
-        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes, encryptionKey ) : null;
+        // An older writer doesn't write the collected items.
+        var collected = new List<KeyValuePair<string, IEnumerable<CollectedItem>>>();
+        if( !d.IsEnd )
+        {
+            int nameCount = d.ReadInt32();
+            Throw.CheckData( "Invalid collected route count.", nameCount >= 0 );
+            for( int i = 0; i < nameCount; ++i )
+            {
+                var name = d.ReadString();
+                int itemCount = d.ReadInt32();
+                Throw.CheckData( "Invalid collected item count.", itemCount >= 0 && itemCount <= CollectedItem.MaxCount );
+                var items = new List<CollectedItem>( itemCount );
+                for( int j = 0; j < itemCount; ++j )
+                {
+                    var value = d.ReadString();
+                    int pathLength = d.ReadInt32();
+                    Throw.CheckData( "Invalid collected item path length.", pathLength >= 0 && pathLength <= PartyRoute.MaxLength );
+                    var path = new string[pathLength];
+                    for( int k = 0; k < pathLength; ++k ) path[k] = d.ReadString();
+                    if( CollectedItem.TryCreate( value, path, out var item, out var itemError ) ) items.Add( item );
+                    else error ??= $"Invalid item collected for '{name}': {itemError}";
+                }
+                if( PartyDescription.TryNormalizeCollected( name, items, out _, out var namedError ) )
+                {
+                    collected.Add( new KeyValuePair<string, IEnumerable<CollectedItem>>( name, items ) );
+                }
+                else error ??= namedError;
+            }
+        }
+        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes, encryptionKey, collected ) : null;
 
         static byte[] ReadKeyBytes( ref FastByteReader r )
         {

@@ -73,6 +73,8 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         _keyManagement.KeyEventAppended.Async += OnKeyEventAppendedAsync;
         // The routes of the local parties follow the connections and the remotes' announcements.
         _transportManager.Feature.ConnectionAvailabilityChanged.Async += OnConnectionAvailabilityChangedAsync;
+        // The pending approvals of the local parties follow the peering issues.
+        _transportManager.Feature.PeeringIssueChanged.Async += OnPeeringIssueChangedAsync;
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
             SubscribeRoutes( local );
@@ -154,6 +156,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         Throw.DebugAssert( _transportManager != null );
         _keyManagement.KeyEventAppended.Async -= OnKeyEventAppendedAsync;
         _transportManager.Feature.ConnectionAvailabilityChanged.Async -= OnConnectionAvailabilityChangedAsync;
+        _transportManager.Feature.PeeringIssueChanged.Async -= OnPeeringIssueChangedAsync;
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
             UnsubscribeRoutes( local );
