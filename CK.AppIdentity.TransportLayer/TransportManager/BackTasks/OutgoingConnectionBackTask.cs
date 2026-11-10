@@ -420,15 +420,16 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             return 30;
                         }
                         // An approval issue: we reply with the reveal of our nonce of the approval code (when it can be
-                        // revealed to this listener's key, see ApprovalSession) and, when the listener must approve
-                        // us, with our EnlistUrl (even if it is null).
+                        // revealed to this listener's key, see ApprovalSession) and, when we must approve the listener,
+                        // with our EnlistUrl (even if it is null): the approval page of our System, where our pending
+                        // approval of the listener is approved.
                         if( pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
                                       or ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
                                       or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
                         {
                             Throw.DebugAssert( block != null );
-                            // Our enlistment URL (the target of our "Enlistment" route), for a listener that must approve us.
-                            var hisEnlistUrl = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
+                            // Our enlistment URL (the target of our "Enlistment" route), for a listener that we must approve.
+                            var hisEnlistUrl = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
                                                 ? null
                                                 : transportManager.GetEnlistRemoteUrl( remote.Party.Owner, remote.Party.FullName );
                             var reveal = remote.Approval.OnReply( block.Value.Head, approvalNonce, sentCommitment );

@@ -226,7 +226,8 @@ CK.AppIdentity), in the second phase of its description
   the URL of that client application followed by `/app-identity/enlist` (`EnlistmentPageSuffix`).
 - **The enlistment URL is the target of the "Enlistment" route** of the local party concerned (the owner of a known
   remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
-  that is unknown here, or that does not trust us, so that it can be enlisted, followed by `?party={its full name}`
+  that is unknown here, or that we must approve (the page approves the pending approvals held by the parties of our
+  System), so that it can be enlisted, followed by `?party={its full name}`
   (escaped: it selects its pending approval on the page; omitted when the URL would exceed `MaxEnlistRemoteUrlLength`).
   It is handed to unauthenticated callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
 - **The pending approvals travel the "Enlistment" route up to its host** (`PartyDescription.Collected`, see
@@ -264,7 +265,8 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
     compute a key whose code matches. Each pending key is one chance in 10^8.
   - The nonces are kept across the attempts (by the remote's `TransportFeature`, in memory): the code doesn't change
     while the parties retry. A listener keeps at most 4 pending keys per remote, for an hour; a restart gives a new code.
-- **Enlisting.** `EnlistUrl` is the URL the other side sent so that it can enlist us. `IsEnlistUrlAuthenticated` is false
+- **Enlisting.** `EnlistUrl` is the URL the other side sent so that it can enlist us: the approval page of its System,
+  with the issues where it must accept us (`RequiresRemoteCreation`, `RequiresRemoteApproval`, `RequiresBothApproval`). `IsEnlistUrlAuthenticated` is false
   when it came in a reply that is not signed by a key we trust: following it is then a trust decision, never automatic.
 
 ## Key events

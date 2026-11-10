@@ -169,6 +169,72 @@ public class EnlistUrlTests
     }
 
     [Test, CancelAfter( 90000 )]
+    public async Task The_listener_that_must_approve_sends_its_enlist_url_to_the_initiator_Async( CancellationToken token )
+    {
+        // The listener doesn't trust the initiator, the initiator trusts the listener: the pending approval is held by the
+        // listener, so the initiator is told the approval page of the listener's System, for itself.
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8LocalListen";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Local:PublicUrl"] = "https://listen.example.test";
+            c["Parties:0:PartyName"] = "$M8LocalInit";
+            c["Parties:0:AutoTrustKey"] = "Never";
+        }, ConfigureServices, token: token );
+        await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8LocalInit";
+            c["Local:PublicUrl"] = "https://init.example.test";
+            c["Parties:0:PartyName"] = "$M8LocalListen";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
+            c["Parties:0:AutoTrustKey"] = "Once";
+        }, ConfigureServices, token: token );
+
+        var issue = await WaitForIssueAsync( initiator.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        issue.ShouldNotBeNull();
+        issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteApproval );
+        issue.EnlistUrl.ShouldBe( ForParty( "https://listen.example.test/admin/app-identity/enlist", initiator ),
+                                  "The listener holds the pending approval: its page approves the initiator." );
+        var held = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        held.ShouldNotBeNull();
+        held!.Kind.ShouldBe( PeeringIssueKind.RequiresLocalApproval );
+        held.EnlistUrl.ShouldBeNull( "The initiator's page is of no use to the listener: the initiator trusts it." );
+    }
+
+    [Test, CancelAfter( 90000 )]
+    public async Task The_initiator_that_must_approve_sends_its_enlist_url_to_the_listener_Async( CancellationToken token )
+    {
+        // The initiator doesn't trust the listener, the listener trusts the initiator: the pending approval is held by the
+        // initiator, so the listener is told the approval page of the initiator's System, for itself.
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8RemoteListen";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Local:PublicUrl"] = "https://listen.example.test";
+            c["Parties:0:PartyName"] = "$M8RemoteInit";
+            c["Parties:0:AutoTrustKey"] = "Once";
+        }, ConfigureServices, token: token );
+        await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$M8RemoteInit";
+            c["Local:PublicUrl"] = "https://init.example.test";
+            c["Parties:0:PartyName"] = "$M8RemoteListen";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
+            c["Parties:0:AutoTrustKey"] = "Never";
+        }, ConfigureServices, token: token );
+
+        var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        issue.ShouldNotBeNull();
+        issue!.Kind.ShouldBe( PeeringIssueKind.RequiresRemoteApproval );
+        issue.EnlistUrl.ShouldBe( ForParty( "https://init.example.test/admin/app-identity/enlist", listener ),
+                                  "The initiator holds the pending approval: its page approves the listener." );
+        var held = await WaitForIssueAsync( initiator.GetRequiredFeature<TransportManagerFeature>(), 40, token );
+        held.ShouldNotBeNull();
+        held!.Kind.ShouldBe( PeeringIssueKind.RequiresLocalApproval );
+        held.EnlistUrl.ShouldBeNull( "The listener's page is of no use to the initiator: the listener trusts it." );
+    }
+
+    [Test, CancelAfter( 90000 )]
     public async Task The_enlist_url_of_an_unknown_party_is_marked_unauthenticated_Async( CancellationToken token )
     {
         // The security half of M8, and the reason the URL must not be auto-followed. The reply that

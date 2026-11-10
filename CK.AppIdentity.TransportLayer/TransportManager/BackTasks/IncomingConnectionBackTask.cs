@@ -628,9 +628,11 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             PeeringIssueKind.RequiresBothApproval => ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval,
             _ => Throw.NotSupportedException<ZeroProtocol.ConfigurationOrTrustIssue>()
         };
-        // When there is a configuration issue or if the remote trust (or can) trust us, there is no point to transfer an enlist url. 
+        // Our enlistment URL (the approval page of our System, for the caller) is sent when we must approve the caller: the
+        // page approves the pending approvals held by the parties of its System. When only the caller must approve us, our
+        // page is of no use to it (its own page is).
         string? enlistUrl = issue is PeeringIssueKind.IncomingUnknown
-                                     or PeeringIssueKind.RequiresRemoteApproval
+                                     or PeeringIssueKind.RequiresLocalApproval
                                      or PeeringIssueKind.RequiresBothApproval
                                 ? transportManager.GetEnlistRemoteUrl( transportManager.GetEnlistingLocalParty( existingParty, initialMessage.DomainName ), initialMessage.FullName )
                                 : null;
@@ -680,9 +682,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                $"Signature or nonce check failed for '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}'." );
                 return;
             }
-            // Our own URL is not useful to an initiator that we trust: only an issue that requires our approval
-            // keeps it (see PeeringIssue.EnlistUrl).
-            if( issue is PeeringIssueKind.RequiresRemoteApproval ) remoteEnlistUrl = null;
+            // The initiator's URL (the approval page of its System) is useful only when the initiator must approve us:
+            // when only we must approve it, it is dropped (see PeeringIssue.EnlistUrl).
+            if( issue is PeeringIssueKind.RequiresLocalApproval ) remoteEnlistUrl = null;
             if( revealed != null )
             {
                 if( remote.Approval.OnReveal( initialMessage.RemoteHead, revealed ) )

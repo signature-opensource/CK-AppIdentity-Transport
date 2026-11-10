@@ -107,7 +107,10 @@ public sealed class PeeringIssue
     public TransportFeature? Remote => _remote;
 
     /// <summary>
-    /// Gets a url that can be used to make the remote accept us.
+    /// Gets a url that can be used to make the remote accept us: the approval page of the remote's System, where its pending
+    /// approval of us is approved (the remote appends <c>?party={our full name}</c>). It comes with the issues where the
+    /// remote must accept us: <see cref="PeeringIssueKind.RequiresRemoteCreation"/>, <see cref="PeeringIssueKind.RequiresRemoteApproval"/>
+    /// and <see cref="PeeringIssueKind.RequiresBothApproval"/>.
     /// <para>
     /// This is always nullable since the remote may not have any url based capability to accept remotes.
     /// </para>
@@ -526,10 +529,10 @@ public sealed class PeeringIssue
                            (isListener && kind == PeeringIssueKind.InvalidClockOffset) == (initialMessage != null && !initialMessage.IsValidClockOffset
                                                                                            && invalidClockOffset == initialMessage.ClockOffset) );
 
-        Throw.DebugAssert( "EnlistUrl => RequiresLocal(Both)Approval or RequiresRemoteCreation.",
+        Throw.DebugAssert( "EnlistUrl => RequiresRemote(Both)Approval or RequiresRemoteCreation: the remote must accept us.",
                            enlistUrl == null
                             || (kind is PeeringIssueKind.RequiresRemoteCreation
-                                        or PeeringIssueKind.RequiresLocalApproval
+                                        or PeeringIssueKind.RequiresRemoteApproval
                                         or PeeringIssueKind.RequiresBothApproval) );
 
         Throw.DebugAssert( "RemoteKeyForApproval => RequiresLocal(Both)Approval.",

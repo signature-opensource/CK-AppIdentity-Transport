@@ -204,10 +204,10 @@ sealed partial class TransportManager : MicroAgent
                                            remote,
                                            enlistUrl,
                                            // Listener side, and this is NOT our own URL: it is the one the
-                                           // remote sent back in its RequiredEnlistUrl reply. That reply is
-                                           // only ever requested for RequiresLocal/BothApproval — the cases
-                                           // that exist precisely because we do not trust its key yet — so
-                                           // its signature verifies against a key it supplied itself.
+                                           // remote sent back in its RequiredEnlistUrl reply, kept when the
+                                           // remote must approve us (RequiresRemote/BothApproval). Its signature
+                                           // verifies against the operational key presented in this very
+                                           // exchange: it is never marked authenticated.
                                            EnlistUrlIsAuthenticated: false,
                                            InvalidClockOffset: kind is PeeringIssueKind.InvalidClockOffset ? message.ClockOffset : null,
                                            usefulRemoteKey,
