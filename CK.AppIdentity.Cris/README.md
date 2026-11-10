@@ -109,7 +109,10 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   destination executes the command read from these exact bytes. An optional
   [`ICrisRoutedCommandSeal`](ICrisRoutedCommandSeal.cs) seals them at the origin (once the envelope contributors filled
   the envelope) and unseals them at the destination (before the command is read): the authentication packages sign the
-  bytes with the user's proof for the destination.
+  bytes with the user's proof for the destination. The seal may also seal the result: the destination sends back an
+  `IPartySealedResult` (the result and its validation messages, sealed), the origin unseals it; the events of such a
+  command are not relayed back. An error made on the way (by a hop, before the execution) is not sealed; any other
+  result that the origin expects sealed and receives in clear is refused.
 - **The destination** is the host of a route (`SendAsync( ..., routeName )`: each hop takes its next hop from its own
   `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path (`SendAlongPathAsync`: for an
   answer, the way back to the party a request came from).

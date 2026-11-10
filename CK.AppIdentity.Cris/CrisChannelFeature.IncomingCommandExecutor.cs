@@ -23,9 +23,9 @@ public sealed partial class CrisChannelFeature
             _feature = crisChannelFeature;
         }
 
-        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallEnvelope envelope, IPartyRoutedCommand? route = null )
+        public void Execute( Protocol handler, IAbstractCommand command, ActivityMonitor.Token issuerToken, ICrisCallEnvelope envelope, IPartyRoutedCommand? route = null, object? resultSealState = null )
         {
-            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _envelope = envelope, _route = route };
+            var scopedData = new AppIdentityDIContainerDefinition.Data( _feature.Party ) { _envelope = envelope, _route = route, _resultSealState = resultSealState };
             var job = new CrisJob( executor: this,
                                    scopedData,
                                    command,
@@ -72,7 +72,9 @@ public sealed partial class CrisChannelFeature
         // command executes.
         protected override Task OnImmediateEventAsync( IActivityMonitor monitor, CrisJob job, IEvent e )
         {
-            if( e.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyImmediateEvent )
+            // The events of a routed command whose result is sealed are not relayed back (the origin ignores them).
+            if( e.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyImmediateEvent
+                && Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._resultSealState == null )
             {
                 Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler.SendImmediateEvent( monitor, job.IssuerToken.Key, e );
             }
@@ -81,7 +83,14 @@ public sealed partial class CrisChannelFeature
 
         protected override Task SetFinalResultAsync( IActivityMonitor monitor, CrisJob job, IExecutedCommand result )
         {
-            var handler = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData )._handler;
+            var data = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData );
+            var handler = data._handler;
+            if( data._resultSealState != null )
+            {
+                // The result of a routed command is sealed for its origin: the hops relay what they can't read.
+                handler.SendExecuted( monitor, job.IssuerToken.Key, _feature.SealResult( data._resultSealState, result.Result, result.ValidationMessages ), default );
+                return Task.CompletedTask;
+            }
             // The final caller-only events precede the result on the same ordered queue.
             foreach( var e in result.Events )
             {

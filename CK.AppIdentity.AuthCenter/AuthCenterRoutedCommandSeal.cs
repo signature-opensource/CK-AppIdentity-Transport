@@ -30,13 +30,20 @@ namespace CK.AppIdentity.AuthCenter;
 ///   back into the envelope, the command is read from the decrypted bytes. The Authentication Center verifies the seal
 ///   with the proof (see <see cref="AuthCenterProofVerifier"/>).
 ///   </item>
+///   <item>
+///   The result of an encrypted command is sealed too: the destination encrypts it with the response key of the
+///   encryption (see <see cref="PartyEncryption.EncryptResponse"/>), only the origin decrypts it.
+///   </item>
 /// </list>
 /// When the origin can't seal (no key management), the proof is not sent: the command travels without it.
 /// </summary>
 public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
 {
+    // The associated data of a sealed result.
+    static readonly byte[] _resultContext = "CK.AuthCenter.RoutedResult"u8.ToArray();
+
     /// <inheritdoc />
-    public async ValueTask<bool> SealAsync( IActivityMonitor monitor,
+    public async ValueTask<(bool Success, object? ResultState)> SealAsync( IActivityMonitor monitor,
                                             IServiceProvider services,
                                             ILocalParty origin,
                                             string destination,
@@ -44,14 +51,14 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
                                             IPartyRoutedCommand routed,
                                             ICrisCallEnvelope envelope )
     {
-        if( envelope is not IAuthenticationCallEnvelope { Token: { } token } proof || routed.SealedCommand == null ) return true;
+        if( envelope is not IAuthenticationCallEnvelope { Token: { } token } proof || routed.SealedCommand == null ) return (true, null);
         var keys = origin.GetFeature<ILocalKeys>();
         if( keys == null )
         {
             monitor.Warn( $"'{origin}' cannot seal the command routed to '{destination}': the user's proof is not sent." );
             proof.Token = null;
             proof.BindingSecretHash = null;
-            return true;
+            return (true, null);
         }
         var utcNow = DateTime.UtcNow;
         var key = origin.GetFeature<IPartyEncryptionKeyDirectory>() is { } directory
@@ -61,13 +68,14 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
         {
             monitor.Warn( $"No verified encryption key for '{destination}': the command routed to it is signed only, in clear." );
             (proof.RoutedSeal, proof.RoutedSignature) = RoutedCommandSeal.Create( keys, destination, token, routed.SealedCommand, utcNow );
-            return true;
+            return (true, null);
         }
         var header = RoutedCommandSeal.CreateHeader( destination, token, utcNow, encrypted: true );
         var plain = Pack( token, proof.BindingSecretHash, routed.SealedCommand );
+        byte[] responseKey;
         try
         {
-            routed.SealedCommand = PartyEncryption.Encrypt( key.Value.PublicKey, plain, header, utcNow, out _ );
+            routed.SealedCommand = PartyEncryption.Encrypt( key.Value.PublicKey, plain, header, utcNow, out responseKey );
         }
         finally
         {
@@ -75,21 +83,21 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
         }
         proof.RoutedSeal = header;
         proof.RoutedSignature = RoutedCommandSeal.Sign( keys, header, routed.SealedCommand, utcNow );
-        // The proof travels encrypted: the hops never hold it.
+        // The proof travels encrypted: the hops never hold it. The result will be encrypted with the response key.
         proof.Token = null;
         proof.BindingSecretHash = null;
-        return true;
+        return (true, responseKey);
     }
 
     /// <inheritdoc />
-    public ValueTask<byte[]?> UnsealAsync( IActivityMonitor monitor, IRemoteParty sender, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+    public ValueTask<(byte[]? Command, object? ResultState)> UnsealAsync( IActivityMonitor monitor, IRemoteParty sender, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
     {
         if( envelope is not IAuthenticationCallEnvelope { RoutedSeal: { } header } proof
             || !RoutedCommandSeal.IsEncrypted( header )
             || routed.SealedCommand == null )
         {
             // Signed only, in clear (or not sealed): the seal is verified with the proof (see AuthCenterProofVerifier).
-            return ValueTask.FromResult( routed.SealedCommand );
+            return ValueTask.FromResult<(byte[]?, object?)>( (routed.SealedCommand, null) );
         }
         var keys = sender.Owner.GetFeature<ILocalKeys>();
         var utcNow = DateTime.UtcNow;
@@ -101,20 +109,29 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
                                             utcNow,
                                             RoutedCommandSeal.Lifetime + RoutedCommandSeal.ClockSkew,
                                             out var plain,
-                                            out _ ) )
+                                            out var responseKey ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The command routed from '{routed.Via[0]}' by '{sender}' can't be decrypted here: it is refused." );
-            return ValueTask.FromResult<byte[]?>( null );
+            return ValueTask.FromResult<(byte[]?, object?)>( (null, null) );
         }
         if( !TryUnpack( plain!, out var token, out var binding, out var command ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The decrypted command routed from '{routed.Via[0]}' is malformed: it is refused." );
-            return ValueTask.FromResult<byte[]?>( null );
+            return ValueTask.FromResult<(byte[]?, object?)>( (null, null) );
         }
         proof.Token = token;
         proof.BindingSecretHash = binding;
-        return ValueTask.FromResult<byte[]?>( command );
+        // The result is encrypted for the origin with the response key.
+        return ValueTask.FromResult<(byte[]?, object?)>( (command, responseKey) );
     }
+
+    /// <inheritdoc />
+    public byte[] SealResult( object resultState, ReadOnlySpan<byte> result )
+        => PartyEncryption.EncryptResponse( (byte[])resultState, result, _resultContext );
+
+    /// <inheritdoc />
+    public byte[]? UnsealResult( IActivityMonitor monitor, object resultState, ReadOnlySpan<byte> sealedResult )
+        => PartyEncryption.TryDecryptResponse( monitor, (byte[])resultState, sealedResult, _resultContext, out var result ) ? result : null;
 
     // The encrypted content: the token, the binding secret hash (empty when there is none) and the command.
     static byte[] Pack( string token, byte[]? binding, byte[] command )

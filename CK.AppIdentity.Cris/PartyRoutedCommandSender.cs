@@ -100,11 +100,13 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         {
             c.Contribute( monitor, services, channel.Party, command, routed, envelope );
         }
+        object? resultState = null;
         if( _seal != null )
         {
             // The destination: the last party of the path, or the host of the route (checked by TryGetNextHop).
             var destination = routed.Path.Count > 0 ? routed.Path[^1] : origin.Description.Routes[routed.RouteName!].Host;
-            if( !await _seal.SealAsync( monitor, services, origin, destination, command, routed, envelope ).ConfigureAwait( false ) )
+            (bool success, resultState) = await _seal.SealAsync( monitor, services, origin, destination, command, routed, envelope ).ConfigureAwait( false );
+            if( !success )
             {
                 return Error( monitor, $"Unable to seal '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{destination}'." );
             }
@@ -113,12 +115,34 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         try
         {
             var executed = await channel.SendCommand( monitor, routed, envelope: envelope ).ExecutedCommand.WaitAsync( ChannelCrisRemoteDispatcher.Timeout ).ConfigureAwait( false );
-            return executed.Result;
+            if( resultState == null ) return executed.Result;
+            return UnsealResult( monitor, channel, command, resultState, executed.Result );
         }
         catch( TimeoutException )
         {
             return Error( monitor, $"Party '{next}' did not answer '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' within {ChannelCrisRemoteDispatcher.Timeout}." );
         }
+    }
+
+    // The result of a command whose result is sealed: an error made on the way (by a hop, or before the execution) is not
+    // sealed and is returned as is; any other result must be sealed by the destination.
+    object? UnsealResult( IActivityMonitor monitor, CrisChannelFeature channel, IAbstractCommand command, object resultState, object? result )
+    {
+        Throw.DebugAssert( _seal != null );
+        if( result is ICrisResultError ) return result;
+        if( result is not IPartySealedResult sealedResult )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The result of '{command.CrisPocoModel.PocoName}' is not sealed by its destination: it is refused." );
+            return Error( monitor, $"The result of '{command.CrisPocoModel.PocoName}' is not sealed by its destination." );
+        }
+        var bytes = _seal.UnsealResult( monitor, resultState, sealedResult.Sealed );
+        var callResult = bytes != null ? channel.ReadResult( monitor, bytes ) : null;
+        if( callResult == null )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The sealed result of '{command.CrisPocoModel.PocoName}' can't be unsealed: it is refused." );
+            return Error( monitor, $"The sealed result of '{command.CrisPocoModel.PocoName}' can't be unsealed." );
+        }
+        return callResult.Result;
     }
 
     ICrisResultError Error( IActivityMonitor monitor, string text )

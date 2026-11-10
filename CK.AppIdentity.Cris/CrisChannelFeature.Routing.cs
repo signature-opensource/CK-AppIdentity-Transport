@@ -58,10 +58,10 @@ public sealed partial class CrisChannelFeature
         var monitor = new ActivityMonitor( $"Receiving a command routed from '{routed.Via[0]}' on '{Party.Owner.FullName}'." );
         try
         {
-            var inner = await ReceiveRoutedCommandAsync( monitor, handler, token, routed, envelope ).ConfigureAwait( false );
+            var (inner, resultSealState) = await ReceiveRoutedCommandAsync( monitor, handler, token, routed, envelope ).ConfigureAwait( false );
             if( inner != null && TransformIncoming( monitor, handler, token, inner ) )
             {
-                _executor.Execute( handler, inner, token, envelope, routed );
+                _executor.Execute( handler, inner, token, envelope, routed, resultSealState );
             }
         }
         catch( Exception ex )
@@ -76,12 +76,12 @@ public sealed partial class CrisChannelFeature
     }
 
     // Unseals, reads and checks the command of a routed command. Null when it is refused (an error has been sent).
-    async Task<IAbstractCommand?> ReceiveRoutedCommandAsync( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+    async Task<(IAbstractCommand? Command, object? ResultSealState)> ReceiveRoutedCommandAsync( IActivityMonitor monitor, Protocol handler, ActivityMonitor.Token token, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
     {
         var local = Party.Owner;
-        var bytes = _routedCommandSeal != null
-                        ? await _routedCommandSeal.UnsealAsync( monitor, Party, routed, envelope ).ConfigureAwait( false )
-                        : routed.SealedCommand;
+        var (bytes, resultSealState) = _routedCommandSeal != null
+                                        ? await _routedCommandSeal.UnsealAsync( monitor, Party, routed, envelope ).ConfigureAwait( false )
+                                        : (routed.SealedCommand, null);
         var inner = bytes != null ? ReadCommand( monitor, _pocoDirectory, bytes ) : null;
         if( inner == null || inner is IPartyRoutedCommand )
         {
@@ -90,7 +90,7 @@ public sealed partial class CrisChannelFeature
                             : inner == null ? "its command cannot be read" : "it carries another routed command";
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Routed command received from '{Party.FullName}' is refused: {reason}." );
             handler.SendError( monitor, token.Key, $"The routed command is refused: {reason}." );
-            return null;
+            return (null, null);
         }
         string? refused = null;
         var m = inner.CrisPocoModel;
@@ -102,10 +102,39 @@ public sealed partial class CrisChannelFeature
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Command routed from '{routed.Via[0]}' is refused: {refused}." );
             handler.SendError( monitor, token.Key, $"The routed command is refused: {refused}." );
-            return null;
+            return (null, null);
         }
         monitor.Info( $"Executing '{m.PocoName}' routed from '{routed.Via[0]}' (via {string.Join( " > ", routed.Via )})." );
-        return inner;
+        return (inner, resultSealState);
+    }
+
+    // Seals the result of a routed command (with its validation messages, as an ICrisCallResult) for its origin.
+    internal IPartySealedResult SealResult( object resultSealState, object? result, System.Collections.Immutable.ImmutableArray<UserMessage> validationMessages )
+    {
+        Throw.DebugAssert( _routedCommandSeal != null );
+        var callResult = _callResultFactory.Create( r =>
+        {
+            r.Result = result;
+            if( !validationMessages.IsDefaultOrEmpty ) r.ValidationMessages = [.. validationMessages];
+        } );
+        var w = new System.Buffers.ArrayBufferWriter<byte>();
+        _pocoDirectory.WriteJson( w, callResult, withType: false, Protocol.ExchangeExportOptions );
+        var sealedResult = _routedCommandSeal.SealResult( resultSealState, w.WrittenSpan );
+        return _pocoDirectory.Create<IPartySealedResult>( r => r.Sealed = sealedResult );
+    }
+
+    // Reads the result of a routed command unsealed by the origin. Null when it can't be read (the reason is logged).
+    internal ICrisCallResult? ReadResult( IActivityMonitor monitor, byte[] result )
+    {
+        try
+        {
+            return _callResultFactory.ReadJson( result, Protocol.ExchangeImportOptions );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( "Unable to read the result of a routed command.", ex );
+            return null;
+        }
     }
 
     // The routed command carries the exact bytes serialized by the origin (the JSON of the command with its type, with

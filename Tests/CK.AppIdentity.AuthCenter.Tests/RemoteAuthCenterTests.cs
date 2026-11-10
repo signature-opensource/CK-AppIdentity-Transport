@@ -470,12 +470,13 @@ public class RemoteAuthCenterTests
             return e;
         }
         // The seal of the origin (the session party): its hook signs the routed command that carries the proof.
-        async Task<IAuthenticationCallEnvelope> SealedByTheHookAsync( string destination, IPartyRoutedCommand routedAtOrigin )
+        async Task<(IAuthenticationCallEnvelope, object?)> SealedByTheHookAsync( string destination, IPartyRoutedCommand routedAtOrigin )
         {
             var e = Proof( p.Center, token, binding );
-            (await seal.SealAsync( TestHelper.Monitor, null!, sessionParty, destination, null!, routedAtOrigin, e )).ShouldBeTrue();
+            var (success, resultState) = await seal.SealAsync( TestHelper.Monitor, null!, sessionParty, destination, null!, routedAtOrigin, e );
+            success.ShouldBeTrue();
             e.RoutedSeal.ShouldNotBeNull();
-            return e;
+            return (e, resultState);
         }
         async Task RefusedAsync( IPartyRoutedCommand route, IAuthenticationCallEnvelope proof, string because )
         {
@@ -488,26 +489,36 @@ public class RemoteAuthCenterTests
 
         // Sealed by the session party (its hook) for the AuthCenter: encrypted, a hop sees neither the command nor the proof.
         var route = Routed( p.Center, origin, command );
-        var proof = await SealedByTheHookAsync( centerName, route );
+        var (proof, originState) = await SealedByTheHookAsync( centerName, route );
+        originState.ShouldNotBeNull( "The result of an encrypted command will be sealed." );
         route.SealedCommand.ShouldNotBe( command );
         proof.Token.ShouldBeNull();
         proof.BindingSecretHash.ShouldBeNull();
         // An altered ciphertext can't be decrypted by the AuthCenter (the destination).
         var altered = Routed( p.Center, origin, route.SealedCommand!.ToArray() );
         altered.SealedCommand![^1] ^= 1;
-        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, altered, proof )).ShouldBeNull();
+        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, altered, proof )).Command.ShouldBeNull();
         // The AuthCenter decrypts it: the command and the proof are back, the Critical level is kept.
-        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, route, proof )).ShouldBe( command );
+        var (unsealed, destinationState) = await seal.UnsealAsync( TestHelper.Monitor, lastHop, route, proof );
+        unsealed.ShouldBe( command );
+        // The result is encrypted for the origin: only it decrypts it.
+        var sealedResult = seal.SealResult( destinationState.ShouldNotBeNull(), "the result"u8 );
+        seal.UnsealResult( TestHelper.Monitor, originState, sealedResult ).ShouldBe( "the result"u8.ToArray() );
+        sealedResult[^1] ^= 1;
+        seal.UnsealResult( TestHelper.Monitor, originState, sealedResult ).ShouldBeNull( "Altered." );
         proof.Token.ShouldBe( token );
         proof.BindingSecretHash.ShouldBe( binding );
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldNotBeNull()
             .ActualActor.Level.ShouldBe( AuthLevel.Critical );
         // No verified encryption key for the destination: signed only, in clear, the proof in the envelope.
         var signedOnly = Routed( p.Center, origin, command );
-        var signedOnlyProof = await SealedByTheHookAsync( "Test/$Unknown", signedOnly );
+        var (signedOnlyProof, signedOnlyState) = await SealedByTheHookAsync( "Test/$Unknown", signedOnly );
+        signedOnlyState.ShouldBeNull( "The result of a command in clear is not sealed." );
         signedOnly.SealedCommand.ShouldBe( command );
         signedOnlyProof.Token.ShouldBe( token );
-        (await seal.UnsealAsync( TestHelper.Monitor, lastHop, signedOnly, signedOnlyProof )).ShouldBe( command );
+        var (signedOnlyCommand, signedOnlyDestinationState) = await seal.UnsealAsync( TestHelper.Monitor, lastHop, signedOnly, signedOnlyProof );
+        signedOnlyCommand.ShouldBe( command );
+        signedOnlyDestinationState.ShouldBeNull();
         // A seal is used once.
         await RefusedAsync( route, proof, "it has already been used" );
         // No seal.

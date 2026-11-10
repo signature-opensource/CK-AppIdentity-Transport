@@ -77,19 +77,41 @@ public class RoutedCommandTests
     {
         public static readonly ConcurrentQueue<string> Sealed = new();
         public static readonly ConcurrentQueue<string> Unsealed = new();
+        public static readonly ConcurrentQueue<string> Results = new();
         public static volatile bool Refuse;
 
-        public ValueTask<bool> SealAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, string destination, IAbstractCommand command, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+        public ValueTask<(bool, object?)> SealAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, string destination, IAbstractCommand command, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
         {
             Sealed.Enqueue( $"{command.CrisPocoModel.PocoName.Split( '.' )[^1]} from {origin.FullName} to {destination}" );
             ((ReceptionTests.ITestEnvelope)envelope).CultureName = "sealed";
-            return ValueTask.FromResult( true );
+            // The state of the origin: what unseals the result.
+            return ValueTask.FromResult<(bool, object?)>( (true, (byte)0x5A) );
         }
 
-        public ValueTask<byte[]?> UnsealAsync( IActivityMonitor monitor, IRemoteParty sender, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
+        public ValueTask<(byte[]?, object?)> UnsealAsync( IActivityMonitor monitor, IRemoteParty sender, IPartyRoutedCommand routed, ICrisCallEnvelope envelope )
         {
             Unsealed.Enqueue( $"{((ReceptionTests.ITestEnvelope)envelope).CultureName} on {sender.Owner.FullName}" );
-            return ValueTask.FromResult( Refuse ? null : routed.SealedCommand );
+            return ValueTask.FromResult<(byte[]?, object?)>( Refuse ? (null, null) : (routed.SealedCommand, (byte)0x5A) );
+        }
+
+        // A reversible transform: the hops relay bytes that are not the JSON of the result.
+        public byte[] SealResult( object resultState, ReadOnlySpan<byte> result )
+        {
+            Results.Enqueue( "sealed" );
+            return Transform( (byte)resultState, result );
+        }
+
+        public byte[]? UnsealResult( IActivityMonitor monitor, object resultState, ReadOnlySpan<byte> sealedResult )
+        {
+            Results.Enqueue( "unsealed" );
+            return Transform( (byte)resultState, sealedResult );
+        }
+
+        static byte[] Transform( byte key, ReadOnlySpan<byte> data )
+        {
+            var r = data.ToArray();
+            for( int i = 0; i < r.Length; ++i ) r[i] ^= key;
+            return r;
         }
     }
 
@@ -117,7 +139,8 @@ public class RoutedCommandTests
                                       typeof( CrisBackgroundExecutorService ),
                                       typeof( RawCrisReceiver ),
                                       typeof( IWhereRoutedCommand ),
-                                      typeof( ReceptionTests.ITestEnvelope )];
+                                      typeof( ReceptionTests.ITestEnvelope ),
+                                      typeof( IPartySealedResult )];
 
     // Like the PartyRoutedCommandSender: the JSON of the command with its type, with the exchange options of the channels.
     static byte[] Serialize( RunningApplication app, IAbstractCommand command )
@@ -224,6 +247,7 @@ public class RoutedCommandTests
         RecordingReceptionHandler.Callers.Clear();
         TestSeal.Sealed.Clear();
         TestSeal.Unsealed.Clear();
+        TestSeal.Results.Clear();
         TestSeal.Refuse = false;
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                                          senderTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( TestSeal )],
@@ -250,6 +274,8 @@ public class RoutedCommandTests
         TestSeal.Sealed.ShouldContain( $"IWhereRoutedCommand from {aName} to {cName}" );
         TestSeal.Unsealed.ShouldContain( $"sealed on {cName}" );
         RecordingReceptionHandler.Callers.ShouldContain( $"IWhereRoutedCommand from {aName} (via {bName}) [sealed]" );
+        // The result has been sealed by the destination, unsealed by the origin.
+        TestSeal.Results.ShouldBe( ["sealed", "unsealed"] );
 
         // The destination refuses to unseal it.
         TestSeal.Refuse = true;

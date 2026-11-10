@@ -24,6 +24,8 @@ public abstract class AppIdentityDIContainerDefinition : DIContainerDefinition<A
         internal ICrisCallEnvelope _envelope;
         // The routed command that carried the command, if any (its originating party is the caller party).
         internal IPartyRoutedCommand? _route;
+        // The state with which the result of the routed command is sealed (see ICrisRoutedCommandSeal), if any.
+        internal object? _resultSealState;
 
         public Data( IRemoteParty remoteParty )
         {
