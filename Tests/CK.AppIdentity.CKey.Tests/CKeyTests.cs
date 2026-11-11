@@ -23,23 +23,51 @@ namespace CK.AppIdentity.CKey.Tests;
 [NonParallelizable]
 public class CKeyTests
 {
-    static async Task<RunningApplicationPair> StartAsync()
+    // Their own names and port: the test assemblies run in parallel (the default "Test/$Sender", "Test/$Listener" and
+    // port of RunningApplication are used by the other ones).
+    const int Port = 37180;
+
+    sealed class Pair( RunningApplication sender, RunningApplication listener ) : IAsyncDisposable
     {
-        return await RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                         c =>
-                                                         {
-                                                             c["Local:AllowFeatures"] = "CKey";
-                                                             c["Parties:0:AutoTrustKey"] = "Never";
-                                                         },
-                                                         [typeof( CKeyFeatureDriver )],
-                                                         c =>
-                                                         {
-                                                             c["Local:AllowFeatures"] = "CKey";
-                                                             c["Parties:0:AutoTrustKey"] = "Never";
-                                                         },
-                                                         [typeof( CKeyFeatureDriver )],
-                                                         // The initiator retries its connection on its heartbeat.
-                                                         senderServices: RunningApplication.WithHeartBeat() );
+        public void Deconstruct( out RunningApplication a, out RunningApplication b ) => (a, b) = (sender, listener);
+
+        public async ValueTask DisposeAsync()
+        {
+            await sender.DisposeAsync();
+            await listener.DisposeAsync();
+        }
+    }
+
+    static async Task<Pair> StartAsync()
+    {
+        var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
+        {
+            c["FullName"] = "Test/$CKeyListener";
+            c["Local:AllowFeatures"] = "CKey";
+            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Parties:0:PartyName"] = "$CKeySender";
+            c["Parties:0:AutoTrustKey"] = "Never";
+        }, null, typeof( CKeyFeatureDriver ) );
+        try
+        {
+            var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: true, c =>
+            {
+                c["FullName"] = "Test/$CKeySender";
+                c["Local:AllowFeatures"] = "CKey";
+                c["Parties:0:PartyName"] = "$CKeyListener";
+                c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
+                c["Parties:0:AutoTrustKey"] = "Never";
+            },
+            // The initiator retries its connection on its heartbeat.
+            RunningApplication.WithHeartBeat(),
+            typeof( CKeyFeatureDriver ) );
+            return new Pair( sender, listener );
+        }
+        catch
+        {
+            await listener.DisposeAsync();
+            throw;
+        }
     }
 
     // Runs the tool in-process, from a folder where no party runs (unless given).
@@ -162,6 +190,8 @@ public class CKeyTests
     {
         await Should.ThrowAsync<Exception>( () => RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
         {
+            c["FullName"] = "Test/$CKeyTenants";
+            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port + 1}";
             c["Parties:1:FullName"] = "Tenant/$Tenant";
             c["Parties:1:Local:AllowFeatures"] = "CKey";
             c["Parties:1:Parties:0:PartyName"] = "$X";
