@@ -137,12 +137,8 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 try
                 {
                     await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
-                    // The System list is signed again before its signature expires.
-                    if( _party.GetFeature<AuthCenterSystemList>() is { } revocations )
-                    {
-                        await revocations.RenewIfNeededAsync( m, DateTime.UtcNow ).ConfigureAwait( false );
-                    }
                 }
+
                 catch( Exception ex )
                 {
                     m.Error( "While purging the expired sessions.", ex );

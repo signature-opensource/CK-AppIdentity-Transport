@@ -128,7 +128,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     }
 
     // The keys of the AuthCenter: the ones of its party (the driver checked that it has them), or the anchored ones.
-    SignatureVerdict CheckSignature( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
+    internal SignatureVerdict CheckSignature( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
         if( _authCenter != null ) return _authCenter.GetRequiredFeature<IPartyKeys>().Check( logger, purpose, data, signature );
         var keys = _owner.GetRequiredFeature<ILocalKeys>().FindAnchoredKeys( _fullName );

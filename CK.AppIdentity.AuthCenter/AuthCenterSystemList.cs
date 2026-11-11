@@ -53,8 +53,14 @@ public sealed class AuthCenterSystemList
     readonly Func<IActivityMonitor, Task>? _onRouteHostsChanged;
     SystemList? _current;
     RouteHosts _routeHosts;
+    // The stored list whose signer is not known yet at setup: verified (with the key events) by the first heartbeat.
+    byte[]? _stored;
+    TransportManagerFeature? _transport;
     DateTime _nextPull;
     int _pulling;
+    bool _detached;
+    readonly object _detachLock = new object();
+
 
     AuthCenterSystemList( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull, Func<IActivityMonitor, Task>? onRouteHostsChanged )
     {
@@ -153,11 +159,19 @@ public sealed class AuthCenterSystemList
 
     ILocalParty Local => _center.Owner;
 
-    NormalizedPath FilePath => Local.LocalFileStore.FolderPath.AppendPart( FileName );
+    NormalizedPath FilePath => StoreFilePath( Local );
+
 
     /// <summary>
     /// Creates the feature of a local party once its <see cref="CrisAuthCenter"/> exists (used by the two sides of the
-    /// "AuthCenter" feature): the list kept in its local store is applied to its keys (it was verified when it was stored).
+    /// "AuthCenter" feature). The list kept in its local store is verified again with the keys of the Authentication Center
+    /// (it may have changed since: a reconfigured or re-incepted Authentication Center) and applied to its keys. When its
+    /// signer is not known here yet, it is verified by the first heartbeat (the key events of the Authentication Center are
+    /// then obtained); a list that is not signed by the Authentication Center is ignored.
+    /// <para>
+    /// The feature follows the heartbeat: a party that is not the Authentication Center pulls the list, the Authentication
+    /// Center signs it again before its signature expires (see <see cref="RenewIfNeededAsync"/>). <see cref="Detach"/> ends this.
+    /// </para>
     /// </summary>
     /// <param name="monitor">The monitor.</param>
     /// <param name="center">The Authentication Center of the local party.</param>
@@ -169,42 +183,89 @@ public sealed class AuthCenterSystemList
     /// Called when the <see cref="RouteHosts"/> changed (the transport computes the routes of the local party again).
     /// </param>
     /// <returns>The feature.</returns>
-    public static AuthCenterSystemList Plug( IActivityMonitor monitor,
-                                             CrisAuthCenter center,
-                                             Func<IActivityMonitor, Task<object?>>? pull,
-                                             Func<IActivityMonitor, Task>? onRouteHostsChanged )
+    public static async Task<AuthCenterSystemList> PlugAsync( IActivityMonitor monitor,
+                                                              CrisAuthCenter center,
+                                                              Func<IActivityMonitor, Task<object?>>? pull,
+                                                              Func<IActivityMonitor, Task>? onRouteHostsChanged )
+    {
+        var local = center.Owner;
+        var f = await CreateAsync( monitor, center, pull, onRouteHostsChanged, local.LocalFileStore.TryReadAllBytes( StoreFilePath( local ) ) ).ConfigureAwait( false );
+        local.AddFeature( f );
+        local.ApplicationIdentityService.Heartbeat.Async += f.OnHeartbeatAsync;
+        // The transport exists once the initialization is done: the list is then sent when a channel becomes available.
+        _ = local.ApplicationIdentityService.InitializationTask.ContinueWith( _ =>
+        {
+            if( local.ApplicationIdentityService.GetFeature<TransportManagerFeature>() is { } transport )
+            {
+                lock( f._detachLock )
+                {
+                    if( f._detached ) return;
+                    f._transport = transport;
+                    transport.ConnectionAvailabilityChanged.Async += f.OnConnectionAvailabilityChangedAsync;
+                }
+            }
+        }, TaskScheduler.Default );
+        return f;
+    }
+
+    static NormalizedPath StoreFilePath( ILocalParty local ) => local.LocalFileStore.FolderPath.AppendPart( FileName );
+
+    // Creates the feature with the list read from the store (null when there is none).
+    internal static async Task<AuthCenterSystemList> CreateAsync( IActivityMonitor monitor,
+                                                                  CrisAuthCenter center,
+                                                                  Func<IActivityMonitor, Task<object?>>? pull,
+                                                                  Func<IActivityMonitor, Task>? onRouteHostsChanged,
+                                                                  byte[]? bytes )
     {
         var f = new AuthCenterSystemList( center, pull, onRouteHostsChanged );
         var local = center.Owner;
-        var bytes = StoreFileReader.TryReadAllBytes( f.FilePath );
         if( bytes != null )
         {
             if( SystemList.TryDecode( bytes, out var list ) && local.GetFeature<ILocalKeys>() is { } keys )
             {
-                f._current = list;
-                f._routeHosts = GetRouteHosts( center, list );
-                keys.SetRevocationsAsync( monitor, list!.Entries ).GetAwaiter().GetResult();
-                monitor.Info( $"{list} of '{local}' is loaded." );
+                var verdict = center.CheckSignature( monitor, SystemList.Purpose, list!.SignedData, list.Signature );
+                if( verdict == SignatureVerdict.Valid )
+                {
+                    f._current = list;
+                    f._routeHosts = GetRouteHosts( center, list );
+                    await keys.SetRevocationsAsync( monitor, list.Entries ).ConfigureAwait( false );
+                    monitor.Info( $"{list} of '{local}' is loaded." );
+                }
+                else if( verdict == SignatureVerdict.UnknownIssuer )
+                {
+                    f._stored = bytes;
+                    monitor.Info( $"The {list} stored by '{local}' is signed by a key of the AuthCenter '{center.AuthCenterFullName}' that is not known yet: it will be verified with its key events." );
+                }
+                else
+                {
+                    monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} stored by '{local}' is not signed by its AuthCenter '{center.AuthCenterFullName}' ({verdict}): it is ignored." );
+                }
             }
             else
             {
                 monitor.Error( $"The System list stored by '{local}' can't be read: it will be received again from its remotes." );
             }
         }
-        local.AddFeature( f );
-        if( pull != null ) local.ApplicationIdentityService.Heartbeat.Async += f.OnHeartbeatAsync;
-        // The transport exists once the initialization is done: the list is then sent when a channel becomes available.
-        _ = local.ApplicationIdentityService.InitializationTask.ContinueWith( _ =>
-        {
-            if( local.ApplicationIdentityService.GetFeature<TransportManagerFeature>() is { } transport )
-            {
-                transport.ConnectionAvailabilityChanged.Async += f.OnConnectionAvailabilityChangedAsync;
-            }
-        }, TaskScheduler.Default );
         return f;
     }
 
-    // The heartbeat runs on the agent loop: the pull and the staleness check run in the background, every PullPeriod.
+    /// <summary>
+    /// Ends the subscriptions of this feature (the heartbeat, the transport): called by the drivers when its local party is
+    /// destroyed (a dynamic tenant domain) or when the application stops.
+    /// </summary>
+    public void Detach()
+    {
+        Local.ApplicationIdentityService.Heartbeat.Async -= OnHeartbeatAsync;
+        lock( _detachLock )
+        {
+            _detached = true;
+            if( _transport != null ) _transport.ConnectionAvailabilityChanged.Async -= OnConnectionAvailabilityChangedAsync;
+            _transport = null;
+        }
+    }
+
+    // The heartbeat runs on the agent loop: the work runs in the background, every PullPeriod. A party that is not the
+    // Authentication Center pulls the list and checks its staleness, the Authentication Center renews its list.
     Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
     {
         var utcNow = DateTime.UtcNow;
@@ -213,15 +274,27 @@ public sealed class AuthCenterSystemList
             _nextPull = utcNow + PullPeriod;
             _ = Task.Run( async () =>
             {
-                var m = new ActivityMonitor( $"Pulling the System list of the AuthCenter of '{Local}'." );
+                var m = new ActivityMonitor( $"The System list of the AuthCenter of '{Local}'." );
                 try
                 {
-                    await PullAsync( m ).ConfigureAwait( false );
-                    CheckStaleness( m, DateTime.UtcNow );
+                    if( Interlocked.Exchange( ref _stored, null ) is { } stored )
+                    {
+                        await TryAdoptAsync( m, stored, null ).ConfigureAwait( false );
+                    }
+                    if( _pull != null )
+                    {
+                        await PullAsync( m ).ConfigureAwait( false );
+                        CheckStaleness( m, DateTime.UtcNow );
+                    }
+                    else
+                    {
+                        // The System list is signed again before its signature expires.
+                        await RenewIfNeededAsync( m, DateTime.UtcNow ).ConfigureAwait( false );
+                    }
                 }
                 catch( Exception ex )
                 {
-                    m.Error( "While pulling the System list.", ex );
+                    m.Error( _pull != null ? "While pulling the System list." : "While renewing the System list.", ex );
                 }
                 finally
                 {
@@ -251,7 +324,17 @@ public sealed class AuthCenterSystemList
             monitor.Warn( $"Unable to ask the AuthCenter '{_center.AuthCenterFullName}' its System list.", ex );
             return false;
         }
-        if( result is byte[] encoded ) return await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false );
+        if( result is byte[] encoded )
+        {
+            // The AuthCenter answers its current list: an older one than the one held here means that it has been reset
+            // (or replaced), the lists it signs are ignored until their sequence number passes the one held here.
+            if( _current != null && SystemList.TryDecode( encoded, out var pulled ) && pulled!.Seq < _current.Seq )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The AuthCenter '{_center.AuthCenterFullName}' answers its {pulled}, older than the {_current} held by '{Local}': it is ignored." );
+                return false;
+            }
+            return await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false );
+        }
         if( result != null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' can't be asked its System list: {result}." );
         return false;
     }

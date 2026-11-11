@@ -244,11 +244,16 @@ transport: `AuthCenterSystemList.RouteHosts`). A name can have several hosts.
 
 - **The list:** the revoked identities, the route hosts, a sequence number and a time, signed by the Authentication
   Center (`SystemList.Purpose`). It is signed again (the next sequence number) when its signature reaches the middle of
-  its life: a signature lasts at most `MaxSignatureDays`. The center changes it with `AuthCenterSystemList.UpdateAsync`.
+  its life (checked every hour): a signature lasts at most `MaxSignatureDays`. The center changes it with
+  `AuthCenterSystemList.UpdateAsync`: the updates are serialized (each one sees the list of the previous one), and the
+  route hosts of a banned name are dropped from every new list.
 - **Every party that has an Authentication Center** (local, remote, or anchored without channel) holds the newest list
   it verified (`AuthCenterSystemList`, a feature of the local party), in its local store. It applies it to its keys
   (the revoked remotes are cut, see CK.AppIdentity.TransportLayer) and to its routes (computed again when the route
-  hosts change).
+  hosts change). At start, the stored list is verified again with the keys of the Authentication Center (it may have
+  been replaced or re-incepted): a list it didn't sign is ignored, a list signed by a key not known yet is verified with
+  its key events by the first heartbeat.
+
 - **The distribution:** the list is sent on every channel that becomes available, and relayed to the other remotes of
   the System when a newer one is adopted (`ISystemListCommand`, internal and endpoint-only). A list is adopted when
   its sequence number is greater and its signature is the Authentication Center's (verified with its pinned or

@@ -57,6 +57,38 @@ public class SystemListTests
     }
 
     [Test]
+    public async Task a_stored_list_that_the_AuthCenter_did_not_sign_is_not_applied_Async()
+    {
+        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types );
+        (await RevokeAsync( p, "Test/$Ghost/#Dev", Identity( 200 ) )).ShouldNotBeNull();
+        var centerList = p.Center.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>().Current.ShouldNotBeNull();
+        var remote = p.Remote.ApplicationIdentityService;
+        var center = remote.GetRequiredFeature<CrisAuthCenter>();
+        // Once the remote holds the list, it knows the keys of the AuthCenter.
+        var held = remote.GetRequiredFeature<AuthCenterSystemList>();
+        for( int i = 0; i < 100 && held.Current?.Seq != centerList.Seq; ++i ) await Task.Delay( 100 );
+        held.Current.ShouldNotBeNull().Seq.ShouldBe( centerList.Seq );
+
+        // The list of the AuthCenter, read from the store: verified and applied.
+        var loaded = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, null, centerList.Encode() );
+        loaded.Current.ShouldNotBeNull().Seq.ShouldBe( centerList.Seq );
+
+        // A stored list that its AuthCenter didn't sign, with a greater sequence number (the AuthCenter has been replaced
+        // or re-incepted; here the remote signs it): not applied, it doesn't block the lists of the AuthCenter.
+        var forged = SystemList.Create( remote.GetRequiredFeature<ILocalKeys>(), centerList.Seq + 40, [], [new RouteHost( "MailSender", "Test/$Evil/#Dev", null )], DateTime.UtcNow );
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            var ignored = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, null, forged.Encode() );
+            ignored.Current.ShouldBeNull();
+            ignored.RouteHosts.Find( "MailSender", "Test/$Evil/#Dev" ).ShouldBeNull();
+            logs.ShouldContain( l => l.Contains( $"stored by '{remote}' is signed by a key of the AuthCenter '{center.AuthCenterFullName}' that is not known yet" ) );
+            // Verified with the key events of the AuthCenter (by the first heartbeat): still refused.
+            (await ignored.TryAdoptAsync( TestHelper.Monitor, forged.Encode(), null )).ShouldBeFalse();
+            (await ignored.TryAdoptAsync( TestHelper.Monitor, centerList.Encode(), null )).ShouldBeTrue();
+        }
+    }
+
+    [Test]
     public async Task a_revoked_party_is_no_more_a_route_host_even_when_configured_Async()
     {
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types,

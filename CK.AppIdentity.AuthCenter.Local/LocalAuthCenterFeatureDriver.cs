@@ -51,14 +51,14 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     }
 
     /// <inheritdoc />
-    protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
+    protected override async Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
         bool success = true;
         foreach( var local in context.GetAllLocals() )
         {
-            success &= Plug( context.Monitor, local );
+            success &= await PlugAsync( context.Monitor, local ).ConfigureAwait( false );
         }
-        return Task.FromResult( success );
+        return success;
     }
 
     /// <inheritdoc />
@@ -66,7 +66,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     {
         if( party is ILocalParty local )
         {
-            return Task.FromResult( Plug( context.Monitor, local ) );
+            return PlugAsync( context.Monitor, local );
         }
         var remote = (IRemoteParty)party;
         if( !IsAllowedFeature( remote.Owner ) ) return Task.FromResult( true );
@@ -83,7 +83,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
         // A destroyed tenant domain takes its AuthCenter with it.
-        if( party is ILocalParty local ) local.GetFeature<LocalAuthCenter>()?.OnTeardown();
+        if( party is ILocalParty local ) Teardown( local );
         return Task.CompletedTask;
     }
 
@@ -92,12 +92,21 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     {
         foreach( var local in context.GetAllLocals() )
         {
-            local.GetFeature<LocalAuthCenter>()?.OnTeardown();
+            Teardown( local );
         }
         return Task.CompletedTask;
     }
 
-    bool Plug( IActivityMonitor monitor, ILocalParty local )
+    static void Teardown( ILocalParty local )
+    {
+        if( local.GetFeature<LocalAuthCenter>() is { } center )
+        {
+            center.OnTeardown();
+            local.GetFeature<AuthCenterSystemList>()?.Detach();
+        }
+    }
+
+    async Task<bool> PlugAsync( IActivityMonitor monitor, ILocalParty local )
     {
         if( !IsAllowedFeature( local ) ) return true;
         bool success = AuthCenterFeature.CheckNoAuthCenterKey( monitor, local );
@@ -120,7 +129,8 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
             if( IsAllowedFeature( r ) ) r.AddFeature( center );
         }
         local.AddFeature( new LocalAuthCenter( monitor, center, options, settings, routeHosts ) );
-        AuthCenterSystemList.Plug( monitor, center, null, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) );
+        await AuthCenterSystemList.PlugAsync( monitor, center, null, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
         return true;
+
     }
 }

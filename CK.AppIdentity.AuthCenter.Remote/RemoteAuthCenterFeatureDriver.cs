@@ -49,14 +49,14 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     }
 
     /// <inheritdoc />
-    protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
+    protected override async Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
         bool success = true;
         foreach( var local in context.GetAllLocals() )
         {
-            success &= Plug( context, local );
+            success &= await PlugAsync( context, local ).ConfigureAwait( false );
         }
-        return Task.FromResult( success );
+        return success;
     }
 
     /// <inheritdoc />
@@ -64,7 +64,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     {
         if( party is ILocalParty local )
         {
-            return Task.FromResult( Plug( context, local ) );
+            return PlugAsync( context, local );
         }
         var remote = (IRemoteParty)party;
         var owner = remote.Owner;
@@ -79,15 +79,19 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
                                    + $"a local party can use only one remote AuthCenter." );
             return Task.FromResult( false );
         }
-        return Task.FromResult( Attach( context, owner, remote ) );
+        return AttachAsync( context, owner, remote );
     }
 
     /// <inheritdoc />
     protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
     {
-        // A destroyed tenant domain takes its AuthCenter (and all its remotes) with it.
+        // A destroyed tenant domain takes its AuthCenter (and all its remotes) with it: its System list stops.
         // A destroyed remote that is the AuthCenter of a living local party is an issue.
-        if( party is IRemoteParty remote
+        if( party is ILocalParty local )
+        {
+            Teardown( local );
+        }
+        else if( party is IRemoteParty remote
             && remote.Owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter f
             && f.AuthCenter == remote )
         {
@@ -97,9 +101,25 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     }
 
     /// <inheritdoc />
-    protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
+    protected override Task TeardownAsync( FeatureLifetimeContext context )
+    {
+        foreach( var local in context.GetAllLocals() )
+        {
+            Teardown( local );
+        }
+        return Task.CompletedTask;
+    }
 
-    bool Plug( FeatureLifetimeContext context, ILocalParty local )
+    // The System list of a local party whose AuthCenter is a remote or anchored one (the Local side detaches its own).
+    static void Teardown( ILocalParty local )
+    {
+        if( local.GetFeature<RemoteAuthCenter>() != null || local.GetFeature<AnchoredAuthCenter>() != null )
+        {
+            local.GetFeature<AuthCenterSystemList>()?.Detach();
+        }
+    }
+
+    async Task<bool> PlugAsync( FeatureLifetimeContext context, ILocalParty local )
     {
         if( IsAllowedFeature( local ) ) return true;
         var monitor = context.Monitor;
@@ -119,12 +139,12 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
                 monitor.Error( $"'{local}' designates the AuthCenter '{designated}' (\"Local:{AuthCenterPartyKey}\") but its remote '{authCenter}' allows the 'AuthCenterRemote' feature." );
                 return false;
             }
-            return Attach( context, local, authCenter );
+            return await AttachAsync( context, local, authCenter ).ConfigureAwait( false );
         }
-        return designated == null || AttachAnchored( monitor, local, designated );
+        return designated == null || await AttachAnchoredAsync( monitor, local, designated ).ConfigureAwait( false );
     }
 
-    bool AttachAnchored( IActivityMonitor monitor, ILocalParty local, string authCenterFullName )
+    async Task<bool> AttachAnchoredAsync( IActivityMonitor monitor, ILocalParty local, string authCenterFullName )
     {
         var directory = (AnchoredKeyDirectory?)_services.GetService( typeof( AnchoredKeyDirectory ) );
         var sender = (PartyRoutedCommandSender?)_services.GetService( typeof( PartyRoutedCommandSender ) );
@@ -137,23 +157,27 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         if( center == null ) return false;
         var anchored = new AnchoredAuthCenter( center, sender, _services );
         local.AddFeature( anchored );
-        AuthCenterSystemList.Plug( monitor, center, m => anchored.SendAsync( m, pocos => pocos.Create<IGetSystemListQCommand>(), "ask the System list" ), AuthCenterSystemList.OnRouteHostsChanged( _services, local ) );
+        await AuthCenterSystemList.PlugAsync( monitor,
+                                              center,
+                                              m => anchored.SendAsync( m, pocos => pocos.Create<IGetSystemListQCommand>(), "ask the System list" ),
+                                              AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
         return true;
     }
 
-    bool Attach( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )
+    async Task<bool> AttachAsync( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )
     {
         var monitor = context.Monitor;
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
         local.AddFeature( new RemoteAuthCenter( center ) );
-        AuthCenterSystemList.Plug( monitor, center, async m =>
+        await AuthCenterSystemList.PlugAsync( monitor, center, async m =>
         {
             var channel = authCenter.GetFeature<CrisChannelFeature>();
             if( channel == null ) return null;
             return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetSystemListQCommand>() )
                                  .ExecutedCommand.WaitAsync( RemoteAuthCenter.Timeout ).ConfigureAwait( false )).Result;
-        }, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) );
+        }, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
         return true;
+
     }
 }
