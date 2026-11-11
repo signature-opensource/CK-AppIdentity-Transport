@@ -303,6 +303,21 @@ sealed partial class LocalKeys : ILocalKeys
     // Whether a party is anchored by "#Dev" (its checkpoint is read from its running status in the dev store).
     internal bool IsDevAnchored( string fullName ) => _devAnchors.Contains( fullName );
 
+    // The anchor of a party: configured, or read from its running status in the dev store ("#Dev"), in its shared folder
+    // (cached by the caller once read). Null when it can't be read yet (the party has not started) or when it is not
+    // anchored.
+    internal KeyCheckpoint? GetAnchor( IActivityLineEmitter logger, string fullName, NormalizedPath sharedFolder, ref KeyCheckpoint? devAnchor )
+    {
+        if( _trustAnchors.TryGetValue( fullName, out var a ) ) return a;
+        if( devAnchor != null || !_devAnchors.Contains( fullName ) ) return devAnchor;
+        return devAnchor = DevAnchors.Read( logger, fullName, sharedFolder );
+    }
+
+    // Before this limit, a replaced key issued nothing still valid: the longest lifetime this party accepts has elapsed
+    // since its replacement.
+    internal DateTime GetReplacedKeyLimit()
+        => _local.ApplicationIdentityService.SystemClock.UtcNow - TimeSpan.FromDays( KeyRotationDays ) - ApplicationSignature.TimePrecisionSlack;
+
     public bool IsDecommissioned => _state.Head.IsAbandonment;
 
     static string KeyName( int seq ) => seq.ToString( CultureInfo.InvariantCulture );

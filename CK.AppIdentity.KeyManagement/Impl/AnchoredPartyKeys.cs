@@ -136,8 +136,7 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
     // replacement: it is dropped, with the older ones (the head is kept).
     void Prune( List<KeyEvent> chain )
     {
-        var limit = _localKeys.Party.ApplicationIdentityService.SystemClock.UtcNow
-                    - TimeSpan.FromDays( _localKeys.KeyRotationDays ) - ApplicationSignature.TimePrecisionSlack;
+        var limit = _localKeys.GetReplacedKeyLimit();
         int drop = 0;
         while( drop < chain.Count - 1 && chain[drop + 1].TimeName < limit ) ++drop;
         if( drop > 0 ) chain.RemoveRange( 0, drop );
@@ -145,9 +144,5 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
 
     // The configured anchor, or the one read from the running status in the dev store ("#Dev").
     KeyCheckpoint? GetAnchor( IActivityLineEmitter logger )
-    {
-        if( _localKeys.TrustAnchors.TryGetValue( _fullName, out var a ) ) return a;
-        if( _devAnchor != null || !_localKeys.IsDevAnchored( _fullName ) ) return _devAnchor;
-        return _devAnchor = DevAnchors.Read( logger, _fullName, DevAnchors.GetSharedFolder( _localKeys.Party, _fullName ) );
-    }
+        => _localKeys.GetAnchor( logger, _fullName, DevAnchors.GetSharedFolder( _localKeys.Party, _fullName ), ref _devAnchor );
 }

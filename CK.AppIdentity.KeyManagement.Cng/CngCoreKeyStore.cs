@@ -292,11 +292,7 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
 
     static NormalizedPath GetMarkerPath( ILocalParty owner, string name )
     {
-        Throw.CheckArgument( "A key name is 1 to 64 letters, digits, '-', '_' or '.', and does not start with '.'.",
-                             !string.IsNullOrEmpty( name )
-                             && name.Length <= 64
-                             && name[0] != '.'
-                             && name.All( c => char.IsAsciiLetterOrDigit( c ) || c == '-' || c == '_' || c == '.' ) );
+        DefaultCoreKeyStore.CheckKeyName( name );
         return GetFolder( owner ).AppendPart( name + MarkerExtension );
     }
 

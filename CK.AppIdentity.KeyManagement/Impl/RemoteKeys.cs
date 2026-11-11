@@ -41,6 +41,9 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
     // The events the pin moved past: consecutive, linked, ending just before _pinned. Guarded by
     // _trustLock and mirrored in the KeyHistory folder.
     readonly List<KeyEvent> _history;
+    // The history and the pin, oldest first: what an application signature is checked against. A snapshot, built once
+    // and dropped (under _trustLock) whenever _history or _pinned change.
+    KeyEvent[]? _chain;
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
     // The anchor read from the running status of the remote in the dev store ("#Dev"), once read.
@@ -110,8 +113,11 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 
     public SignatureVerdict Check( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
-        KeyEvent[] chain;
-        lock( _trustLock ) chain = _pinned == null ? [] : [.. _history, _pinned];
+        var chain = _chain;
+        if( chain == null )
+        {
+            lock( _trustLock ) chain = _chain ??= _pinned == null ? [] : [.. _history, _pinned];
+        }
         // Bounded by this party's KeyRotationDays: what it accepts, whatever the remote is configured with.
         return ApplicationSignature.Check( logger, _remote.FullName, chain, purpose, data, signature,
                                             _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset, _localKeys.KeyRotationDays );
@@ -177,14 +183,9 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 
     // The anchor of this remote: configured, or read from its running status in the dev store ("#Dev"). Null when it
     // can't be read yet (the remote has not started) or when it is not anchored.
+    // The remote writes its running status in its shared folder of the dev store: the folder of this remote party.
     KeyCheckpoint? GetAnchor( IActivityLineEmitter logger )
-    {
-        if( _localKeys.TrustAnchors.TryGetValue( _remote.FullName, out var a ) ) return a;
-        if( !_localKeys.IsDevAnchored( _remote.FullName ) ) return null;
-        if( _devAnchor != null ) return _devAnchor;
-        // The remote writes its running status in its shared folder of the dev store: the folder of this remote party.
-        return _devAnchor = DevAnchors.Read( logger, _remote.FullName.Path, _remote.SharedFileStore.FolderPath );
-    }
+        => _localKeys.GetAnchor( logger, _remote.FullName.Path, _remote.SharedFileStore.FolderPath, ref _devAnchor );
 
     string IAnchoredKeys.FullName => _remote.FullName.Path;
 
@@ -497,6 +498,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         }
         _history.Clear();
         _history.AddRange( history );
+        _chain = null;
         PruneHistory( logger );
     }
 
@@ -505,14 +507,14 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
     void PruneHistory( IActivityLineEmitter logger )
     {
         Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
-        var limit = _remote.ApplicationIdentityService.SystemClock.UtcNow
-                    - TimeSpan.FromDays( _localKeys.KeyRotationDays ) - ApplicationSignature.TimePrecisionSlack;
+        var limit = _localKeys.GetReplacedKeyLimit();
         int drop = 0;
         while( drop < _history.Count && ReplacedAt( drop ) < limit ) ++drop;
         if( drop == 0 ) return;
         var folder = _remote.SharedFileStore.FolderPath.AppendPart( HistoryFolderName );
         for( int i = 0; i < drop; ++i ) _remote.SharedFileStore.TryTrash( logger, GetHistoryPath( folder, _history[i].Seq ), immediateDelete: true );
         _history.RemoveRange( 0, drop );
+        _chain = null;
 
         DateTime ReplacedAt( int i ) => (i + 1 < _history.Count ? _history[i + 1] : _pinned!).TimeName;
     }
@@ -554,6 +556,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             store.TryTrash( logger, GetTrustPath( current.Seq ) );
         }
         _pinned = e;
+        _chain = null;
         _identity = e != null ? CreateKey( e ) : null;
         if( e != null ) _pinRevoked = false;
         return true;

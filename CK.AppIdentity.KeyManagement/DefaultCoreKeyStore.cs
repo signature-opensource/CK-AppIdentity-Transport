@@ -133,12 +133,22 @@ public sealed class DefaultCoreKeyStore : ICoreKeyStore
     static NormalizedPath GetPath( ILocalParty owner, string name )
     {
         Throw.CheckNotNullArgument( owner );
+        CheckKeyName( name );
+        return GetFolder( owner ).AppendPart( name + Extension );
+    }
+
+    /// <summary>
+    /// Checks a key name, for a store that names a file after it: 1 to 64 letters, digits, '-', '_' or '.', and it does
+    /// not start with '.'.
+    /// </summary>
+    /// <param name="name">The key name.</param>
+    public static void CheckKeyName( string name )
+    {
         Throw.CheckArgument( "A key name is 1 to 64 letters, digits, '-', '_' or '.', and does not start with '.'.",
                              !string.IsNullOrEmpty( name )
                              && name.Length <= 64
                              && name[0] != '.'
                              && name.All( c => char.IsAsciiLetterOrDigit( c ) || c == '-' || c == '_' || c == '.' ) );
-        return GetFolder( owner ).AppendPart( name + Extension );
     }
 
     IDataProtector GetProtector( ILocalParty owner ) => _protectionProvider.CreateProtector( ProtectorPurpose, owner.FullName.Path );
