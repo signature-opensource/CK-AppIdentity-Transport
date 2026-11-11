@@ -76,8 +76,20 @@ public class SessionCommandsTests
         (await ReadSessionAsync( app )).ShouldNotBeNull().SessionParty.ShouldBe( app.Identity.FullName.Path );
         var cookies = app.Caller.Cookies.ShouldNotBeNull();
 
-        // The same cookies presented through another party: they have been stolen. The session is revoked.
+        // Another party that saw a token knows the session key, not its secrets: with other secrets, it is refused and the
+        // session is kept (the session key alone can't end it).
         app.Caller.CallerParty = "Test/$Other";
+        app.Caller.Cookies = cookies with { RefreshSecretHash = AuthCenterApp.Hash( "forged" ), BindingSecretHash = AuthCenterApp.Hash( "forged" ) };
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            (await RefreshAsync( app )).Success.ShouldBeFalse();
+            texts.ShouldContain( t => t.Contains( "is presented by 'Test/$Other': refused" ) );
+        }
+        (await ReadSessionAsync( app )).ShouldNotBeNull();
+
+        // The same cookies presented through another party: they have been stolen. The session is revoked.
+        app.Caller.Cookies = cookies;
+
         using( TestHelper.Monitor.CollectTexts( out var texts ) )
         {
             var r = await RefreshAsync( app );

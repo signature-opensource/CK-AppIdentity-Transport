@@ -62,12 +62,15 @@ The session identifiers are random (16 bytes, base64url) and checked before bein
 **The session party.** A session stores the full name of the party that opened it: the caller party of the login (the
 remote that relays it), this Authentication Center's party for its own endpoints. The endpoint's secrets (its cookies)
 belong to the origin of that party: a session operation (refresh, logout, impersonation...) presented through another
-party means that they have been stolen. It is refused, and the session is revoked by the operations that revoke on a
-mismatch (a `SecurityCritical` warning). The session party is in the tokens of the session.
+party is refused (a `SecurityCritical` warning), before its secrets are compared. When its secrets match, they have
+been stolen: the session is revoked by the operations that revoke on a mismatch. When they don't, the session is kept:
+the session key is in every token, a party that saw a token can't end the session with it. The session party is in the
+tokens of the session.
 
-**Rotation and reuse detection.** Every refresh, impersonation and end of impersonation rotates the secrets. A
-presented proof that matches neither the current secrets nor (below) the previous ones **revokes the session**: two
-parties hold the same cookies.
+**Rotation and reuse detection.** Every refresh, impersonation and end of impersonation rotates the secrets. A proof
+presented through the session party that matches neither the current secrets nor (below) the previous ones **revokes
+the session**: two parties hold the same cookies.
+
 
 **The grace window** (`RefreshGraceWindow`): the answer of a rotation can be lost (a dropped connection, a remote's dispatch
 that timed out while the Authentication Center completed). The caller then still has the previous secrets. They are

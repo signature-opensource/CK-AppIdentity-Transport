@@ -77,6 +77,24 @@ public sealed class AuthCenterSessionService
         var store = center.Sessions;
         var session = await store.TryReadAsync( monitor, actualActorId, sessionId ).ConfigureAwait( false );
         if( session == null ) return (null, "Invalid session.", "Authentication.InvalidSession");
+        // The endpoint's secrets belong to the origin of the party that opened the session: this is checked first. Presented
+        // through another party, secrets that match have been stolen (the session is revoked by the operations that revoke
+        // on a mismatch); secrets that don't match prove nothing (the session key is in every token): refused, the session
+        // is kept.
+        var callerParty = _current.CallerPartyFullName ?? center.Party.FullName.Path;
+        if( callerParty != session.SessionParty )
+        {
+            if( revokeOnMismatch && (session.Matches( proof ) || session.MatchesPrevious( proof, DateTime.UtcNow, center.Options.RefreshGraceWindow )) )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': the session is revoked." );
+                store.TryDelete( monitor, actualActorId, sessionId );
+            }
+            else
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': refused." );
+            }
+            return (null, "Invalid session.", "Authentication.InvalidSession");
+        }
         bool fromPrevious = false;
         if( !session.Matches( proof ) && session.MatchesPrevious( proof, DateTime.UtcNow, center.Options.RefreshGraceWindow ) )
         {
@@ -98,23 +116,8 @@ public sealed class AuthCenterSessionService
             store.TryDelete( monitor, actualActorId, sessionId );
             return (null, "The session expired.", "Authentication.SessionExpired");
         }
-        // The endpoint's secrets belong to the origin of the party that opened the session: presented through another
-        // party, they have been stolen.
-        var callerParty = _current.CallerPartyFullName ?? center.Party.FullName.Path;
-        if( callerParty != session.SessionParty )
-        {
-            if( revokeOnMismatch )
-            {
-                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': the session is revoked." );
-                store.TryDelete( monitor, actualActorId, sessionId );
-            }
-            else
-            {
-                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': refused." );
-            }
-            return (null, "Invalid session.", "Authentication.InvalidSession");
-        }
         return (new Current( center, session, fromPrevious ), null, null);
+
     }
 
     /// <summary>
