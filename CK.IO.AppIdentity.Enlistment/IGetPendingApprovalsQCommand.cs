@@ -45,4 +45,10 @@ public interface IPendingApproval : IPoco
     /// Gets or sets since when the key waits (UTC).
     /// </summary>
     DateTime Since { get; set; }
+
+    /// <summary>
+    /// Gets the names of the routes that the party states it hosts: the operator can authorize them with its approval
+    /// (see <see cref="IApprovePartyCommand.Routes"/>).
+    /// </summary>
+    IList<string> Routes { get; }
 }

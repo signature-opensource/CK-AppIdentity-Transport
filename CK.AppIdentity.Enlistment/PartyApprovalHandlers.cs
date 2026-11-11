@@ -81,6 +81,7 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                     a.KeyFingerprint = pending.Fingerprint;
                     a.Kind = pending.Kind;
                     a.Since = pending.Since;
+                    a.Routes.AddRange( pending.HostedRoutes );
                 } ) );
             }
         }
