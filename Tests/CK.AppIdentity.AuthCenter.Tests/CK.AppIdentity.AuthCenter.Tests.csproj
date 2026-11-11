@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Remote\CK.AppIdentity.AuthCenter.Remote.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Oidc\CK.AppIdentity.AuthCenter.Oidc.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Passkey\CK.AppIdentity.AuthCenter.Passkey.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Enlistment\CK.AppIdentity.AuthCenter.Enlistment.csproj" />
     <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris\CK.Testing.AppIdentity.Cris.csproj" />
     <ProjectReference Include="..\..\CK.Testing.AppIdentity.AuthCenter\CK.Testing.AppIdentity.AuthCenter.csproj" />
   </ItemGroup>

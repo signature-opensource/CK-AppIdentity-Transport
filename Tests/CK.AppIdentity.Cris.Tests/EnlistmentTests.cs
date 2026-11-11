@@ -174,11 +174,11 @@ public class EnlistmentTests
         } );
         var holder = b.Services.GetRequiredService<PartyApprovalHandlers>();
         var bLocal = new CurrentLocalParty( b.ApplicationIdentityService );
-        holder.Handle( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( "Test/$Other" ) )
+        (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( "Test/$Other" ) ))
               .ShouldBe( PartyApprovalStatus.Refused, "Not the host of the route." );
-        holder.Handle( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None )
+        (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None ))
               .ShouldBe( PartyApprovalStatus.Refused, "No caller party." );
-        holder.Handle( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( aName ) )
+        (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( aName ) ))
               .ShouldBe( PartyApprovalStatus.Refused, "The signature of the host is invalid." );
 
         // The right code among others: approved, D connects, the pending approval disappears.

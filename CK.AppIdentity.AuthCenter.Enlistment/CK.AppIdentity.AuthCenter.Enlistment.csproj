@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The part of the Authentication Center in the enlistment of a party: it countersigns the approval statement (after checking the operator's live proof), and the holder of the pending approval requires and verifies the countersignature.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.AuthCenter\CK.AppIdentity.AuthCenter.csproj" />
+    <ProjectReference Include="..\CK.AppIdentity.Enlistment\CK.AppIdentity.Enlistment.csproj" />
+  </ItemGroup>
+</Project>

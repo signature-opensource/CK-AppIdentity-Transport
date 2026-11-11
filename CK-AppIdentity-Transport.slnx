@@ -32,6 +32,7 @@
   <Project Path="CK.AppIdentity.Cris.Authentication/CK.AppIdentity.Cris.Authentication.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement/CK.AppIdentity.KeyManagement.csproj" />
   <Project Path="CK.AppIdentity.Enlistment/CK.AppIdentity.Enlistment.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Enlistment/CK.AppIdentity.AuthCenter.Enlistment.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement.Cng/CK.AppIdentity.KeyManagement.Cng.csproj" />
   <Project Path="CK.AppIdentity.Transport.MutualTls/CK.AppIdentity.Transport.MutualTls.csproj" />
   <Project Path="CK.Testing.AppIdentity.TransportLayer/CK.Testing.AppIdentity.TransportLayer.csproj" />

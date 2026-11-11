@@ -221,8 +221,17 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         return read;
     }
 
-    // Checks a signature of the AuthCenter for a purpose, with the safety net of a remote AuthCenter (see ReadTokenAsync).
-    internal async ValueTask<SignatureVerdict> CheckWithKeyEventsAsync( IActivityLineEmitter logger, string purpose, byte[] data, ApplicationSignature signature )
+    /// <summary>
+    /// Checks a signature of the Authentication Center for a purpose (a statement it signed: a key, a revocation list, a
+    /// countersignature...), with the safety net of a remote or anchored one: when its signer is unknown here, its key
+    /// events are obtained (on the channel, or along its route) and the signature is checked again, once.
+    /// </summary>
+    /// <param name="logger">Receives the reason of a refusal.</param>
+    /// <param name="purpose">The purpose of the signature.</param>
+    /// <param name="data">The signed data.</param>
+    /// <param name="signature">The signature.</param>
+    /// <returns>The verdict.</returns>
+    public async ValueTask<SignatureVerdict> CheckWithKeyEventsAsync( IActivityLineEmitter logger, string purpose, byte[] data, ApplicationSignature signature )
     {
         if( !IsAvailable ) return SignatureVerdict.Refused;
         var verdict = CheckSignature( logger, purpose, data, signature );

@@ -162,7 +162,7 @@ public class RemoteAuthCenterTests
 
     const int Port = 37147;
 
-    sealed class Pair : IAsyncDisposable
+    internal sealed class Pair : IAsyncDisposable
     {
         public required RunningApplication Remote { get; init; }
         public required RunningApplication Center { get; init; }
@@ -213,17 +213,18 @@ public class RemoteAuthCenterTests
         services.AddScoped( sp => new CurrentLocalParty( sp.GetRequiredService<ApplicationIdentityService>() ) );
     }
 
-    static async Task<Pair> StartAsync( bool remoteIsAllowed = true,
+    internal static async Task<Pair> StartAsync( bool remoteIsAllowed = true,
                                         bool remoteEncrypts = true,
                                         bool passkeys = false,
                                         Action<MutableConfigurationSection>? oidcSettings = null,
-                                        string? centerPublicUrl = null )
+                                        string? centerPublicUrl = null,
+                                        Type[]? extraTypes = null )
     {
         // The remote's AuthCenter is its remote "$Listener".
-        Type[] remoteTypes = [.. _common, .. _remoteTypes,
+        Type[] remoteTypes = [.. _common, .. _remoteTypes, .. extraTypes ?? [],
                               .. (remoteEncrypts ? [typeof( AuthCenterFieldEncryptor )] : Type.EmptyTypes),
                               .. (passkeys ? [.. _passkeyCommands, typeof( PasskeyHandlers )] : Type.EmptyTypes)];
-        Type[] centerTypes = [.. _common, .. _centerTypes,
+        Type[] centerTypes = [.. _common, .. _centerTypes, .. extraTypes ?? [],
                               .. (passkeys
                                     ? [.. _passkeyCommands,
                                        typeof( Passkey.AuthCenterPasskeyFeatureDriver ),

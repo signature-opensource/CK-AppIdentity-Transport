@@ -67,7 +67,8 @@ public interface IPartyApprovalStatement : IPoco
     byte[] HostSignature { get; set; }
 
     /// <summary>
-    /// Gets or sets the encoded countersignature of the statement by the Authentication Center: null without a trust anchor.
+    /// Gets or sets the encoded countersignature of the statement by the Authentication Center (CK.AppIdentity.AuthCenter.Enlistment):
+    /// null in a System without Authentication Center.
     /// </summary>
     byte[]? CenterCountersignature { get; set; }
 }

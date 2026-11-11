@@ -29,14 +29,17 @@ namespace CK.AppIdentity.Enlistment;
 public sealed class PartyApprovalHandlers : ISingletonAutoService
 {
     readonly PartyRoutedCommandSender _sender;
+    readonly IPartyApprovalCountersignature? _countersignature;
 
     /// <summary>
     /// Initializes the handlers.
     /// </summary>
     /// <param name="sender">The sender of the routed commands.</param>
-    public PartyApprovalHandlers( PartyRoutedCommandSender sender )
+    /// <param name="countersignature">The countersignature by the Authentication Center, if any.</param>
+    public PartyApprovalHandlers( PartyRoutedCommandSender sender, IPartyApprovalCountersignature? countersignature = null )
     {
         _sender = sender;
+        _countersignature = countersignature;
     }
 
     /// <summary>
@@ -129,6 +132,21 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                 statement.HostSignature = keys.Sign( PartyApprovalStatement.Purpose,
                                                      PartyApprovalStatement.GetSignedData( statement ),
                                                      statement.Time + PartyApprovalStatement.Lifetime ).Encoded.ToArray();
+                if( _countersignature != null )
+                {
+                    var (success, countersignature) = await _countersignature.CountersignAsync( monitor, services, host, statement ).ConfigureAwait( false );
+                    if( !success )
+                    {
+                        monitor.Warn( $"The approval of '{party}' pending on '{item.Holder}' can't be countersigned by the Authentication Center: it is not sent." );
+                        outcomes.Add( pocos.Create<IPartyApprovalOutcome>( o =>
+                        {
+                            o.HolderFullName = item.Holder;
+                            o.Status = PartyApprovalStatus.Refused;
+                        } ) );
+                        continue;
+                    }
+                    statement.CenterCountersignature = countersignature;
+                }
                 var approve = pocos.Create<IApprovePendingPartyCommand>( a =>
                 {
                     a.Statement = statement;
@@ -139,7 +157,7 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                 if( item.Length == 1 )
                 {
                     // The host holds the pending approval itself.
-                    status = ApprovePending( monitor, host, host.FullName, approve );
+                    status = await ApprovePendingAsync( monitor, host, host.FullName, approve ).ConfigureAwait( false );
                 }
                 else
                 {
@@ -174,15 +192,15 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
     /// <param name="authentication">The authentication: its caller party must be the host of the "Enlistment" route.</param>
     /// <returns>The outcome.</returns>
     [CommandHandler]
-    public PartyApprovalStatus Handle( IActivityMonitor monitor,
-                                       IApprovePendingPartyCommand command,
-                                       CurrentLocalParty current,
-                                       AuthenticationInfo authentication )
+    public Task<PartyApprovalStatus> HandleAsync( IActivityMonitor monitor,
+                                                  IApprovePendingPartyCommand command,
+                                                  CurrentLocalParty current,
+                                                  AuthenticationInfo authentication )
     {
-        return ApprovePending( monitor, current.LocalParty, authentication.CallerPartyFullName, command );
+        return ApprovePendingAsync( monitor, current.LocalParty, authentication.CallerPartyFullName, command );
     }
 
-    static PartyApprovalStatus ApprovePending( IActivityMonitor monitor, ILocalParty holder, string? caller, IApprovePendingPartyCommand command )
+    async Task<PartyApprovalStatus> ApprovePendingAsync( IActivityMonitor monitor, ILocalParty holder, string? caller, IApprovePendingPartyCommand command )
     {
         var statement = command.Statement!;
         // Fail closed: only from the host of the route, about a pending approval of this holder.
@@ -217,6 +235,13 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
         else
         {
             monitor.Trace( $"The approval of '{statement.PartyFullName}' is accepted from the chain of hops: the keys of '{caller}' are not known by '{holder.FullName}'." );
+        }
+        // The countersignature of the Authentication Center: required when the holder has one (fail closed).
+        if( _countersignature != null && !await _countersignature.VerifyAsync( monitor, holder, statement ).ConfigureAwait( false ) )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
+                          $"'{holder.FullName}' refuses the approval of '{statement.PartyFullName}': it is not countersigned by its Authentication Center." );
+            return PartyApprovalStatus.Refused;
         }
         var issue = holder.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>()
                           .GetPeeringIssues()

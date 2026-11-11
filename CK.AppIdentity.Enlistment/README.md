@@ -45,3 +45,11 @@ the origin of the route). It fails closed:
   statement only (`PeeringIssue.TryApprove` with the expected fingerprint): `Approved`, `CodeMismatch` or `NotReady`.
 
 An approval is logged by the holder with its statement and the host's signature: the audit of the enlistment.
+
+## The countersignature of the Authentication Center
+
+An optional `IPartyApprovalCountersignature` (implemented by
+[CK.AppIdentity.AuthCenter.Enlistment](../CK.AppIdentity.AuthCenter.Enlistment/README.md)) adds the countersignature of
+the Authentication Center to the statement (`CenterCountersignature`): the host obtains it in the operator's request (an
+approval it can't countersign is not sent: `Refused`), and the holder that has an Authentication Center requires and
+verifies it (otherwise `Refused`).

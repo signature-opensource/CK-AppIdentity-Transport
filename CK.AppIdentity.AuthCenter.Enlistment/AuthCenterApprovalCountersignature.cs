@@ -1,0 +1,170 @@
+using CK.AppIdentity.Cris;
+using CK.AppIdentity.Enlistment;
+using CK.AppIdentity.KeyManagement;
+using CK.Auth;
+using CK.Core;
+using CK.Cris;
+using CK.IO.AppIdentity.Enlistment;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace CK.AppIdentity.AuthCenter.Enlistment;
+
+/// <summary>
+/// Asks the Authentication Center to countersign the statement of an approval: sent by the host of the approval page in
+/// the request of the operator (the Critical level: the operator's live proof travels with it). The Authentication Center
+/// checks that the operator is the one of the statement, not impersonated, and that the caller party is its host. The
+/// right to enlist can be checked here by the application (a validator of this command, on the Authentication Center).
+/// </summary>
+[Internal]
+public interface ICountersignApprovalCommand : ICommand<byte[]?>, ICommandAuthCritical
+{
+    /// <summary>
+    /// Gets or sets the statement, signed by the host.
+    /// </summary>
+    IPartyApprovalStatement? Statement { get; set; }
+}
+
+/// <summary>
+/// The countersignature of an approval statement by the Authentication Center (<see cref="Purpose"/>): it covers the same
+/// data as the host's signature (<see cref="PartyApprovalStatement.GetSignedData"/>) and lives as long.
+/// </summary>
+public static class ApprovalCountersignature
+{
+    /// <summary>
+    /// The purpose of the countersignature by the Authentication Center.
+    /// </summary>
+    public const string Purpose = "CK.AuthCenter.PartyApproval";
+}
+
+/// <summary>
+/// The <see cref="IPartyApprovalCountersignature"/> of a System that has an Authentication Center:
+/// <list type="bullet">
+///   <item>On the host, the countersignature is asked to the Authentication Center (<see cref="ICountersignApprovalCommand"/>):
+///   signed here when the host is the Authentication Center, sent to it otherwise as a routed command (along the path to the
+///   remote, or along its route), with the operator's proof, sealed.</item>
+///   <item>On the holder, it is required when the holder has an Authentication Center, and verified with its keys (pinned
+///   or anchored): an approval without it, or with an invalid one, is refused.</item>
+///   <item>On the Authentication Center, the command is handled: the operator's live proof, its identity and the host.</item>
+/// </list>
+/// A party without Authentication Center neither asks nor requires a countersignature.
+/// </summary>
+public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersignature
+{
+    readonly PartyRoutedCommandSender _sender;
+
+    /// <summary>
+    /// Initializes a new countersignature service.
+    /// </summary>
+    /// <param name="sender">The sender of the routed commands.</param>
+    public AuthCenterApprovalCountersignature( PartyRoutedCommandSender sender )
+    {
+        _sender = sender;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<(bool Success, byte[]? Countersignature)> CountersignAsync( IActivityMonitor monitor,
+                                                                                      IServiceProvider services,
+                                                                                      ILocalParty host,
+                                                                                      IPartyApprovalStatement statement )
+    {
+        var center = host.GetFeature<CrisAuthCenter>();
+        if( center == null ) return (true, null);
+        if( center.AuthCenter == host )
+        {
+            // The host is the Authentication Center: the operator's request is executed here, at the Critical level.
+            return (true, Sign( host, statement ));
+        }
+        var command = services.GetRequiredService<PocoDirectory>().Create<ICountersignApprovalCommand>( c =>
+        {
+            // The operator: its live proof travels with the command.
+            c.ActorId = statement.OperatorActorId;
+            c.Statement = statement;
+        } );
+        object? result;
+        try
+        {
+            // Always addressed to the Authentication Center (the handler is everywhere this package is): along the path to
+            // the remote, or along its route. The operator's proof travels with it, sealed.
+            result = center.AuthCenter != null
+                        ? await _sender.SendAlongPathAsync( monitor, services, host, command, [host.FullName.Path, center.AuthCenterFullName] ).ConfigureAwait( false )
+                        : await _sender.SendAsync( monitor, services, host, command, AuthCenterFeature.RouteName ).ConfigureAwait( false );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to ask the AuthCenter '{center.AuthCenterFullName}' to countersign the approval of '{statement.PartyFullName}'.", ex );
+            return (false, null);
+        }
+        if( result is byte[] countersignature ) return (true, countersignature);
+        var error = result is ICrisResultError e ? e.Errors.Select( m => m.Text ).Concatenate() : "refused";
+        monitor.Warn( $"The AuthCenter '{center.AuthCenterFullName}' doesn't countersign the approval of '{statement.PartyFullName}': {error}" );
+        return (false, null);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> VerifyAsync( IActivityMonitor monitor, ILocalParty holder, IPartyApprovalStatement statement )
+    {
+        var center = holder.GetFeature<CrisAuthCenter>();
+        if( center == null ) return true;
+        if( statement.CenterCountersignature == null
+            || !ApplicationSignature.TryRead( statement.CenterCountersignature, out var signature ) )
+        {
+            monitor.Warn( $"The approval of '{statement.PartyFullName}' has no countersignature of the AuthCenter '{center.AuthCenterFullName}'." );
+            return false;
+        }
+        var verdict = await center.CheckWithKeyEventsAsync( monitor, ApprovalCountersignature.Purpose, PartyApprovalStatement.GetSignedData( statement ), signature ).ConfigureAwait( false );
+        if( verdict != SignatureVerdict.Valid )
+        {
+            monitor.Warn( $"The countersignature of the approval of '{statement.PartyFullName}' by the AuthCenter '{center.AuthCenterFullName}' is invalid ({verdict})." );
+            return false;
+        }
+        return true;
+    }
+
+    // The Authentication Center signs the same data as the host, for the same lifetime.
+    static byte[] Sign( ILocalParty center, IPartyApprovalStatement statement )
+    {
+        return center.GetRequiredFeature<ILocalKeys>()
+                     .Sign( ApprovalCountersignature.Purpose,
+                            PartyApprovalStatement.GetSignedData( statement ),
+                            statement.Time + PartyApprovalStatement.Lifetime )
+                     .Encoded.ToArray();
+    }
+
+    /// <summary>
+    /// Handles the <see cref="ICountersignApprovalCommand"/> on the Authentication Center: the operator (at the Critical
+    /// level, checked by <see cref="ICommandAuthCritical"/>) must be the operator of the statement, not impersonated, and the
+    /// caller party must be its host.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="command">The command.</param>
+    /// <param name="current">The local party.</param>
+    /// <param name="authentication">The authentication of the operator.</param>
+    /// <returns>The countersignature, or null when it is refused (the reason is logged).</returns>
+    [CommandHandler]
+    public byte[]? Handle( IActivityMonitor monitor, ICountersignApprovalCommand command, CurrentLocalParty current, AuthenticationInfo authentication )
+    {
+        var local = current.LocalParty;
+        var statement = command.Statement;
+        if( local.GetFeature<CrisAuthCenter>()?.AuthCenter != local || statement == null )
+        {
+            monitor.Warn( $"'{local}' is asked to countersign an approval: it is not an Authentication Center." );
+            return null;
+        }
+        string? refusal = null;
+        if( authentication.IsImpersonated ) refusal = "the operator is impersonating";
+        else if( authentication.ActualActor.Level < AuthLevel.Critical ) refusal = "the operator is not at the Critical level";
+        else if( authentication.Actor.ActorId != statement.OperatorActorId ) refusal = $"the operator #{authentication.Actor.ActorId} is not the one of the statement (#{statement.OperatorActorId})";
+        else if( authentication.CallerPartyFullName != statement.HostFullName ) refusal = $"the caller party '{authentication.CallerPartyFullName}' is not the host of the statement ('{statement.HostFullName}')";
+        if( refusal != null )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The AuthCenter '{local}' refuses to countersign the approval of '{statement.PartyFullName}': {refusal}." );
+            return null;
+        }
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical,
+                      $"The AuthCenter '{local}' countersigns the approval of '{statement.PartyFullName}' (key '{statement.KeyFingerprint}') pending on '{statement.HolderFullName}', by actor #{statement.OperatorActorId} on '{statement.HostFullName}'." );
+        return Sign( local, statement );
+    }
+}
