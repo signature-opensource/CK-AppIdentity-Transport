@@ -327,5 +327,4 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             r.PinGrant = command.WithPinGrant ? CreatePinGrant( monitor, local, statement ) : null;
         } );
     }
-
 }

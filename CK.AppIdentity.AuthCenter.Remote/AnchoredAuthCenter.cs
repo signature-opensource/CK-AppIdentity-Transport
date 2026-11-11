@@ -33,7 +33,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     readonly CrisAuthCenter _center;
     readonly PartyRoutedCommandSender _sender;
     readonly IServiceProvider _services;
-    readonly ConcurrentDictionary<string, (byte[] PublicKey, DateTime Expires)> _partyKeys;
+    readonly StatedEncryptionKeys _partyKeys;
 
     internal AnchoredAuthCenter( CrisAuthCenter center, PartyRoutedCommandSender sender, IServiceProvider services )
     {
@@ -41,7 +41,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
         _center = center;
         _sender = sender;
         _services = services;
-        _partyKeys = new ConcurrentDictionary<string, (byte[], DateTime)>();
+        _partyKeys = new StatedEncryptionKeys( center );
     }
 
     /// <summary>
@@ -148,7 +148,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     public async ValueTask<(byte[] PublicKey, DateTime Expires)?> GetPartyEncryptionKeyAsync( IActivityMonitor monitor, string partyFullName )
     {
         Throw.CheckNotNullArgument( partyFullName );
-        if( _partyKeys.TryGetValue( partyFullName, out var cached ) && cached.Expires - TimeSpan.FromMinutes( 1 ) > DateTime.UtcNow )
+        if( _partyKeys.TryGet( partyFullName, DateTime.UtcNow, out var cached ) )
         {
             return cached;
         }
@@ -160,19 +160,8 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
             if( answer == null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' doesn't know the encryption key of '{partyFullName}'." );
             return null;
         }
-        if( statement.PartyFullName != partyFullName
-            || !ApplicationSignature.TryRead( statement.Signature, out var signature )
-            || await _center.CheckWithKeyEventsAsync( monitor,
-                                                     PartyEncryptionKeyStatement.Purpose,
-                                                     PartyEncryptionKeyStatement.GetSignedData( partyFullName, statement.PublicKey ),
-                                                     signature ).ConfigureAwait( false ) != SignatureVerdict.Valid )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The statement of the AuthCenter '{_center.AuthCenterFullName}' about the encryption key of '{partyFullName}' is invalid." );
-            return null;
-        }
-        var key = (statement.PublicKey, signature.Expiration);
-        _partyKeys[partyFullName] = key;
-        return key;
+        return await _partyKeys.VerifyAsync( monitor, partyFullName, statement ).ConfigureAwait( false );
+
     }
 
     // Sends a query along the route of the AuthCenter. Null when it answered null, or when it can't be sent or answered

@@ -35,7 +35,6 @@ public interface IVerifyRoutedProofQCommand : ICommand<IAuthCenterProofStatement
     /// </summary>
     byte[] EncryptedProof { get; set; }
 
-
     /// <summary>
     /// Gets or sets the header of the seal of the routed command.
     /// </summary>

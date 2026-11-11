@@ -61,7 +61,6 @@ public sealed class AuthCenterPasskey : IAuthCenterScheme
 
     internal AuthCenterPendingStore<PasskeyCeremony> GetCeremonies( bool isRegistration ) => isRegistration ? _registrations! : _ceremonies!;
 
-
     /// <inheritdoc />
     public string ProviderName => PasskeyLoginPayload.Scheme;
 

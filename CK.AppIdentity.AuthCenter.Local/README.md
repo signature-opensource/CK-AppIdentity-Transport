@@ -71,7 +71,6 @@ tokens of the session.
 presented through the session party that matches neither the current secrets nor (below) the previous ones **revokes
 the session**: two parties hold the same cookies.
 
-
 **The grace window** (`RefreshGraceWindow`): the answer of a rotation can be lost (a dropped connection, a remote's dispatch
 that timed out while the Authentication Center completed). The caller then still has the previous secrets. They are
 accepted **once**, within the window after the rotation, by the operations that rotate again (refresh, impersonation, end

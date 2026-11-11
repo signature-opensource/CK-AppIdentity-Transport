@@ -61,7 +61,6 @@ public sealed class AuthCenterSystemList
     bool _detached;
     readonly object _detachLock = new object();
 
-
     AuthCenterSystemList( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull, Func<IActivityMonitor, Task>? onRouteHostsChanged )
     {
         _center = center;
@@ -160,7 +159,6 @@ public sealed class AuthCenterSystemList
     ILocalParty Local => _center.Owner;
 
     NormalizedPath FilePath => StoreFilePath( Local );
-
 
     /// <summary>
     /// Creates the feature of a local party once its <see cref="CrisAuthCenter"/> exists (used by the two sides of the

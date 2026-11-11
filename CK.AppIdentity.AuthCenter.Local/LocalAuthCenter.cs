@@ -101,7 +101,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         } ).ConfigureAwait( false );
     }
 
-
     /// <summary>
     /// Gets the configuration sub-section of a scheme family ("AuthCenter:Oidc" for "Oidc"): the families read their own
     /// settings. The key must be declared by an <see cref="IAuthCenterSchemeConfiguration"/>.
@@ -338,19 +337,29 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                             : $"'{partyFullName}' publishes no encryption key (it is not connected, or it has no key management)." );
             return null;
         }
-        var verdict = PartyEncryption.Check( monitor, keys, published, out var publicKey, out var expires );
-        if( verdict == SignatureVerdict.UnknownIssuer
-            && remote.GetFeature<CK.AppIdentity.TransportLayer.TransportFeature>() is { } transport
-            && await transport.RequestKeyEventsAsync( CrisAuthCenter.KeyEventsTimeout ).ConfigureAwait( false ) )
-        {
-            verdict = PartyEncryption.Check( monitor, keys, published, out publicKey, out expires );
-        }
+        byte[]? publicKey = null;
+        DateTime expires = default;
+        var verdict = await CheckWithKeyEventsAsync( remote, () => PartyEncryption.Check( monitor, keys, published, out publicKey, out expires ) ).ConfigureAwait( false );
         if( verdict != SignatureVerdict.Valid || expires <= utcNow )
         {
             monitor.Warn( $"The encryption key published by '{partyFullName}' is refused." );
             return null;
         }
         return (publicKey!, expires);
+    }
+
+    // Checks a signature of a party: when its issuer is unknown here, the key events of the party (a remote) are requested
+    // and the signature is checked again, once.
+    static async ValueTask<SignatureVerdict> CheckWithKeyEventsAsync( IParty signer, Func<SignatureVerdict> check )
+    {
+        var verdict = check();
+        if( verdict == SignatureVerdict.UnknownIssuer
+            && signer.GetFeature<CK.AppIdentity.TransportLayer.TransportFeature>() is { } transport
+            && await transport.RequestKeyEventsAsync( CrisAuthCenter.KeyEventsTimeout ).ConfigureAwait( false ) )
+        {
+            verdict = check();
+        }
+        return verdict;
     }
 
     /// <summary>
@@ -382,14 +391,8 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
             else
             {
                 var data = RoutedCommandSeal.GetSignedData( seal.Header, seal.PayloadDigest );
-                var verdict = keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature );
                 // The session party may have rotated its key: its key events are requested, once.
-                if( verdict == SignatureVerdict.UnknownIssuer
-                    && signer!.GetFeature<CK.AppIdentity.TransportLayer.TransportFeature>() is { } transport
-                    && await transport.RequestKeyEventsAsync( CrisAuthCenter.KeyEventsTimeout ).ConfigureAwait( false ) )
-                {
-                    verdict = keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature );
-                }
+                var verdict = await CheckWithKeyEventsAsync( signer!, () => keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature ) ).ConfigureAwait( false );
                 valid = verdict == SignatureVerdict.Valid;
                 if( valid && !_sealNonces.TryUse( monitor, nonce!, created + RoutedCommandSeal.Lifetime + RoutedCommandSeal.ClockSkew, utcNow ) )
                 {
@@ -404,6 +407,4 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         }
         return valid;
     }
-
-
 }
