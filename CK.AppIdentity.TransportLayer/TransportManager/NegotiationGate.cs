@@ -7,8 +7,8 @@ namespace CK.AppIdentity.TransportLayer;
 /// Admission control for incoming connections that have not authenticated yet.
 /// <para>
 /// Everything an incoming connection costs before the listener knows whether it is talking to a
-/// party it has ever heard of — a pooled read buffer, a <c>Task.Run</c>, a back task, an SPKI import
-/// and an ECDSA verification — is spent on an unauthenticated peer's say-so. <c>IncomingNegotiationTimeout</c>
+/// party it has ever heard of — a pooled read buffer, a <c>Task.Run</c>, a back task, SPKI imports
+/// and ECDSA verifications — is spent on an unauthenticated peer's say-so. <c>IncomingNegotiationTimeout</c>
 /// bounds how long one of those lasts; it does not bound how many run at once.
 /// </para>
 /// <para>
@@ -17,8 +17,11 @@ namespace CK.AppIdentity.TransportLayer;
 /// which needs eviction that then needs its own bound. Counting what is in flight needs none of it:
 /// an entry exists only while a negotiation is running, so <see cref="MaxTotal"/> bounds the table
 /// as well as the work. What a concurrency cap does not stop is a peer completing and reconnecting
-/// as fast as it can; at that point the cost is one ECDSA verification per TCP handshake, and a peer
-/// able to sustain that is a network-level flood for a firewall to answer, not this layer.
+/// as fast as it can; at that point the cost is a few ECDSA verifications per TCP handshake: the events of
+/// the tail it presents (at most <see cref="KeyManagement.KeyEventChain.MaxEventTail"/> for a caller that is
+/// not a remote, up to <see cref="KeyManagement.KeyEventChain.MaxEventWindow"/> for a remote that catches up
+/// from what is held of it), its operational credential and the message. A peer able to sustain that is a
+/// network-level flood for a firewall to answer, not this layer.
 /// </para>
 /// <para>
 /// Refusal is silent on the wire: the listener closes the connection without reading. A legitimate

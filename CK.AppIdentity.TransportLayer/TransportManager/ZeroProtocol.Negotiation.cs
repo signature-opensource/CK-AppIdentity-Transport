@@ -261,9 +261,11 @@ static partial class ZeroProtocol // Negotiation
         Span<byte> signature = stackalloc byte[lenSignature];
         r.ReadBytes( signature );
 
+        // A sender that is not one of our remotes can only be self-asserted: its events prove nothing, only its last ones
+        // are checked (a bounded work before anything is known of it).
         var chain = senderKeys != null
                         ? senderKeys.ApplyTail( logger, tail )
-                        : KeyEventChain.Verify( senderFullName, tail, null );
+                        : KeyEventChain.Verify( senderFullName, tail.Length > KeyEventChain.MaxEventTail ? tail[^KeyEventChain.MaxEventTail..] : tail, null );
         var head = tail[^1];
         // Malformed bytes in the head are the peer's fault: InvalidDataException, like any other.
         var headKeyData = new RemoteIdentityKeyData( head );
@@ -534,7 +536,9 @@ static partial class ZeroProtocol // Negotiation
         if( r.ReadBool() )
         {
             signatureCheck = ReadIdentityBlockAndVerify( ref r, logger, remoteKeys.Party.FullName, remoteKeys, remoteKeys.Party.ApplicationIdentityService.SystemClock.UtcNow, out var read );
-            block = read;
+            // Nothing is signed by this key after a rejection: it is not kept.
+            read.OperationalKey?.Dispose();
+            block = read with { OperationalKey = null };
         }
         else
         {
@@ -699,6 +703,8 @@ static partial class ZeroProtocol // Negotiation
             offMessage = GoodbyeMessage.ReadMessage( ref r );
         }
         var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
+        // Nothing else is signed by this key on this connection.
+        block.OperationalKey?.Dispose();
         // Switching a remote off on the strength of a self-asserted signature would let anyone
         // answering on this connection take it down with a single packet and no key material.
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
@@ -891,6 +897,7 @@ static partial class ZeroProtocol // Negotiation
         if( foundTrustedKey ) transport.SetRemoteCredential( block.OperationalKey!, block.CredentialNotAfter );
         if( !foundTrustedKey )
         {
+            block.OperationalKey?.Dispose();
             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                            $"Received untrusted (self-asserted) AcceptedProtocolsMessage message from '{remote.Party}'." );
             return default;
@@ -944,6 +951,8 @@ static partial class ZeroProtocol // Negotiation
             return false;
         }
         var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
+        // Nothing else is signed by this key on this connection.
+        block.OperationalKey?.Dispose();
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
@@ -1028,6 +1037,8 @@ static partial class ZeroProtocol // Negotiation
             return false;
         }
         var check = ReadIdentityBlockAndVerify( ref r, logger, remote.Party.FullName, remote.RemoteKeys, remote.Party.ApplicationIdentityService.SystemClock.UtcNow, out var block );
+        // Nothing else is signed by this key on this connection.
+        block.OperationalKey?.Dispose();
         if( !remote.RemoteKeys.IsTrustedAfterRead( logger, check, block ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated,

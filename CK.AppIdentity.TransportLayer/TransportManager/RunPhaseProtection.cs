@@ -64,6 +64,10 @@ public sealed class RunPhaseProtection : IDisposable
     readonly byte[] _receiveKey;
     readonly AesGcm? _sendGcm;
     readonly AesGcm? _receiveGcm;
+    // The HMAC of each direction, created once like the AesGcm (its key schedule is not redone per frame): each one has a
+    // single caller (the sender, the receiver), and it is reset by each tag.
+    readonly IncrementalHash? _sendHmac;
+    readonly IncrementalHash? _receiveHmac;
     // Monotonic, never transmitted: both sides count locally, so a dropped or reordered frame
     // fails its MAC automatically and costs no bytes on the wire.
     ulong _sendCounter;
@@ -86,6 +90,11 @@ public sealed class RunPhaseProtection : IDisposable
         {
             _sendGcm = new AesGcm( sendKey, TagLength );
             _receiveGcm = new AesGcm( receiveKey, TagLength );
+        }
+        else
+        {
+            _sendHmac = IncrementalHash.CreateHMAC( HashAlgorithmName.SHA256, sendKey );
+            _receiveHmac = IncrementalHash.CreateHMAC( HashAlgorithmName.SHA256, receiveKey );
         }
     }
 
@@ -418,14 +427,14 @@ public sealed class RunPhaseProtection : IDisposable
         }
         else
         {
-            using var h = IncrementalHash.CreateHMAC( HashAlgorithmName.SHA256, sending ? _sendKey : _receiveKey );
+            var h = sending ? _sendHmac! : _receiveHmac!;
             Span<byte> c = stackalloc byte[8];
             BinaryPrimitives.WriteUInt64LittleEndian( c, counter );
             h.AppendData( c );
             h.AppendData( header );
             foreach( var s in payload ) h.AppendData( s.Span );
             Span<byte> full = stackalloc byte[32];
-            h.GetCurrentHash( full );
+            h.GetHashAndReset( full );
             full.Slice( 0, TagLength ).CopyTo( tag );
         }
     }
@@ -436,6 +445,8 @@ public sealed class RunPhaseProtection : IDisposable
         _disposed = true;
         _sendGcm?.Dispose();
         _receiveGcm?.Dispose();
+        _sendHmac?.Dispose();
+        _receiveHmac?.Dispose();
         CryptographicOperations.ZeroMemory( _sendKey );
         CryptographicOperations.ZeroMemory( _receiveKey );
     }

@@ -163,12 +163,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                   out var existingParty );
         if( issue == PeeringIssueKind.None && remote == null )
         {
+            DisposeUnusedKey( initialMessage, incoming );
             await ZeroProtocol.SendFinalFailureMessageAsync( incoming ).ConfigureAwait( false );
             return false;
         }
         if( issue != PeeringIssueKind.None )
         {
             await HandleConfigurationOrTrustIssueAsync( transportManager, incoming, initialMessage, remote, issue, existingParty ).ConfigureAwait( false );
+            DisposeUnusedKey( initialMessage, incoming );
             return false;
         }
         Throw.DebugAssert( "We have a trusted remote.", remote != null && foundTrustKey );
@@ -438,7 +440,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 if( remote != null && block.Verdict == KeyManagement.KeyChainVerdict.Revoked )
                 {
                     conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.Revoked);
-                    return null;
+                    return Drop( block );
                 }
                 if( remote != null && remote.RemoteKeys.IsAnchored && remote.RemoteKeys.Refusal == block.Verdict )
                 {
@@ -448,24 +450,24 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                     ? ZeroProtocol.ConfigurationOrTrustIssue.EventsRequired
                                     : ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch;
                     conflict = (remote.RemoteKeys, timedNonce.Nonce, issue);
-                    return null;
+                    return Drop( block );
                 }
                 if( remote != null && block.Verdict is KeyManagement.KeyChainVerdict.Rollback or KeyManagement.KeyChainVerdict.Duplicity )
                 {
                     conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict);
-                    return null;
+                    return Drop( block );
                 }
                 // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
                 // This is a serious issue and we cannot do a lot here.
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                $"Unable to verify the signature's incoming message from '{fullName}'." );
-                return null;
+                return Drop( block );
             }
             // A caller that we don't know and whose identity is revoked here: dropped (it never becomes a pending approval).
             if( remote == null && block.Head != null && IsRevokedHere( transportManager, fullName, block.Head ) )
             {
                 transportManager.Logger.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity of the unknown caller '{fullName}' is revoked: it is refused." );
-                return null;
+                return Drop( block );
             }
             // A pinned initiator whose events don't reach our pin (it was offline for long): it can send its events from our
             // pin (stated in our signed rejection) when it is within the window of its head.
@@ -474,7 +476,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 && CanSendFrom( remote.RemoteKeys, block.Head ) )
             {
                 conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.EventsRequired);
-                return null;
+                return Drop( block );
             }
             // The statement is signed by whoever sent it, so it can now be held against what arrived.
             ZeroProtocol.CheckCertificateBinding( attestedBinding, incoming );
@@ -482,7 +484,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             // We do this after the signature check because an invalid signature is more impacting.
             if( !timedNonce.CheckCreationTimeKind( transportManager.Logger, fullName ) )
             {
-                return null;
+                return Drop( block );
             }
             // The message's signature is verified and the CreationTime.Kind is UTC.
             // If we have no identified remote, we're done (with an invalid clock offset) but we compute the clockOffset
@@ -503,7 +505,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 {
                     // This looks like a replay attack.
                     // This has already been logged.
-                    return null;
+                    return Drop( block );
                 }
                 // We have a known remote, validClockOffset may be false but if it is true then nonce is fine (and in the cache).
 
@@ -529,7 +531,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                    $"Incoming connection identified as '{incoming.RemoteKeys.Party}' by the transport " +
                                                    $"presented a signed InitialMessage claiming to be '{remote.RemoteKeys.Party}'. " +
                                                    $"Refusing it." );
-                    return null;
+                    return Drop( block );
                 }
                 // We're almost done: if validClockOffset is true (then the nonce is okay) we can update the remote keys with the current one
                 // (if we trust the remote) and if we don't 
@@ -548,7 +550,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                     {
                         foundTrustKey = true;
                         // Trusted now: its nonce must be recorded (and must not be a replay).
-                        if( !recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) ) return null;
+                        if( !recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) ) return Drop( block );
                     }
                     // The initiator's operational key verifies its FinalSuccess and Goodbye on this connection,
                     // and its expiry bounds how long this connection may live.
@@ -575,6 +577,21 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        approvalCommitment,
                                        hostedRoutes );
         }
+    }
+
+    // A message that is dropped once its identity block has been read: the operational key read in it is disposed (only
+    // a transport that takes it, SetRemoteCredential, keeps it).
+    static InitialMessage? Drop( in IdentityBlock block )
+    {
+        block.OperationalKey?.Dispose();
+        return null;
+    }
+
+    // The operational key of an initial message that has not been handed to the transport is only used during the
+    // exchange that follows it: it is disposed once it is over.
+    static void DisposeUnusedKey( InitialMessage initialMessage, Transport incoming )
+    {
+        if( initialMessage.RemoteOperationalKey is { } k && k != incoming.RemoteOperationalKey ) k.Dispose();
     }
 
     // Whether the initiator can send its events from what we hold of its log (our anchor or our pin): within the window
