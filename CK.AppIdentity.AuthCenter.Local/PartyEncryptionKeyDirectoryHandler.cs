@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// Handles the <see cref="IGetRemoteEncryptionKeyQCommand"/> of a remote of the Authentication Center (the key directory):
-/// the encryption key of one of its remotes (or its own), verified, in a statement it signs (see
-/// <see cref="PartyEncryptionKeyStatement"/>).
+/// Handles the <see cref="IGetRemoteEncryptionKeyQCommand"/> of a party of the System (the key directory), received
+/// directly or along the "AuthCenter" route: the encryption key of one of the remotes of the Authentication Center (or its
+/// own), verified, in a statement it signs (see <see cref="PartyEncryptionKeyStatement"/>).
 /// </summary>
 public sealed class PartyEncryptionKeyDirectoryHandler : ISingletonAutoService
 {
@@ -19,16 +19,16 @@ public sealed class PartyEncryptionKeyDirectoryHandler : ISingletonAutoService
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="command">The query.</param>
-    /// <param name="caller">The remote that sent it.</param>
+    /// <param name="party">The local party.</param>
     /// <param name="pocos">The poco directory.</param>
     /// <returns>The statement, or null when the party is unknown or publishes no key.</returns>
     [CommandHandler]
-    public async Task<IPartyEncryptionKeyStatement?> HandleAsync( IActivityMonitor monitor, IGetRemoteEncryptionKeyQCommand command, IRemoteParty caller, PocoDirectory pocos )
+    public async Task<IPartyEncryptionKeyStatement?> HandleAsync( IActivityMonitor monitor, IGetRemoteEncryptionKeyQCommand command, CurrentLocalParty party, PocoDirectory pocos )
     {
-        var local = LocalAuthCenter.GetLocal( caller );
+        var local = party.LocalParty.GetFeature<LocalAuthCenter>();
         if( local == null )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' asks '{caller.Owner}' the encryption key of '{command.PartyFullName}': it is not a remote of an Authentication Center here." );
+            monitor.Warn( $"'{party.LocalParty}' is asked the encryption key of '{command.PartyFullName}': it is not an Authentication Center." );
             return null;
         }
         var key = await local.GetPartyEncryptionKeyAsync( monitor, command.PartyFullName ).ConfigureAwait( false );

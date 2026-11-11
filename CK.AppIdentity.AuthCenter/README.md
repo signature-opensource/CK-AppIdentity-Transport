@@ -30,12 +30,13 @@ of its role (a remote has no operation handler at all).
 The feature is opt-in. Its name is `"AuthCenter"` in the `"Local"` of a local party and `"AuthCenterRemote"` on a remote
 (in their `"AllowFeatures"`, or in a `"Defaults"` that applies to them, see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
-There is no designation key: the `"AuthCenter"` of the `"Local"` gives the role of the local party:
+The `"AuthCenter"` of the `"Local"` gives the role of the local party (the only designation key,
+`"Local:AuthCenterParty"`, is for an Authentication Center reached without a channel):
 
 | The local party | Its role | Its remotes that allow `"AuthCenterRemote"` |
 |---|---|---|
 | allows `"AuthCenter"` | It **is** its own Authentication Center (CK.AppIdentity.AuthCenter.Local). | They use it (they share its `CrisAuthCenter`): a `"Defaults"` that allows `"AuthCenterRemote"` lets all of them use it. |
-| doesn't allow it | It relays its authentication to a remote Authentication Center (CK.AppIdentity.AuthCenter.Remote). | **The** remote that is its Authentication Center: at most one. |
+| doesn't allow it | It relays its authentication to a remote Authentication Center (CK.AppIdentity.AuthCenter.Remote). | **The** remote that is its Authentication Center: at most one. Without such a remote, `"Local:AuthCenterParty"` designates an anchored Authentication Center reached without a channel (see [CK.AppIdentity.AuthCenter.Remote](../CK.AppIdentity.AuthCenter.Remote/README.md)). |
 
 A `"Local"` that allows only `"AuthCenterRemote"`, or a remote that allows only `"AuthCenter"`, is a configuration error
 (this was the configuration of a remote of an Authentication Center before the asymmetric features). Allowing both names

@@ -4,6 +4,7 @@ using CK.Cris;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using Microsoft.Extensions.DependencyInjection;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -33,6 +34,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
 
     readonly PartyRoutedCommandSender _sender;
     readonly PocoDirectory _pocoDirectory;
+    readonly IServiceProvider _services;
     readonly ConcurrentDictionary<(string Local, string Anchored), FetchState> _fetches;
 
     sealed class FetchState
@@ -46,10 +48,12 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     /// </summary>
     /// <param name="sender">The routed command sender.</param>
     /// <param name="pocoDirectory">The poco directory.</param>
-    public AnchoredKeyDirectory( PartyRoutedCommandSender sender, PocoDirectory pocoDirectory )
+    /// <param name="services">The root services: a scope is created when the caller has none.</param>
+    public AnchoredKeyDirectory( PartyRoutedCommandSender sender, PocoDirectory pocoDirectory, IServiceProvider services )
     {
         _sender = sender;
         _pocoDirectory = pocoDirectory;
+        _services = services;
         _fetches = new ConcurrentDictionary<(string, string), FetchState>();
     }
 
@@ -59,7 +63,10 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     /// again, once.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="services">The services of the calling scope (to send the routed command).</param>
+    /// <param name="services">
+    /// The services of the calling scope (to send the routed command). When null, a scope is created: the query carries no
+    /// identity, no envelope contributor needs the caller's scope.
+    /// </param>
     /// <param name="local">The local party.</param>
     /// <param name="fullName">The full name of the anchored party.</param>
     /// <param name="routeName">The name of a route hosted by the anchored party.</param>
@@ -68,7 +75,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     /// <param name="signature">The signature.</param>
     /// <returns>The verdict.</returns>
     public async ValueTask<SignatureVerdict> CheckAsync( IActivityMonitor monitor,
-                                                         IServiceProvider services,
+                                                         IServiceProvider? services,
                                                          ILocalParty local,
                                                          string fullName,
                                                          string routeName,
@@ -91,12 +98,12 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     /// <see cref="IAnchoredKeys.ApplyEvents"/>), unless it has been fetched less than <see cref="MinFetchInterval"/> ago.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="services">The services of the calling scope (to send the routed command).</param>
+    /// <param name="services">The services of the calling scope (to send the routed command), null to create a scope.</param>
     /// <param name="local">The local party.</param>
     /// <param name="fullName">The full name of the anchored party.</param>
     /// <param name="routeName">The name of a route hosted by the anchored party.</param>
     /// <returns>True when events were fetched and verified.</returns>
-    public ValueTask<bool> RefreshAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty local, string fullName, string routeName )
+    public ValueTask<bool> RefreshAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, string fullName, string routeName )
     {
         var keys = FindKeys( monitor, local, fullName );
         return keys == null ? ValueTask.FromResult( false ) : FetchAsync( monitor, services, local, keys, routeName );
@@ -111,9 +118,8 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         return keys;
     }
 
-    async ValueTask<bool> FetchAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty local, IAnchoredKeys keys, string routeName )
+    async ValueTask<bool> FetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys, string routeName )
     {
-        Throw.CheckNotNullArgument( services );
         Throw.CheckNotNullOrWhiteSpaceArgument( routeName );
         var state = _fetches.GetOrAdd( (local.FullName.Path, keys.FullName), _ => new FetchState() );
         Task<bool> fetch;
@@ -145,8 +151,13 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         }
     }
 
-    async Task<bool> DoFetchAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty local, IAnchoredKeys keys, string routeName )
+    async Task<bool> DoFetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys, string routeName )
     {
+        if( services == null )
+        {
+            await using var scope = _services.CreateAsyncScope();
+            return await DoFetchAsync( monitor, scope.ServiceProvider, local, keys, routeName ).ConfigureAwait( false );
+        }
         if( !local.Description.Routes.TryGetValue( routeName, out var route ) )
         {
             monitor.Warn( $"'{local.FullName}' has no route '{routeName}': the key events of '{keys.FullName}' can't be fetched." );

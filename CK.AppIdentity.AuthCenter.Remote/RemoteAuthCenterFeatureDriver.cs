@@ -1,5 +1,7 @@
+using CK.AppIdentity.Cris;
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.AuthCenter;
@@ -10,9 +12,22 @@ namespace CK.AppIdentity.AuthCenter;
 /// Authentication Center. The local party gets a <see cref="CrisAuthCenter"/> (shared with this remote) and a
 /// <see cref="RemoteAuthCenter"/>. A remote added later can be it. A local party that allows "AuthCenter" is ignored
 /// (CK.AppIdentity.AuthCenter.Local handles it).
+/// <para>
+/// Without such a remote, the Authentication Center can be designated by its full name: "Local:AuthCenterParty". It must
+/// have a trust anchor: the local party gets a <see cref="CrisAuthCenter"/> without channel and an
+/// <see cref="AnchoredAuthCenter"/> (what it asks the Authentication Center travels along its route). With such a remote,
+/// "Local:AuthCenterParty" must name it.
+/// </para>
 /// </summary>
 public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
+    /// <summary>
+    /// The key of the "Local" configuration that designates the Authentication Center by its full name: "AuthCenterParty".
+    /// </summary>
+    public const string AuthCenterPartyKey = "AuthCenterParty";
+
+    readonly IServiceProvider _services;
+
     /// <summary>
     /// Initializes a new <see cref="RemoteAuthCenterFeatureDriver"/>.
     /// </summary>
@@ -20,9 +35,15 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     /// <param name="keys">
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
-    public RemoteAuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys )
+    /// <param name="services">
+    /// The root services. An Authentication Center designated by its full name needs the <see cref="AnchoredKeyDirectory"/>
+    /// and the <see cref="PartyRoutedCommandSender"/> of CK.AppIdentity.Cris (resolved then), and its
+    /// <see cref="AnchoredAuthCenter"/> sends its queries from its own scope.
+    /// </param>
+    public RemoteAuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys, IServiceProvider services )
         : base( s, AuthCenterFeature.Name )
     {
+        _services = services;
     }
 
     /// <inheritdoc />
@@ -86,9 +107,34 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
             success &= AuthCenterFeature.CheckNoAuthCenterKey( monitor, r );
         }
         if( !success || !TryGetFeatureRemote( monitor, local, out var authCenter ) ) return false;
-        // No AuthCenter, or already plugged (a dynamic tenant domain and its remotes).
-        if( authCenter == null || local.GetFeature<CrisAuthCenter>() != null ) return true;
-        return Attach( context, local, authCenter );
+        // Already plugged (a dynamic tenant domain and its remotes).
+        if( local.GetFeature<CrisAuthCenter>() != null ) return true;
+        var designated = local.LocalConfiguration.Configuration[AuthCenterPartyKey];
+        if( authCenter != null )
+        {
+            if( designated != null && designated != authCenter.FullName.Path )
+            {
+                monitor.Error( $"'{local}' designates the AuthCenter '{designated}' (\"Local:{AuthCenterPartyKey}\") but its remote '{authCenter}' allows the 'AuthCenterRemote' feature." );
+                return false;
+            }
+            return Attach( context, local, authCenter );
+        }
+        return designated == null || AttachAnchored( monitor, local, designated );
+    }
+
+    bool AttachAnchored( IActivityMonitor monitor, ILocalParty local, string authCenterFullName )
+    {
+        var directory = (AnchoredKeyDirectory?)_services.GetService( typeof( AnchoredKeyDirectory ) );
+        var sender = (PartyRoutedCommandSender?)_services.GetService( typeof( PartyRoutedCommandSender ) );
+        if( directory == null || sender == null )
+        {
+            monitor.Error( $"'{local}' designates the AuthCenter '{authCenterFullName}' by its full name: the AnchoredKeyDirectory and the PartyRoutedCommandSender of CK.AppIdentity.Cris are required." );
+            return false;
+        }
+        var center = CrisAuthCenter.TryCreateAnchored( monitor, local, authCenterFullName, directory );
+        if( center == null ) return false;
+        local.AddFeature( new AnchoredAuthCenter( center, sender, _services ) );
+        return true;
     }
 
     static bool Attach( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )

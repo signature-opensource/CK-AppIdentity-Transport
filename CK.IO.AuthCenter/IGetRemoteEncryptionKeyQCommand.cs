@@ -4,12 +4,13 @@ using CK.Cris;
 namespace CK.IO.AuthCenter;
 
 /// <summary>
-/// Asks the Authentication Center the encryption key of one of its remotes (the key directory): it answers with a statement
-/// it signs, from the description of the remote (verified with its pinned keys). Null when the party is unknown or publishes
-/// no key. Internal to the System and executed by the receiving endpoint only (the handler answers its remotes only).
+/// Asks the Authentication Center the encryption key of one of its remotes, or its own (the key directory): it answers with
+/// a statement it signs, from the description of the remote (verified with its pinned keys). Null when the party is unknown
+/// or publishes no key. Internal to the System: any party of the System can ask, directly or along the "AuthCenter" route
+/// (the statement is verified with the keys of the Authentication Center, whatever the path).
 /// </summary>
 [Internal]
-public interface IGetRemoteEncryptionKeyQCommand : ICommand<IPartyEncryptionKeyStatement?>, ICommandEndpointOnly
+public interface IGetRemoteEncryptionKeyQCommand : ICommand<IPartyEncryptionKeyStatement?>
 {
     /// <summary>
     /// Gets or sets the full name of the party.

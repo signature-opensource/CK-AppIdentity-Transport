@@ -35,7 +35,7 @@ public sealed class RunningApplication : IAsyncDisposable
     readonly PocoDirectory _pocoDirectory;
     readonly ApplicationIdentityService _appIdentityService;
     readonly TransportManagerFeature _transport;
-    readonly CrisChannelFeature _channel;
+    readonly CrisChannelFeature? _channel;
     readonly bool _isSender;
 
     /// <summary>
@@ -63,7 +63,7 @@ public sealed class RunningApplication : IAsyncDisposable
     /// <summary>
     /// Gets the Cris channel.
     /// </summary>
-    public CrisChannelFeature CrisChannel => _channel;
+    public CrisChannelFeature CrisChannel => _channel ?? throw new InvalidOperationException( "This application has no \"$Listener\" or \"$Sender\" remote (its configuration renamed it)." );
 
     /// <summary>
     /// Gets the global, root, service provider: <see cref="CreateScopeServices"/> or <see cref="CreateAsyncScopeServices"/>
@@ -97,7 +97,8 @@ public sealed class RunningApplication : IAsyncDisposable
         _appIdentityService = s.Services.GetRequiredService<ApplicationIdentityService>();
         _transport = _appIdentityService.GetRequiredFeature<TransportManagerFeature>();
         _pocoDirectory = s.Services.GetRequiredService<PocoDirectory>();
-        _channel = _appIdentityService.Remotes.First( r => r.PartyName == (isSender ? "$Listener" : "$Sender") ).GetRequiredFeature<CrisChannelFeature>();
+        // A configuration may rename the remote (a chain of applications): the channel is then not available.
+        _channel = _appIdentityService.Remotes.FirstOrDefault( r => r.PartyName == (isSender ? "$Listener" : "$Sender") )?.GetRequiredFeature<CrisChannelFeature>();
     }
 
     /// <summary>

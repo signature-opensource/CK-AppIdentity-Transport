@@ -20,9 +20,15 @@ public interface ICrisAuthCenter
     const string TokenPurpose = "CK.AuthCenter.Token";
 
     /// <summary>
-    /// Gets the party that is the Authentication Center.
+    /// Gets the party that is the Authentication Center: the local party itself, or one of its remotes. Null when the
+    /// Authentication Center is not a remote (it is designated by its <see cref="AuthCenterFullName"/> and anchored).
     /// </summary>
-    IParty AuthCenter { get; }
+    IParty? AuthCenter { get; }
+
+    /// <summary>
+    /// Gets the full name of the Authentication Center.
+    /// </summary>
+    string AuthCenterFullName { get; }
 
     /// <summary>
     /// Verifies a token signed by the <see cref="AuthCenter"/> (for the <see cref="TokenPurpose"/>): this is the same

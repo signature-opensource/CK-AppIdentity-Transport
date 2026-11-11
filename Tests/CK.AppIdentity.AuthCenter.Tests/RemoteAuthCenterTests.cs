@@ -77,7 +77,7 @@ public class RemoteAuthCenterTests
         public string Handle( ICriticalWhoCallsCommand c, AuthenticationInfo info ) => $"{info.UnsafeActor.ActorName}/{info.UnsafeActualActor.Level}/{info.CallerPartyFullName}";
     }
 
-    static readonly Type[] _common = [typeof( CurrentLocalParty ),
+    internal static readonly Type[] _common = [typeof( CurrentLocalParty ),
                                       typeof( CurrentLocalPartyDefaultProvider ),
                                       typeof( IAuthenticationSessionEndpoint ),
                                       typeof( CrisAuthenticationService ),
@@ -126,7 +126,7 @@ public class RemoteAuthCenterTests
                                       typeof( CrisBackgroundExecutorService )];
 
     // The remote: the endpoint side of the session commands, no login provider.
-    static readonly Type[] _remoteTypes = [typeof( RemoteAuthCenterFeatureDriver ),
+    internal static readonly Type[] _remoteTypes = [typeof( RemoteAuthCenterFeatureDriver ),
                                            typeof( AuthCenterProofContributor ),
                                            typeof( IAuthenticationSessionOpener ),
                                            typeof( AuthenticationSessionEndpointService ),
@@ -136,7 +136,7 @@ public class RemoteAuthCenterTests
                                            typeof( EchoHandler )];
 
     // The AuthCenter: the operations, the policy for its remotes, the verifier of the user's proofs.
-    static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
+    internal static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
                                            typeof( AuthCenterOperationHandlers ),
                                            typeof( AuthCenterCommandHandlers ),
                                            typeof( AuthCenterCallerPartyService ),
@@ -204,7 +204,7 @@ public class RemoteAuthCenterTests
         }
     }
 
-    static void RemoteServices( IServiceCollection services )
+    internal static void RemoteServices( IServiceCollection services )
     {
         services.AddSingleton<AuthCenterApp.Browser>();
         services.AddScoped<IAuthenticationSessionEndpoint, AuthCenterApp.FakeEndpoint>();
@@ -389,7 +389,7 @@ public class RemoteAuthCenterTests
     }
 
     // A routed command as received by its destination: the bytes of the command, the path from the origin.
-    static IPartyRoutedCommand Routed( RunningApplication destination, string origin, byte[] sealedCommand )
+    internal static IPartyRoutedCommand Routed( RunningApplication destination, string origin, byte[] sealedCommand )
     {
         return destination.PocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
@@ -588,7 +588,7 @@ public class RemoteAuthCenterTests
         }
     }
 
-    static IAuthenticationCallEnvelope Proof( RunningApplication app, string token, byte[]? binding )
+    internal static IAuthenticationCallEnvelope Proof( RunningApplication app, string token, byte[]? binding )
     {
         var e = (IAuthenticationCallEnvelope)app.PocoDirectory.Create<ICrisCallEnvelope>();
         e.Token = token;

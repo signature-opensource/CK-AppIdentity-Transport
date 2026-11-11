@@ -20,6 +20,40 @@ CK.AppIdentity.AuthCenter.Local handles it, and the two packages can be referenc
 The Authentication Center must announce it (the roles of its description): a `"Center"` whose `"Local"` doesn't allow
 `"AuthCenter"` is an error when it announces its description.
 
+## Without a channel to the Authentication Center ([`AnchoredAuthCenter`](AnchoredAuthCenter.cs))
+
+A local party that has no remote allowing `"AuthCenterRemote"` can designate its Authentication Center by its full name,
+`"Local:AuthCenterParty"`. The Authentication Center must then have a trust anchor (`"Local:TrustAnchors"`, see
+[CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)), otherwise the setup fails. With a remote that
+allows `"AuthCenterRemote"`, `"AuthCenterParty"` must name it (the channel is used).
+
+```jsonc
+"CK-AppIdentity": {
+  "FullName": "Acme/$Worker",
+  "Local": {
+    "AuthCenterParty": "Acme/$Center/#Prod",
+    "TrustAnchors": { "Acme/$Center/#Prod": "12:8e2a980dea..." }
+  },
+  "Parties": [ { "PartyName": "Front" } ] // No channel to the Center: its route goes through the Front.
+}
+```
+
+The local party gets a `CrisAuthCenter` whose `AuthCenter` is null and an `AnchoredAuthCenter` (the
+`IAuthCenterProofChecker` and the `IPartyEncryptionKeyDirectory`). Everything it needs from the Authentication Center
+travels along its `"AuthCenter"` route, verified with its keys, whatever the hops (the driver then needs the
+`AnchoredKeyDirectory` and the `PartyRoutedCommandSender` of CK.AppIdentity.Cris, resolved from the root services):
+
+- **The keys:** its key events, fetched by the key directory of CK.AppIdentity.Cris (`AnchoredKeyDirectory`) and
+  verified from the anchor: the tokens are read here.
+- **A user's proof received directly** is read here (the token and its binding): its session is not asked. A logout or a
+  revocation takes effect at the end of the critical window (the liveness lag accepted without a channel).
+- **A user's proof received with a routed command** is verified by the Authentication Center
+  (`IVerifyRoutedProofQCommand`): only it has the keys of the session party that sealed the command. It also checks the
+  session at once. Its answer is a statement it signs (`AuthCenterProofStatement`: the destination, a nonce chosen by
+  this party, the digests of the token and of the seal).
+- **The encryption keys** of the Authentication Center and of its remotes are its statements
+  (`IGetRemoteEncryptionKeyQCommand`).
+
 ## How a remote authenticates its users
 
 A remote has no login provider and no session store. Its endpoints execute the session commands themselves, with the
