@@ -27,6 +27,11 @@ namespace CK.AppIdentity.KeyManagement;
 /// An event carries no party name: the name is supplied by whoever reads it and is part of what is
 /// signed, so that an event of one party can never be accepted into the chain of another.
 /// </para>
+/// <para>
+/// Every event after the inception carries the <see cref="InceptionDigest">digest of the inception</see> of its log: the
+/// identity of the log (<see cref="GetIdentity"/>), the same for its whole life (a recovery keeps it), that any single event
+/// tells. A party that incepts again starts another log, with another identity: this is what a revocation names.
+/// </para>
 /// </summary>
 public sealed class KeyEvent
 {
@@ -40,7 +45,7 @@ public sealed class KeyEvent
     /// Upper bound of an encoded event. An identity key is a P-256 SPKI (91 bytes) and its signature
     /// 64 bytes, so an actual event is about 270 bytes: this bounds what a peer can make us parse.
     /// </summary>
-    public const int MaxEncodedSize = 4 + 8 + 1 + 2 + ILocalKeys.MaxPublicKeySize + HashSize + HashSize + HashSize + 1 + 255;
+    public const int MaxEncodedSize = 4 + 8 + 1 + 2 + ILocalKeys.MaxPublicKeySize + HashSize + HashSize + HashSize + HashSize + 1 + 255;
 
     const byte RecoveryFlag = 1;
 
@@ -52,6 +57,7 @@ public sealed class KeyEvent
     readonly byte[] _nextCommit;
     readonly byte[] _recoveryCommit;
     readonly byte[] _prevDigest;
+    readonly byte[] _inceptionDigest;
     readonly byte[] _signature;
     readonly byte[] _encoded;
     readonly DateTime _timeName;
@@ -61,8 +67,9 @@ public sealed class KeyEvent
     sealed record DigestCache( string Name, byte[] Digest );
     DigestCache? _digest;
 
-    KeyEvent( int seq, DateTime timeName, byte flags, byte[] spki, byte[] nextCommit, byte[] recoveryCommit, byte[] prevDigest, byte[] signature )
+    KeyEvent( int seq, DateTime timeName, byte flags, byte[] spki, byte[] nextCommit, byte[] recoveryCommit, byte[] prevDigest, byte[] inceptionDigest, byte[] signature )
     {
+        _inceptionDigest = inceptionDigest;
         _seq = seq;
         _timeName = timeName;
         _flags = flags;
@@ -106,6 +113,20 @@ public sealed class KeyEvent
     /// Gets the <see cref="GetDigest">digest</see> of the previous event, or 32 zero bytes for the inception.
     /// </summary>
     public ReadOnlyMemory<byte> PrevDigest => _prevDigest;
+
+    /// <summary>
+    /// Gets the <see cref="GetDigest">digest</see> of the inception of this log, or 32 zero bytes for the inception itself
+    /// (see <see cref="GetIdentity"/>).
+    /// </summary>
+    public ReadOnlyMemory<byte> InceptionDigest => _inceptionDigest;
+
+    /// <summary>
+    /// Gets the identity of the log of this event: the <see cref="GetDigest">digest</see> of its inception. It is the same
+    /// for every event of a log (a recovery keeps it): any single event tells which log it belongs to.
+    /// </summary>
+    /// <param name="fullName">The full name of the party whose log this is.</param>
+    /// <returns>The 32-byte identity.</returns>
+    public ReadOnlyMemory<byte> GetIdentity( string fullName ) => IsInception ? GetDigest( fullName ) : _inceptionDigest;
 
     /// <summary>
     /// Gets the signature, by the key this event reveals.
@@ -276,12 +297,13 @@ public sealed class KeyEvent
         Throw.CheckArgument( "The key must fit the bound a reader enforces.", spki.Length <= ILocalKeys.MaxPublicKeySize );
         var next = CheckCommit( nextCommit, nameof( nextCommit ) );
         var prev = previous != null ? previous.GetDigest( fullName ).ToArray() : new byte[HashSize];
-        var unsigned = new KeyEvent( seq, TruncateToMilliseconds( timeName ), flags, spki, next, recoveryCommit, prev, Array.Empty<byte>() );
+        var inception = previous != null ? previous.GetIdentity( fullName ).ToArray() : new byte[HashSize];
+        var unsigned = new KeyEvent( seq, TruncateToMilliseconds( timeName ), flags, spki, next, recoveryCommit, prev, inception, Array.Empty<byte>() );
         Span<byte> hash = stackalloc byte[64];
         SHA512.HashData( unsigned.GetSignedPayload( fullName ), hash );
         var signature = key.SignHash( hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
         Throw.CheckState( "Signature length must fit on one byte.", signature.Length <= 255 );
-        return new KeyEvent( unsigned._seq, unsigned._timeName, flags, spki, next, recoveryCommit, prev, signature );
+        return new KeyEvent( unsigned._seq, unsigned._timeName, flags, spki, next, recoveryCommit, prev, inception, signature );
     }
 
     /// <summary>
@@ -333,13 +355,16 @@ public sealed class KeyEvent
         var next = ReadBytes( data, ref p, HashSize );
         var recovery = ReadBytes( data, ref p, HashSize );
         var prev = ReadBytes( data, ref p, HashSize );
+        var inception = ReadBytes( data, ref p, HashSize );
         int sigLength = ReadBytes( data, ref p, 1 )[0];
         Throw.CheckData( "Missing event signature.", sigLength > 0 );
         var sig = ReadBytes( data, ref p, sigLength );
         bool zeroPrev = prev.AsSpan().IndexOfAnyExcept( (byte)0 ) < 0;
         Throw.CheckData( "The inception, and only the inception, has no previous event.", (seq == 0) == zeroPrev );
+        bool zeroInception = inception.AsSpan().IndexOfAnyExcept( (byte)0 ) < 0;
+        Throw.CheckData( "The inception, and only the inception, has no inception digest.", (seq == 0) == zeroInception );
         bytesRead = p;
-        return new KeyEvent( seq, new DateTime( ticks, DateTimeKind.Utc ), flags, spki, next, recovery, prev, sig );
+        return new KeyEvent( seq, new DateTime( ticks, DateTimeKind.Utc ), flags, spki, next, recovery, prev, inception, sig );
     }
 
     /// <summary>
@@ -376,9 +401,9 @@ public sealed class KeyEvent
         return payload;
     }
 
-    int FixedFieldsLength => 4 + 8 + 1 + 2 + _spki.Length + HashSize + HashSize + HashSize;
+    int FixedFieldsLength => 4 + 8 + 1 + 2 + _spki.Length + HashSize + HashSize + HashSize + HashSize;
 
-    // Seq | TimeName | Flags | spkiLength | Spki | NextCommit | RecoveryCommit | PrevDigest: shared by
+    // Seq | TimeName | Flags | spkiLength | Spki | NextCommit | RecoveryCommit | PrevDigest | InceptionDigest: shared by
     // the payload and the encoding.
     int WriteFixedFields( Span<byte> s )
     {
@@ -397,6 +422,8 @@ public sealed class KeyEvent
         _recoveryCommit.CopyTo( s.Slice( p ) );
         p += HashSize;
         _prevDigest.CopyTo( s.Slice( p ) );
+        p += HashSize;
+        _inceptionDigest.CopyTo( s.Slice( p ) );
         p += HashSize;
         return p;
     }

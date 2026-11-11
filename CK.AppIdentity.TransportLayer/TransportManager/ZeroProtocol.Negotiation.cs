@@ -149,7 +149,7 @@ static partial class ZeroProtocol // Negotiation
     /// </summary>
     public const int IdentityBlockMaxLength = 5 // Version.
                                               + 5 // Event count.
-                                              + KeyEventChain.MaxEventTail * (5 + KeyEvent.MaxEncodedSize)
+                                              + KeyEventChain.MaxEventWindow * (5 + KeyEvent.MaxEncodedSize)
                                               + 5 + KeyEvent.HashSize // The pin statement.
                                               + 5 + OperationalCredential.MaxEncodedSize // The credential.
                                               + 1 + 255; // The signature, byte-length prefixed.

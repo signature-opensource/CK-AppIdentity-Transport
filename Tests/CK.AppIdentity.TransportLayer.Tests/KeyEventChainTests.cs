@@ -100,6 +100,28 @@ public class KeyEventChainTests
     }
 
     [Test]
+    public void every_event_tells_the_identity_of_its_log()
+    {
+        using var log = new Log( 4 );
+        var identity = log.Events[0].GetDigest( Party ).ToArray();
+        log.Events[0].InceptionDigest.ToArray().ShouldAllBe( b => b == 0, "The inception is the identity: its own digest." );
+        foreach( var e in log.Events ) e.GetIdentity( Party ).ToArray().ShouldBe( identity );
+
+        // Only the inception has no inception digest.
+        var bytes = log.Events[1].Encoded.ToArray();
+        int identityOffset = 4 + 8 + 1 + 2 + log.Events[1].Spki.Length + 3 * KeyEvent.HashSize;
+        Array.Clear( bytes, identityOffset, KeyEvent.HashSize );
+        Should.Throw<InvalidDataException>( () => KeyEvent.Read( bytes ) );
+
+        // A validly signed event, by the committed key, that names another log doesn't link.
+        var other = new byte[KeyEvent.HashSize];
+        other[0] = 1;
+        var forged = Forge( 2, log.Events[2].TimeName, log.Keys[2], log.Keys[2], log.Events[2].NextCommit.ToArray(), log.Events[1], identity: other );
+        forged.VerifySignature( Party ).ShouldBeTrue();
+        KeyEventChain.Verify( Party, [log.Events[1], forged], log.Events[1] ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
+    }
+
+    [Test]
     public void the_digest_does_not_cover_the_malleable_signature()
     {
         // ECDSA: if (r, s) is valid then so is (r, n - s). Whoever relays an event can produce that
@@ -320,8 +342,10 @@ public class KeyEventChainTests
                            ECDsa signer,
                            byte[] nextCommit,
                            KeyEvent previous,
-                           byte[]? prevDigest = null )
+                           byte[]? prevDigest = null,
+                           byte[]? identity = null )
     {
+        var logIdentity = identity ?? previous.GetIdentity( Party ).ToArray();
         var spki = revealed.ExportSubjectPublicKeyInfo();
         var prev = prevDigest ?? previous.GetDigest( Party ).ToArray();
         var t = new DateTime( timeName.Ticks - (timeName.Ticks % TimeSpan.TicksPerMillisecond), DateTimeKind.Utc );
@@ -343,6 +367,7 @@ public class KeyEventChainTests
             w.Write( nextCommit );
             w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
+            w.Write( logIdentity ); // The identity of the log, carried by every event.
         }
         var hash = SHA512.HashData( payload.ToArray() );
         var sig = signer.SignHash( hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
@@ -358,6 +383,7 @@ public class KeyEventChainTests
             w.Write( nextCommit );
             w.Write( previous.RecoveryCommit.ToArray() ); // Carried unchanged, as an ordinary event must.
             w.Write( prev );
+            w.Write( logIdentity ); // The identity of the log, carried by every event.
             w.Write( (byte)sig.Length );
             w.Write( sig );
         }

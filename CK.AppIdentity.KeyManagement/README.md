@@ -34,6 +34,11 @@ to, and when it is signed by that key: a thief holding the current key can sign 
 - **Abandonment.** An event that commits to no next key ends the identity: nothing can follow it.
 - **No party name inside.** The name is supplied by the reader and is part of what is signed, so an event of one party
   can never be accepted into the log of another.
+- **The identity of a log.** Every event after the inception carries the digest of the inception (`InceptionDigest`):
+  `KeyEvent.GetIdentity( fullName )` is the same for every event of a log (a recovery keeps it), so any single event
+  tells which log it belongs to. A party that incepts again starts another log, with another identity: this is what a
+  revocation names. A log written in a previous format can't be read: the party refuses to start (it never incepts
+  again on its own), its key store must be reset.
 
 [`KeyEventChain.Verify`](KeyEventChain.cs) checks a tail of events against the pinned event and returns a
 [`KeyChainVerdict`](KeyEventChain.cs): `UpToDate`, `Advanced` (valid rotations), `Recovered`, `Abandoned`, `Terminated`,

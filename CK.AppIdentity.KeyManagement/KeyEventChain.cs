@@ -281,6 +281,7 @@ public static class KeyEventChain
                     ? previous.CommitsToRecovery( next.Spki.Span )
                     : previous.CommitsTo( next.Spki.Span ) && SameDigest( next.RecoveryCommit.Span, previous.RecoveryCommit.Span ))
                && SameDigest( next.PrevDigest.Span, previous.GetDigest( fullName ).Span )
+               && SameDigest( next.InceptionDigest.Span, previous.GetIdentity( fullName ).Span )
                && next.VerifySignature( fullName );
     }
 

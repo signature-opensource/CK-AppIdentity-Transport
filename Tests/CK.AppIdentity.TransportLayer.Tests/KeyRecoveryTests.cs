@@ -186,6 +186,7 @@ public class KeyRecoveryTests
             w.Write( nextCommit );
             w.Write( recoveryCommit );
             w.Write( prev );
+            w.Write( previous.GetIdentity( Party ).ToArray() ); // The identity of the log, carried by every event.
         }
         var sig = signer.SignHash( SHA512.HashData( payload.ToArray() ), DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
         using var encoded = new MemoryStream();
@@ -199,6 +200,7 @@ public class KeyRecoveryTests
             w.Write( nextCommit );
             w.Write( recoveryCommit );
             w.Write( prev );
+            w.Write( previous.GetIdentity( Party ).ToArray() ); // The identity of the log, carried by every event.
             w.Write( (byte)sig.Length );
             w.Write( sig );
         }
