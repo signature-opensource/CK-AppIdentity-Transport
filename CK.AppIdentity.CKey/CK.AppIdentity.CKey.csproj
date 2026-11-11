@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>CKey: the local, low-level user interface of the AppIdentity store of a running party. The opt-in "CKey" feature listens on a named pipe reachable by the OS user of the party only; the ckey tool (shipped by this package next to the host) shows the checkpoint and the peering issues, approves a remote with its code, exports and imports the trust of a party.</Description>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_CKeyToolInPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />
+    <InternalsVisibleTo Include="CK.AppIdentity.CKey.Tests" />
+    <!-- The ckey tool: built with this project, shipped in its package (buildTransitive/ckey), never referenced. -->
+    <ProjectReference Include="..\CK.AppIdentity.CKey.Tool\CK.AppIdentity.CKey.Tool.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="buildTransitive\**" Pack="true" PackagePath="buildTransitive" />
+  </ItemGroup>
+  <Target Name="_CKeyToolInPackage">
+    <PropertyGroup>
+      <_CKeyToolOutput>$(MSBuildThisFileDirectory)..\CK.AppIdentity.CKey.Tool\bin\$(Configuration)\$(TargetFramework)\</_CKeyToolOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(_CKeyToolOutput)ckey.dll;$(_CKeyToolOutput)ckey.runtimeconfig.json;$(_CKeyToolOutput)ckey.deps.json" PackagePath="buildTransitive/ckey" />
+    </ItemGroup>
+  </Target>
+</Project>

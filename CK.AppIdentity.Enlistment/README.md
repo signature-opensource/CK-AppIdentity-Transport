@@ -56,3 +56,6 @@ verifies it (otherwise `Refused`). For a "Both" item (the approved party waits o
 also asks a pin grant of the holder for the approved party: it travels down with the approval
 (`IApprovePendingPartyCommand.WaitingPartyGrant`) and the holder hands it over to the approved party (see the authority of
 the System in [CK.AppIdentity.TransportLayer](../CK.AppIdentity.TransportLayer/README.md)).
+
+Without the anchor of an Authentication Center, the waiting side of a "both approval" approves the holder locally:
+`ckey approve`, or `ckey export trust` / `ckey import trust` (see [CK.AppIdentity.CKey](../CK.AppIdentity.CKey/README.md)).

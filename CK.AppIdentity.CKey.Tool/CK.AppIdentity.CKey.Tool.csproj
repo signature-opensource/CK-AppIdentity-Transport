@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- The "ckey" tool: a framework-dependent executable that needs only the .NET runtime (never the SDK), with no
+         dependency beyond the base libraries. It is shipped by the CK.AppIdentity.CKey package (copied next to the host
+         of a party), never packed itself. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>ckey</AssemblyName>
+    <RootNamespace>CK.AppIdentity.CKey.Tool</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <UseAppHost>false</UseAppHost>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>The ckey tool: the local, low-level user interface of the AppIdentity store of a running party.</Description>
+  </PropertyGroup>
+</Project>

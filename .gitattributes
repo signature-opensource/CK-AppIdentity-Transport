@@ -15,3 +15,6 @@
 *.nupkg binary
 *.ico binary
 *.snk binary
+
+# The shell launcher of the ckey tool must keep LF line endings (it runs on Linux and macOS).
+CK.AppIdentity.CKey/buildTransitive/ckey/ckey text eol=lf

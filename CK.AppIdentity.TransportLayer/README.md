@@ -279,7 +279,8 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
   An operator reads it on the remote party itself and enters it on the party that must approve:
   `TryApprove( monitor, code )` pins the key whose code matches. `TryApprove( monitor, code, expectedFingerprint, out notReady )`
   pins it only when it is the expected key (a listener keeps several keys of the same remote), and says when the code
-  can't be checked yet. `ApprovalPendingSince` is when the key started to wait: it changes only when another key waits
+  can't be checked yet (the `ckey approve` command of [CK.AppIdentity.CKey](../CK.AppIdentity.CKey/README.md) calls it
+  on a running party). `ApprovalPendingSince` is when the key started to wait: it changes only when another key waits
   (`LastUpdated` changes with each attempt).
   - The initiator commits to its nonce in its initial message, the listener answers its own in its rejection, and the
     initiator reveals its nonce in its reply: nobody chooses its values once it knows the other's, so an attacker can't

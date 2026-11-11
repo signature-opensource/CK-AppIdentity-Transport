@@ -14,6 +14,8 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.Cris.Authentication](CK.AppIdentity.Cris.Authentication/README.md) | The identity of the users across the Cris channels: vouched for by the caller party, or proved. |
 | [CK.IO.AppIdentity.Enlistment](CK.IO.AppIdentity.Enlistment/README.md) | The commands of the enlistment of a party: its approval on the approval page, and the signed statement sent down to the holder of the pending approval. |
 | [CK.AppIdentity.Enlistment](CK.AppIdentity.Enlistment/README.md) | The approval of a pending party: signed by the host of the approval page, checked and applied by the holder. |
+| [CK.AppIdentity.AuthCenter.Enlistment](CK.AppIdentity.AuthCenter.Enlistment/README.md) | The Authentication Center in the enlistment: the countersignature of the approvals, the pin grant of a "both approval", the authenticated approval page. |
+| [CK.AppIdentity.CKey](CK.AppIdentity.CKey/README.md) | CKey: the local user interface of the AppIdentity store of a running party (a named pipe), and the `ckey` tool it ships (CK.AppIdentity.CKey.Tool). |
 | [CK.AppIdentity.AuthCenter](CK.AppIdentity.AuthCenter/README.md) | The "AuthCenter" feature core: the Authentication Center of each local party and the reading of its tokens. |
 | [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | **Deprecated**: renamed CK.AppIdentity.AuthCenter. |
 | [CK.AppIdentity.AuthCenter.Local](CK.AppIdentity.AuthCenter.Local/README.md) | This application is the Authentication Center: settings, sessions, token signing, the session operations. |

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.cris-auth.1.ci.111" />
+        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.cris-auth.1.ci.39" />
+        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.cris-auth.1.ci.39" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="CK.Testing.NUnit" Version="18.0.0-0.cris-auth.0.ci.6" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+        <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\CK.Testing.AppIdentity.Cris\CK.Testing.AppIdentity.Cris.csproj" />
+        <ProjectReference Include="..\..\CK.AppIdentity.CKey\CK.AppIdentity.CKey.csproj" />
+        <!-- The tool's logic is called in-process. -->
+        <ProjectReference Include="..\..\CK.AppIdentity.CKey.Tool\CK.AppIdentity.CKey.Tool.csproj" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    The ckey tool (see the README of CK.AppIdentity.CKey): copied into the output and the publish folder of every
+    executable project that references this package (the host of a party), with its launchers: "ckey.cmd" on Windows,
+    "ckey" (a shell script) elsewhere ("sh ckey" or "dotnet ckey.dll": NuGet doesn't keep the executable bit).
+    It needs only the .NET runtime.
+  -->
+  <ItemGroup Condition=" '$(OutputType)' == 'Exe' ">
+    <None Include="$(MSBuildThisFileDirectory)ckey\*"
+          Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
+</Project>

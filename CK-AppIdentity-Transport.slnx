@@ -11,6 +11,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/CK.AppIdentity.BlobChannel.Tests/CK.AppIdentity.BlobChannel.Tests.csproj" />
+    <Project Path="Tests/CK.AppIdentity.CKey.Tests/CK.AppIdentity.CKey.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.AuthCenter.Tests/CK.AppIdentity.AuthCenter.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.Cris.Tests/CK.AppIdentity.Cris.Tests.csproj" />
     <Project Path="Tests/CK.AppIdentity.MutualTls.Tests/CK.AppIdentity.MutualTls.Tests.csproj" />
@@ -34,6 +35,8 @@
   <Project Path="CK.AppIdentity.Enlistment/CK.AppIdentity.Enlistment.csproj" />
   <Project Path="CK.AppIdentity.AuthCenter.Enlistment/CK.AppIdentity.AuthCenter.Enlistment.csproj" />
   <Project Path="CK.AppIdentity.KeyManagement.Cng/CK.AppIdentity.KeyManagement.Cng.csproj" />
+  <Project Path="CK.AppIdentity.CKey/CK.AppIdentity.CKey.csproj" />
+  <Project Path="CK.AppIdentity.CKey.Tool/CK.AppIdentity.CKey.Tool.csproj" />
   <Project Path="CK.AppIdentity.Transport.MutualTls/CK.AppIdentity.Transport.MutualTls.csproj" />
   <Project Path="CK.Testing.AppIdentity.TransportLayer/CK.Testing.AppIdentity.TransportLayer.csproj" />
   <Project Path="CK.AppIdentity.TransportLayer/CK.AppIdentity.TransportLayer.csproj" />
