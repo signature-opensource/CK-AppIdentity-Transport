@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="CK.AppIdentity.MutualTls.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.TransportLayer\CK.AppIdentity.TransportLayer.csproj" />
   </ItemGroup>
 

@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using System;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -24,21 +25,28 @@ sealed class TlsCredential
     const string ServerAuthOid = "1.3.6.1.5.5.7.3.1";
     const string ClientAuthOid = "1.3.6.1.5.5.7.3.2";
 
-    readonly object _lock;
-    LocalIdentityKey? _identity;
-    X509Certificate2? _certificate;
-    byte[]? _binding;
+    // One credential per local party: the application and its tenant domains (each one has its keys) present their own,
+    // and alternating between them must not issue a certificate on each connection.
+    readonly ConditionalWeakTable<ILocalKeys, Entry> _entries;
+
+    sealed class Entry
+    {
+        public LocalIdentityKey? Identity;
+        public X509Certificate2? Certificate;
+        public byte[]? Binding;
+    }
 
     public TlsCredential()
     {
-        _lock = new object();
+        _entries = new ConditionalWeakTable<ILocalKeys, Entry>();
     }
 
     /// <summary>
     /// Gets the certificate to present and the SHA-256 of its DER, reissuing them when the identity
     /// has rotated.
     /// <para>
-    /// The cache is keyed on the identity instance rather than refreshed on a timer, so a rotation
+    /// The cache holds one credential per <paramref name="keys"/> (one per local party). It is keyed on
+    /// the identity instance rather than refreshed on a timer, so a rotation
     /// takes effect on the next connection instead of the next restart. The certificate it replaces
     /// is deliberately NOT disposed: a connection established a moment earlier still holds it for as
     /// long as it lives, and rotation happens at most once per <see cref="ILocalKeys.KeyRotationDays"/>.
@@ -49,20 +57,21 @@ sealed class TlsCredential
     public (X509Certificate2 Certificate, ReadOnlyMemory<byte> Binding) Get( ILocalKeys keys )
     {
         var current = keys.CurrentIdentity;
-        lock( _lock )
+        var e = _entries.GetValue( keys, _ => new Entry() );
+        lock( e )
         {
-            if( !ReferenceEquals( _identity, current ) || _certificate == null )
+            if( !ReferenceEquals( e.Identity, current ) || e.Certificate == null || e.Binding == null )
             {
                 using var issued = current.CreateDerivedCertificate( configure: r =>
                     r.CertificateExtensions.Add(
                         new X509EnhancedKeyUsageExtension( new OidCollection { new Oid( ServerAuthOid ), new Oid( ClientAuthOid ) },
                                                            critical: false ) ) );
                 var c = MakeUsableBySslStream( issued );
-                _binding = ComputeBinding( c );
-                _certificate = c;
-                _identity = current;
+                e.Binding = ComputeBinding( c );
+                e.Certificate = c;
+                e.Identity = current;
             }
-            return (_certificate, _binding);
+            return (e.Certificate, e.Binding);
         }
     }
 
