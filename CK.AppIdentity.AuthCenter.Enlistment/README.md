@@ -32,7 +32,8 @@ CK.AppIdentity.Enlistment:
   impersonated, the operator of the statement, and the caller party must be the host of the statement. The
   countersignature (`ApprovalCountersignature.Purpose`, `"CK.AuthCenter.PartyApproval"`) covers the same data as the
   host's signature and lives as long (10 minutes). Who may enlist can be checked here by the application: a validator
-  of `ICountersignApprovalCommand`.
+  of `ICountersignApprovalCommand`. The routes of the statement are authorized for the approved party: they are added
+  to the System list of the Authentication Center (`AuthCenterSystemList.AuthorizeAsync`, see CK.AppIdentity.AuthCenter).
 - **On the holder,** when it has an Authentication Center, the countersignature is required and verified with its keys
   (`CrisAuthCenter.CheckWithKeyEventsAsync`): an approval without it, or with an invalid one, is `Refused`. A holder
   without Authentication Center ignores it.

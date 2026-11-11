@@ -42,6 +42,24 @@ public class RouteTests
         protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Hosts the "MailSender" route (without target: the host is what is reached).
+    /// </summary>
+    public sealed class MailHostFeatureDriver : ApplicationIdentityFeatureDriver
+    {
+        public MailHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+
+        protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder ) => builder.HostRoute( "MailSender" );
+
+        protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );
+
+        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.FromResult( true );
+
+        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.CompletedTask;
+
+        protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
+    }
+
     static async Task<PartyDescription> WaitForAsync( ILocalParty local, Func<PartyDescription, bool> condition )
     {
         for( int i = 0; i < 100; ++i )
@@ -133,11 +151,12 @@ public class RouteTests
         var route = TransportFeatureDriver.EnlistmentRouteName;
         (await WaitForAsync( b.ApplicationIdentityService, d => d.Routes.ContainsKey( route ) )).Routes[route].ShouldHaveSingleItem().Host.ShouldBe( aName );
 
-        // D trusts B on first contact, B doesn't trust D: B must approve D's key (RequiresLocalApproval).
+        // D trusts B on first contact, B doesn't trust D: B must approve D's key (RequiresLocalApproval). D hosts a route.
         await using var d = await RunningApplication.CreateAsync( TestHelper.Monitor,
                                                                   isSender: true,
                                                                   c => c["FullName"] = "Test/$D",
-                                                                  RunningApplication.WithHeartBeat() );
+                                                                  RunningApplication.WithHeartBeat(),
+                                                                  [typeof( MailHostFeatureDriver )] );
         string dName = d.ApplicationIdentityService.FullName;
 
         var atHost = await WaitForAsync( a.ApplicationIdentityService, x => x.Collected.ContainsKey( route ) );
@@ -154,8 +173,12 @@ public class RouteTests
             v.GetProperty( "Fingerprint" ).GetString().ShouldBe( issue.RemoteKeyFingerprintForApproval );
             v.GetProperty( "Kind" ).GetString().ShouldBe( "Local" );
             v.GetProperty( "Since" ).GetDateTime().ShouldBe( issue.ApprovalPendingSince!.Value );
-            v.EnumerateObject().Select( p => p.Name ).ShouldBe( ["Party", "Fingerprint", "Kind", "Since"], "Never the approval code." );
+            v.EnumerateObject().Select( p => p.Name ).ShouldBe( ["Party", "Fingerprint", "Kind", "Since", "Routes"], "Never the approval code." );
         }
+        // The routes D states that it hosts travel with its pending approval: the operator can authorize them with it.
+        issue.RemoteHostedRoutes.ShouldBe( ["MailSender"] );
+        TransportFeatureDriver.TryReadPendingApprovalValue( item.Value, out var pending ).ShouldBeTrue();
+        pending.HostedRoutes.ShouldBe( ["MailSender"] );
 
         // Approved: D connects, the issue is resolved and the item disappears from the holder and from the host.
         issue.AcceptRemoteIdentity( TestHelper.Monitor ).ShouldBeTrue();

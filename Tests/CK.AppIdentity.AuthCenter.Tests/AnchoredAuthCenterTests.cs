@@ -37,9 +37,9 @@ public class AnchoredAuthCenterTests
                                        typeof( AnchoredKeyDirectory ),
                                        typeof( IVerifyRoutedProofQCommand ),
                                        typeof( IAuthCenterProofStatement ),
-                                       typeof( IRevocationListCommand ),
-                                       typeof( IGetRevocationListQCommand ),
-                                       typeof( RevocationListHandler )];
+                                       typeof( ISystemListCommand ),
+                                       typeof( IGetSystemListQCommand ),
+                                       typeof( SystemListHandler )];
 
     sealed class Chain : IAsyncDisposable
     {
@@ -216,7 +216,7 @@ public class AnchoredAuthCenterTests
         return new RevokePartyHandler().HandleAsync( TestHelper.Monitor, command, new CurrentLocalParty( center ) );
     }
 
-    static int? SeqOf( RunningApplication app ) => app.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>().Current?.Seq;
+    static int? SeqOf( RunningApplication app ) => app.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>().Current?.Seq;
 
     [Test]
     public async Task the_revocation_list_reaches_every_party_and_cuts_the_revoked_one_Async()
@@ -257,10 +257,10 @@ public class AnchoredAuthCenterTests
     {
         await using var c = await StartAsync();
         var hop = c.Hop.ApplicationIdentityService;
-        var forged = RevocationList.Create( hop.GetRequiredFeature<ILocalKeys>(), 7, [], DateTime.UtcNow );
+        var forged = SystemList.Create( hop.GetRequiredFeature<ILocalKeys>(), 7, [], [], DateTime.UtcNow );
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
-            (await c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>()
+            (await c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>()
                                                  .TryAdoptAsync( TestHelper.Monitor, forged.Encode(), c.A.ApplicationIdentityService.Remotes.Single() )).ShouldBeFalse();
             logs.ShouldContain( l => l.Contains( $"is not signed by its AuthCenter '{c.CenterName}'" ) );
         }
@@ -271,8 +271,8 @@ public class AnchoredAuthCenterTests
     public async Task the_list_is_pulled_from_the_center_and_a_stale_one_raises_the_alarm_Async()
     {
         await using var c = await StartAsync();
-        var hopRevocations = c.Hop.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>();
-        var aRevocations = c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>();
+        var hopRevocations = c.Hop.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>();
+        var aRevocations = c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>();
         var ghost = new byte[KeyEvent.HashSize];
         ghost[0] = 42;
         (await RevokeAsync( c, "Test/$Ghost/#Dev", ghost )).ShouldBe( 1 );

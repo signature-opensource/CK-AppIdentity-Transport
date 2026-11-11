@@ -69,6 +69,12 @@ public interface IPartyApprovalStatement : IPoco
     DateTime Time { get; set; }
 
     /// <summary>
+    /// Gets the names of the routes that the operator authorizes the approved party to host (among the ones it states):
+    /// the Authentication Center adds them to its System list when it countersigns.
+    /// </summary>
+    IList<string> Routes { get; }
+
+    /// <summary>
     /// Gets or sets the encoded signature of the statement by the host.
     /// </summary>
     byte[] HostSignature { get; set; }

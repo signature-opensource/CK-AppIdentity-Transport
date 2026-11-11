@@ -23,6 +23,7 @@ counted before the connection is opened.
 | Protocols | Count and full names ("Name.Version") of every registered protocol version. |
 | Expected common protocol count | How many protocols the initiator needs. |
 | CanAutoTrust | Whether the initiator will pin the listener's identity on first contact (`AutoTrustKey` is `Once` and nothing is pinned). |
+| Hosted routes | Count and names of the routes the initiator hosts (at most 16): a party that waits for its approval states them, the operator can authorize them with it (`PeeringIssue.RemoteHostedRoutes`). |
 | Ephemeral public key | The initiator's half of the ECDH key agreement of this connection. |
 | MAC capabilities | The MAC algorithms this machine can run. |
 | Certificate binding | The SHA-256 of the certificate the initiator presents on the transport (empty on `tcp:`). |

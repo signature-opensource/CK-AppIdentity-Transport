@@ -75,6 +75,8 @@ public static class PeerMessages
             foreach( var p in availableProtocols ) w.WriteString( p );
             w.WriteSmallInt32( expectedCommonProtocolCount );
             w.WriteBool( canAutoTrust );
+            // The names of the routes it hosts: none.
+            w.WriteSmallUInt32( 0 );
             // Per-connection key agreement material, inside the signed region.
             w.WriteSmallUInt32( (uint)ephemeralPublicKey.Length );
             w.WriteBytes( ephemeralPublicKey );

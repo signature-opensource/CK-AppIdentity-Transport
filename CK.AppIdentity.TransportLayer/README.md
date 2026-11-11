@@ -220,17 +220,33 @@ CK.AppIdentity), in the second phase of its description
 ([`TransportFeatureDriver.Routes`](TransportFeatureDriver.Routes.cs)):
 
 - **Every route name hosted here or announced by a connected remote of the System** (same domain and environment)
-  gets a route: the hosted one (`PartyRoute.Hosted`), or the best route of the remotes (`SelectBest` of the accepted
-  ones) extended with the local party. A route counts only from a connected remote: when a remote disconnects, its
-  routes are withdrawn. The routes are computed again when a remote connects or disconnects and when a remote
-  announces another description (`ILocalParty.RemoteDescriptionChanged`).
-- **A route name has one host.** A route is announced, not proven: any party of the System can announce that it hosts
-  a route, or a path shorter than the real one. When the routes of a name lead to more than one host (among the remotes,
-  or a remote and the local party that hosts it), a `SecurityCritical` warning names the hosts and the announcers, once
-  per change of the conflict. The best route is still the shortest one: what uses a route must check where it leads.
+  gets its routes, one per host: the hosted one (`PartyRoute.Hosted`), and for each other host the best route of the
+  remotes (`SelectBest` of the accepted ones) extended with the local party. A name can have several hosts (several
+  mail senders). A route counts only from a connected remote: when a remote disconnects, its routes are withdrawn. The
+  routes are computed again when a remote connects or disconnects, when a remote announces another description
+  (`ILocalParty.RemoteDescriptionChanged`) and when the authorized hosts change.
+- **A route is accepted only toward an authorized host.** A route is announced, not proven: any party of the System can
+  announce that it hosts a route. The hosts authorized for the routes of a local party
+  ([`RouteHosts`](RouteHosts.cs), `TransportFeatureDriver.GetRouteHosts`) come from its
+  [`IRouteHostAuthority`](RouteHosts.cs) (its Authentication Center: CK.AppIdentity.AuthCenter implements it with its
+  signed System list), otherwise from its `"RouteHosts"` configuration (its `"Local"`, or a `"Defaults"` above it):
+
+  ```jsonc
+  "RouteHosts": {
+    "MailSender": [ "Acme/$Mail1", "Acme/$Mail2" ],                          // Routes without target.
+    "Enlistment": { "Acme/$Admin": "https://admin.acme.com/app-identity/enlist" } // The authorized target.
+  }
+  ```
+
+  A route to a host that is not authorized for its name, or whose target is not the authorized one, is refused (a
+  `SecurityCritical` warning names its announcer, once per change). With neither an authority nor a configuration, the
+  routes are believed as announced (a warning says so). The authority calls `TransportFeatureDriver.OnRouteHostsChangedAsync`
+  when the hosts change.
 - **The "Enlistment" route is the approval page of the System** (`EnlistmentRouteName`): a local party hosts it when
   one of its client applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its target is
-  the URL of that client application followed by `/app-identity/enlist` (`EnlistmentPageSuffix`).
+  the URL of that client application followed by the value of the fact (the path of the page, `app-identity/enlist`:
+  exactly one value). `TransportFeatureDriver.GetEnlistmentRoute` gives the page of a local party: its own, otherwise
+  the nearest one.
 - **The enlistment URL is the target of the "Enlistment" route** of the local party concerned (the owner of a known
   remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
   that is unknown here, or that we must approve (the page approves the pending approvals held by the parties of our
@@ -244,9 +260,11 @@ CK.AppIdentity), in the second phase of its description
   in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each
   `RequiresLocalApproval` or `RequiresBothApproval` issue of a local party is an item of the route, whose value is a
   JSON object (`GetPendingApprovalValue`, read by `TryReadPendingApprovalValue`): `{ "Party", "Fingerprint", "Kind"
-  ("Local" or "Both"), "Since" }`, never the approval code. Each party collects its own items and those of the
-  connected remotes whose route goes through it, so the host of the approval page knows every pending approval of the
-  System that reaches it, and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
+  ("Local" or "Both"), "Since", "Routes" }`, never the approval code. `"Routes"` are the names of the routes the party
+  states that it hosts, in its connection attempt (`PeeringIssue.RemoteHostedRoutes`, omitted when there is none): the
+  operator can authorize them with the approval. Each party collects its own items and those of the connected remotes
+  one of whose routes of the name goes through it, so the hosts of the approval pages know every pending approval of the
+  System that reaches them, and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
 
 ## Peering issues
 

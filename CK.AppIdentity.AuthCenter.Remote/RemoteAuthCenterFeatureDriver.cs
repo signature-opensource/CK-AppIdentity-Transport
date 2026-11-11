@@ -1,5 +1,6 @@
 using CK.AppIdentity.Cris;
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using CK.IO.AuthCenter;
 using System;
@@ -136,23 +137,23 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         if( center == null ) return false;
         var anchored = new AnchoredAuthCenter( center, sender, _services );
         local.AddFeature( anchored );
-        AuthCenterRevocations.Plug( monitor, center, m => anchored.SendAsync( m, pocos => pocos.Create<IGetRevocationListQCommand>(), "ask the revocation list" ) );
+        AuthCenterSystemList.Plug( monitor, center, m => anchored.SendAsync( m, pocos => pocos.Create<IGetSystemListQCommand>(), "ask the System list" ), AuthCenterSystemList.OnRouteHostsChanged( _services, local ) );
         return true;
     }
 
-    static bool Attach( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )
+    bool Attach( FeatureLifetimeContext context, ILocalParty local, IRemoteParty authCenter )
     {
         var monitor = context.Monitor;
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
         local.AddFeature( new RemoteAuthCenter( center ) );
-        AuthCenterRevocations.Plug( monitor, center, async m =>
+        AuthCenterSystemList.Plug( monitor, center, async m =>
         {
             var channel = authCenter.GetFeature<CrisChannelFeature>();
             if( channel == null ) return null;
-            return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetRevocationListQCommand>() )
+            return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetSystemListQCommand>() )
                                  .ExecutedCommand.WaitAsync( RemoteAuthCenter.Timeout ).ConfigureAwait( false )).Result;
-        } );
+        }, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) );
         return true;
     }
 }

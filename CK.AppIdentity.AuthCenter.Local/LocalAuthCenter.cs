@@ -1,4 +1,5 @@
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System;
 using System.Collections.Generic;
@@ -21,17 +22,88 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     readonly AuthCenterPendingStore<PendingRemoteLogin> _pendingRemoteLogins;
 
     readonly ImmutableConfigurationSection? _settings;
+    readonly RouteHosts? _configuredRouteHosts;
+    readonly SemaphoreSlim _routeHostsLock;
 
-    internal LocalAuthCenter( IActivityMonitor monitor, CrisAuthCenter center, AuthCenterOptions options, ImmutableConfigurationSection? settings )
+    internal LocalAuthCenter( IActivityMonitor monitor,
+                              CrisAuthCenter center,
+                              AuthCenterOptions options,
+                              ImmutableConfigurationSection? settings,
+                              RouteHosts? configuredRouteHosts )
     {
         Throw.DebugAssert( center.AuthCenter == center.Owner );
         _center = center;
         var party = _party = center.Owner;
         _options = options;
         _settings = settings;
+        _configuredRouteHosts = configuredRouteHosts;
+        _routeHostsLock = new SemaphoreSlim( 1, 1 );
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
+        // The targets of the authorized hosts follow what the hosts announce.
+        party.DescriptionChanged.Async += ( m, p, cancel ) => SyncRouteHostsInBackground();
+        party.RemoteDescriptionChanged.Async += ( m, r, cancel ) => SyncRouteHostsInBackground();
+        _ = party.ApplicationIdentityService.InitializationTask.ContinueWith( _ => SyncRouteHostsInBackground(), TaskScheduler.Default );
+    }
+
+    Task SyncRouteHostsInBackground()
+    {
+        _ = Task.Run( async () =>
+        {
+            var m = new ActivityMonitor( $"AuthCenter '{_party}': the route hosts." );
+            try
+            {
+                await SyncRouteHostsAsync( m ).ConfigureAwait( false );
+            }
+            catch( Exception ex )
+            {
+                m.Error( "While updating the route hosts.", ex );
+            }
+            finally
+            {
+                m.MonitorEnd();
+            }
+        } );
+        return Task.CompletedTask;
+    }
+
+    // The configured hosts are always authorized (a configured target is fixed); the targets of the other ones follow what
+    // their hosts announce, when this center sees their description. A new list is signed only when something changed.
+    async Task SyncRouteHostsAsync( IActivityMonitor monitor )
+    {
+        if( _party.GetFeature<AuthCenterSystemList>() is not { } list ) return;
+        await _routeHostsLock.WaitAsync().ConfigureAwait( false );
+        try
+        {
+            await list.UpdateAsync( monitor, ( entries, hosts ) =>
+            {
+                var result = new Dictionary<(string, string), RouteHost>();
+                foreach( var h in hosts ) result[(h.RouteName, h.Host)] = h;
+                if( _configuredRouteHosts != null )
+                {
+                    foreach( var c in _configuredRouteHosts.Entries ) result.TryAdd( (c.RouteName, c.Host), c );
+                }
+                foreach( var key in result.Keys.ToList() )
+                {
+                    var h = result[key];
+                    if( _configuredRouteHosts?.Find( h.RouteName, h.Host ) is { Target: not null } fixedTarget )
+                    {
+                        result[key] = fixedTarget;
+                    }
+                    else
+                    {
+                        var target = AuthCenterSystemList.FindAnnouncedTarget( _party, h.RouteName, h.Host, out var seen );
+                        if( seen ) result[key] = h with { Target = target };
+                    }
+                }
+                return (entries, result.Values.ToList());
+            } ).ConfigureAwait( false );
+        }
+        finally
+        {
+            _routeHostsLock.Release();
+        }
     }
 
     /// <summary>
@@ -73,8 +145,8 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 try
                 {
                     await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
-                    // The revocation list is signed again before its signature expires.
-                    if( _party.GetFeature<AuthCenterRevocations>() is { } revocations )
+                    // The System list is signed again before its signature expires.
+                    if( _party.GetFeature<AuthCenterSystemList>() is { } revocations )
                     {
                         await revocations.RenewIfNeededAsync( m, DateTime.UtcNow ).ConfigureAwait( false );
                     }

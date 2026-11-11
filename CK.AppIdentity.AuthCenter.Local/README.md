@@ -33,6 +33,15 @@ Read from the `"AuthCenter"` section of the local party's `"Local"` (never from 
 | `CriticalLifetimes:<scheme>` | `CriticalLifetime` | The same, for one scheme (at most the session's). `00:00:00`: the scheme never elevates to `Critical`. |
 | `TokenLifetime` | 10 minutes | The lifetime of a token (at most the session's). |
 | `RefreshGraceWindow` | 1 minute | How long the previous secrets of a session are accepted, once, after a rotation (0 disables it, at most 5 minutes). See "Sessions". |
+| `RouteHosts` | none | The hosts of the routes known at deployment, always authorized in the System list (the format of `RouteHosts.TryRead`, CK.AppIdentity.TransportLayer): `{ "MailSender": [ "Acme/$Mail1" ], "Enlistment": { "Acme/$Admin": "https://..." } }`. A configured target is fixed; otherwise the target follows what the host announces. See "The route hosts" below. |
+
+### The route hosts
+
+The `LocalAuthCenter` keeps the route hosts of its System list (see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-route-hosts)):
+the configured ones are always in it, and the target of each host follows what it announces when the center sees its
+description (itself, or one of its remotes): a new list is signed when it changes. The `RevokePartyHandler` also handles
+the Critical `IAuthorizeRouteHostCommand` and `IRemoveRouteHostCommand` (CK.IO.AuthCenter): who may send them is decided
+by the application, like the revocation.
 
 ### The Critical level is a fresh proof
 

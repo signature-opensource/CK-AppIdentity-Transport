@@ -101,6 +101,7 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         if( center.AuthCenter == host )
         {
             // The host is the Authentication Center: the operator's request is executed here, at the Critical level.
+            await AuthorizeRoutesAsync( monitor, host, statement ).ConfigureAwait( false );
             return (true, Sign( host, statement ), withPinGrant ? CreatePinGrant( monitor, host, statement ) : null);
         }
         var command = services.GetRequiredService<PocoDirectory>().Create<ICountersignApprovalCommand>( c =>
@@ -148,6 +149,20 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             return false;
         }
         return true;
+    }
+
+    // The Authentication Center authorizes the approved party to host the routes the operator approved with it.
+    static async Task AuthorizeRoutesAsync( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
+    {
+        if( statement.Routes.Count == 0 ) return;
+        if( center.GetFeature<AuthCenterSystemList>() is not { } list )
+        {
+            monitor.Warn( $"The AuthCenter '{center}' has no System list: the routes of '{statement.PartyFullName}' are not authorized." );
+            return;
+        }
+        var updated = await list.AuthorizeAsync( monitor, statement.PartyFullName, statement.Routes ).ConfigureAwait( false );
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical,
+                      $"'{statement.PartyFullName}' is authorized to host the route(s) '{string.Join( "', '", statement.Routes )}' with its approval, by actor #{statement.OperatorActorId}: {updated}." );
     }
 
     // The Authentication Center signs the same data as the host, for the same lifetime.
@@ -205,11 +220,11 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
     /// <param name="pocos">The poco directory.</param>
     /// <returns>The countersignature (and the pin grant), or null when it is refused (the reason is logged).</returns>
     [CommandHandler]
-    public ICountersignApprovalResult? Handle( IActivityMonitor monitor,
-                                               ICountersignApprovalCommand command,
-                                               CurrentLocalParty current,
-                                               AuthenticationInfo authentication,
-                                               PocoDirectory pocos )
+    public async Task<ICountersignApprovalResult?> HandleAsync( IActivityMonitor monitor,
+                                                                ICountersignApprovalCommand command,
+                                                                CurrentLocalParty current,
+                                                                AuthenticationInfo authentication,
+                                                                PocoDirectory pocos )
     {
         var local = current.LocalParty;
         var statement = command.Statement;
@@ -230,6 +245,7 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         }
         monitor.Info( ActivityMonitor.Tags.SecurityCritical,
                       $"The AuthCenter '{local}' countersigns the approval of '{statement.PartyFullName}' (key '{statement.KeyFingerprint}') pending on '{statement.HolderFullName}', by actor #{statement.OperatorActorId} on '{statement.HostFullName}'." );
+        await AuthorizeRoutesAsync( monitor, local, statement ).ConfigureAwait( false );
         return pocos.Create<ICountersignApprovalResult>( r =>
         {
             r.Countersignature = Sign( local, statement );

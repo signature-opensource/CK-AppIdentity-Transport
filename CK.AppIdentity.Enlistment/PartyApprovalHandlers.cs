@@ -128,6 +128,8 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                     s.HostFullName = host.FullName;
                     s.OperatorActorId = authentication.Actor.ActorId;
                     s.Time = host.ApplicationIdentityService.SystemClock.UtcNow;
+                    // Only the routes the party states that it hosts.
+                    s.Routes.AddRange( command.Routes.Where( pending.HostedRoutes.Contains ).Distinct( StringComparer.Ordinal ) );
                 } );
                 statement.HostSignature = keys.Sign( PartyApprovalStatement.Purpose,
                                                      PartyApprovalStatement.GetSignedData( statement ),

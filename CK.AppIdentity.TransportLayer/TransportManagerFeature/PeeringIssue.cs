@@ -163,6 +163,13 @@ public sealed class PeeringIssue
     public KeyEvent? RemoteIdentityForApproval => _remoteKeyForApproval;
 
     /// <summary>
+    /// Gets the names of the routes that the other side states it hosts, in its connection attempt (empty when it is not
+    /// the initiator): an operator who approves it can authorize them with it (see the route hosts of the System). Like
+    /// <see cref="RemoteIdentityForApproval"/>, this is only what the other side sent.
+    /// </summary>
+    public IReadOnlyList<string> RemoteHostedRoutes => _initialMessage?.HostedRoutes ?? [];
+
+    /// <summary>
     /// Gets the key <see cref="RemoteIdentityForApproval"/> reveals, null when there is nothing to approve.
     /// </summary>
     public RemoteIdentityKeyData? RemoteKeyForApproval => _remoteKeyForApproval != null ? new RemoteIdentityKeyData( _remoteKeyForApproval ) : null;

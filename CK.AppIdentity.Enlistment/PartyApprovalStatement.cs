@@ -48,6 +48,9 @@ public static class PartyApprovalStatement
         m.Write( b, 0, 4 );
         BinaryPrimitives.WriteInt64BigEndian( b, statement.Time.Ticks );
         m.Write( b );
+        BinaryPrimitives.WriteInt32BigEndian( b, statement.Routes.Count );
+        m.Write( b, 0, 4 );
+        foreach( var r in statement.Routes ) Write( r );
         return m.ToArray();
     }
 }

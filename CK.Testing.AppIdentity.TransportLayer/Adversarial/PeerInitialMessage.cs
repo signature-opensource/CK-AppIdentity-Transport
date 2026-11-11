@@ -96,6 +96,9 @@ public sealed class PeerInitialMessage
         for( int i = 0; i < protocolCount; ++i ) protocols[i] = r.ReadString();
         int expectedCommon = r.ReadSmallInt32();
         bool canAutoTrust = r.ReadBool();
+        // The names of the routes it hosts.
+        uint hostedCount = r.ReadSmallUInt32();
+        for( uint i = 0; i < hostedCount; ++i ) r.ReadString();
 
         // Per-connection key agreement material, written inside the signed region right after the
         // cached message content and before the nonce.

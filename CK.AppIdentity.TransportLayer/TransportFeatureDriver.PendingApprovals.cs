@@ -1,6 +1,7 @@
 using CK.Core;
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
@@ -44,8 +45,9 @@ public partial class TransportFeatureDriver
     /// <summary>
     /// Gets the value of a pending approval, as collected along the <see cref="EnlistmentRouteName"/> route: an opaque JSON
     /// object <c>{ "Party": the full name of the party to approve, "Fingerprint": the fingerprint of the key to approve,
-    /// "Kind": "Local" or "Both", "Since": when the key started to wait (ISO 8601, UTC) }</c>. Never the approval code: the
-    /// operator reads it on the party to approve. The holder of the approval is the first party of the item's path.
+    /// "Kind": "Local" or "Both", "Since": when the key started to wait (ISO 8601, UTC), "Routes": the names of the routes it
+    /// states that it hosts (omitted when there is none) }</c>. Never the approval code: the operator reads it on the party
+    /// to approve. The holder of the approval is the first party of the item's path.
     /// </summary>
     /// <param name="issue">The peering issue.</param>
     /// <returns>The value, or null when the issue is not a pending approval.</returns>
@@ -63,6 +65,13 @@ public partial class TransportFeatureDriver
             w.WriteString( "Fingerprint", fingerprint );
             w.WriteString( "Kind", issue.Kind == PeeringIssueKind.RequiresBothApproval ? "Both" : "Local" );
             w.WriteString( "Since", since.Value );
+            var routes = issue.RemoteHostedRoutes;
+            if( routes.Count > 0 )
+            {
+                w.WriteStartArray( "Routes" );
+                foreach( var r in routes ) w.WriteStringValue( r );
+                w.WriteEndArray();
+            }
             w.WriteEndObject();
         }
         return Encoding.UTF8.GetString( buffer.WrittenSpan );
@@ -87,7 +96,17 @@ public partial class TransportFeatureDriver
                 && e.TryGetProperty( "Kind", out var k ) && k.ValueKind == JsonValueKind.String && k.GetString() is "Local" or "Both"
                 && e.TryGetProperty( "Since", out var t ) && t.ValueKind == JsonValueKind.String && t.TryGetDateTime( out var since ) )
             {
-                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime() );
+                var routes = new List<string>();
+                if( e.TryGetProperty( "Routes", out var rs ) )
+                {
+                    if( rs.ValueKind != JsonValueKind.Array ) return false;
+                    foreach( var r in rs.EnumerateArray() )
+                    {
+                        if( r.ValueKind != JsonValueKind.String || !PartyDescription.IsValidName( r.GetString() ) ) return false;
+                        routes.Add( r.GetString()! );
+                    }
+                }
+                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes );
                 return true;
             }
         }
@@ -107,4 +126,5 @@ public partial class TransportFeatureDriver
 /// <param name="Fingerprint">The fingerprint of the key to approve.</param>
 /// <param name="Kind">"Local", or "Both" when the party to approve must also approve the holder.</param>
 /// <param name="Since">Since when the key waits (UTC).</param>
-public sealed record PendingApprovalValue( string PartyFullName, string Fingerprint, string Kind, DateTime Since );
+/// <param name="HostedRoutes">The names of the routes the party states that it hosts (see <see cref="PeeringIssue.RemoteHostedRoutes"/>).</param>
+public sealed record PendingApprovalValue( string PartyFullName, string Fingerprint, string Kind, DateTime Since, IReadOnlyList<string> HostedRoutes );

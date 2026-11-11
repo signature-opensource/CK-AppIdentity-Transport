@@ -133,6 +133,7 @@ public sealed class AuthCenterOptions
         {
             if( s.GetChildren().Any()
                 && !s.Key.Equals( nameof( CriticalLifetimes ), StringComparison.OrdinalIgnoreCase )
+                && !s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase )
                 && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase ) )
             {
                 monitor.Error( $"The '{s.Path}' section belongs to no installed scheme family (is a package missing?). Installed: '{schemeKeys.Concatenate( "', '" )}'." );

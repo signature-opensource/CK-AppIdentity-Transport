@@ -24,6 +24,16 @@ sealed class InitialMessage : IIncomingRequest
     /// The <see cref="CoreApplicationIdentity.InstanceId"/> is currently 21 characters long.
     /// </summary>
     const int InstanceIdMaxLength = 21;
+
+    /// <summary>
+    /// The maximal number of route names the initiator states that it hosts.
+    /// </summary>
+    public const int MaxHostedRouteCount = 16;
+
+    /// <summary>
+    /// The maximal length of a route name stated by the initiator.
+    /// </summary>
+    public const int MaxRouteNameLength = 64;
     // Used as a high limit so that weirdly big messages are just skipped.
     // Note that each string or array read are also protected.
     public const int MaxLength = 8 // "CK-AppId"
@@ -34,6 +44,7 @@ sealed class InitialMessage : IIncomingRequest
                                + MaxProtocolFullNameCount * (2 + MessageProtocol.FullNameMaxLength)
                                + 5 // expectedCommonProtocolCount
                                + 1 // RemoteTrustInfo.CanAutoTrust?
+                               + 5 + MaxHostedRouteCount * (2 + MaxRouteNameLength) // The names of the routes the initiator hosts.
                                + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
                                + (5 + AnchoredStatement.MaxEncodedSize) // The pin grant the initiator holds for the listener.
                                + 1 // Its MAC capabilities.
@@ -76,6 +87,10 @@ sealed class InitialMessage : IIncomingRequest
     readonly byte _remoteMacCapabilities;
     // Incoming only: the initiator's commitment to its nonce of the approval code (see ApprovalSession).
     readonly byte[] _approvalCommitment;
+    // Outgoing: the local party (its hosted routes are read when the message is written). Incoming: the names of the
+    // routes the initiator states that it hosts (a party waiting for its approval: the operator authorizes them with it).
+    readonly ILocalParty? _local;
+    readonly string[] _hostedRoutes;
 
     sealed class ProtocolAdapter : IReadOnlyCollection<string>
     {
@@ -115,6 +130,8 @@ sealed class InitialMessage : IIncomingRequest
         // reused across connection attempts, and a reused ephemeral would reuse the session key.
         _remoteEphemeralPublicKey = Array.Empty<byte>();
         _approvalCommitment = Array.Empty<byte>();
+        _local = local;
+        _hostedRoutes = [];
     }
 
     /// <summary>
@@ -137,8 +154,10 @@ sealed class InitialMessage : IIncomingRequest
                            IdentityBlock block,
                            byte[] remoteEphemeralPublicKey,
                            byte remoteMacCapabilities,
-                           byte[] approvalCommitment )
+                           byte[] approvalCommitment,
+                           string[] hostedRoutes )
     {
+        _hostedRoutes = hostedRoutes;
         _endPointDescription = endPointDescription;
         _remoteEndPointDescription = remoteEndPointDescription;
         _version = version;
@@ -174,6 +193,22 @@ sealed class InitialMessage : IIncomingRequest
     /// </summary>
     public byte RemoteMacCapabilities => _remoteMacCapabilities;
 
+    /// <summary>
+    /// Gets the names of the routes the initiator hosts: read from the local party for an outgoing message (when it is
+    /// written), the ones it stated for an incoming one.
+    /// </summary>
+    public IReadOnlyList<string> HostedRoutes => _local != null ? GetHostedRoutes( _local ) : _hostedRoutes;
+
+    static string[] GetHostedRoutes( ILocalParty local )
+    {
+        string self = local.FullName;
+        return local.Description.Routes
+                    .Where( kv => kv.Key.Length <= MaxRouteNameLength && kv.Value.Any( r => r.Host == self ) )
+                    .Select( kv => kv.Key )
+                    .Take( MaxHostedRouteCount )
+                    .ToArray();
+    }
+
     public void WriteCurrentVersion( ref FastByteWriter w )
     {
         w.WriteBytes( _prefix );
@@ -187,6 +222,10 @@ sealed class InitialMessage : IIncomingRequest
         }
         w.WriteSmallInt32( _expectedCommonProtocolCount );
         w.WriteBool( _canAutoTrust );
+        // The routes this party hosts: when it waits for its approval, the operator authorizes them with it.
+        var hosted = HostedRoutes;
+        w.WriteSmallUInt32( (uint)hosted.Count );
+        foreach( var name in hosted ) w.WriteString( name );
     }
 
     /// <summary>
@@ -203,8 +242,10 @@ sealed class InitialMessage : IIncomingRequest
                                  [NotNullWhen( true )] out string? fullName,
                                  [NotNullWhen( true )] out string[]? protocols,
                                  out int expectedCommonProtocolCount,
-                                 out bool canAutoTrust )
+                                 out bool canAutoTrust,
+                                 [NotNullWhen( true )] out string[]? hostedRoutes )
     {
+        hostedRoutes = null;
         Span<byte> header = stackalloc byte[8];
         r.ReadBytes( header );
         if( !header.SequenceEqual( _prefix ) )
@@ -245,6 +286,14 @@ sealed class InitialMessage : IIncomingRequest
         }
         expectedCommonProtocolCount = r.ReadSmallInt32();
         canAutoTrust = r.ReadBool();
+        var hostedCount = r.ReadSmallUInt32();
+        Throw.CheckData( hostedCount <= MaxHostedRouteCount );
+        hostedRoutes = new string[hostedCount];
+        for( int i = 0; i < hostedRoutes.Length; i++ )
+        {
+            hostedRoutes[i] = r.ReadString( MaxRouteNameLength );
+            Throw.CheckData( PartyDescription.IsValidName( hostedRoutes[i] ) );
+        }
         return true;
 
         static bool False( out string? instanceId,

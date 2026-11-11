@@ -86,7 +86,8 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
     }
 
     // On the Authentication Center: the statement of the target of its "Enlistment" route, signed again at half-life or
-    // when the target changes. Null when it knows no approval page.
+    // when the target changes. Null when it knows no approval page. The routes of the center are the authorized ones (its
+    // System list rules them, see AuthCenterRouteHostAuthority): the stated URL is the one of an authorized host.
     AnchoredStatement? GetOrSign( IActivityLineEmitter logger, ILocalParty center )
     {
         var target = TransportFeatureDriver.GetEnlistmentRoute( center )?.Target;

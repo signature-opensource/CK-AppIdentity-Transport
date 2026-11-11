@@ -21,7 +21,8 @@ refused while impersonating: the operator approves as itself). For each pending 
 the "Enlistment" route of the current local party:
 
 - it builds an `IPartyApprovalStatement` (the party, the fingerprint of its key, the holder, the host, the operator's
-  actor identifier and the time) and signs it with the host's identity key (`ILocalKeys.Sign`, see
+  actor identifier, the time, and the `Routes` that the operator authorizes it to host: the `IApprovePartyCommand.Routes`
+  among the ones the party states, see the pending approvals of CK.AppIdentity.TransportLayer) and signs it with the host's identity key (`ILocalKeys.Sign`, see
   [`PartyApprovalStatement`](PartyApprovalStatement.cs): its `Purpose`, its `GetSignedData` and its `Lifetime` of 10
   minutes, which bounds a replay);
 - it sends an `IApprovePendingPartyCommand` (the statement and the codes) to the holder along the reversed path of the

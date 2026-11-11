@@ -5,33 +5,40 @@ using CK.Core;
 using CK.Cris;
 using CK.IO.AuthCenter;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The revocation list of a local party that has an Authentication Center (a feature of the local party, see
-/// <see cref="RevocationList"/>): the newest list it verified. It is kept in its local store, applied to its keys (see
+/// The System list of a local party that has an Authentication Center (a feature of the local party, see
+/// <see cref="SystemList"/>): the newest list it verified. It is kept in its local store, applied to its keys (see
 /// <see cref="ILocalKeys.SetRevocationsAsync"/>: the revoked remotes are cut) and relayed to its remotes of the System:
-/// when a channel becomes available, and when a newer list is adopted (from any remote: <see cref="IRevocationListCommand"/>).
+/// when a channel becomes available, and when a newer list is adopted (from any remote: <see cref="ISystemListCommand"/>).
+/// <para>
+/// Its <see cref="RouteHosts"/> are the hosts authorized for the routes of the local party (see
+/// <see cref="AuthCenterRouteHostAuthority"/>): the ones of the list, and the Authentication Center for its own
+/// "AuthCenter" route (implicit: the list itself is pulled along it). Before any list, only this route is authorized.
+/// </para>
 /// <para>
 /// A list is adopted only when its sequence number is greater than the one held and when its signature is the
 /// Authentication Center's (verified with its keys, pinned or anchored): a hop can withhold a list, not forge one.
 /// </para>
 /// <para>
 /// The freshness: a party that is not the Authentication Center also asks it its current list every
-/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetRevocationListQCommand"/>), and raises a
+/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetSystemListQCommand"/>), and raises a
 /// <see cref="ActivityMonitor.Tags.SecurityCritical"/> alarm when the signature of the list it holds expired (the
 /// Authentication Center signs it again before: an expired one means that nothing newer reached this party).
 /// </para>
 /// </summary>
-public sealed class AuthCenterRevocations
+public sealed class AuthCenterSystemList
 {
     /// <summary>
     /// The name of the file of the list, in the local store of the local party.
     /// </summary>
-    public const string FileName = "RevocationList.bin";
+    public const string FileName = "SystemList.bin";
 
     /// <summary>
     /// The period of the pull of the current list from the Authentication Center: 1 hour.
@@ -41,21 +48,100 @@ public sealed class AuthCenterRevocations
     readonly CrisAuthCenter _center;
     readonly SemaphoreSlim _adoptLock;
     readonly Func<IActivityMonitor, Task<object?>>? _pull;
-    RevocationList? _current;
+    readonly Func<IActivityMonitor, Task>? _onRouteHostsChanged;
+    SystemList? _current;
+    RouteHosts _routeHosts;
     DateTime _nextPull;
     int _pulling;
 
-    AuthCenterRevocations( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull )
+    AuthCenterSystemList( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull, Func<IActivityMonitor, Task>? onRouteHostsChanged )
     {
         _center = center;
         _pull = pull;
+        _onRouteHostsChanged = onRouteHostsChanged;
         _adoptLock = new SemaphoreSlim( 1, 1 );
+        _routeHosts = GetRouteHosts( center, null );
     }
 
     /// <summary>
     /// Gets the newest list verified here, null when none.
     /// </summary>
-    public RevocationList? Current => _current;
+    public SystemList? Current => _current;
+
+    /// <summary>
+    /// Gets the hosts authorized for the routes of the local party: the ones of the <see cref="Current"/> list, and the
+    /// Authentication Center for its "AuthCenter" route.
+    /// </summary>
+    public RouteHosts RouteHosts => _routeHosts;
+
+    /// <summary>
+    /// Gets the callback of <see cref="Plug"/> that has the transport compute the routes of a local party again (nothing
+    /// when there is no transport).
+    /// </summary>
+    /// <param name="services">The root services.</param>
+    /// <param name="local">The local party.</param>
+    /// <returns>The callback.</returns>
+    public static Func<IActivityMonitor, Task> OnRouteHostsChanged( IServiceProvider services, ILocalParty local )
+    {
+        Throw.CheckNotNullArgument( services );
+        Throw.CheckNotNullArgument( local );
+        return m => services.GetService( typeof( TransportFeatureDriver ) ) is TransportFeatureDriver t
+                        ? t.OnRouteHostsChangedAsync( m, local )
+                        : Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Finds the target of a route that a host announces, when the local party sees the host's description: the host is
+    /// the local party itself, or one of its remotes.
+    /// </summary>
+    /// <param name="local">The local party (the Authentication Center).</param>
+    /// <param name="routeName">The route name.</param>
+    /// <param name="host">The full name of the host.</param>
+    /// <param name="seen">True when the host's description is seen and announces the route.</param>
+    /// <returns>The target (null when the route has none, or is not seen).</returns>
+    public static string? FindAnnouncedTarget( ILocalParty local, string routeName, string host, out bool seen )
+    {
+        Throw.CheckNotNullArgument( local );
+        var description = host == local.FullName.Path
+                            ? local.Description
+                            : local.Remotes.FirstOrDefault( r => r.FullName.Path == host )?.Description;
+        var route = description?.FindRoute( routeName, host );
+        seen = route != null;
+        return route?.Target;
+    }
+
+    /// <summary>
+    /// On the Authentication Center: authorizes a host for routes (the ones it doesn't host yet), with the target it
+    /// announces when it is seen (see <see cref="FindAnnouncedTarget"/>; the Authentication Center keeps it up to date).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="host">The full name of the host.</param>
+    /// <param name="routeNames">The route names.</param>
+    /// <returns>The list.</returns>
+    public Task<SystemList?> AuthorizeAsync( IActivityMonitor monitor, string host, IEnumerable<string> routeNames )
+    {
+        Throw.CheckNotNullArgument( host );
+        Throw.CheckNotNullArgument( routeNames );
+        var names = routeNames.Where( n => PartyDescription.IsValidName( n ) && n != AuthCenterFeature.RouteName ).Distinct( StringComparer.Ordinal ).ToList();
+        return UpdateAsync( monitor, ( entries, hosts ) =>
+        {
+            var h = hosts.ToList();
+            foreach( var name in names )
+            {
+                if( !h.Any( x => x.RouteName == name && x.Host == host ) )
+                {
+                    h.Add( new RouteHost( name, host, FindAnnouncedTarget( Local, name, host, out _ ) ) );
+                }
+            }
+            return (entries, h);
+        } );
+    }
+
+    static RouteHosts GetRouteHosts( CrisAuthCenter center, SystemList? list )
+    {
+        var implicitHost = new RouteHost( AuthCenterFeature.RouteName, center.AuthCenterFullName, null );
+        return RouteHosts.Create( (list?.RouteHosts ?? []).Where( h => h.RouteName != AuthCenterFeature.RouteName ).Append( implicitHost ) );
+    }
 
     /// <summary>
     /// Gets the Authentication Center.
@@ -73,26 +159,33 @@ public sealed class AuthCenterRevocations
     /// <param name="monitor">The monitor.</param>
     /// <param name="center">The Authentication Center of the local party.</param>
     /// <param name="pull">
-    /// Sends an <see cref="IGetRevocationListQCommand"/> to the Authentication Center and returns its result (null for the
+    /// Sends an <see cref="IGetSystemListQCommand"/> to the Authentication Center and returns its result (null for the
     /// Authentication Center itself): the periodic pull.
     /// </param>
+    /// <param name="onRouteHostsChanged">
+    /// Called when the <see cref="RouteHosts"/> changed (the transport computes the routes of the local party again).
+    /// </param>
     /// <returns>The feature.</returns>
-    public static AuthCenterRevocations Plug( IActivityMonitor monitor, CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull )
+    public static AuthCenterSystemList Plug( IActivityMonitor monitor,
+                                             CrisAuthCenter center,
+                                             Func<IActivityMonitor, Task<object?>>? pull,
+                                             Func<IActivityMonitor, Task>? onRouteHostsChanged )
     {
-        var f = new AuthCenterRevocations( center, pull );
+        var f = new AuthCenterSystemList( center, pull, onRouteHostsChanged );
         var local = center.Owner;
         var bytes = StoreFileReader.TryReadAllBytes( f.FilePath );
         if( bytes != null )
         {
-            if( RevocationList.TryDecode( bytes, out var list ) && local.GetFeature<ILocalKeys>() is { } keys )
+            if( SystemList.TryDecode( bytes, out var list ) && local.GetFeature<ILocalKeys>() is { } keys )
             {
                 f._current = list;
+                f._routeHosts = GetRouteHosts( center, list );
                 keys.SetRevocationsAsync( monitor, list!.Entries ).GetAwaiter().GetResult();
                 monitor.Info( $"{list} of '{local}' is loaded." );
             }
             else
             {
-                monitor.Error( $"The revocation list stored by '{local}' can't be read: it will be received again from its remotes." );
+                monitor.Error( $"The System list stored by '{local}' can't be read: it will be received again from its remotes." );
             }
         }
         local.AddFeature( f );
@@ -117,7 +210,7 @@ public sealed class AuthCenterRevocations
             _nextPull = utcNow + PullPeriod;
             _ = Task.Run( async () =>
             {
-                var m = new ActivityMonitor( $"Pulling the revocation list of the AuthCenter of '{Local}'." );
+                var m = new ActivityMonitor( $"Pulling the System list of the AuthCenter of '{Local}'." );
                 try
                 {
                     await PullAsync( m ).ConfigureAwait( false );
@@ -125,7 +218,7 @@ public sealed class AuthCenterRevocations
                 }
                 catch( Exception ex )
                 {
-                    m.Error( "While pulling the revocation list.", ex );
+                    m.Error( "While pulling the System list.", ex );
                 }
                 finally
                 {
@@ -152,11 +245,11 @@ public sealed class AuthCenterRevocations
         }
         catch( Exception ex )
         {
-            monitor.Warn( $"Unable to ask the AuthCenter '{_center.AuthCenterFullName}' its revocation list.", ex );
+            monitor.Warn( $"Unable to ask the AuthCenter '{_center.AuthCenterFullName}' its System list.", ex );
             return false;
         }
         if( result is byte[] encoded ) return await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false );
-        if( result != null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' can't be asked its revocation list: {result}." );
+        if( result != null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' can't be asked its System list: {result}." );
         return false;
     }
 
@@ -190,13 +283,36 @@ public sealed class AuthCenterRevocations
 
     bool IsInSystem( IRemoteParty r ) => r.DomainName == Local.DomainName && r.EnvironmentName == Local.EnvironmentName;
 
-    void Send( IActivityMonitor monitor, IRemoteParty remote, RevocationList list )
+    void Send( IActivityMonitor monitor, IRemoteParty remote, SystemList list )
     {
         var channel = remote.GetFeature<CrisChannelFeature>();
         if( channel == null ) return;
-        var command = channel.PocoDirectory.Create<IRevocationListCommand>( c => c.Encoded = list.Encode() );
+        var command = channel.PocoDirectory.Create<ISystemListCommand>( c => c.Encoded = list.Encode() );
         channel.SendCommand( monitor, command );
         monitor.Trace( $"{list} sent to '{remote}'." );
+    }
+
+    /// <summary>
+    /// On the Authentication Center: signs a new list (the next sequence number) with its revocations and its route hosts
+    /// computed from the current ones, and adopts it (it is relayed to every party of the System). Nothing is signed when
+    /// they don't change.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="update">Computes the new revocations and route hosts from the current ones.</param>
+    /// <returns>The new list, the current one when nothing changed.</returns>
+    public async Task<SystemList?> UpdateAsync( IActivityMonitor monitor,
+                                                Func<IReadOnlyList<RevocationEntry>, IReadOnlyList<RouteHost>, (IReadOnlyList<RevocationEntry> Entries, IReadOnlyList<RouteHost> RouteHosts)> update )
+    {
+        Throw.CheckState( "Only the Authentication Center signs its list.", _center.AuthCenter == Local );
+        Throw.CheckNotNullArgument( update );
+        var current = _current;
+        IReadOnlyList<RevocationEntry> entries = current?.Entries ?? [];
+        IReadOnlyList<RouteHost> hosts = current?.RouteHosts ?? [];
+        var (newEntries, newHosts) = update( entries, hosts );
+        var sortedHosts = newHosts.OrderBy( h => h.RouteName, StringComparer.Ordinal ).ThenBy( h => h.Host, StringComparer.Ordinal ).ToList();
+        if( newEntries.SequenceEqual( entries ) && sortedHosts.SequenceEqual( hosts ) ) return current;
+        var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, DateTime.UtcNow );
+        return await TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false ) ? list : _current;
     }
 
     /// <summary>
@@ -213,7 +329,7 @@ public sealed class AuthCenterRevocations
         var current = _current;
         var keys = Local.GetRequiredFeature<ILocalKeys>();
         if( current == null || current.Signature.Expiration - utcNow > TimeSpan.FromDays( keys.MaxSignatureDays ) / 2 ) return false;
-        var list = RevocationList.Create( keys, current.Seq + 1, current.Entries, utcNow );
+        var list = SystemList.Create( keys, current.Seq + 1, current.Entries, current.RouteHosts, utcNow );
         return await TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false );
     }
 
@@ -228,25 +344,31 @@ public sealed class AuthCenterRevocations
     public async Task<bool> TryAdoptAsync( IActivityMonitor monitor, byte[] encoded, IRemoteParty? from )
     {
         Throw.CheckNotNullArgument( encoded );
-        if( !RevocationList.TryDecode( encoded, out var list ) )
+        if( !SystemList.TryDecode( encoded, out var list ) )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{from}' sent an invalid revocation list to '{Local}': it is ignored." );
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{from}' sent an invalid System list to '{Local}': it is ignored." );
             return false;
         }
         await _adoptLock.WaitAsync().ConfigureAwait( false );
         try
         {
             if( _current != null && list!.Seq <= _current.Seq ) return false;
-            var verdict = await _center.CheckWithKeyEventsAsync( monitor, RevocationList.Purpose, list!.SignedData.ToArray(), list.Signature ).ConfigureAwait( false );
+            var verdict = await _center.CheckWithKeyEventsAsync( monitor, SystemList.Purpose, list!.SignedData.ToArray(), list.Signature ).ConfigureAwait( false );
             if( verdict != SignatureVerdict.Valid )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} sent by '{from}' to '{Local}' is not signed by its AuthCenter '{_center.AuthCenterFullName}' ({verdict}): it is ignored." );
                 return false;
             }
             Local.LocalFileStore.WriteAtomically( FilePath, s => s.Write( encoded ) );
+            var previousHosts = _current?.RouteHosts ?? [];
             _current = list;
+            _routeHosts = GetRouteHosts( _center, list );
             monitor.Info( $"{list} of the AuthCenter '{_center.AuthCenterFullName}' is adopted by '{Local}'{(from != null ? $" (from '{from}')" : "")}." );
             await Local.GetRequiredFeature<ILocalKeys>().SetRevocationsAsync( monitor, list.Entries ).ConfigureAwait( false );
+            if( _onRouteHostsChanged != null && !previousHosts.SequenceEqual( list.RouteHosts ) )
+            {
+                await _onRouteHostsChanged( monitor ).ConfigureAwait( false );
+            }
             foreach( var r in Local.Remotes )
             {
                 if( r != from
@@ -266,10 +388,10 @@ public sealed class AuthCenterRevocations
 }
 
 /// <summary>
-/// Handles the <see cref="IRevocationListCommand"/> sent by a remote: the list is adopted when it is newer and verifies
-/// (see <see cref="AuthCenterRevocations.TryAdoptAsync"/>). Ignored by a local party without Authentication Center.
+/// Handles the <see cref="ISystemListCommand"/> sent by a remote: the list is adopted when it is newer and verifies
+/// (see <see cref="AuthCenterSystemList.TryAdoptAsync"/>). Ignored by a local party without Authentication Center.
 /// </summary>
-public sealed class RevocationListHandler : ISingletonAutoService
+public sealed class SystemListHandler : ISingletonAutoService
 {
     /// <summary>
     /// Handles the command.
@@ -279,9 +401,9 @@ public sealed class RevocationListHandler : ISingletonAutoService
     /// <param name="caller">The remote that sent it.</param>
     /// <returns>The awaitable.</returns>
     [CommandHandler]
-    public async Task HandleAsync( IActivityMonitor monitor, IRevocationListCommand command, IRemoteParty caller )
+    public async Task HandleAsync( IActivityMonitor monitor, ISystemListCommand command, IRemoteParty caller )
     {
-        if( caller.Owner.GetFeature<AuthCenterRevocations>() is { } revocations && command.Encoded != null )
+        if( caller.Owner.GetFeature<AuthCenterSystemList>() is { } revocations && command.Encoded != null )
         {
             await revocations.TryAdoptAsync( monitor, command.Encoded, caller ).ConfigureAwait( false );
         }
