@@ -64,7 +64,19 @@ public enum KeyChainVerdict
     /// Only the holder of that sequence's committed key can produce it: this is proof that the key
     /// leaked. <see cref="KeyChainCheck.Held"/> and <see cref="KeyChainCheck.Conflicting"/> are the evidence.
     /// </summary>
-    Duplicity
+    Duplicity,
+
+    /// <summary>
+    /// The event at the sequence of the trust anchor is not the one the anchor names (<see cref="KeyEventChain.VerifyFromAnchor"/>):
+    /// this is not the anchored identity (an impostor, a party that incepted again, or a stale anchor).
+    /// </summary>
+    AnchorMismatch,
+
+    /// <summary>
+    /// The trust anchor is older than the first event presented (<see cref="KeyEventChain.VerifyFromAnchor"/>): the
+    /// events from the anchor must be asked (up to <see cref="KeyEventChain.MaxAnchorWindow"/>), or the anchor updated.
+    /// </summary>
+    AnchorTooOld
 }
 
 /// <summary>
@@ -94,6 +106,12 @@ public static class KeyEventChain
     public const int MaxEventTail = 8;
 
     /// <summary>
+    /// The maximal number of events a party sends from a trust anchor (see <see cref="VerifyFromAnchor"/>): about five years
+    /// of rotations with the default <c>AllowedOfflineDays</c>. An anchor older than this must be updated.
+    /// </summary>
+    public const int MaxAnchorWindow = 32;
+
+    /// <summary>
     /// Verifies a tail of events sent by <paramref name="fullName"/> against the <paramref name="pinned"/> event.
     /// </summary>
     /// <param name="fullName">The full name of the party whose log this is.</param>
@@ -105,6 +123,50 @@ public static class KeyEventChain
         Throw.CheckNotNullOrEmptyArgument( fullName );
         Throw.CheckNotNullArgument( tail );
         if( tail.Count == 0 || tail.Count > MaxEventTail ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+        return VerifyCore( fullName, tail, pinned );
+    }
+
+    /// <summary>
+    /// Verifies the events sent by <paramref name="fullName"/> from a trust anchor: the event at the sequence of the
+    /// <paramref name="anchor"/> must be the one it names, and the events after it are verified from it, like from a pin
+    /// (rotations, recovery, abandonment). The anchored event plays the role of the pinned one: its content is vouched for
+    /// by the anchor.
+    /// </summary>
+    /// <param name="fullName">The full name of the party whose log this is.</param>
+    /// <param name="events">The events, consecutive, oldest first (at most <see cref="MaxAnchorWindow"/>). The last one is the sender's head.</param>
+    /// <param name="anchor">The trust anchor of the party.</param>
+    /// <returns>
+    /// The verdict: <see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/> (the anchor is
+    /// before the first event), <see cref="KeyChainVerdict.Rollback"/> (the head is before the anchor),
+    /// <see cref="KeyChainVerdict.Terminated"/> (the anchored event is an abandonment), or the verdict of the events after
+    /// the anchored one (<see cref="KeyChainVerdict.UpToDate"/> when the head is the anchored event).
+    /// </returns>
+    public static KeyChainCheck VerifyFromAnchor( string fullName, IReadOnlyList<KeyEvent> events, KeyCheckpoint anchor )
+    {
+        Throw.CheckNotNullOrEmptyArgument( fullName );
+        Throw.CheckNotNullArgument( events );
+        Throw.CheckNotNullArgument( anchor );
+        if( events.Count == 0 || events.Count > MaxAnchorWindow ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+        int a = events[0].Seq;
+        for( int i = 1; i < events.Count; ++i )
+        {
+            if( events[i].Seq != a + i ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+        }
+        int m = events[^1].Seq;
+        if( anchor.Seq > m ) return new KeyChainCheck( KeyChainVerdict.Rollback );
+        if( anchor.Seq < a ) return new KeyChainCheck( KeyChainVerdict.AnchorTooOld );
+        var anchored = events[anchor.Seq - a];
+        if( !anchor.Matches( fullName, anchored ) ) return new KeyChainCheck( KeyChainVerdict.AnchorMismatch );
+        if( anchored.IsAbandonment ) return new KeyChainCheck( KeyChainVerdict.Terminated );
+        if( anchor.Seq == m ) return new KeyChainCheck( KeyChainVerdict.UpToDate, anchored );
+        var after = new KeyEvent[m - anchor.Seq];
+        for( int i = 0; i < after.Length; ++i ) after[i] = events[anchor.Seq - a + 1 + i];
+        return VerifyCore( fullName, after, anchored );
+    }
+
+    // The verification of consecutive events against a pin, without bound on their count.
+    static KeyChainCheck VerifyCore( string fullName, IReadOnlyList<KeyEvent> tail, KeyEvent? pinned )
+    {
         int a = tail[0].Seq;
         for( int i = 1; i < tail.Count; ++i )
         {

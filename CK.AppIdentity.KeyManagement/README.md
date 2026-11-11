@@ -197,7 +197,7 @@ On a remote (its own entry, otherwise the nearest `"Defaults"` above it, see
 
 | Key | Default | |
 |-----|---------|---|
-| `AutoTrustKey` | `Never` | `Once` pins the identity the remote presents when nothing is pinned yet. |
+| `AutoTrustKey` | `Never` | `Once` pins the identity the remote presents when nothing is pinned yet: a trust on first use, the weak option. Prefer a trust anchor (`TrustAnchors`) for a remote known at deployment, and the enlistment (`Never`, an operator approves) for one that is not. Ignored for an anchored remote. |
 | `MaxClockOffset` | `00:05:00` | The clock offset tolerated with the remote, between 1 and 20 minutes. |
 
 Out-of-range values are clamped (or replaced by the default) with a warning.

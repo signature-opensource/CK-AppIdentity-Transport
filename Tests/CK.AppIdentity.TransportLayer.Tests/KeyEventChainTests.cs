@@ -362,4 +362,60 @@ public class KeyEventChainTests
         }
         return KeyEvent.Read( encoded.ToArray() );
     }
+
+    // --- From a trust anchor ----------------------------------------------------------------------
+
+    static KeyCheckpoint Anchor( Log log, int seq, string fullName = Party ) => KeyCheckpoint.Of( fullName, log.Events[seq] );
+
+    [Test]
+    public void the_events_after_a_trust_anchor_are_verified_from_it()
+    {
+        using var log = new Log( 12 );
+        // From the inception: more than a handshake's tail, within the window.
+        var c = KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 11 ), Anchor( log, 0 ) );
+        c.Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        c.Head.ShouldBe( log.Events[11] );
+        // From a checkpoint in the middle, the events before it need not be presented.
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 5, 11 ), Anchor( log, 5 ) ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 3, 11 ), Anchor( log, 5 ) ).Head.ShouldBe( log.Events[11] );
+        // The anchor is the head.
+        c = KeyEventChain.VerifyFromAnchor( Party, log.Tail( 4, 11 ), Anchor( log, 11 ) );
+        c.Verdict.ShouldBe( KeyChainVerdict.UpToDate );
+        c.Head.ShouldBe( log.Events[11] );
+    }
+
+    [Test]
+    public void another_log_does_not_match_the_trust_anchor()
+    {
+        using var log = new Log( 6 );
+        using var impostor = new Log( 6 );
+        KeyEventChain.VerifyFromAnchor( Party, impostor.Tail( 0, 5 ), Anchor( log, 2 ) ).Verdict.ShouldBe( KeyChainVerdict.AnchorMismatch );
+        // The digest covers the full name: the anchor of another party never matches.
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 5 ), Anchor( log, 2, "Test/$Other" ) ).Verdict.ShouldBe( KeyChainVerdict.AnchorMismatch );
+        // The anchored event is right, a later one is not linked to it.
+        var forged = log.Tail( 0, 5 ).ToList();
+        forged[4] = impostor.Events[4];
+        KeyEventChain.VerifyFromAnchor( Party, forged, Anchor( log, 2 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
+    }
+
+    [Test]
+    public void a_trust_anchor_must_be_within_the_events_presented()
+    {
+        using var log = new Log( 40 );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 4, 11 ), Anchor( log, 2 ) ).Verdict.ShouldBe( KeyChainVerdict.AnchorTooOld );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 5 ), Anchor( log, 8 ) ).Verdict.ShouldBe( KeyChainVerdict.Rollback, "The head is before the anchor." );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxAnchorWindow - 1 ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxAnchorWindow ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Beyond the window." );
+        var gap = log.Tail( 0, 5 ).ToList();
+        gap.RemoveAt( 3 );
+        KeyEventChain.VerifyFromAnchor( Party, gap, Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Not consecutive." );
+    }
+
+    [Test]
+    public void an_abandonment_after_or_at_the_trust_anchor()
+    {
+        using var log = new Log( 5, abandonAtEnd: true );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 4 ), Anchor( log, 1 ) ).Verdict.ShouldBe( KeyChainVerdict.Abandoned );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 4 ), Anchor( log, 4 ) ).Verdict.ShouldBe( KeyChainVerdict.Terminated, "The anchored identity has ended." );
+    }
 }
