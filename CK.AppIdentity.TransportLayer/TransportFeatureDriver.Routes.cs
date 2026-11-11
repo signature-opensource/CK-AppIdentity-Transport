@@ -75,10 +75,16 @@ public partial class TransportFeatureDriver
                 continue;
             }
             var accepted = new List<PartyRoute>();
+            var keys = party.GetFeature<KeyManagement.ILocalKeys>();
             foreach( var r in remotes )
             {
                 if( r.Description.Routes.TryGetValue( name, out var route ) )
                 {
+                    if( keys != null && route.Path.FirstOrDefault( keys.IsNameBanned ) is { } banned )
+                    {
+                        ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical, $"Route '{name}' of '{r.FullName}' ignored by '{local}': it goes through '{banned}', a revoked party." );
+                        continue;
+                    }
                     if( route.TryAccept( r.FullName, local, out var reason ) ) accepted.Add( route );
                     else ActivityMonitor.StaticLogger.Trace( $"Route '{name}' of '{r.FullName}' ignored by '{local}': {reason}." );
                 }

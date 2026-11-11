@@ -175,6 +175,13 @@ public sealed partial class CrisChannelFeature
         {
             return "its Via contains a loop.";
         }
+        // A revoked party (its name is banned until it is readmitted): a hop that still relays for it lies, or is not up
+        // to date.
+        if( local.GetFeature<KeyManagement.ILocalKeys>() is { } keys
+            && routed.Via.FirstOrDefault( keys.IsNameBanned ) is { } banned )
+        {
+            return $"its Via contains '{banned}', a revoked party.";
+        }
         return null;
     }
 

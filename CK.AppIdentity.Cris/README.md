@@ -131,7 +131,9 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   as the current one. Routing needs nothing else than this package. `Via` holds the full names of the parties: the full
   name is the identity of a party across the System.
 
-The destination believes the chain: each hop authenticated its predecessor, inside the System. The outgoing transformers
+The destination believes the chain: each hop authenticated its predecessor, inside the System. A chain that contains
+a revoked party (its name banned by the revocations of the Authentication Center, see CK.AppIdentity.KeyManagement) is
+refused by any party (a `SecurityCritical` warning): a hop that still relays for it lies, or is not up to date. The outgoing transformers
 (`ICrisOutgoingCommandTransformer`) are not applied: a routed command's sensitive fields can't be encrypted for its
 destination.
 

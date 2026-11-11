@@ -65,4 +65,32 @@ public sealed class RevokePartyHandler : ISingletonAutoService
         await revocations.TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false );
         return list.Seq;
     }
+
+    /// <summary>
+    /// Handles the readmission of a full name: its entries no more ban the name (their identities stay revoked).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="command">The command.</param>
+    /// <param name="party">The local party.</param>
+    /// <returns>The sequence number of the new list, or null when the name is not banned (the reason is logged).</returns>
+    [CommandHandler]
+    public async Task<int?> HandleAsync( IActivityMonitor monitor, IReadmitPartyNameCommand command, CurrentLocalParty party )
+    {
+        var local = party.LocalParty;
+        var revocations = local.GetFeature<LocalAuthCenter>() != null ? local.GetFeature<AuthCenterRevocations>() : null;
+        var current = revocations?.Current;
+        if( current == null || !current.Entries.Any( e => e.NameBanned && e.FullName == command.PartyFullName ) )
+        {
+            monitor.Warn( $"'{command.PartyFullName}' is not a banned name of the AuthCenter '{local}'." );
+            return null;
+        }
+        var entries = current.Entries.Select( e => e.NameBanned && e.FullName == command.PartyFullName
+                                                     ? new RevocationEntry( e.FullName, e.Identity.Span, e.RevokedAt, nameBanned: false )
+                                                     : e )
+                                     .ToList();
+        var list = RevocationList.Create( local.GetRequiredFeature<ILocalKeys>(), current.Seq + 1, entries, DateTime.UtcNow );
+        monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The name '{command.PartyFullName}' is readmitted by the AuthCenter '{local}' (its revoked identities stay refused): {list}." );
+        await revocations!.TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false );
+        return list.Seq;
+    }
 }

@@ -83,7 +83,7 @@ public class AnchoredAuthCenterTests
             c["Parties:0:PartyName"] = "$Hop";
             c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
-        }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( RevokePartyHandler )] );
+        }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( IReadmitPartyNameCommand ), typeof( RevokePartyHandler )] );
         try
         {
             var checkpoint = center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().Checkpoint;
@@ -241,6 +241,14 @@ public class AnchoredAuthCenterTests
         (await WaitForAsync( () => a.GetRequiredFeature<TransportManagerFeature>().Find( c.HopName )?.Kind == PeeringIssueKind.RevokedByRemote ))
             .ShouldBeTrue( "A reconnects and is refused by the hop." );
         aToHop.ConnectionAvailability.ShouldNotBe( ConnectionAvailability.Connected );
+
+        // Its name is readmitted (it would incept again): its revoked identity stays refused.
+        var readmit = c.Center.PocoDirectory.Create<IReadmitPartyNameCommand>( r => r.PartyFullName = c.AName );
+        (await new RevokePartyHandler().HandleAsync( TestHelper.Monitor, readmit, new CurrentLocalParty( c.Center.ApplicationIdentityService ) )).ShouldBe( 3 );
+        var hopKeys = c.Hop.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>();
+        (await WaitForAsync( () => SeqOf( c.Hop ) == 3 )).ShouldBeTrue();
+        hopKeys.IsNameBanned( c.AName ).ShouldBeFalse();
+        hopKeys.IsRevoked( aIdentity ).ShouldBeTrue();
     }
 
     [Test]

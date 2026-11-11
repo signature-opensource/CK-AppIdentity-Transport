@@ -170,4 +170,36 @@ public class KeyDirectoryTests
         // A party that is not anchored is never looked up.
         (await CheckAsync( a, b.ApplicationIdentityService.FullName.Path, "Keys", Sign( b ) )).ShouldBe( SignatureVerdict.Refused );
     }
+
+    [Test]
+    public async Task a_revoked_name_is_refused_in_the_routed_commands_and_the_routes_Async()
+    {
+        var (a, b, c, pair) = await StartAsync();
+        await using var _ = c;
+        await using var __ = pair;
+        string aName = a.ApplicationIdentityService.FullName.Path;
+        string cName = c.ApplicationIdentityService.FullName.Path;
+        // Another identity than the actual ones: only the names are banned, nobody is cut.
+        var other = new byte[KeyEvent.HashSize];
+        other[0] = 7;
+        var bKeys = b.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>();
+
+        // The listener (a hop) refuses a routed command that comes from a banned name.
+        await bKeys.SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( aName, other, DateTime.UtcNow, nameBanned: true )] );
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
+            logs.ShouldContain( l => l.Contains( $"its Via contains '{aName}', a revoked party." ) );
+        }
+        // Readmitted: the name is accepted again.
+        await bKeys.SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( aName, other, DateTime.UtcNow, nameBanned: false )] );
+        await Task.Delay( AnchoredKeyDirectory.MinFetchInterval );
+        (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
+
+        // A route that goes through a banned name is ignored.
+        await a.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>()
+               .SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( cName, other, DateTime.UtcNow, nameBanned: true )] );
+        for( int i = 0; i < 100 && a.ApplicationIdentityService.Description.Routes.ContainsKey( "Keys" ); ++i ) await Task.Delay( 100 );
+        a.ApplicationIdentityService.Description.Routes.ShouldNotContainKey( "Keys" );
+    }
 }

@@ -213,8 +213,9 @@ Authentication Center vouches for it. It has pinned the keys of its remotes, and
 The Authentication Center revokes the identity of a party System-wide: `IRevokePartyCommand` (Critical, the operator's
 live proof; who may revoke is decided by the application, a validator of the command), handled by the
 `RevokePartyHandler` of CK.AppIdentity.AuthCenter.Local. What is revoked is the identity of a key event log (the digest
-of its inception, given or read from the pin of the remote), never refused again once revoked; the entry also bans the
-full name in the routed commands and the routes until it is readmitted.
+of its inception, given or read from the pin of the remote), refused forever once revoked; the entry also bans the
+full name in the routed commands and the routes until it is readmitted (`IReadmitPartyNameCommand`, Critical too: the
+party incepted again and comes back by a new enlistment or a new anchor, its revoked identities stay refused).
 
 - **The list:** the revoked identities, a sequence number and a time, signed by the Authentication Center
   (`RevocationList.Purpose`). It is signed again (the next sequence number) when its signature reaches the middle of its

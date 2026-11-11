@@ -279,6 +279,14 @@ public interface ILocalKeys : IPartyKeys
     bool IsRevoked( ReadOnlySpan<byte> identity );
 
     /// <summary>
+    /// Gets whether a full name is banned by the <see cref="Revocations"/>: a party revoked and not readmitted. It is
+    /// refused in the routed commands and the routes (they carry full names).
+    /// </summary>
+    /// <param name="fullName">A full name.</param>
+    /// <returns>True when it is banned.</returns>
+    bool IsNameBanned( string fullName );
+
+    /// <summary>
     /// Sets the revoked identities: the entries of a verified revocation list (the caller verified it). The pins of the
     /// revoked remotes are cleared, then <see cref="RevocationsChanged"/> is raised (the transport cuts their connections).
     /// </summary>

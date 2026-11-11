@@ -132,6 +132,15 @@ sealed partial class LocalKeys : ILocalKeys
         return false;
     }
 
+    public bool IsNameBanned( string fullName )
+    {
+        foreach( var e in _revocations )
+        {
+            if( e.NameBanned && e.FullName == fullName ) return true;
+        }
+        return false;
+    }
+
     public async Task SetRevocationsAsync( IActivityMonitor monitor, IReadOnlyList<RevocationEntry> entries, CancellationToken cancel = default )
     {
         Throw.CheckNotNullArgument( entries );

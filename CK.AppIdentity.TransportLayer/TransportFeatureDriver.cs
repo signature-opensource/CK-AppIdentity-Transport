@@ -73,7 +73,8 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
                 _transportManager.OnRevoked( transport );
             }
         }
-        return Task.CompletedTask;
+        // The routes through a banned name are ignored: they are computed again.
+        return OnDescriptionChangedAsync( monitor, local );
     }
 
     void SubscribeRevocations( ILocalParty local )
