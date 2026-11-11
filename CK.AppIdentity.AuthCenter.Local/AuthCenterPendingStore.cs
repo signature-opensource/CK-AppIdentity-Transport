@@ -1,6 +1,8 @@
 using CK.Core;
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
+
 
 namespace CK.AppIdentity.AuthCenter;
 
@@ -13,6 +15,7 @@ namespace CK.AppIdentity.AuthCenter;
 public sealed class AuthCenterPendingStore<T> where T : class
 {
     readonly ConcurrentDictionary<string, (T Value, DateTime Expires)> _items;
+    long _nextPurge;
 
     /// <summary>
     /// Initializes a new store.
@@ -44,15 +47,21 @@ public sealed class AuthCenterPendingStore<T> where T : class
     public int Count => _items.Count;
 
     /// <summary>
-    /// Purges the expired items and gets whether a new item can be added.
+    /// Gets whether a new item can be added. When the store is full, the expired items are purged first (at most once per
+    /// second: a flood of additions to a full store doesn't scan it each time).
     /// </summary>
     /// <param name="utcNow">The current time.</param>
     /// <returns>True if there is room for a new item.</returns>
     public bool HasRoom( DateTime utcNow )
     {
-        foreach( var (key, item) in _items )
+        if( _items.Count < Capacity ) return true;
+        var next = Interlocked.Read( ref _nextPurge );
+        if( utcNow.Ticks >= next && Interlocked.CompareExchange( ref _nextPurge, utcNow.Ticks + TimeSpan.TicksPerSecond, next ) == next )
         {
-            if( item.Expires < utcNow ) _items.TryRemove( key, out _ );
+            foreach( var (key, item) in _items )
+            {
+                if( item.Expires < utcNow ) _items.TryRemove( key, out _ );
+            }
         }
         return _items.Count < Capacity;
     }

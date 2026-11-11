@@ -7,7 +7,9 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 
 /// <summary>
 /// The passkey (WebAuthn) scheme family of a <see cref="LocalAuthCenter"/>: the "Passkey" scheme, verified here with
-/// Fido2NetLib. It keeps the pending ceremonies (a login or a registration that waits for the browser's response).
+/// Fido2NetLib. It keeps the pending ceremonies (a login or a registration that waits for the browser's response), in two
+/// stores: the logins are started anonymously, the registrations by a Critical session, so a flood of anonymous login
+/// starts can't block the registrations.
 /// <para>
 /// The "Passkey" scheme is available when the "AuthCenter:Passkey" section configures it and an <see cref="IPasskeyStore"/>
 /// is registered. Without them, the family exists but has no scheme: it hides the "Passkey" provider name.
@@ -16,13 +18,15 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 public sealed class AuthCenterPasskey : IAuthCenterScheme
 {
     /// <summary>
-    /// The maximal number of pending ceremonies: 10,000. Starting a login is anonymous: this bounds the memory.
+    /// The maximal number of pending login ceremonies, and of pending registration ceremonies: 10,000 each. Starting a
+    /// login is anonymous: this bounds the memory.
     /// </summary>
     public const int MaxPendingCeremonies = 10_000;
 
     readonly AuthCenterPasskeyOptions? _options;
     readonly bool _hasStore;
     readonly AuthCenterPendingStore<PasskeyCeremony>? _ceremonies;
+    readonly AuthCenterPendingStore<PasskeyCeremony>? _registrations;
 
     internal AuthCenterPasskey( AuthCenterPasskeyOptions? options, bool hasStore )
     {
@@ -31,6 +35,7 @@ public sealed class AuthCenterPasskey : IAuthCenterScheme
         if( options != null && hasStore )
         {
             _ceremonies = new AuthCenterPendingStore<PasskeyCeremony>( options.Timeout, MaxPendingCeremonies );
+            _registrations = new AuthCenterPendingStore<PasskeyCeremony>( options.Timeout, MaxPendingCeremonies );
         }
     }
 
@@ -45,9 +50,17 @@ public sealed class AuthCenterPasskey : IAuthCenterScheme
     public bool IsAvailable => _ceremonies != null;
 
     /// <summary>
-    /// Gets the pending ceremonies, under their challenge. Null when the scheme is not <see cref="IsAvailable"/>.
+    /// Gets the pending login ceremonies, under their challenge. Null when the scheme is not <see cref="IsAvailable"/>.
     /// </summary>
     public AuthCenterPendingStore<PasskeyCeremony>? Ceremonies => _ceremonies;
+
+    /// <summary>
+    /// Gets the pending registration ceremonies, under their challenge. Null when the scheme is not <see cref="IsAvailable"/>.
+    /// </summary>
+    public AuthCenterPendingStore<PasskeyCeremony>? Registrations => _registrations;
+
+    internal AuthCenterPendingStore<PasskeyCeremony> GetCeremonies( bool isRegistration ) => isRegistration ? _registrations! : _ceremonies!;
+
 
     /// <inheritdoc />
     public string ProviderName => PasskeyLoginPayload.Scheme;

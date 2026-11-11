@@ -40,8 +40,9 @@ provider name.
   asked, and the UV flag is checked. A passkey login gives the Critical level, like any login.
 - **Usernameless login:** `IStartPasskeyLoginCommand` has no parameter and the options list no credential: starting a
   login reveals nothing about the accounts. The response must carry the user handle of the passkey's owner.
-- **Ceremonies:** in memory, one use, under their challenge, for the `Timeout`, at most 10,000 (starting a login is
-  anonymous). A login response cannot complete a registration, nor a ceremony started from another origin.
+- **Ceremonies:** in memory, one use, under their challenge, for the `Timeout`, at most 10,000 logins (starting a login
+  is anonymous) and 10,000 registrations, in two stores: a flood of anonymous login starts can't block the registrations.
+  A login response cannot complete a registration, nor a ceremony started from another origin.
 - **Signature counter:** a non-zero counter that does not increase is refused (a cloned authenticator). Synchronized
   passkeys always send 0: accepted.
 - **Registration:** `ICommandAuthCritical`, refused below the Critical level or while impersonating (a passkey added by

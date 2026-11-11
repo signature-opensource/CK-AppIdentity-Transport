@@ -299,7 +299,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
     #region Ceremonies and helpers
     static void AddCeremony( IActivityMonitor monitor, AuthCenterPasskey family, byte[] challenge, PasskeyCeremony ceremony )
     {
-        var store = family.Ceremonies!;
+        var store = family.GetCeremonies( ceremony.IsRegistration );
         if( !store.TryAdd( Base64Url.EncodeToString( challenge ), ceremony, DateTime.UtcNow ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Too many pending passkey ceremonies ({store.Count}): a new one is refused." );
@@ -331,7 +331,8 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
         catch( JsonException )
         {
         }
-        var ceremony = family.Ceremonies!.TryTake( challenge, DateTime.UtcNow, out bool expired );
+        var ceremony = family.GetCeremonies( isRegistration ).TryTake( challenge, DateTime.UtcNow, out bool expired );
+
         if( ceremony == null )
         {
             (error, errorId) = (expired ? "This passkey operation has expired." : "This passkey operation is unknown or has expired.", "Authentication.PasskeyCeremonyExpired");

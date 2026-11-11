@@ -54,6 +54,23 @@ public class PasskeyTests
     }
 
     [Test]
+    public async Task anonymous_login_starts_cannot_block_the_registrations_Async()
+    {
+        await using var app = await StartAsync();
+        using var authenticator = new SoftAuthenticator();
+        // The anonymous login starts fill their store.
+        var logins = app.Identity.GetRequiredFeature<AuthCenterPasskey>().Ceremonies.ShouldNotBeNull();
+        var utcNow = DateTime.UtcNow;
+        for( int i = 0; logins.HasRoom( utcNow ); ++i )
+        {
+            logins.TryAdd( $"flood-{i}", new PasskeyCeremony( false, "https://front.example.com", "{}", null, 0, "" ), utcNow ).ShouldBeTrue();
+        }
+        Errors( await app.ExecuteAsync( p => p.Create<IStartPasskeyLoginCommand>() ) ).ShouldNotBeEmpty( "Too many passkey operations in progress." );
+        // A registration (a Critical session) has its own store.
+        await RegisterAsync( app, authenticator );
+    }
+
+    [Test]
     public async Task a_registered_passkey_logs_in_at_the_Critical_level_Async()
     {
         await using var app = await StartAsync();
