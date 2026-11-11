@@ -153,4 +153,94 @@ public class PartyDescriptionCodecTests
         error.ShouldStartWith( "Invalid item collected for 'Enlistment': " );
         r.ReadByte().ShouldBe( (byte)42 );
     }
+
+    [Test]
+    public void an_invalid_count_or_a_truncated_block_is_an_error_not_an_exception()
+    {
+        using var sequence = new MutableSequence<byte>();
+        var w = new FastByteWriter( sequence );
+        // Too many facts (the reader refuses more than MaxFactCount).
+        var d = w.BeginBlock();
+        w.WriteBool( false );
+        w.WriteInt32( 1 );
+        var c = w.BeginBlock();
+        w.WriteString( "App" );
+        w.WriteString( "/" );
+        w.WriteInt32( PartyDescriptionCodec.MaxFactCount + 1 );
+        for( int i = 0; i <= PartyDescriptionCodec.MaxFactCount; ++i )
+        {
+            w.WriteString( $"K{i}" );
+            w.WriteString( "V" );
+        }
+        w.EndBlock( c );
+        w.WriteInt32( 0 );
+        w.EndBlock( d );
+        // A negative role count.
+        d = w.BeginBlock();
+        w.WriteBool( false );
+        w.WriteInt32( 0 );
+        w.WriteInt32( -1 );
+        w.EndBlock( d );
+        // A role count bigger than the block.
+        d = w.BeginBlock();
+        w.WriteBool( false );
+        w.WriteInt32( 0 );
+        w.WriteInt32( 1000 );
+        w.EndBlock( d );
+        w.WriteByte( 42 );
+        w.Commit();
+
+        var r = new FastByteReader( sequence.GetReadOnlySequence() );
+        PartyDescriptionCodec.Read( ref r, out var error ).ShouldBeNull();
+        error.ShouldNotBeNull().ShouldContain( "Invalid fact count." );
+        PartyDescriptionCodec.Read( ref r, out error ).ShouldBeNull();
+        error.ShouldNotBeNull().ShouldContain( "Invalid role count." );
+        PartyDescriptionCodec.Read( ref r, out error ).ShouldBeNull();
+        error.ShouldNotBeNull();
+        r.ReadByte().ShouldBe( (byte)42 );
+    }
+
+    [Test]
+    public void the_names_of_an_advertisement_are_read_from_the_bytes_not_from_their_announced_count()
+    {
+        // A negative count: the advertisement is invalid.
+        using( var sequence = new MutableSequence<byte>() )
+        {
+            var w = new FastByteWriter( sequence );
+            w.WriteInt32( -1 );
+            w.Commit();
+            var r = new FastByteReader( sequence.GetReadOnlySequence() );
+            CrisChannelFeature.Protocol.ReadAccepted( ref r, out _, out _ ).ShouldBeNull();
+        }
+        // A huge count: nothing is allocated from it, the end of the message is reached.
+        using( var sequence = new MutableSequence<byte>() )
+        {
+            var w = new FastByteWriter( sequence );
+            w.WriteInt32( int.MaxValue );
+            w.WriteString( "A" );
+            w.Commit();
+            Should.Throw<System.IO.InvalidDataException>( () =>
+            {
+                var r = new FastByteReader( sequence.GetReadOnlySequence() );
+                CrisChannelFeature.Protocol.ReadAccepted( ref r, out _, out _ );
+            } );
+        }
+        // An invalid description: the names are read, the description is null with its error.
+        using( var sequence = new MutableSequence<byte>() )
+        {
+            var w = new FastByteWriter( sequence );
+            w.WriteInt32( 1 );
+            w.WriteString( "A" );
+            var d = w.BeginBlock();
+            w.WriteBool( false );
+            w.WriteInt32( -1 );
+            w.EndBlock( d );
+            w.Commit();
+            var r = new FastByteReader( sequence.GetReadOnlySequence() );
+            var names = CrisChannelFeature.Protocol.ReadAccepted( ref r, out var description, out var error );
+            names.ShouldNotBeNull().ShouldBe( ["A"] );
+            description.ShouldBeNull();
+            error.ShouldNotBeNull();
+        }
+    }
 }

@@ -270,15 +270,32 @@ public sealed partial class CrisChannelFeature
 
         void HandleAccepted( IActivityMonitor monitor, ref FastByteReader r )
         {
-            int count = r.ReadInt32();
-            var names = new HashSet<string>( count );
-            for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
-            var description = PartyDescriptionCodec.Read( ref r, out var error );
+            var names = ReadAccepted( ref r, out var description, out var error );
+            if( names == null )
+            {
+                monitor.Error( $"Invalid advertisement received from '{_feature.Party.FullName}'. Ignored." );
+                return;
+            }
             if( error != null )
             {
                 monitor.Error( $"Invalid description announced by '{_feature.Party.FullName}' (ignored): {error}" );
             }
             _feature.OnAccepted( monitor, names, description );
+        }
+
+        // Reads the content of a DAccepted message: null when the names can't be read. The count comes from the remote:
+        // nothing is allocated from it (each name is read from the bytes that remain). An invalid description is null,
+        // with its error.
+        internal static HashSet<string>? ReadAccepted( ref FastByteReader r, out PartyDescription? description, out string? error )
+        {
+            description = null;
+            error = null;
+            int count = r.ReadInt32();
+            if( count < 0 ) return null;
+            var names = new HashSet<string>();
+            for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
+            description = PartyDescriptionCodec.Read( ref r, out error );
+            return names;
         }
 
         ValueTask HandleImmediateEvent( IActivityMonitor monitor, ref FastByteReader r )

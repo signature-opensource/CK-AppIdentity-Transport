@@ -114,7 +114,9 @@ public static class PartyDescriptionCodec
 
     /// <summary>
     /// Reads a description written by <see cref="Write(ref FastByteWriter, PartyDescription)"/>. The reader is always
-    /// moved after the description's block, even when the description is invalid.
+    /// moved after the description's block, even when the description is invalid: an invalid content of the block (a
+    /// negative or too big count, a truncated field) is an <paramref name="error"/>, never an exception. Only an invalid
+    /// block length throws an <see cref="System.IO.InvalidDataException"/>.
     /// </summary>
     /// <param name="r">The reader.</param>
     /// <param name="error">The reason why the description is invalid.</param>
@@ -122,6 +124,19 @@ public static class PartyDescriptionCodec
     public static PartyDescription? Read( ref FastByteReader r, out string? error )
     {
         var d = r.ReadBlock();
+        try
+        {
+            return ReadContent( ref d, out error );
+        }
+        catch( Exception ex ) when ( ex is System.IO.InvalidDataException or ArgumentException or OverflowException )
+        {
+            error = $"Invalid description block: {ex.Message}";
+            return null;
+        }
+    }
+
+    static PartyDescription? ReadContent( ref FastByteReader d, out string? error )
+    {
         error = null;
         Uri? url = null;
         if( d.ReadBool() ) PartyDescription.TryParsePublicUrl( d.ReadString(), out url, out error );
