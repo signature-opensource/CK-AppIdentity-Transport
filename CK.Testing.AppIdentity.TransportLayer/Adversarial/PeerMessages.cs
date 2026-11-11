@@ -275,6 +275,21 @@ public static class PeerMessages
     }
 
     /// <summary>
+    /// Reads the listener's nonce of the approval code from its RejectRemote message (null when it sent none).
+    /// </summary>
+    public static byte[]? ReadApprovalNonce( byte[] rejectRemote )
+    {
+        var r = new FastByteReader( new ReadOnlySequence<byte>( rejectRemote ) );
+        if( r.ReadByte() != DNegoRejectRemote ) throw new InvalidOperationException( "Not a RejectRemote message." );
+        r.ReadUInt64();
+        r.ReadByte();
+        r.ReadNullableTimeSpan();
+        r.ReadString();
+        uint length = r.ReadSmallUInt32();
+        return length == 0 ? null : r.ReadBytes( length );
+    }
+
+    /// <summary>
     /// Reads the listener's ephemeral public key from its AcceptedProtocols message.
     /// </summary>
     public static byte[] ReadListenerEphemeral( byte[] acceptedProtocols )

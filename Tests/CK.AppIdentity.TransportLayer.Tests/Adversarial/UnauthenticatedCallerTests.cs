@@ -122,6 +122,53 @@ public class UnauthenticatedCallerTests
     }
 
     [Test, CancelAfter( 60000 )]
+    public async Task new_keys_under_the_name_of_a_remote_do_not_push_its_approval_item_out_Async( CancellationToken token )
+    {
+        const string remote = "$TM7Waiting";
+        PeerStore.ClearRemoteTrust( $"Test/{remote}" );
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$TM7Listen";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Never";
+            c["Parties:0:PartyName"] = remote;
+        }, ConfigureFastClock, token: token );
+        var fullName = $"Test/{remote}/#Dev";
+        var transport = listener.Remotes.Single().GetRequiredFeature<TransportFeature>();
+        var commitment = RandomNumberGenerator.GetBytes( 32 );
+
+        // One attempt of a caller: the listener's nonce of the approval code for its key.
+        async Task<byte[]?> AttemptAsync( PeerIdentity key, byte[] approvalCommitment )
+        {
+            using var ephemeral = new PeerEphemeral();
+            var protocols = transport.BestRegisteredProtocols.Select( p => p.FullName ).ToArray();
+            var initial = PeerMessages.InitialMessage( fullName, "AdvInstance", protocols, protocols.Length, _systemClock.UtcNow, NewNonce(),
+                                                       ephemeral.PublicKey, RunPhaseProtection.LocalCapabilities, key,
+                                                       canAutoTrust: true, approvalCommitment: approvalCommitment );
+            await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
+            await c.SendZeroFrameAsync( initial, token );
+            var reply = await c.ReadFrameAsync( token );
+            reply.Discriminator.ShouldBe( PeerMessages.DNegoRejectRemote, "An approval is required." );
+            return PeerMessages.ReadApprovalNonce( reply.Payload );
+        }
+
+        using var genuine = PeerIdentity.Create( fullName );
+        var first = await AttemptAsync( genuine, commitment );
+        first.ShouldNotBeNull();
+        // Strangers present new keys under the remote's name, more than the listener keeps.
+        for( int i = 0; i < 2 * ApprovalSessionMaxPendingKeys; ++i )
+        {
+            using var stranger = PeerIdentity.Create( fullName );
+            await AttemptAsync( stranger, RandomNumberGenerator.GetBytes( 32 ) );
+        }
+        var second = await AttemptAsync( genuine, commitment );
+        second.ShouldBe( first, "The item of the remote's key is still there: its code doesn't change." );
+    }
+
+    // ApprovalSession.MaxPendingKeys (internal).
+    const int ApprovalSessionMaxPendingKeys = 4;
+
+    [Test, CancelAfter( 60000 )]
     public async Task a_FinalSuccess_must_confirm_the_listener_ephemeral_key_of_its_connection_Async( CancellationToken token )
     {
         const string remote = "$TM3Initiator";

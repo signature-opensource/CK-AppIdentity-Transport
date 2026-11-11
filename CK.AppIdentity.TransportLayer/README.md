@@ -309,6 +309,8 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
     compute a key whose code matches. Each pending key is one chance in 10^8.
   - The nonces are kept across the attempts (by the remote's `TransportFeature`, in memory): the code doesn't change
     while the parties retry. A listener keeps at most 4 pending keys per remote, for an hour; a restart gives a new code.
+    When they are 4, a new key replaces the newest one whose nonce has not been revealed (the newest one otherwise): the
+    keys already there stay, so presenting new keys under the remote's name doesn't push the remote's own key out.
 - **Enlisting.** `EnlistUrl` is the URL the other side sent so that it can enlist us: the approval page of its System,
   with the issues where it must accept us (`RequiresRemoteCreation`, `RequiresRemoteApproval`, `RequiresBothApproval`). `IsEnlistUrlAuthenticated` is false
   when it came in a reply that is not signed by a key we trust: following it is then a trust decision, never automatic.

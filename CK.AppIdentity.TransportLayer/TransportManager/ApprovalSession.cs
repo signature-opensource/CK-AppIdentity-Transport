@@ -31,7 +31,9 @@ sealed class ApprovalSession
     public const int NonceLength = 32;
 
     /// <summary>
-    /// The maximal number of keys a listener keeps per remote: above, the oldest item is forgotten.
+    /// The maximal number of keys a listener keeps per remote. Above, the newest item whose nonce has not been revealed is
+    /// forgotten (the newest one when all have been): the items already there are kept, so that anyone presenting new keys
+    /// under the remote's name only churns the last place, and can't push the remote's own item out.
     /// </summary>
     public const int MaxPendingKeys = 4;
 
@@ -174,7 +176,11 @@ sealed class ApprovalSession
             var item = _pending.Find( p => p.Fingerprint == fingerprint );
             if( item == null )
             {
-                if( _pending.Count >= MaxPendingKeys ) _pending.RemoveAt( 0 );
+                if( _pending.Count >= MaxPendingKeys )
+                {
+                    int evict = _pending.FindLastIndex( p => p.PeerNonce == null );
+                    _pending.RemoveAt( evict >= 0 ? evict : _pending.Count - 1 );
+                }
                 item = new Pending
                 {
                     Head = initiatorHead,
