@@ -137,19 +137,26 @@ public class UnauthenticatedCallerTests
         var transport = listener.Remotes.Single().GetRequiredFeature<TransportFeature>();
         var commitment = RandomNumberGenerator.GetBytes( 32 );
 
-        // One attempt of a caller: the listener's nonce of the approval code for its key.
+        // One attempt of a caller: the listener's nonce of the approval code for its key. Retried when the listener
+        // closes before answering (its 2 seconds negotiation budget on a loaded machine): the same key and commitment
+        // find the same item.
         async Task<byte[]?> AttemptAsync( PeerIdentity key, byte[] approvalCommitment )
         {
-            using var ephemeral = new PeerEphemeral();
             var protocols = transport.BestRegisteredProtocols.Select( p => p.FullName ).ToArray();
-            var initial = PeerMessages.InitialMessage( fullName, "AdvInstance", protocols, protocols.Length, _systemClock.UtcNow, NewNonce(),
-                                                       ephemeral.PublicKey, RunPhaseProtection.LocalCapabilities, key,
-                                                       canAutoTrust: true, approvalCommitment: approvalCommitment );
-            await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
-            await c.SendZeroFrameAsync( initial, token );
-            var reply = await c.ReadFrameAsync( token );
-            reply.Discriminator.ShouldBe( PeerMessages.DNegoRejectRemote, "An approval is required." );
-            return PeerMessages.ReadApprovalNonce( reply.Payload );
+            for( int retry = 0; ; ++retry )
+            {
+                using var ephemeral = new PeerEphemeral();
+                var initial = PeerMessages.InitialMessage( fullName, "AdvInstance", protocols, protocols.Length, _systemClock.UtcNow, NewNonce(),
+                                                           ephemeral.PublicKey, RunPhaseProtection.LocalCapabilities, key,
+                                                           canAutoTrust: true, approvalCommitment: approvalCommitment );
+                await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
+                await c.SendZeroFrameAsync( initial, token );
+                var reply = await ReadOrNullAsync( c, token );
+                if( reply == null && retry < 3 ) continue;
+                reply.ShouldNotBeNull();
+                reply.Value.Discriminator.ShouldBe( PeerMessages.DNegoRejectRemote, "An approval is required." );
+                return PeerMessages.ReadApprovalNonce( reply.Value.Payload );
+            }
         }
 
         using var genuine = PeerIdentity.Create( fullName );

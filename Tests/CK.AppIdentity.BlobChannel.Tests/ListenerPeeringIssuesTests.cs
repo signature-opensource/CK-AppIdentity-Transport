@@ -101,17 +101,12 @@ public class ListenerPeeringIssuesTests
                 // because the OnRemoteAppeared method check that the new remote has a TargetAddress (without waiting for
                 // the next incoming request).
                 // (This is the same object since we haven't clone the issue.)
-                var prevMessage = theIssue.IncomingRequest;
                 var theSameIssue = await issueEvents.WaitForOneAsync( token );
                 Throw.DebugAssert( theSameIssue == theIssue );
                 theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
-                TestHelper.Monitor.Info( "Tests: Wait for the remote's incoming connection." );
-                var alwaysTheSameIssue = await issueEvents.WaitForOneAsync( token );
-                Throw.DebugAssert( alwaysTheSameIssue == theIssue );
-                var butNotTheSameMessage = theIssue.IncomingRequest;
-                Throw.DebugAssert( butNotTheSameMessage != prevMessage );
-
+                // The remote's next incoming connections don't update it: the declared remote pins nothing, so nothing
+                // authenticates the caller as this remote (anyone could claim its name), and it is refused with no issue.
                 TestHelper.Monitor.Info( "Tests: No change: still InitiatorConflict." );
                 theIssue.Kind.ShouldBe( PeeringIssueKind.InitiatorConflict );
 
