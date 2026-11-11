@@ -375,6 +375,20 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                            $"Unable to verify the signature's reply message from '{remote.Party}'. Retrying in 30 seconds." );
                             return 30;
                         }
+                        if( pIssue == ZeroProtocol.ConfigurationOrTrustIssue.EventsRequired )
+                        {
+                            // The listener holds an older point of our log than the events we sent (its anchor or its pin,
+                            // stated in its signed reply and read with it): we send our events from there, at once.
+                            var ownHead = remote.RemoteKeys.LocalKeys.State.Head.Seq;
+                            if( remote.RemoteKeys.HeldByRemoteSeq is int held && held <= ownHead && ownHead - held < KeyEventChain.MaxEventWindow )
+                            {
+                                transportManager.Logger.Info( $"The remote '{remote.Party}' holds our key event #{held}: retrying at once with our events from it." );
+                                return 1;
+                            }
+                            transportManager.Logger.Warn( $"The remote '{remote.Party}' holds a point of our key event log beyond the window of {KeyEventChain.MaxEventWindow} events: its anchor (or its pin) of us must be updated." );
+                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, PeeringIssueKind.RemoteAnchorMismatch, null, null, false, null );
+                            return 30;
+                        }
                         // From now on we'll always retry in 5 seconds.
                         transportManager.Logger.Warn( $"The remote '{remote.Party}' listener rejected us. Issue='{pIssue}', EnlistUrl='{enlistUrl}'. " +
                                                       $"Retrying in 5 seconds." );

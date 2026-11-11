@@ -184,9 +184,10 @@ public class KeyEventChainTests
     [Test]
     public void malformed_tails_are_invalid()
     {
-        using var log = new Log( 10 );
+        using var log = new Log( 40 );
         KeyEventChain.Verify( Party, Array.Empty<KeyEvent>(), null ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
-        KeyEventChain.Verify( Party, log.Tail( 0, 8 ), null ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "9 events: beyond MaxEventTail." );
+        KeyEventChain.Verify( Party, log.Tail( 0, 8 ), null ).Verdict.ShouldBe( KeyChainVerdict.Unpinned, "9 events: more than the usual tail, within the window." );
+        KeyEventChain.Verify( Party, log.Tail( 0, KeyEventChain.MaxEventWindow ), null ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Beyond MaxEventWindow." );
         KeyEventChain.Verify( Party, new[] { log.Events[0], log.Events[2] }, null ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "A gap." );
         KeyEventChain.Verify( Party, new[] { log.Events[1], log.Events[0] }, null ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Out of order." );
     }
@@ -404,8 +405,8 @@ public class KeyEventChainTests
         using var log = new Log( 40 );
         KeyEventChain.VerifyFromAnchor( Party, log.Tail( 4, 11 ), Anchor( log, 2 ) ).Verdict.ShouldBe( KeyChainVerdict.AnchorTooOld );
         KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, 5 ), Anchor( log, 8 ) ).Verdict.ShouldBe( KeyChainVerdict.Rollback, "The head is before the anchor." );
-        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxAnchorWindow - 1 ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
-        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxAnchorWindow ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Beyond the window." );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxEventWindow - 1 ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        KeyEventChain.VerifyFromAnchor( Party, log.Tail( 0, KeyEventChain.MaxEventWindow ), Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Beyond the window." );
         var gap = log.Tail( 0, 5 ).ToList();
         gap.RemoveAt( 3 );
         KeyEventChain.VerifyFromAnchor( Party, gap, Anchor( log, 0 ) ).Verdict.ShouldBe( KeyChainVerdict.Invalid, "Not consecutive." );

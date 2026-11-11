@@ -570,7 +570,7 @@ public sealed class TransportFeature
         var waiter = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
         // Concurrent requests: the previous waiter is released, its caller sees the same pin.
         Interlocked.Exchange( ref _keyEventsWaiter, waiter )?.TrySetResult();
-        var request = ZeroProtocol.CreateKeyEventsRequestMessage();
+        var request = ZeroProtocol.CreateKeyEventsRequestMessage( _remoteKeys.GetStatedCheckpoint( ActivityMonitor.StaticLogger ) );
         if( !controller.TryEnqueueHighPriority( request ) )
         {
             request.Release();

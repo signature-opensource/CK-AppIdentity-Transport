@@ -424,7 +424,12 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             {
                 if( remote != null && remote.RemoteKeys.IsAnchored && remote.RemoteKeys.AnchorRefusal == block.Verdict )
                 {
-                    conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch);
+                    // An anchor older than the events presented: the initiator can send its events from it (when it is
+                    // within the window of its head). Otherwise, the anchor doesn't match (or is too old to be reached).
+                    var issue = block.Verdict == KeyManagement.KeyChainVerdict.AnchorTooOld && CanSendFrom( remote.RemoteKeys, block.Head )
+                                    ? ZeroProtocol.ConfigurationOrTrustIssue.EventsRequired
+                                    : ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch;
+                    conflict = (remote.RemoteKeys, timedNonce.Nonce, issue);
                     return null;
                 }
                 if( remote != null && block.Verdict is KeyManagement.KeyChainVerdict.Rollback or KeyManagement.KeyChainVerdict.Duplicity )
@@ -436,6 +441,15 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 // This is a serious issue and we cannot do a lot here.
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                $"Unable to verify the signature's incoming message from '{fullName}'." );
+                return null;
+            }
+            // A pinned initiator whose events don't reach our pin (it was offline for long): it can send its events from our
+            // pin (stated in our signed rejection) when it is within the window of its head.
+            if( remote != null
+                && block.Verdict == KeyManagement.KeyChainVerdict.TooFarBehind
+                && CanSendFrom( remote.RemoteKeys, block.Head ) )
+            {
+                conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.EventsRequired);
                 return null;
             }
             // The statement is signed by whoever sent it, so it can now be held against what arrived.
@@ -524,6 +538,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        remoteMacCapabilities,
                                        approvalCommitment );
         }
+    }
+
+    // Whether the initiator can send its events from what we hold of its log (our anchor or our pin): within the window
+    // of its head.
+    static bool CanSendFrom( KeyManagement.IRemoteKeys keys, KeyManagement.KeyEvent initiatorHead )
+    {
+        var held = keys.GetStatedCheckpoint( ActivityMonitor.StaticLogger );
+        return held != null && held.Seq <= initiatorHead.Seq && initiatorHead.Seq - held.Seq < KeyManagement.KeyEventChain.MaxEventWindow;
     }
 
     static PeeringIssueKind DetectConfigurationOrTrustIssue( TransportManager transportManager,

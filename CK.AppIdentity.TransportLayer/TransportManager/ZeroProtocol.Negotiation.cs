@@ -59,7 +59,11 @@ static partial class ZeroProtocol // Negotiation
         // The listener anchors the initiator and can't verify its key event log from its anchor.
         AnchorMismatch = 9,
 
-        MaxValue = 9
+        // The initiator's events don't reach the point of its log that the listener holds (its anchor or its pin, stated
+        // in the signed rejection): the initiator retries at once with its events from there.
+        EventsRequired = 10,
+
+        MaxValue = 10
     }
 
 
@@ -172,22 +176,24 @@ static partial class ZeroProtocol // Negotiation
     {
         // Independent serialization version for the identity block.
         w.WriteSmallUInt32( 0 );
-        var tail = state.Tail;
+        // Our events from the point the receiver holds of our log (its pin or its anchor of us), up to the window.
+        var tail = GetEventsFrom( state, receiver?.HeldByRemoteSeq );
         w.WriteSmallUInt32( (uint)tail.Count );
         foreach( var e in tail )
         {
             w.WriteSmallUInt32( (uint)e.Encoded.Length );
             w.WriteBytes( e.Encoded.Span );
         }
-        var pinned = receiver?.TrustedEvent;
-        if( pinned == null )
+        // What we hold of the receiver's log: its anchor when it is anchored, otherwise its pin.
+        var stated = receiver?.GetStatedCheckpoint( ActivityMonitor.StaticLogger );
+        if( stated == null )
         {
             w.WriteSmallUInt32( 0 );
         }
         else
         {
-            w.WriteSmallUInt32( (uint)pinned.Seq + 1 );
-            w.WriteBytes( pinned.GetDigest( receiver!.Party.FullName ).Span );
+            w.WriteSmallUInt32( (uint)stated.Seq + 1 );
+            w.WriteBytes( stated.Digest );
         }
         var credential = state.Operational.Encoded;
         w.WriteSmallUInt32( (uint)credential.Length );
@@ -225,7 +231,7 @@ static partial class ZeroProtocol // Negotiation
     {
         Throw.CheckData( r.ReadSmallUInt32() == 0 ); // Version.
         var count = r.ReadSmallUInt32();
-        Throw.CheckData( count >= 1 && count <= KeyEventChain.MaxEventTail );
+        Throw.CheckData( count >= 1 && count <= KeyEventChain.MaxEventWindow );
         var tail = new KeyEvent[count];
         for( int i = 0; i < tail.Length; ++i )
         {
@@ -251,6 +257,8 @@ static partial class ZeroProtocol // Negotiation
         Span<byte> signature = stackalloc byte[lenSignature];
         r.ReadBytes( signature );
 
+        // What the sender holds of our log: what we send to it next starts there.
+        if( senderKeys != null ) senderKeys.HeldByRemoteSeq = statedSeq;
         var chain = senderKeys != null
                         ? senderKeys.ApplyTail( logger, tail )
                         : KeyEventChain.Verify( senderFullName, tail, null );

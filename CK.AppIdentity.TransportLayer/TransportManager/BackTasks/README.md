@@ -29,9 +29,11 @@ counted before the connection is opened.
 | Nonce | Its creation time and a random 64-bit value. |
 | Identity block | See below. |
 
-Every signed message ends with an **identity block**: the tail of the sender's key event log (at most 8 events), what the
-sender pins for the receiver (a sequence and an event digest, or nothing), the sender's operational credential, and one
-signature, by the credential's key, over the SHA-512 of everything before it.
+Every signed message ends with an **identity block**: the events of the sender's key event log (its last 8 events, or
+its events from the point the receiver last stated it holds, up to 32), what the sender holds of the receiver's log (its
+anchor of it, or else its pin: a sequence and an event digest, or nothing), the sender's operational credential, and one
+signature, by the credential's key, over the SHA-512 of everything before it. Each side remembers what the other states
+it holds, and sends its events from there next time.
 
 ### 2. Listener: the first answer
 
@@ -46,7 +48,7 @@ Its answer is one of these (the first byte of the payload is the discriminator):
 | Discriminator | Message | When |
 |---------------|---------|------|
 | 1 | FinalFailure | The signature or the nonce does not verify. One byte, unsigned. |
-| 0 | RejectRemote | A configuration or trust issue: unknown caller, disallowed or unsupported transport, invalid clock offset, two initiators, an approval required on one side or both, or an identity conflict (the caller presented a log that does not extend what the listener pins for it). Unsigned when the caller is unknown or its transport is disallowed (the listener cannot choose a local party to sign with); signed otherwise. It carries the listener's `EnlistRemoteUrl` when the caller is unknown or does not trust the listener. |
+| 0 | RejectRemote | A configuration or trust issue: unknown caller, disallowed or unsupported transport, invalid clock offset, two initiators, an approval required on one side or both, an identity conflict (the caller presented a log that does not extend what the listener pins for it), an anchor mismatch (the listener anchors the caller and its log doesn't verify from the anchor), or events required (the caller's events don't reach what the listener holds of its log: the caller retries at once with its events from the point stated in the signed rejection, when it is within 32 events of its head). Unsigned when the caller is unknown or its transport is disallowed (the listener cannot choose a local party to sign with); signed otherwise. It carries the listener's `EnlistRemoteUrl` when the caller is unknown or does not trust the listener. |
 | 2 | DowngradeProtocol | The caller's version is greater than the listener's: the caller may retry once with the version it names. |
 | 6 | OffRemote | The remote is switched off here. Signed, with the reason. |
 | 4 | MissingProtocols | One side does not support the protocols the other needs. Signed, with both lists. |

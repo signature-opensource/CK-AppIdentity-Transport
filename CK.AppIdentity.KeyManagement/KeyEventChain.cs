@@ -74,7 +74,7 @@ public enum KeyChainVerdict
 
     /// <summary>
     /// The trust anchor is older than the first event presented (<see cref="KeyEventChain.VerifyFromAnchor"/>): the
-    /// events from the anchor must be asked (up to <see cref="KeyEventChain.MaxAnchorWindow"/>), or the anchor updated.
+    /// events from the anchor must be asked (up to <see cref="KeyEventChain.MaxEventWindow"/>), or the anchor updated.
     /// </summary>
     AnchorTooOld,
 
@@ -106,16 +106,18 @@ public readonly record struct KeyChainCheck( KeyChainVerdict Verdict, KeyEvent? 
 public static class KeyEventChain
 {
     /// <summary>
-    /// The maximal number of events a party sends. A verifier more than this many rotations behind
-    /// cannot catch up from a handshake and needs an operator to re-pin.
+    /// The number of last events a party sends by default. When the receiver holds an older point of its log (its pin,
+    /// or its trust anchor), the party sends its events from that point, up to <see cref="MaxEventWindow"/>.
     /// </summary>
     public const int MaxEventTail = 8;
 
     /// <summary>
-    /// The maximal number of events a party sends from a trust anchor (see <see cref="VerifyFromAnchor"/>): about five years
-    /// of rotations with the default <c>AllowedOfflineDays</c>. An anchor older than this must be updated.
+    /// The maximal number of events a party sends from the point of its log that the receiver holds (its pin or its trust
+    /// anchor), and that <see cref="Verify"/> and <see cref="VerifyFromAnchor"/> accept: about five years of rotations with
+    /// the default <c>AllowedOfflineDays</c>. A verifier more than this many rotations behind can't catch up from a
+    /// handshake: an anchor must be updated, a pin re-approved by an operator.
     /// </summary>
-    public const int MaxAnchorWindow = 32;
+    public const int MaxEventWindow = 32;
 
     /// <summary>
     /// Verifies a tail of events sent by <paramref name="fullName"/> against the <paramref name="pinned"/> event.
@@ -128,7 +130,7 @@ public static class KeyEventChain
     {
         Throw.CheckNotNullOrEmptyArgument( fullName );
         Throw.CheckNotNullArgument( tail );
-        if( tail.Count == 0 || tail.Count > MaxEventTail ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+        if( tail.Count == 0 || tail.Count > MaxEventWindow ) return new KeyChainCheck( KeyChainVerdict.Invalid );
         return VerifyCore( fullName, tail, pinned );
     }
 
@@ -139,7 +141,7 @@ public static class KeyEventChain
     /// by the anchor.
     /// </summary>
     /// <param name="fullName">The full name of the party whose log this is.</param>
-    /// <param name="events">The events, consecutive, oldest first (at most <see cref="MaxAnchorWindow"/>). The last one is the sender's head.</param>
+    /// <param name="events">The events, consecutive, oldest first (at most <see cref="MaxEventWindow"/>). The last one is the sender's head.</param>
     /// <param name="anchor">The trust anchor of the party.</param>
     /// <returns>
     /// The verdict: <see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/> (the anchor is
@@ -152,7 +154,7 @@ public static class KeyEventChain
         Throw.CheckNotNullOrEmptyArgument( fullName );
         Throw.CheckNotNullArgument( events );
         Throw.CheckNotNullArgument( anchor );
-        if( events.Count == 0 || events.Count > MaxAnchorWindow ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+        if( events.Count == 0 || events.Count > MaxEventWindow ) return new KeyChainCheck( KeyChainVerdict.Invalid );
         int a = events[0].Seq;
         for( int i = 1; i < events.Count; ++i )
         {

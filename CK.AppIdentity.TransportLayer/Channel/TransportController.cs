@@ -487,7 +487,20 @@ sealed partial class TransportController
                     }
                 case ZeroProtocol.DRunKeyEventsRequest:
                     {
-                        var answer = ZeroProtocol.CreateKeyEventsMessage( _transport.RemoteKeys.LocalKeys.State );
+                        // The peer says which point of our log it holds: our events from there.
+                        int? held;
+                        try
+                        {
+                            held = ZeroProtocol.ReadKeyEventsRequest( m );
+                        }
+                        catch( Exception ex )
+                        {
+                            receiveMonitor.Error( $"Invalid key events request received from '{_transport.RemoteEndPointDescription}'.", ex );
+                            _transportManager.KillTransport( _transport, 0 );
+                            return false;
+                        }
+                        _transport.RemoteKeys.HeldByRemoteSeq = held;
+                        var answer = ZeroProtocol.CreateKeyEventsMessage( _transport.RemoteKeys.LocalKeys.State, held );
                         if( !TryEnqueueHighPriority( answer ) )
                         {
                             answer.Release();

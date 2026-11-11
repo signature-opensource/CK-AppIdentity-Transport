@@ -49,9 +49,10 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             int count = 0;
             foreach( var r in local.Remotes )
             {
-                var controller = r.GetFeature<TransportFeature>()?.TransportController;
+                var transport = r.GetFeature<TransportFeature>();
+                var controller = transport?.TransportController;
                 if( controller == null ) continue;
-                var m = ZeroProtocol.CreateKeyEventsMessage( keys.State );
+                var m = ZeroProtocol.CreateKeyEventsMessage( keys.State, transport!.RemoteKeys.HeldByRemoteSeq );
                 if( controller.TryEnqueueHighPriority( m ) ) ++count;
                 else m.Release();
             }

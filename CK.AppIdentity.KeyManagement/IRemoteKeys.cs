@@ -67,6 +67,23 @@ public interface IRemoteKeys : IPartyKeys
     KeyChainVerdict? AnchorRefusal { get; }
 
     /// <summary>
+    /// Gets what this local party states it holds of the remote's key event log, in its identity block: the trust anchor
+    /// of the remote when it is anchored (and its anchor can be read), otherwise its pin. Null when nothing is held. The
+    /// remote sends its events from this point (up to <see cref="KeyEventChain.MaxEventWindow"/>).
+    /// </summary>
+    /// <param name="logger">The logger to use (a "#Dev" anchor is read from the dev store).</param>
+    /// <returns>The stated checkpoint, or null.</returns>
+    KeyCheckpoint? GetStatedCheckpoint( IActivityLineEmitter logger );
+
+    /// <summary>
+    /// Gets or sets the sequence of our own key event log that the remote last stated it holds (its pin or its anchor of
+    /// us, read in its identity block): what we send to it starts there when it is older than our last
+    /// <see cref="KeyEventChain.MaxEventTail"/> events (up to <see cref="KeyEventChain.MaxEventWindow"/>). Set by the
+    /// transport when it reads the remote's identity block.
+    /// </summary>
+    int? HeldByRemoteSeq { get; set; }
+
+    /// <summary>
     /// Gets the "MaxClockOffset" configuration option.
     /// Defaults to <see cref="DefaultMaxClockOffset"/>.
     /// Cannot be less than 1 minute and greater than 20 minutes.

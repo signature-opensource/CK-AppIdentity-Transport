@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using System.Collections.Generic;
 
 namespace CK.AppIdentity.TransportLayer;
 
@@ -18,7 +19,7 @@ static partial class ZeroProtocol
     /// </summary>
     /// <param name="state">The identity state.</param>
     /// <returns>The message.</returns>
-    internal static IOutgoingMessage CreateKeyEventsMessage( LocalIdentityState state )
+    internal static IOutgoingMessage CreateKeyEventsMessage( LocalIdentityState state, int? heldSeq )
     {
         var builder = _zeroFactory.CreateBuilder();
         var sequence = builder.ObtainSequence();
@@ -26,7 +27,7 @@ static partial class ZeroProtocol
         w.WriteByte( DRunKeyEvents );
         // Independent serialization version.
         w.WriteSmallUInt32( 0 );
-        var tail = state.Tail;
+        var tail = GetEventsFrom( state, heldSeq );
         w.WriteSmallUInt32( (uint)tail.Count );
         foreach( var e in tail )
         {
@@ -38,18 +39,57 @@ static partial class ZeroProtocol
     }
 
     /// <summary>
-    /// Creates the message that asks the peer for its last key events.
+    /// Creates the message that asks the peer for its key events, from the point of its log that we hold (our pin or our
+    /// anchor of it): the peer sends its events from there (up to <see cref="KeyEventChain.MaxEventWindow"/>).
     /// </summary>
+    /// <param name="stated">What we hold of the peer's log, null if nothing.</param>
     /// <returns>The message.</returns>
-    internal static IOutgoingMessage CreateKeyEventsRequestMessage()
+    internal static IOutgoingMessage CreateKeyEventsRequestMessage( KeyCheckpoint? stated )
     {
         var builder = _zeroFactory.CreateBuilder();
         var sequence = builder.ObtainSequence();
         var w = new FastByteWriter( sequence );
         w.WriteByte( DRunKeyEventsRequest );
         w.WriteSmallUInt32( 0 );
+        w.WriteSmallUInt32( stated == null ? 0 : (uint)stated.Seq + 1 );
         w.Commit();
         return builder.CreateMessage( sequence );
+    }
+
+    /// <summary>
+    /// Reads the point of our log that the peer holds, from a <see cref="DRunKeyEventsRequest"/> message.
+    /// </summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The sequence the peer holds, null if nothing.</returns>
+    internal static int? ReadKeyEventsRequest( IncomingMessage message )
+    {
+        var r = new FastByteReader( message.Message );
+        var discriminator = r.ReadByte();
+        Throw.DebugAssert( discriminator == DRunKeyEventsRequest );
+        Throw.CheckData( r.ReadSmallUInt32() == 0 ); // Version.
+        var held = r.ReadSmallUInt32();
+        return held == 0 ? null : (int)(held - 1);
+    }
+
+    /// <summary>
+    /// Gets the events of our log to send to a peer: from the point it holds (its pin or its anchor of us) when it is
+    /// older than our last <see cref="KeyEventChain.MaxEventTail"/> events and within <see cref="KeyEventChain.MaxEventWindow"/>
+    /// of our head; otherwise our last events (<see cref="LocalIdentityState.Tail"/>).
+    /// </summary>
+    /// <param name="state">Our identity state.</param>
+    /// <param name="heldSeq">The sequence of our log that the peer holds, null if unknown.</param>
+    /// <returns>The events to send, oldest first.</returns>
+    internal static IReadOnlyList<KeyEvent> GetEventsFrom( LocalIdentityState state, int? heldSeq )
+    {
+        var tail = state.Tail;
+        if( heldSeq is not int s || s < 0 || s >= tail[0].Seq || state.Head.Seq - s >= KeyEventChain.MaxEventWindow ) return tail;
+        var events = new List<KeyEvent>( state.Head.Seq - s + 1 );
+        for( int seq = s; seq <= state.Head.Seq; ++seq )
+        {
+            if( state.GetEvent( seq ) is not { } e ) return tail;
+            events.Add( e );
+        }
+        return events;
     }
 
     /// <summary>
@@ -65,7 +105,7 @@ static partial class ZeroProtocol
         Throw.DebugAssert( discriminator == DRunKeyEvents );
         Throw.CheckData( r.ReadSmallUInt32() == 0 ); // Version.
         var count = r.ReadSmallUInt32();
-        Throw.CheckData( count >= 1 && count <= KeyEventChain.MaxEventTail );
+        Throw.CheckData( count >= 1 && count <= KeyEventChain.MaxEventWindow );
         var tail = new KeyEvent[count];
         for( int i = 0; i < tail.Length; ++i )
         {

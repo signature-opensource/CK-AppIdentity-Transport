@@ -35,10 +35,9 @@ to, and when it is signed by that key: a thief holding the current key can sign 
 - **No party name inside.** The name is supplied by the reader and is part of what is signed, so an event of one party
   can never be accepted into the log of another.
 
-[`KeyEventChain.Verify`](KeyEventChain.cs) checks a tail of events (at most `KeyEventChain.MaxEventTail`, 8) against the
-pinned event and returns a [`KeyChainVerdict`](KeyEventChain.cs): `UpToDate`, `Advanced` (valid rotations), `Recovered`,
-`Abandoned`, `Terminated`, `Rollback`, `TooFarBehind` (more rotations behind than a tail carries: an operator must
-re-pin), `Duplicity` (two validly signed events at the pinned position: proof that a committed key leaked), `Unpinned`
+[`KeyEventChain.Verify`](KeyEventChain.cs) checks a tail of events against the pinned event and returns a
+[`KeyChainVerdict`](KeyEventChain.cs): `UpToDate`, `Advanced` (valid rotations), `Recovered`, `Abandoned`, `Terminated`,
+`Rollback`, `TooFarBehind` (the tail doesn't reach the pinned event), `Duplicity` (two validly signed events at the pinned position: proof that a committed key leaked), `Unpinned`
 (nothing pinned: the head is only self-asserted) or `Invalid`. It is pure: the caller applies the verdict.
 
 **A checkpoint names a point of the log:** [`KeyCheckpoint`](KeyCheckpoint.cs), the sequence of an event and its digest
@@ -47,6 +46,13 @@ Every event commits to the previous one and to the next key, so the events after
 party exposes the checkpoint of its head (`ILocalKeys.Checkpoint`): it is logged at start and after each event, and it is
 in the "KeyManagement" section of the running status of a development party (`DevRunningStatus.json`). Another party
 configures it as its trust anchor of this one (`TrustAnchors`, below).
+
+**The events a party sends start where the receiver stands.** By default a party sends its last events
+(`KeyEventChain.MaxEventTail`, 8). The receiver states what it holds of the sender's log (its anchor of it when it is
+anchored, otherwise its pin: `IRemoteKeys.GetStatedCheckpoint`), and the sender then sends its events from that point
+(`IRemoteKeys.HeldByRemoteSeq` remembers it), up to `KeyEventChain.MaxEventWindow` (32) events: about five years of
+rotations with the default `AllowedOfflineDays`. `Verify` and `VerifyFromAnchor` accept that window. A receiver further
+behind can't catch up: its anchor must be updated, or its pin re-approved by an operator.
 
 ## Local keys
 

@@ -255,7 +255,10 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
 - **An anchored remote** (a trust anchor, see [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md))
   is verified from its anchor during the handshake, on both sides, never approved. When its key event log doesn't verify
   from the anchor, the issue is `AnchorMismatch` here and `RemoteAnchorMismatch` on its side (the listener refuses the
-  initiator with its own rejection): no approval code, no enlistment URL, never in the pending approvals. An initiator
+  initiator with its own rejection): no approval code, no enlistment URL, never in the pending approvals. An anchor
+  older than the usual tail is not a mismatch: the events are sent from it (the listener asks the initiator for them in
+  its rejection, the initiator retries at once). An anchor more than `KeyEventChain.MaxEventWindow` events behind must be
+  updated. An initiator
   declares that it can trust an anchored listener without an operator (`RemoteTrustInfo.CanAutoTrust`).
 
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
@@ -282,7 +285,9 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
 
 Right after a rotation, a recovery or a decommission (`KeyManagementFeatureDriver.KeyEventAppended`), the new key events
 of a local party are pushed to its connected remotes, that move their pin at once. A party that sees an
-`UnknownIssuer` signature of a remote can also ask for them: `TransportFeature.RequestKeyEventsAsync( timeout )`.
+`UnknownIssuer` signature of a remote can also ask for them: `TransportFeature.RequestKeyEventsAsync( timeout )`. Events
+are always sent from the point the receiver holds (its pin or its anchor, stated in its identity block and in its
+request), up to `KeyEventChain.MaxEventWindow` events: a remote offline for long catches up without an operator.
 
 ## Transport types
 

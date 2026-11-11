@@ -126,6 +126,17 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     public KeyChainVerdict? AnchorRefusal => _anchorRefusal;
 
+    public int? HeldByRemoteSeq { get; set; }
+
+    public KeyCheckpoint? GetStatedCheckpoint( IActivityLineEmitter logger )
+    {
+        lock( _trustLock )
+        {
+            if( IsAnchored && GetAnchor( logger ) is { } anchor ) return anchor;
+            return _pinned != null ? KeyCheckpoint.Of( _remote.FullName, _pinned ) : null;
+        }
+    }
+
     // The anchor of this remote: configured, or read from its running status in the dev store ("#Dev"). Null when it
     // can't be read yet (the remote has not started) or when it is not anchored.
     KeyCheckpoint? GetAnchor( IActivityLineEmitter logger )
@@ -233,7 +244,7 @@ sealed partial class RemoteKeys : IRemoteKeys
     static IReadOnlyList<KeyEvent> TailFrom( IReadOnlyList<KeyEvent> tail, int seq )
     {
         int a = tail[0].Seq;
-        int from = Math.Max( seq - a, tail.Count - KeyEventChain.MaxEventTail );
+        int from = Math.Max( seq - a, tail.Count - KeyEventChain.MaxEventWindow );
         var r = new List<KeyEvent>( tail.Count - from );
         for( int i = from; i < tail.Count; ++i ) r.Add( tail[i] );
         return r;
