@@ -228,7 +228,11 @@ party incepted again and comes back by a new enlistment or a new anchor, its rev
   its sequence number is greater and its signature is the Authentication Center's (verified with its pinned or
   anchored keys): a hop can withhold a list, not forge one. A party without Authentication Center ignores it (its
   operator cuts its remotes).
-- **The freshness is open:** a hop can serve an older list. The relay by every channel makes it hard, not impossible.
+- **The freshness:** a hop can withhold a newer list. Besides the relay by every channel, a party that is not the
+  Authentication Center asks it its current list every hour (`IGetRevocationListQCommand`, on the channel or along the
+  `"AuthCenter"` route): to withhold, a hop must also block that, and an unreachable center is visible. A list whose
+  signature expired (the center signs it again before) raises a `SecurityCritical` alarm: nothing newer reached the
+  party (`AuthCenterRevocations.CheckStaleness`). A token that would state the sequence of the list is not done.
 
 ## The encryption of the sensitive fields ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs))
 

@@ -157,7 +157,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
 
     // Sends a query along the route of the AuthCenter. Null when it answered null, or when it can't be sent or answered
     // (an error is logged): the result is an ICrisResultError then.
-    async Task<object?> SendAsync( IActivityMonitor monitor, Func<PocoDirectory, IAbstractCommand> create, string what )
+    internal async Task<object?> SendAsync( IActivityMonitor monitor, Func<PocoDirectory, IAbstractCommand> create, string what )
     {
         await using var scope = _services.CreateAsyncScope();
         var services = scope.ServiceProvider;

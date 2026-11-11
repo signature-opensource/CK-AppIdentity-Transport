@@ -19,6 +19,12 @@ namespace CK.AppIdentity.AuthCenter;
 /// A list is adopted only when its sequence number is greater than the one held and when its signature is the
 /// Authentication Center's (verified with its keys, pinned or anchored): a hop can withhold a list, not forge one.
 /// </para>
+/// <para>
+/// The freshness: a party that is not the Authentication Center also asks it its current list every
+/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetRevocationListQCommand"/>), and raises a
+/// <see cref="ActivityMonitor.Tags.SecurityCritical"/> alarm when the signature of the list it holds expired (the
+/// Authentication Center signs it again before: an expired one means that nothing newer reached this party).
+/// </para>
 /// </summary>
 public sealed class AuthCenterRevocations
 {
@@ -27,13 +33,22 @@ public sealed class AuthCenterRevocations
     /// </summary>
     public const string FileName = "RevocationList.bin";
 
+    /// <summary>
+    /// The period of the pull of the current list from the Authentication Center: 1 hour.
+    /// </summary>
+    public static readonly TimeSpan PullPeriod = TimeSpan.FromHours( 1 );
+
     readonly CrisAuthCenter _center;
     readonly SemaphoreSlim _adoptLock;
+    readonly Func<IActivityMonitor, Task<object?>>? _pull;
     RevocationList? _current;
+    DateTime _nextPull;
+    int _pulling;
 
-    AuthCenterRevocations( CrisAuthCenter center )
+    AuthCenterRevocations( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull )
     {
         _center = center;
+        _pull = pull;
         _adoptLock = new SemaphoreSlim( 1, 1 );
     }
 
@@ -57,10 +72,14 @@ public sealed class AuthCenterRevocations
     /// </summary>
     /// <param name="monitor">The monitor.</param>
     /// <param name="center">The Authentication Center of the local party.</param>
+    /// <param name="pull">
+    /// Sends an <see cref="IGetRevocationListQCommand"/> to the Authentication Center and returns its result (null for the
+    /// Authentication Center itself): the periodic pull.
+    /// </param>
     /// <returns>The feature.</returns>
-    public static AuthCenterRevocations Plug( IActivityMonitor monitor, CrisAuthCenter center )
+    public static AuthCenterRevocations Plug( IActivityMonitor monitor, CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull )
     {
-        var f = new AuthCenterRevocations( center );
+        var f = new AuthCenterRevocations( center, pull );
         var local = center.Owner;
         var bytes = StoreFileReader.TryReadAllBytes( f.FilePath );
         if( bytes != null )
@@ -77,6 +96,7 @@ public sealed class AuthCenterRevocations
             }
         }
         local.AddFeature( f );
+        if( pull != null ) local.ApplicationIdentityService.Heartbeat.Async += f.OnHeartbeatAsync;
         // The transport exists once the initialization is done: the list is then sent when a channel becomes available.
         _ = local.ApplicationIdentityService.InitializationTask.ContinueWith( _ =>
         {
@@ -86,6 +106,74 @@ public sealed class AuthCenterRevocations
             }
         }, TaskScheduler.Default );
         return f;
+    }
+
+    // The heartbeat runs on the agent loop: the pull and the staleness check run in the background, every PullPeriod.
+    Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
+    {
+        var utcNow = DateTime.UtcNow;
+        if( utcNow >= _nextPull && Interlocked.CompareExchange( ref _pulling, 1, 0 ) == 0 )
+        {
+            _nextPull = utcNow + PullPeriod;
+            _ = Task.Run( async () =>
+            {
+                var m = new ActivityMonitor( $"Pulling the revocation list of the AuthCenter of '{Local}'." );
+                try
+                {
+                    await PullAsync( m ).ConfigureAwait( false );
+                    CheckStaleness( m, DateTime.UtcNow );
+                }
+                catch( Exception ex )
+                {
+                    m.Error( "While pulling the revocation list.", ex );
+                }
+                finally
+                {
+                    m.MonitorEnd();
+                    _pulling = 0;
+                }
+            } );
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Asks the Authentication Center its current list and adopts it when it is newer (and verifies).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <returns>True when a newer list has been adopted.</returns>
+    public async Task<bool> PullAsync( IActivityMonitor monitor )
+    {
+        if( _pull == null ) return false;
+        object? result;
+        try
+        {
+            result = await _pull( monitor ).ConfigureAwait( false );
+        }
+        catch( Exception ex )
+        {
+            monitor.Warn( $"Unable to ask the AuthCenter '{_center.AuthCenterFullName}' its revocation list.", ex );
+            return false;
+        }
+        if( result is byte[] encoded ) return await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false );
+        if( result != null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' can't be asked its revocation list: {result}." );
+        return false;
+    }
+
+    /// <summary>
+    /// Raises the alarm when the signature of the list held expired: the Authentication Center signs it again before, so
+    /// nothing newer reached this party (a hop withholds it, or the Authentication Center is unreachable).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="utcNow">The current time.</param>
+    /// <returns>True when the list is stale.</returns>
+    public bool CheckStaleness( IActivityMonitor monitor, DateTime utcNow )
+    {
+        var current = _current;
+        if( current == null || current.Signature.Expiration > utcNow ) return false;
+        monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
+                      $"The {current} held by '{Local}' is stale: its signature expired at {current.Signature.Expiration:O}, nothing newer reached it from the AuthCenter '{_center.AuthCenterFullName}'." );
+        return true;
     }
 
     Task OnConnectionAvailabilityChangedAsync( IActivityMonitor monitor, TransportFeature transport, CancellationToken cancel )

@@ -38,6 +38,7 @@ public class AnchoredAuthCenterTests
                                        typeof( IVerifyRoutedProofQCommand ),
                                        typeof( IAuthCenterProofStatement ),
                                        typeof( IRevocationListCommand ),
+                                       typeof( IGetRevocationListQCommand ),
                                        typeof( RevocationListHandler )];
 
     sealed class Chain : IAsyncDisposable
@@ -264,5 +265,32 @@ public class AnchoredAuthCenterTests
             logs.ShouldContain( l => l.Contains( $"is not signed by its AuthCenter '{c.CenterName}'" ) );
         }
         SeqOf( c.A ).ShouldBeNull();
+    }
+
+    [Test]
+    public async Task the_list_is_pulled_from_the_center_and_a_stale_one_raises_the_alarm_Async()
+    {
+        await using var c = await StartAsync();
+        var hopRevocations = c.Hop.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>();
+        var aRevocations = c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>();
+        var ghost = new byte[KeyEvent.HashSize];
+        ghost[0] = 42;
+        (await RevokeAsync( c, "Test/$Ghost/#Dev", ghost )).ShouldBe( 1 );
+        (await WaitForAsync( () => SeqOf( c.Hop ) == 1 && SeqOf( c.A ) == 1 )).ShouldBeTrue();
+        // The pull reaches the center: on the channel (the hop), along the route (A). Up to date: nothing is adopted.
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            (await hopRevocations.PullAsync( TestHelper.Monitor )).ShouldBeFalse();
+            (await aRevocations.PullAsync( TestHelper.Monitor )).ShouldBeFalse();
+            logs.ShouldNotContain( l => l.Contains( "revocation list" ) && (l.Contains( "Unable" ) || l.Contains( "can't be asked" )) );
+        }
+        // A list whose signature expired is stale: nothing newer reached the party.
+        aRevocations.CheckStaleness( TestHelper.Monitor, DateTime.UtcNow ).ShouldBeFalse();
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            var later = DateTime.UtcNow.AddDays( c.A.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().MaxSignatureDays + 1 );
+            aRevocations.CheckStaleness( TestHelper.Monitor, later ).ShouldBeTrue();
+            logs.ShouldContain( l => l.Contains( "is stale: its signature expired" ) );
+        }
     }
 }

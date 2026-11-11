@@ -111,7 +111,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
             if( IsAllowedFeature( r ) ) r.AddFeature( center );
         }
         local.AddFeature( new LocalAuthCenter( monitor, center, options, settings ) );
-        AuthCenterRevocations.Plug( monitor, center );
+        AuthCenterRevocations.Plug( monitor, center, null );
         return true;
     }
 }

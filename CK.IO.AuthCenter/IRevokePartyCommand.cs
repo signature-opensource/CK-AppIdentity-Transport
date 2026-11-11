@@ -39,6 +39,17 @@ public interface IReadmitPartyNameCommand : ICommand<int?>, ICommandAuthCritical
 }
 
 /// <summary>
+/// Asks the Authentication Center its current revocation list (encoded: its data and its signature), null when it has
+/// none. Sent periodically by every party that has an Authentication Center, on the channel or along the "AuthCenter"
+/// route: a hop that withholds the relayed lists must also block this, and an unreachable center is visible. Internal to
+/// the System.
+/// </summary>
+[Internal]
+public interface IGetRevocationListQCommand : ICommand<byte[]?>
+{
+}
+
+/// <summary>
 /// Sends the revocation list of the Authentication Center to a remote: it adopts it when it is newer than its own and
 /// verifies (with the keys of the Authentication Center), then relays it to its other remotes. Internal to the System and
 /// executed by the receiving endpoint only.

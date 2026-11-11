@@ -1,6 +1,7 @@
 using CK.AppIdentity.Cris;
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using CK.IO.AuthCenter;
 using System;
 using System.Threading.Tasks;
 
@@ -133,8 +134,9 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         }
         var center = CrisAuthCenter.TryCreateAnchored( monitor, local, authCenterFullName, directory );
         if( center == null ) return false;
-        local.AddFeature( new AnchoredAuthCenter( center, sender, _services ) );
-        AuthCenterRevocations.Plug( monitor, center );
+        var anchored = new AnchoredAuthCenter( center, sender, _services );
+        local.AddFeature( anchored );
+        AuthCenterRevocations.Plug( monitor, center, m => anchored.SendAsync( m, pocos => pocos.Create<IGetRevocationListQCommand>(), "ask the revocation list" ) );
         return true;
     }
 
@@ -144,7 +146,13 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
         local.AddFeature( new RemoteAuthCenter( center ) );
-        AuthCenterRevocations.Plug( monitor, center );
+        AuthCenterRevocations.Plug( monitor, center, async m =>
+        {
+            var channel = authCenter.GetFeature<CrisChannelFeature>();
+            if( channel == null ) return null;
+            return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetRevocationListQCommand>() )
+                                 .ExecutedCommand.WaitAsync( RemoteAuthCenter.Timeout ).ConfigureAwait( false )).Result;
+        } );
         return true;
     }
 }

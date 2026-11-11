@@ -67,6 +67,19 @@ public sealed class RevokePartyHandler : ISingletonAutoService
     }
 
     /// <summary>
+    /// Answers the current revocation list of this Authentication Center (encoded), null when it has none.
+    /// </summary>
+    /// <param name="command">The query.</param>
+    /// <param name="party">The local party.</param>
+    /// <returns>The encoded list or null.</returns>
+    [CommandHandler]
+    public byte[]? Handle( IGetRevocationListQCommand command, CurrentLocalParty party )
+    {
+        var local = party.LocalParty;
+        return local.GetFeature<LocalAuthCenter>() != null ? local.GetFeature<AuthCenterRevocations>()?.Current?.Encode() : null;
+    }
+
+    /// <summary>
     /// Handles the readmission of a full name: its entries no more ban the name (their identities stay revoked).
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
