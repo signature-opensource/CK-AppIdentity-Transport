@@ -120,6 +120,33 @@ public class KeyRecoveryTests
     }
 
     [Test]
+    public void a_recovery_that_reuses_its_recovery_key_is_refused()
+    {
+        // KM-4: with the same recovery key committed again, the public recovery event could be replayed later against
+        // any pin that commits to it, and roll the pin back.
+        using var victim = PeerIdentity.Create( Party );
+        using var next = NewKey();
+        Should.Throw<ArgumentException>( () => KeyEvent.CreateRecovery( Party, DateTime.UtcNow, victim.RecoveryKey, Commit( next ), Commit( victim.RecoveryKey ), victim.Head ) );
+    }
+
+    [Test]
+    public void a_recovery_event_that_commits_again_to_its_key_does_not_supersede_a_later_pin()
+    {
+        // Such an event (written before the writers refused it) doesn't roll a later pin back.
+        using var victim = PeerIdentity.Create( Party );
+        var recovery = victim.RecoveryKey;
+        using var k2 = NewKey();
+        using var k3 = NewKey();
+        using var k4 = NewKey();
+        var r1 = Forge( 1, recovery, recovery, Commit( k2 ), Commit( recovery ), victim.Head, recovery: true );
+        var e2 = KeyEvent.Create( Party, 2, DateTime.UtcNow, k2, Commit( k3 ), r1 );
+        var e3 = KeyEvent.Create( Party, 3, DateTime.UtcNow, k3, Commit( k4 ), e2 );
+        KeyEventChain.Verify( Party, new[] { victim.Head, r1, e2, e3 }, victim.Head ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        // Pinned at #3 (that commits to the same recovery key): the old [r1, e2] is a rollback, not a recovery.
+        KeyEventChain.Verify( Party, new[] { r1, e2 }, e3 ).Verdict.ShouldBe( KeyChainVerdict.Rollback );
+    }
+
+    [Test]
     public void a_recovery_supersedes_an_abandonment_written_with_a_stolen_next_key()
     {
         // A thief with the next key can end the identity: a denial of service. The owner takes it back.

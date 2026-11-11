@@ -80,8 +80,9 @@ approve.
   When a scheduled rotation fails, the party keeps its key under a fresh certificate and raises a `RotationFailing`
   alert.
 - **Recovery.** `Recover()` writes a recovery event (revealing the recovery key, given back from offline or taken from
-  the key store) followed at once by an ordinary rotation to a fresh online key. Every remote that receives the tail
-  drops whatever it had pinned since.
+  the key store) followed at once by an ordinary rotation to a fresh online key. It commits to a new recovery key: one
+  that commits again to the recovery key it reveals is refused (it could be replayed later), by its writer and by the
+  verifiers. Every remote that receives the tail drops whatever it had pinned since.
 - **Decommission.** `Decommission()` writes an abandonment event, signed by the committed next key, and destroys the
   keys: the party then refuses to start until its `Keys` folder and key store are reset.
 - **Operational credential.** The identity key does not sign the handshakes: it issues an

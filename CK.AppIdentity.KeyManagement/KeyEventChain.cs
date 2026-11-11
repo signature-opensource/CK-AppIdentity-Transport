@@ -211,6 +211,9 @@ public static class KeyEventChain
             {
                 var r = tail[j];
                 if( !r.IsRecovery || !pinned.CommitsToRecovery( r.Spki.Span ) ) continue;
+                // A recovery that commits again to the recovery key it reveals can't supersede a pin that commits to it:
+                // that would be the replay of an old recovery event (a recovery always commits to a new recovery key).
+                if( SameDigest( r.RecoveryCommit.Span, pinned.RecoveryCommit.Span ) ) continue;
                 if( !r.VerifySignature( fullName ) ) return new KeyChainCheck( KeyChainVerdict.Invalid );
                 for( int i = j + 1; i < tail.Count; ++i )
                 {

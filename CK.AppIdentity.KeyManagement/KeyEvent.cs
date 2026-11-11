@@ -257,7 +257,10 @@ public sealed class KeyEvent
     /// <param name="timeName">The time of the recovery, in UTC.</param>
     /// <param name="recoveryKey">The recovery key the previous event committed to.</param>
     /// <param name="nextCommit">The commitment to the next (online) key.</param>
-    /// <param name="nextRecoveryCommit">The commitment to the next recovery key. Empty means no further recovery.</param>
+    /// <param name="nextRecoveryCommit">
+    /// The commitment to the next recovery key, which must be a new one (not the recovery key revealed here). Empty means
+    /// no further recovery.
+    /// </param>
     /// <param name="previous">The last event of the owner's log.</param>
     /// <returns>The recovery event, at <c>previous.Seq + 1</c>.</returns>
     public static KeyEvent CreateRecovery( string fullName,
@@ -271,6 +274,9 @@ public sealed class KeyEvent
         Throw.CheckArgument( "A recovery commits to a next key.", !nextCommit.IsEmpty );
         var spki = recoveryKey.ExportSubjectPublicKeyInfo();
         Throw.CheckArgument( "The key must be the recovery key the previous event committed to.", previous.CommitsToRecovery( spki ) );
+        // A reused recovery key would let this recovery event be replayed later, against a pin that commits to it again.
+        Throw.CheckArgument( "The next recovery key must be a new one, not the recovery key revealed here.",
+                             !nextRecoveryCommit.SequenceEqual( previous._recoveryCommit ) );
         return Sign( fullName, previous.Seq + 1, timeName, RecoveryFlag, recoveryKey, spki, nextCommit,
                      CheckCommit( nextRecoveryCommit, nameof( nextRecoveryCommit ) ), previous );
     }

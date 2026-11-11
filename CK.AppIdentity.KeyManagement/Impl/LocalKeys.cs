@@ -464,6 +464,11 @@ sealed partial class LocalKeys : ILocalKeys
                 if( !nextRecoveryPublicKey.IsEmpty )
                 {
                     nextRecoveryCommit = KeyEvent.ComputeCommit( nextRecoveryPublicKey.Span );
+                    if( head.CommitsToRecovery( nextRecoveryPublicKey.Span ) )
+                    {
+                        monitor.Error( $"The next recovery key of '{_local.FullName}' must be a new one, not the recovery key used now: an old recovery event could be replayed." );
+                        return false;
+                    }
                 }
                 else if( recoveryKey == null )
                 {

@@ -64,6 +64,7 @@ public class LocalRecoveryTests
         keys.Recover( TestHelper.Monitor ).ShouldBeFalse( "The recovery key is offline: it must be brought back." );
         keys.Recover( TestHelper.Monitor, someOther, nextOffline.ExportSubjectPublicKeyInfo() ).ShouldBeFalse( "Not the committed key." );
         keys.Recover( TestHelper.Monitor, offline ).ShouldBeFalse( "The next offline recovery key must be named." );
+        keys.Recover( TestHelper.Monitor, offline, offline.ExportSubjectPublicKeyInfo() ).ShouldBeFalse( "The next offline recovery key must be a new one." );
         keys.Seq.ShouldBe( 0 );
 
         keys.Recover( TestHelper.Monitor, offline, nextOffline.ExportSubjectPublicKeyInfo() ).ShouldBeTrue();

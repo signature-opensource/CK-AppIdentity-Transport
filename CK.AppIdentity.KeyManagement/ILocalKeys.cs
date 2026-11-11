@@ -238,8 +238,8 @@ public interface ILocalKeys : IPartyKeys
     /// key is then in the key store.
     /// </param>
     /// <param name="nextRecoveryPublicKey">
-    /// The SubjectPublicKeyInfo of the next recovery key, generated offline. Required when
-    /// <paramref name="recoveryKey"/> is given; when it is not, a new one is created in the key store.
+    /// The SubjectPublicKeyInfo of the next recovery key, generated offline: a new key, not the recovery key used now.
+    /// Required when <paramref name="recoveryKey"/> is given; when it is not, a new one is created in the key store.
     /// </param>
     /// <returns>True on success, false (with an error logged) otherwise.</returns>
     bool Recover( IActivityMonitor monitor, System.Security.Cryptography.ECDsa? recoveryKey = null, ReadOnlyMemory<byte> nextRecoveryPublicKey = default );
