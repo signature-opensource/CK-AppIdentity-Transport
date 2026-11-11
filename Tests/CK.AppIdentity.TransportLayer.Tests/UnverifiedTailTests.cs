@@ -6,6 +6,7 @@ using NUnit.Framework;
 using Shouldly;
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -46,6 +47,24 @@ public class UnverifiedTailTests
         return KeyEvent.Read( bytes );
     }
 
+    delegate KeyEvent SignFn( string fullName, int seq, DateTime timeName, byte flags, ECDsa key, byte[] spki,
+                              ReadOnlySpan<byte> nextCommit, byte[] recoveryCommit, KeyEvent? previous );
+
+    static readonly SignFn _sign = (SignFn)Delegate.CreateDelegate( typeof( SignFn ),
+                                                                    typeof( KeyEvent ).GetMethod( "Sign", BindingFlags.NonPublic | BindingFlags.Static )! );
+
+    // A valid log of one event that names the identity of another log: a non-inception event states its identity, and
+    // anyone signs it with a key pair of its own (KeyEvent.Create refuses it: it checks the commitment of the previous event).
+    static KeyEvent ForgeOwnEventOf( string fullName, KeyEvent claimed, ECDsa key )
+    {
+        using var next = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        var e = _sign( fullName, claimed.Seq + 1, DateTime.UtcNow, 0, key, key.ExportSubjectPublicKeyInfo(),
+                       KeyEvent.ComputeCommit( next.ExportSubjectPublicKeyInfo() ), new byte[32], claimed );
+        KeyEventChain.Verify( fullName, [e], null ).Verdict.ShouldBe( KeyChainVerdict.Unpinned, "The forged event is a valid log on its own." );
+        e.GetIdentity( fullName ).ToArray().ShouldBe( claimed.GetIdentity( fullName ).ToArray() );
+        return e;
+    }
+
     static Task RevokeAsync( ApplicationIdentityService s, string fullName, KeyEvent e )
         => s.GetRequiredFeature<ILocalKeys>()
             .SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( fullName, e.GetIdentity( fullName ).Span, DateTime.UtcNow, nameBanned: false )] );
@@ -73,15 +92,53 @@ public class UnverifiedTailTests
         keys.Refusal.ShouldBeNull();
 
         // The revoked log itself is refused, but it is not the pinned one: the pin stays, and the live connection of the
-        // pinned remote must not be cut.
-        keys.ApplyTail( TestHelper.Monitor, revoked.Events ).Verdict.ShouldBe( KeyChainVerdict.Revoked );
+        // pinned remote must not be cut. It is another log: only invalid (no Revoked issue, no signed reply).
+        keys.ApplyTail( TestHelper.Monitor, revoked.Events ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
         keys.TrustedEvent.ShouldBe( peer.Head, "Another log presented under the name doesn't clear the pin." );
         keys.IsRevoked.ShouldBeFalse( "Only the revocation of the pinned identity revokes the remote." );
+        keys.Refusal.ShouldBeNull();
 
         // The revocation of the pinned identity does.
         await RevokeAsync( service, fullName, peer.Head );
         keys.TrustedEvent.ShouldBeNull();
         keys.IsRevoked.ShouldBeTrue();
+        // With no pin any more, a valid log of the revoked identity is believed.
+        keys.ApplyTail( TestHelper.Monitor, peer.Events ).Verdict.ShouldBe( KeyChainVerdict.Revoked );
+        keys.Refusal.ShouldBe( KeyChainVerdict.Revoked );
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task a_self_signed_log_naming_a_revoked_identity_is_only_invalid_for_a_pinned_or_anchored_remote_Async( CancellationToken token )
+    {
+        const string name = "TM1SelfSigned";
+        PeerStore.ClearRemoteTrust( $"Test/${name}Peer" );
+        var fullName = RemoteFullName( name );
+        using var peer = PeerIdentity.Create( fullName );
+        using var revoked = PeerIdentity.Create( fullName );
+        using var attackerKey = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        var forged = ForgeOwnEventOf( fullName, revoked.Head, attackerKey );
+
+        // Pinned.
+        await using( var service = await CreateAsync( name, null, token ) )
+        {
+            var keys = KeysOf( service );
+            keys.SetTrustedIdentity( TestHelper.Monitor, peer.Head ).ShouldBeTrue();
+            await RevokeAsync( service, fullName, revoked.Head );
+            keys.ApplyTail( TestHelper.Monitor, [forged] ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
+            keys.Refusal.ShouldBeNull();
+            keys.TrustedEvent.ShouldBe( peer.Head );
+        }
+        PeerStore.ClearRemoteTrust( $"Test/${name}Peer" );
+        // Anchored (nothing pinned yet).
+        await using( var service = await CreateAsync( name, KeyCheckpoint.Of( fullName, peer.Head ), token ) )
+        {
+            var keys = KeysOf( service );
+            await RevokeAsync( service, fullName, revoked.Head );
+            keys.ApplyTail( TestHelper.Monitor, [forged] ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
+            keys.Refusal.ShouldBeNull();
+            // The anchored remote itself.
+            keys.ApplyTail( TestHelper.Monitor, peer.Events ).Verdict.ShouldBe( KeyChainVerdict.UpToDate );
+        }
     }
 
     [Test, CancelAfter( 60000 )]
@@ -172,6 +229,54 @@ public class UnverifiedTailTests
     }
 
     [Test, CancelAfter( 60000 )]
+    public async Task a_refusal_from_the_anchored_pin_clears_a_stale_anchor_refusal_Async( CancellationToken token )
+    {
+        const string name = "TM10Stale";
+        PeerStore.ClearRemoteTrust( $"Test/${name}Peer" );
+        var fullName = RemoteFullName( name );
+        using var peer = PeerIdentity.Create( fullName );
+        for( int i = 0; i < 3; ++i ) peer.Rotate();
+        await using var service = await CreateAsync( name, KeyCheckpoint.Of( fullName, peer.Head ), token );
+        var keys = KeysOf( service );
+        var atAnchor = peer.Events.ToArray();
+        peer.Rotate();
+        keys.ApplyTail( TestHelper.Monitor, peer.Events ).Verdict.ShouldBe( KeyChainVerdict.Advanced );
+        // A head before the anchor: a refusal of the anchor (sticky).
+        keys.ApplyTail( TestHelper.Monitor, [atAnchor[0], atAnchor[1]] ).Verdict.ShouldBe( KeyChainVerdict.Rollback );
+        keys.Refusal.ShouldBe( KeyChainVerdict.Rollback );
+        // The anchored head, before the pin: it verifies from the anchor, the refusal is the pin's (an identity conflict).
+        keys.ApplyTail( TestHelper.Monitor, atAnchor ).Verdict.ShouldBe( KeyChainVerdict.Rollback );
+        keys.Refusal.ShouldBeNull( "The stale refusal of the anchor would turn the identity conflict into an anchor mismatch." );
+    }
+
+    [Test, CancelAfter( 60000 )]
+    public async Task a_fork_of_a_pin_before_the_anchor_is_kept_as_evidence_Async( CancellationToken token )
+    {
+        const string name = "TM11Fork";
+        PeerStore.ClearRemoteTrust( $"Test/${name}Peer" );
+        var fullName = RemoteFullName( name );
+        using var peer = PeerIdentity.Create( fullName );
+        peer.Rotate();
+        // The holder of the key #1 forks at #1.
+        using var thiefNext = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        var fork1 = KeyEvent.Create( fullName, 1, DateTime.UtcNow, peer.CurrentKey, KeyEvent.ComputeCommit( thiefNext.ExportSubjectPublicKeyInfo() ), peer.Events[0] );
+        peer.Rotate();
+        peer.Rotate();
+        await using( var notAnchored = await CreateAsync( name, null, token ) )
+        {
+            KeysOf( notAnchored ).SetTrustedIdentity( TestHelper.Monitor, peer.Events[1] ).ShouldBeTrue();
+        }
+        await using var service = await CreateAsync( name, KeyCheckpoint.Of( fullName, peer.Head ), token );
+        var keys = KeysOf( service );
+        // The alerts survive restarts: the ones of a previous run go.
+        var localKeys = service.GetRequiredFeature<ILocalKeys>();
+        foreach( var a in localKeys.Alerts.ToList() ) localKeys.Acknowledge( TestHelper.Monitor, a );
+        keys.ApplyTail( TestHelper.Monitor, [fork1, peer.Events[2], peer.Events[3]] ).Verdict.ShouldBe( KeyChainVerdict.UpToDate );
+        keys.TrustedEvent.ShouldBe( peer.Head, "The anchor is the authority." );
+        localKeys.Alerts.ShouldContain( a => a.Kind == IdentityAlertKind.RemoteDuplicity && a.Subject == fullName );
+    }
+
+    [Test, CancelAfter( 60000 )]
     public async Task the_key_directory_honors_the_revocations_Async( CancellationToken token )
     {
         const string name = "KM2Directory";
@@ -194,5 +299,11 @@ public class UnverifiedTailTests
         directory.Head.ShouldBeNull( "What is held of a revoked identity is forgotten." );
         directory.ApplyEvents( TestHelper.Monitor, other.Events ).Verdict.ShouldBe( KeyChainVerdict.Revoked );
         directory.Head.ShouldBeNull();
+
+        // A log of another identity that names a revoked one doesn't verify from the anchor: only invalid (no alarm).
+        using var revoked = PeerIdentity.Create( fullName );
+        using var attackerKey = ECDsa.Create( ECCurve.NamedCurves.nistP256 );
+        await RevokeAsync( service, fullName, revoked.Head );
+        directory.ApplyEvents( TestHelper.Monitor, [ForgeOwnEventOf( fullName, revoked.Head, attackerKey )] ).Verdict.ShouldBe( KeyChainVerdict.Invalid );
     }
 }

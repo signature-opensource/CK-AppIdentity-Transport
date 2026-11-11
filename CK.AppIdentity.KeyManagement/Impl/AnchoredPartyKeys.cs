@@ -71,16 +71,23 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
                 return new KeyChainCheck( KeyChainVerdict.AnchorUnavailable );
             }
             if( events.Count == 0 ) return new KeyChainCheck( KeyChainVerdict.Invalid );
-            // A revoked log is refused whatever it presents (what is held of it is forgotten by OnRevocations).
-            if( _localKeys.IsRevoked( events[^1].GetIdentity( _fullName ).Span ) )
-            {
-                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The key events received for '{_fullName}' are of a revoked identity: refused." );
-                return new KeyChainCheck( KeyChainVerdict.Revoked );
-            }
             var held = _chain.Length > 0 ? _chain[^1] : null;
             var check = held == null
                             ? KeyEventChain.VerifyFromAnchor( _fullName, events, anchor )
                             : KeyEventChain.Verify( _fullName, events, held );
+            // A revoked log is refused whatever it presents (what is held of it is forgotten by OnRevocations). It is
+            // believed (an alarm) only when the events verify from the anchor or the head held: anyone can write a
+            // revoked identity in an event, or build a valid log that names it with a key pair of its own.
+            if( _localKeys.IsRevoked( events[^1].GetIdentity( _fullName ).Span ) )
+            {
+                if( check.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned )
+                {
+                    logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The key events received for '{_fullName}' are of a revoked identity: refused." );
+                    return new KeyChainCheck( KeyChainVerdict.Revoked );
+                }
+                logger.Warn( $"The key events received for '{_fullName}' name a revoked identity but don't verify from its anchor or its verified head: refused." );
+                return new KeyChainCheck( KeyChainVerdict.Invalid );
+            }
             switch( check.Verdict )
             {
                 case KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned:

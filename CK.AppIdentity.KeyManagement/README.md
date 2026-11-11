@@ -112,12 +112,13 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   an unrelated identity is a takeover.
 - **An anchored remote** (`IsAnchored`: its full name has a trust anchor, see `TrustAnchors` below) is verified from its
   anchor at each `ApplyTail` (`KeyEventChain.VerifyFromAnchor`): its first pin comes from there, a pin of another log
-  (a `SecurityCritical` error) or before the anchor is replaced by the verified head, and a pin at or after the anchor
+  (a `SecurityCritical` error) or before the anchor is replaced by the verified head (a fork at the pinned position
+  signed by the pinned key is kept all the same as a duplicity evidence), and a pin at or after the anchor
   must then be extended like any pin (a fork is a `Duplicity`, an older head a `Rollback`: refused, the pin stays).
   `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity` never apply to it (an approval doesn't either: the anchor
   is updated by whoever configures it). A refused verification is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`,
   `AnchorUnavailable`), kept in `IRemoteKeys.Refusal` only when the presented events are a valid log (each event signed
-  and linked): bytes that don't verify are only `Invalid`. A verifier that holds nothing yet accepts any event from the
+  and linked): bytes that don't verify are only `Invalid`. Events that verify from the anchor clear it. A verifier that holds nothing yet accepts any event from the
   anchor on, the anchored one included: after a key leaked, move the anchors past it.
 - **The keys of any anchored party** ([`IAnchoredKeys`](IAnchoredKeys.cs)): `ILocalKeys.FindAnchoredKeys( fullName )`
   gives the `IRemoteKeys` of an anchored remote, otherwise the entry of the anchored party in the key directory of the
@@ -140,8 +141,11 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
 - **A revoked log** ([`RevocationEntry`](RevocationEntry.cs)): `ILocalKeys.Revocations` are the identities of the logs
   revoked by the Authentication Center (its signed list, verified and set by CK.AppIdentity.AuthCenter:
   `SetRevocationsAsync`, then `RevocationsChanged`). A revoked log presented by a remote is refused whatever its events
-  (`KeyChainVerdict.Revoked`, `IRemoteKeys.Refusal`, a `SecurityCritical` error) when they are a valid log (a forged
-  event that names a revoked identity is only `Invalid`), and it can be neither trusted on first use nor approved. What
+  (`KeyChainVerdict.Revoked`, `IRemoteKeys.Refusal`, a `SecurityCritical` error) when they are the remote's log: they
+  verify from its anchor (anchored) or its pin (pinned), or are a valid log (neither). Anything else is only `Invalid`:
+  a non-inception event states its identity, so anyone can build a valid log that names a revoked one with a key pair
+  of its own. The same holds for an entry of the key directory (from its anchor or its head). A revoked log can be
+  neither trusted on first use nor approved. What
   is presented changes no pin: a pin is cleared when its own identity is revoked (`IRemoteKeys.IsRevoked`, the transport
   then cuts its connection). A party that incepts again starts another log: it is not revoked.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and

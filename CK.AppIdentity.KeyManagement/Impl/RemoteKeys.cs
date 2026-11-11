@@ -167,8 +167,31 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 
     // Whether a tail is a valid piece of a key event log on its own: every event signed by the key it reveals and linked
     // to the previous one. Only such a tail is taken for the log it names: anyone can write any identity in a forged event.
+    // Its last MaxEventTail events are enough (the bar is what a stranger meets with a key pair of its own): a refusal
+    // must not cost more signature checks than a stranger's handshake.
     bool IsValidLog( IReadOnlyList<KeyEvent> tail )
-        => KeyEventChain.Verify( _remote.FullName, tail, null ).Verdict is KeyChainVerdict.Unpinned or KeyChainVerdict.Abandoned;
+    {
+        var last = tail.Count > KeyEventChain.MaxEventTail ? tail.Skip( tail.Count - KeyEventChain.MaxEventTail ).ToList() : tail;
+        return KeyEventChain.Verify( _remote.FullName, last, null ).Verdict is KeyChainVerdict.Unpinned or KeyChainVerdict.Abandoned;
+    }
+
+    // Must be called with _trustLock held. Whether a tail is the key event log of this remote: it verifies from its anchor
+    // (anchored), from its pin (pinned), or, when there is neither, it is a valid log. A non-inception event states the
+    // identity it belongs to: anyone can build a valid log that names any identity with a key pair of its own, so for a
+    // pinned or anchored remote another log is never taken for its own.
+    bool IsOwnLog( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail )
+    {
+        if( IsAnchored )
+        {
+            return GetAnchor( logger ) is { } anchor
+                   && KeyEventChain.VerifyFromAnchor( _remote.FullName, tail, anchor ).Verdict
+                        is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned;
+        }
+        return _pinned != null
+                ? KeyEventChain.Verify( _remote.FullName, tail, _pinned ).Verdict
+                    is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned
+                : IsValidLog( tail );
+    }
 
     public int? HeldByRemoteSeq { get; set; }
 
@@ -214,6 +237,8 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             }
             else if( FollowAnchoredPin( logger, tail, anchor, head ) is { } refused )
             {
+                // The events verified from the anchor: an earlier refusal of the anchor no longer holds, this one is not sticky.
+                _refusal = null;
                 return refused;
             }
             _refusal = null;
@@ -272,6 +297,9 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             }
             else
             {
+                // The anchor is the authority, but a fork at the pinned sequence signed by the pinned key is the proof that
+                // this key leaked: it is kept.
+                if( fromPin.Verdict == KeyChainVerdict.Duplicity ) OnDuplicity( logger, fromPin.Held!, fromPin.Conflicting! );
                 logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned (was #{p})." );
                 DoPin( logger, head );
                 ReplaceHistory( logger, [] );
@@ -382,16 +410,17 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         {
             // A revoked log is refused whatever it presents (and whatever is pinned). What is presented changes nothing
             // here: the pin is cleared only when its own identity is revoked (OnRevocations does it when the revocations
-            // change), and a tail that is not a valid log is only invalid.
+            // change). The refusal is believed (sticky, an issue, a signed reply) only when the tail is the log of this
+            // remote: anything else is only invalid.
             if( tail.Count > 0 && _localKeys.IsRevoked( tail[^1].GetIdentity( _remote.FullName ).Span ) )
             {
-                if( !IsValidLog( tail ) )
+                ClearRevokedPin( logger );
+                if( !IsOwnLog( logger, tail ) )
                 {
-                    logger.Warn( $"Remote '{_remote}' presented events that are not a valid key event log (they name a revoked identity): refused." );
+                    logger.Warn( $"Remote '{_remote}' presented events that name a revoked identity but are not its key event log: refused." );
                     return new KeyChainCheck( KeyChainVerdict.Invalid );
                 }
                 logger.Error( ActivityMonitor.Tags.SecurityCritical, $"Remote '{_remote}' presented a key event log whose identity is revoked: refused." );
-                ClearRevokedPin( logger );
                 return RefuseAnchored( new KeyChainCheck( KeyChainVerdict.Revoked ) );
             }
             if( IsAnchored ) return ApplyAnchoredTail( logger, tail );
