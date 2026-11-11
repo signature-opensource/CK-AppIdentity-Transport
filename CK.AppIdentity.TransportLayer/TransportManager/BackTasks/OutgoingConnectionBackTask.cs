@@ -662,7 +662,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         }
                         // We are ready to accept the transport.
                         // Sends the initiator DNegoFinalSuccessMessage.
-                        if( await ZeroProtocol.SendFinalSuccessMessageAsync( transport, remote, sentNonce.Value, finalClockOffset ).ConfigureAwait( false ) )
+                        if( await ZeroProtocol.SendFinalSuccessMessageAsync( transport, remote, sentNonce.Value, finalClockOffset, listenerEphemeral ).ConfigureAwait( false ) )
                         {
                             // Accepts the transport.
                             killTransport = false;

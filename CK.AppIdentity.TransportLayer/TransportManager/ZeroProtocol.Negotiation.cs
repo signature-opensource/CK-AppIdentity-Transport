@@ -261,8 +261,6 @@ static partial class ZeroProtocol // Negotiation
         Span<byte> signature = stackalloc byte[lenSignature];
         r.ReadBytes( signature );
 
-        // What the sender holds of our log: what we send to it next starts there.
-        if( senderKeys != null ) senderKeys.HeldByRemoteSeq = statedSeq;
         var chain = senderKeys != null
                         ? senderKeys.ApplyTail( logger, tail )
                         : KeyEventChain.Verify( senderFullName, tail, null );
@@ -295,10 +293,20 @@ static partial class ZeroProtocol // Negotiation
         }
         // Otherwise (Invalid, Rollback, Duplicity, Abandoned, Terminated) nothing is accepted. What
         // could be applied (an abandonment, duplicity evidence) has been by ApplyTail.
-        if( check == SignatureCheck.Failed && operationalKey != null )
+        if( check == SignatureCheck.Failed )
         {
-            operationalKey.Dispose();
-            operationalKey = null;
+            if( operationalKey != null )
+            {
+                operationalKey.Dispose();
+                operationalKey = null;
+            }
+        }
+        else if( senderKeys != null )
+        {
+            // What the sender holds of our log: what we send to it next starts there. Only from a message whose signature
+            // verifies (it is public data: a self-asserted sender can't do more than make us send other events of our log,
+            // and two parties that are both far behind each other need it to catch up).
+            senderKeys.HeldByRemoteSeq = statedSeq;
         }
         block = new IdentityBlock( chain.Verdict, head, headKeyData, operationalKey, credentialNotAfter, statedSeq, statedDigest, tail );
         return check;
@@ -1059,12 +1067,29 @@ static partial class ZeroProtocol // Negotiation
         return transport.SendAsync( 0, m );
     }
 
-    public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport, TransportFeature remote, ulong nonce, TimeSpan finalClockOffset )
+    /// <summary>
+    /// The length of the FinalSuccess message: the discriminator, the nonce, the clock offset, the confirmation of the
+    /// listener's ephemeral key, and the signature (its length on one byte and up to 255 bytes).
+    /// </summary>
+    internal const int FinalSuccessMessageMaxLength = 1 + 8 + 8 + FinalSuccessConfirmationLength + 1 + 255;
+
+    const int FinalSuccessConfirmationLength = 32;
+
+    /// <summary>
+    /// Sends the initiator's FinalSuccess. It is a key confirmation: it signs, with the nonce and the clock offset, the
+    /// SHA-256 of the listener's ephemeral public key of this connection. A FinalSuccess is therefore worth nothing for
+    /// any other connection (a replayed handshake meets a fresh ephemeral key).
+    /// </summary>
+    public static async ValueTask<bool> SendFinalSuccessMessageAsync( Transport transport,
+                                                                      TransportFeature remote,
+                                                                      ulong nonce,
+                                                                      TimeSpan finalClockOffset,
+                                                                      byte[] listenerEphemeralPublicKey )
     {
-        using var m = CreateAndSignMessage( nonce, finalClockOffset, transport.GetSigningState( remote.RemoteKeys.LocalKeys ).Operational );
+        using var m = CreateAndSignMessage( nonce, finalClockOffset, listenerEphemeralPublicKey, transport.GetSigningState( remote.RemoteKeys.LocalKeys ).Operational );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, OperationalCredential credential )
+        static IOutgoingMessage CreateAndSignMessage( ulong nonce, TimeSpan finalClockOffset, byte[] listenerEphemeralPublicKey, OperationalCredential credential )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -1073,6 +1098,7 @@ static partial class ZeroProtocol // Negotiation
             w.WriteByte( DNegoFinalSuccessMessage );
             w.WriteUInt64( nonce );
             w.WriteTimeSpan( finalClockOffset );
+            w.WriteBytes( SHA256.HashData( listenerEphemeralPublicKey ) );
             ComputeSHA512HashAndAppendSignature( ref w, credential );
             return builder.CreateMessage( sequence );
         }
@@ -1083,6 +1109,7 @@ static partial class ZeroProtocol // Negotiation
                                                    ulong expectedNonce,
                                                    TransportFeature remote,
                                                    Transport transport,
+                                                   byte[] ourEphemeralPublicKey,
                                                    out TimeSpan finalClockOffset )
     {
         Throw.DebugAssert( "The initiator's identity block was verified on this connection.", transport.RemoteOperationalKey != null );
@@ -1095,6 +1122,13 @@ static partial class ZeroProtocol // Negotiation
             return false;
         }
         finalClockOffset = r.ReadTimeSpan();
+        Span<byte> confirmation = stackalloc byte[FinalSuccessConfirmationLength];
+        r.ReadBytes( confirmation );
+        if( !CryptographicOperations.FixedTimeEquals( confirmation, SHA256.HashData( ourEphemeralPublicKey ) ) )
+        {
+            logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received a FinalSuccess message from '{remote.Party}' that doesn't confirm this connection (a replay?)." );
+            return false;
+        }
         if( !ComputeSHA512HashAndVerifySignature( ref r, transport.RemoteOperationalKey ) )
         {
             logger.Error( ActivityMonitor.Tags.ToBeInvestigated, $"Received unverifiable FinalSuccess message from '{remote.Party}'." );

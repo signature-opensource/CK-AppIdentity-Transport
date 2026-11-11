@@ -373,6 +373,11 @@ sealed class InitialMessage : IIncomingRequest
     internal KeyEvent RemoteHead => _block.Head;
 
     /// <summary>
+    /// Gets the events the initiator presented, oldest first (<see cref="RemoteHead"/> is the last one).
+    /// </summary>
+    internal IReadOnlyList<KeyEvent> RemoteTail => _block.Tail;
+
+    /// <summary>
     /// Gets the initiator's operational key, when its credential and signature verified. Relevant only for incoming messages.
     /// </summary>
     internal System.Security.Cryptography.ECDsa? RemoteOperationalKey => _block.OperationalKey;

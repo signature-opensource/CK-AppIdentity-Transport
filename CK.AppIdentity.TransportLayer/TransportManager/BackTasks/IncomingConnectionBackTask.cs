@@ -143,7 +143,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         //   the ApplicationIdentityService.AllRemotes:
         //     - If we can't find him, then the issue is "IncomingUnknown"
         //     - If it has no associated TransportFeature the issue is "IncomingDisallowedTransport"
-        //     - A TransportFeature is available so we have its IRemoteKeys.MaxClockOffset:  
+        //     - A TransportFeature is available: the caller must be authenticated against what we pin of it (otherwise
+        //       anyone could overwrite its issues): an unauthenticated one is refused, with no issue and no signed reply.
+        //       Then we have its IRemoteKeys.MaxClockOffset:
         //        - We can check the clockOffset against the IRemoteKeys.MaxClockOffset: the issue can be "InvalidClockOffset".
         //        - If our Remote is also an initiator, this is "InitiatorConflict"
         //        - Otherwise, the Party is bound to another Listener: the issue is "IncomingUnsupportedTransport".
@@ -159,7 +161,11 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                   ref remote,
                                                                   foundTrustKey,
                                                                   out var existingParty );
-
+        if( issue == PeeringIssueKind.None && remote == null )
+        {
+            await ZeroProtocol.SendFinalFailureMessageAsync( incoming ).ConfigureAwait( false );
+            return false;
+        }
         if( issue != PeeringIssueKind.None )
         {
             await HandleConfigurationOrTrustIssueAsync( transportManager, incoming, initialMessage, remote, issue, existingParty ).ConfigureAwait( false );
@@ -249,10 +255,9 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         {
             // Wait for the final message, either:
             //  - A single "DNegoFinalFailureMessage" discriminator byte on failure.
-            //  - A DNegoFinalSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA512 hash (64 bytes) and
-            //    the signature (its length on one byte and up to 255 bytes).
-            const int MaxInitiatorSuccessMessageLength = 1 + 8 + 8 + 64 + 1 + 255;
-            using var finalInitiatorMessage = await incoming.ReadNextAsync( MaxInitiatorSuccessMessageLength ).ConfigureAwait( false );
+            //  - A DNegoFinalSuccessMessage discriminator byte, the nonce, the remote's updated clock offset, the SHA-256 of our
+            //    ephemeral public key (it confirms this connection) and the signature (its length on one byte and up to 255 bytes).
+            using var finalInitiatorMessage = await incoming.ReadNextAsync( ZeroProtocol.FinalSuccessMessageMaxLength ).ConfigureAwait( false );
             if( !finalInitiatorMessage.IsValid
                 || finalInitiatorMessage.Protocol != MessageProtocol.ZeroProtocol
                 || finalInitiatorMessage.Message.FirstSpan.Length == 0
@@ -265,7 +270,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             {
                 transportManager.Logger.Warn( $"Remote '{initialMessage.FullName}' at '{incoming.RemoteEndPointDescription}' replied with a failure message." );
             }
-            else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, incoming, out var finalClockOffset ) )
+            else if( ZeroProtocol.TryReadFinalSuccessMessage( transportManager.Logger, finalInitiatorMessage, initialMessage.Nonce, remote, incoming, ourEphemeral, out var finalClockOffset ) )
             {
                 // Final message is received: the current transport (if any) will be evicted.
                 var m = new GoodbyeMessage.Evicted( initialMessage.RemoteEndPointDescription, initialMessage.InstanceId );
@@ -487,13 +492,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             if( remote != null )
             {
                 // Before impacting anything we check the nonce (that checks clock offset).
-                // The nonce (when validClockOffset is true) is always added: we don't want to
-                // forget a nonce because the remote is not trusted right now: if such message
-                // was to be replayed once the legitimate remote has been accepted, we would let
-                // a bad guy validate its connection... And if DisallowEviction is false this will
-                // be endless.
+                // The nonce (when validClockOffset is true) is added when the message may be the remote's: when it is
+                // authenticated, or when nothing is pinned for the remote (an approval may make it trusted later: a
+                // replay must then be caught). A self-asserted message of a pinned remote proves nothing of it: anyone can
+                // send one, and recording it would let anyone flush the remote's cache (and write to disk). It is
+                // recorded below if it becomes trusted.
                 validClockOffset = remote.RemoteKeys.CheckClockOffset( transportManager.Logger, clockOffset );
-                if( validClockOffset && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) )
+                bool recordNonce = signatureCheck == SignatureCheck.Trusted || remote.RemoteKeys.TrustedEvent == null;
+                if( validClockOffset && recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) )
                 {
                     // This looks like a replay attack.
                     // This has already been logged.
@@ -541,6 +547,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                         && transportManager.TryPinFromGrant( remote, pinGrant, block ) )
                     {
                         foundTrustKey = true;
+                        // Trusted now: its nonce must be recorded (and must not be a replay).
+                        if( !recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) ) return null;
                     }
                     // The initiator's operational key verifies its FinalSuccess and Goodbye on this connection,
                     // and its expiry bounds how long this connection may live.
@@ -616,6 +624,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 // exist but this is more than that: it is disallowed.
                 return PeeringIssueKind.IncomingDisallowedTransport;
             }
+            // The identity block has been read without this remote's keys: what it presents is checked against them now.
+            // An issue of this remote (and a signed reply) is only for the remote itself.
+            if( !IsAuthenticatedBy( remote.RemoteKeys, initialMessage ) )
+            {
+                transportManager.Logger.Warn( $"Incoming call from '{incoming.RemoteEndPointDescription}' claiming to be the remote '{initialMessage.FullName}' " +
+                                              $"that doesn't listen here: it can't be authenticated, it is refused." );
+                remote = null;
+                exists = null;
+                return PeeringIssueKind.None;
+            }
             // The party exists: we can check the clock offset.
             if( !remote.RemoteKeys.CheckClockOffset( transportManager.Logger, initialMessage.ClockOffset ) )
             {
@@ -667,6 +685,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             return heTrustsUs ? PeeringIssueKind.None : PeeringIssueKind.RequiresRemoteApproval;
         }
         return heTrustsUs ? PeeringIssueKind.RequiresLocalApproval : PeeringIssueKind.RequiresBothApproval;
+    }
+
+    // Whether the identity block of an initial message, read without the keys of this remote (it doesn't listen here),
+    // is authenticated by them: its signature verified with a credential of its head, and its events extend our pin.
+    static bool IsAuthenticatedBy( KeyManagement.IRemoteKeys keys, InitialMessage initialMessage )
+    {
+        var pinned = keys.TrustedEvent;
+        if( pinned == null || initialMessage.RemoteOperationalKey == null ) return false;
+        var check = KeyManagement.KeyEventChain.Verify( keys.Party.FullName, initialMessage.RemoteTail, pinned );
+        return check.Verdict is KeyManagement.KeyChainVerdict.UpToDate or KeyManagement.KeyChainVerdict.Advanced or KeyManagement.KeyChainVerdict.Recovered;
     }
 
     /// <summary>

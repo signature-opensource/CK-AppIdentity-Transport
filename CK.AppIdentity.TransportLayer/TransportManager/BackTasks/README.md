@@ -41,8 +41,14 @@ it holds, and sends its events from there next time.
 The listener finds the remote among the parties of its listener by the full name, applies the tail to what it pins for
 it, verifies the credential against the key at the head of the tail and the signature with the credential's key, checks
 the certificate binding against what the transport received, then the nonce (UTC creation time, clock offset within
-`MaxClockOffset`, never seen before). When the transport already identified the peer (from its certificate), the
-signed full name must be the same party.
+`MaxClockOffset`, never seen before). The nonce is recorded when the message may be the remote's: authenticated, or
+from a remote that nothing is pinned for yet (an approval may make it trusted); a self-asserted message of a pinned remote
+is recorded only if it becomes trusted (a pin grant), so that a stranger can't flush the cache. When the transport
+already identified the peer (from its certificate), the signed full name must be the same party.
+
+A caller that names a known remote that doesn't listen here (an initiator remote, another listener) must be
+authenticated by what is pinned of that remote: otherwise it is answered by a FinalFailure, with no issue (a stranger
+must not overwrite the remote's issues nor get a signed reply).
 
 Its answer is one of these (the first byte of the payload is the discriminator):
 
@@ -70,14 +76,15 @@ on both sides as a `PeeringIssue`.
 
 On AcceptedProtocols, the initiator verifies the nonce, the protocols, the signature against what it trusts for the
 listener and the certificate binding. The MAC algorithm must be one it offered and the best one both sides can run. It
-then derives its session keys and sends **FinalSuccess** (discriminator 7): the nonce, its clock offset and a signature by
-its operational key. Anything wrong is answered by a FinalFailure.
+then derives its session keys and sends **FinalSuccess** (discriminator 7): the nonce, its clock offset, the SHA-256 of the
+listener's ephemeral public key (the key confirmation: a FinalSuccess is worth nothing for another connection) and a
+signature by its operational key. Anything wrong is answered by a FinalFailure.
 
 On any other answer, the initiator raises the matching `PeeringIssue` when there is one (and switches the remote off when
 it is switched off for good), then retries later.
 
-The listener verifies the FinalSuccess against the initiator's operational key, and the connection replaces (evicts) the
-remote's previous one, if any.
+The listener checks that the FinalSuccess confirms its ephemeral key of this connection and verifies it against the
+initiator's operational key, and the connection replaces (evicts) the remote's previous one, if any.
 
 ## The session keys
 

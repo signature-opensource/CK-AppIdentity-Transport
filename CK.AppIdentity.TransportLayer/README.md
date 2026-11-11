@@ -422,8 +422,10 @@ operator confirming such a key should compare its fingerprint out of band —
 `IPublicKeyData.GetFingerprint()` exists for that.
 
 Replays are refused: a nonce is single use per remote, and a message whose timestamp falls outside
-`IRemoteKeys.MaxClockOffset` is rejected. The nonce is checked once the signature has verified, so that unsigned noise
-cannot flush the replay cache.
+`IRemoteKeys.MaxClockOffset` is rejected. The nonce is checked once the signature has verified, and recorded only when the
+message may be the remote's (authenticated, or nothing is pinned for it yet), so that neither noise nor a stranger's
+self-asserted messages can flush the replay cache. The initiator's FinalSuccess confirms the listener's ephemeral key of
+the connection: a captured one completes no other handshake.
 
 ### What protects the frames afterwards
 

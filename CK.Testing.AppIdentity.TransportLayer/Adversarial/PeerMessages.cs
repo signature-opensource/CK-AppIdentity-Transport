@@ -249,6 +249,47 @@ public static class PeerMessages
     }
 
     /// <summary>
+    /// The initiator's FinalSuccess: the nonce, the final clock offset and the SHA-256 of the listener's ephemeral public
+    /// key of this connection (the key confirmation), signed by the operational key of <paramref name="signWith"/>.
+    /// </summary>
+    /// <param name="listenerEphemeralPublicKey">
+    /// The listener's ephemeral public key to confirm, or null to write the message without confirmation (what a
+    /// FinalSuccess was before it confirmed its connection).
+    /// </param>
+    public static byte[] FinalSuccess( ulong nonce, TimeSpan finalClockOffset, byte[]? listenerEphemeralPublicKey, PeerIdentity signWith )
+    {
+        using var seq = new MutableSequence<byte>();
+        var w = new FastByteWriter( seq );
+        w.WriteByte( DNegoFinalSuccessMessage );
+        w.WriteUInt64( nonce );
+        w.WriteTimeSpan( finalClockOffset );
+        if( listenerEphemeralPublicKey != null ) w.WriteBytes( SHA256.HashData( listenerEphemeralPublicKey ) );
+        w.Commit();
+        Span<byte> hash = stackalloc byte[64];
+        ComputeSha512( seq, hash );
+        var sig = signWith.Credential.Key.SignHash( hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
+        w.WriteByte( (byte)sig.Length );
+        w.WriteBytes( sig );
+        w.Commit();
+        return seq.GetReadOnlySequence().ToArray();
+    }
+
+    /// <summary>
+    /// Reads the listener's ephemeral public key from its AcceptedProtocols message.
+    /// </summary>
+    public static byte[] ReadListenerEphemeral( byte[] acceptedProtocols )
+    {
+        var r = new FastByteReader( new ReadOnlySequence<byte>( acceptedProtocols ) );
+        if( r.ReadByte() != DNegoAcceptedProtocolsMessage ) throw new InvalidOperationException( "Not an AcceptedProtocols message." );
+        r.ReadUInt64();
+        r.ReadTimeSpan();
+        r.ReadDateTime();
+        uint count = r.ReadSmallUInt32();
+        for( int i = 0; i < count; ++i ) r.ReadString();
+        return r.ReadBytes( r.ReadSmallUInt32() );
+    }
+
+    /// <summary>
     /// The listener refuses to be evicted by this new connection.
     /// </summary>
     public static byte[] EvictionDisallowed( ulong nonce, PeerIdentity signWith,
