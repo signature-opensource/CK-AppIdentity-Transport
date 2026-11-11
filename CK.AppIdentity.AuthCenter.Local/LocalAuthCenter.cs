@@ -37,6 +37,10 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         _settings = settings;
         _configuredRouteHosts = configuredRouteHosts;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
+        _sealNonces = new AuthCenterSealNonces( monitor,
+                                                party.LocalFileStore,
+                                                party.LocalFileStore.FolderPath.Combine( SealNoncesPath ),
+                                                party.ApplicationIdentityService.SystemClock.UtcNow );
         _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
         // The targets of the authorized hosts follow what the hosts announce.
@@ -138,10 +142,17 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 {
                     await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
                 }
-
                 catch( Exception ex )
                 {
                     m.Error( "While purging the expired sessions.", ex );
+                }
+                try
+                {
+                    _sealNonces.Compact( m, DateTime.UtcNow );
+                }
+                catch( Exception ex )
+                {
+                    m.Error( "While compacting the journal of the seal nonces.", ex );
                 }
                 finally
                 {
@@ -342,8 +353,13 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         return (publicKey!, expires);
     }
 
-    // The nonces of the seals that have been used, until the end of their lifetime.
-    readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _sealNonces = new();
+    /// <summary>
+    /// The path of the journal of the nonces of the seals that have been used, in the local store (see <see cref="CheckSealAsync"/>).
+    /// </summary>
+    public const string SealNoncesPath = "AuthCenter/SealNonces.journal";
+
+    // The nonces of the seals that have been used, until the end of their lifetime (journaled: a restart forgets nothing).
+    readonly AuthCenterSealNonces _sealNonces;
 
     // Checks the seal of a routed command: made by the session party, for this destination, with this proof, used once.
     async ValueTask<bool> CheckSealAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal seal, string destination )
@@ -375,7 +391,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                     verdict = keys.Check( monitor, RoutedCommandSeal.Purpose, data, signature );
                 }
                 valid = verdict == SignatureVerdict.Valid;
-                if( valid && !TryUseNonce( nonce!, created + RoutedCommandSeal.Lifetime + RoutedCommandSeal.ClockSkew, utcNow ) )
+                if( valid && !_sealNonces.TryUse( monitor, nonce!, created + RoutedCommandSeal.Lifetime + RoutedCommandSeal.ClockSkew, utcNow ) )
                 {
                     monitor.Warn( "Routed command seal refused: it has already been used." );
                     valid = false;
@@ -389,16 +405,5 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         return valid;
     }
 
-    bool TryUseNonce( string nonce, DateTime expires, DateTime utcNow )
-    {
-        if( _sealNonces.Count > 1024 )
-        {
-            foreach( var (n, e) in _sealNonces )
-            {
-                if( e <= utcNow ) _sealNonces.TryRemove( n, out _ );
-            }
-        }
-        return _sealNonces.TryAdd( nonce, expires );
-    }
 
 }
