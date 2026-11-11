@@ -267,7 +267,8 @@ public interface ILocalKeys : IPartyKeys
     /// <summary>
     /// Gets the revoked identities: the entries of the last verified revocation list of the Authentication Center (set by
     /// <see cref="SetRevocationsAsync"/>). A remote whose log identity is revoked is refused at the peering (its pin is
-    /// cleared), whatever it presents.
+    /// cleared), whatever it presents; so are the signatures and the key events of an anchored party of the key directory
+    /// (see <see cref="FindAnchoredKeys"/>).
     /// </summary>
     IReadOnlyList<RevocationEntry> Revocations { get; }
 
@@ -288,7 +289,7 @@ public interface ILocalKeys : IPartyKeys
 
     /// <summary>
     /// Sets the revoked identities: the entries of a verified revocation list (the caller verified it). The pins of the
-    /// revoked remotes are cleared, then <see cref="RevocationsChanged"/> is raised (the transport cuts their connections).
+    /// revoked remotes are cleared (and what the key directory holds of a revoked party), then <see cref="RevocationsChanged"/> is raised (the transport cuts their connections).
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="entries">The entries.</param>

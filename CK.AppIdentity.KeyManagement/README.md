@@ -110,13 +110,19 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   presented. This is a trust-on-first-use decision, not a proof. There is deliberately no "always": over an existing pin,
   an unrelated identity is a takeover.
 - **An anchored remote** (`IsAnchored`: its full name has a trust anchor, see `TrustAnchors` below) is verified from its
-  anchor at each `ApplyTail` (`KeyEventChain.VerifyFromAnchor`): its first pin comes from there, a pin that contradicts
-  the anchor is replaced (a `SecurityCritical` error), and `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity`
-  never apply to it (an approval doesn't either: the anchor is updated by whoever configures it). A refused verification
-  is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`, `AnchorUnavailable`).
+  anchor at each `ApplyTail` (`KeyEventChain.VerifyFromAnchor`): its first pin comes from there, a pin of another log
+  (a `SecurityCritical` error) or before the anchor is replaced by the verified head, and a pin at or after the anchor
+  must then be extended like any pin (a fork is a `Duplicity`, an older head a `Rollback`: refused, the pin stays).
+  `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity` never apply to it (an approval doesn't either: the anchor
+  is updated by whoever configures it). A refused verification is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`,
+  `AnchorUnavailable`), kept in `IRemoteKeys.Refusal` only when the presented events are a valid log (each event signed
+  and linked): bytes that don't verify are only `Invalid`. A verifier that holds nothing yet accepts any event from the
+  anchor on, the anchored one included: after a key leaked, move the anchors past it.
 - **The keys of any anchored party** ([`IAnchoredKeys`](IAnchoredKeys.cs)): `ILocalKeys.FindAnchoredKeys( fullName )`
   gives the `IRemoteKeys` of an anchored remote, otherwise the entry of the anchored party in the key directory of the
-  local party: a party with no channel to it can still verify what it signs. The entry is kept in memory only. Its
+  local party: a party with no channel to it can still verify what it signs. The entry is kept in memory only (after a
+  restart, it is verified from the anchor again), and forgotten when its identity is revoked (a revoked log, its events
+  and its signatures are refused). Its
   events come from any path (CK.AppIdentity.Cris fetches them along a route hosted by the party) and are verified, never
   believed: from the anchor the first time (`GetStatedCheckpoint` is the anchor), then from the head held (it becomes
   the stated checkpoint). A mismatch with the anchor, or two validly signed events at the same position, is a
@@ -132,9 +138,11 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   pinned. Like an operator's approval, it replaces the pin; never for an anchored remote nor a revoked log.
 - **A revoked log** ([`RevocationEntry`](RevocationEntry.cs)): `ILocalKeys.Revocations` are the identities of the logs
   revoked by the Authentication Center (its signed list, verified and set by CK.AppIdentity.AuthCenter:
-  `SetRevocationsAsync`, then `RevocationsChanged`). A remote whose log identity is revoked is refused whatever it
-  presents (`KeyChainVerdict.Revoked`, `IRemoteKeys.Refusal`, a `SecurityCritical` error), its pin is cleared and it can
-  be neither trusted on first use nor approved. A party that incepts again starts another log: it is not revoked.
+  `SetRevocationsAsync`, then `RevocationsChanged`). A revoked log presented by a remote is refused whatever its events
+  (`KeyChainVerdict.Revoked`, `IRemoteKeys.Refusal`, a `SecurityCritical` error) when they are a valid log (a forged
+  event that names a revoked identity is only `Invalid`), and it can be neither trusted on first use nor approved. What
+  is presented changes no pin: a pin is cleared when its own identity is revoked (`IRemoteKeys.IsRevoked`, the transport
+  then cuts its connection). A party that incepts again starts another log: it is not revoked.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
   has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
   every accepted nonce is first journaled to disk (`Nonce.journal`), so a crash forgets nothing. It is bounded by time and,

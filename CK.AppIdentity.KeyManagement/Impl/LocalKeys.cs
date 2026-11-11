@@ -149,6 +149,7 @@ sealed partial class LocalKeys : ILocalKeys
         {
             if( r.GetFeature<IRemoteKeys>() is RemoteKeys keys ) keys.OnRevocations( monitor );
         }
+        foreach( var d in _directory.Values ) d.OnRevocations( monitor );
         await _revocationsChanged.SafeRaiseAsync( monitor, _revocations, cancel ).ConfigureAwait( false );
     }
 

@@ -46,6 +46,9 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
     // The anchor read from the running status of the remote in the dev store ("#Dev"), once read.
     KeyCheckpoint? _devAnchor;
     KeyChainVerdict? _refusal;
+    // The pin has been cleared because its identity is revoked: nothing replaced it yet. Set from the local revocations
+    // only, never from what a peer presents.
+    bool _pinRevoked;
 
     // The replay cache belongs here, with the remote it protects: one cache, one lock, one file per
     // remote. Holding it on LocalKeys behind an index keyed by remote name would be a hand-rolled
@@ -131,7 +134,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         get
         {
             var p = _pinned;
-            return _refusal == KeyChainVerdict.Revoked || (p != null && _localKeys.IsRevoked( p.GetIdentity( _remote.FullName ).Span ));
+            return _pinRevoked || (p != null && _localKeys.IsRevoked( p.GetIdentity( _remote.FullName ).Span ));
         }
     }
 
@@ -140,15 +143,26 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
     {
         lock( _trustLock )
         {
-            if( _pinned != null && _localKeys.IsRevoked( _pinned.GetIdentity( _remote.FullName ).Span ) )
-            {
-                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity of remote '{_remote}' is revoked: its pin #{_pinned.Seq} is cleared." );
-                DoPin( logger, null );
-                ReplaceHistory( logger, [] );
-                _refusal = KeyChainVerdict.Revoked;
-            }
+            if( ClearRevokedPin( logger ) ) _refusal = KeyChainVerdict.Revoked;
         }
     }
+
+    // Must be called with _trustLock held. Clears the pin when its own identity is revoked: a local fact, never what a
+    // peer presented.
+    bool ClearRevokedPin( IActivityLineEmitter logger )
+    {
+        if( _pinned == null || !_localKeys.IsRevoked( _pinned.GetIdentity( _remote.FullName ).Span ) ) return false;
+        logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity of remote '{_remote}' is revoked: its pin #{_pinned.Seq} is cleared." );
+        DoPin( logger, null );
+        ReplaceHistory( logger, [] );
+        _pinRevoked = true;
+        return true;
+    }
+
+    // Whether a tail is a valid piece of a key event log on its own: every event signed by the key it reveals and linked
+    // to the previous one. Only such a tail is taken for the log it names: anyone can write any identity in a forged event.
+    bool IsValidLog( IReadOnlyList<KeyEvent> tail )
+        => KeyEventChain.Verify( _remote.FullName, tail, null ).Verdict is KeyChainVerdict.Unpinned or KeyChainVerdict.Abandoned;
 
     public int? HeldByRemoteSeq { get; set; }
 
@@ -189,46 +203,30 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             return RefuseAnchored( new KeyChainCheck( KeyChainVerdict.AnchorUnavailable ) );
         }
         var check = KeyEventChain.VerifyFromAnchor( _remote.FullName, tail, anchor );
+        if( check.Verdict is KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned )
+        {
+            var head = check.Head!;
+            if( _pinned == null )
+            {
+                logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned." );
+                DoPin( logger, head );
+            }
+            else if( FollowAnchoredPin( logger, tail, anchor, head ) is { } refused )
+            {
+                return refused;
+            }
+            _refusal = null;
+            return check;
+        }
+        // A refusal is believed (it is sticky and raises an issue) only when the presented events are a valid log that
+        // contradicts the anchor: anyone can send bytes that don't verify.
+        if( !IsValidLog( tail ) )
+        {
+            logger.Warn( $"Remote '{_remote}' presented events that are not a valid key event log: refused." );
+            return new KeyChainCheck( KeyChainVerdict.Invalid );
+        }
         switch( check.Verdict )
         {
-            case KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned:
-                var head = check.Head!;
-                if( _pinned == null )
-                {
-                    logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned." );
-                    DoPin( logger, head );
-                }
-                else
-                {
-                    // The pin must be on the anchored chain: the presented event at its sequence must be the pinned one
-                    // (a pin before the presented events can't be compared: it is replaced by the verified head).
-                    int a = tail[0].Seq;
-                    int p = _pinned.Seq;
-                    bool comparable = p >= a && p <= head.Seq;
-                    bool onChain = comparable
-                                   && tail[p - a].GetDigest( _remote.FullName ).Span.SequenceEqual( _pinned.GetDigest( _remote.FullName ).Span );
-                    if( comparable && !onChain )
-                    {
-                        logger.Error( ActivityMonitor.Tags.SecurityCritical,
-                                      $"The pinned identity #{p} of '{_remote}' contradicts its trust anchor {anchor}: replaced by the verified #{head.Seq}." );
-                        DoPin( logger, head );
-                        ReplaceHistory( logger, [] );
-                    }
-                    else if( !comparable )
-                    {
-                        // The pin is before the anchored events (or after the head): the verified head replaces it.
-                        logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned (was #{p})." );
-                        DoPin( logger, head );
-                        ReplaceHistory( logger, [] );
-                    }
-                    else if( head.Seq > p )
-                    {
-                        logger.Info( $"Remote '{_remote}' rotated its identity key: #{p} -> #{head.Seq} (verified from its trust anchor)." );
-                        MoveOn( logger, tail, KeyEventChain.Verify( _remote.FullName, TailFrom( tail, p ), _pinned ) );
-                    }
-                }
-                _refusal = null;
-                return check;
             case KeyChainVerdict.AnchorMismatch:
                 logger.Error( ActivityMonitor.Tags.SecurityCritical,
                               $"Remote '{_remote}' presented a key event log that doesn't match its trust anchor {anchor}: refused (an impostor, a party that incepted again, or a stale anchor)." );
@@ -239,6 +237,65 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             default:
                 logger.Warn( $"Remote '{_remote}' presented events that can't be verified from its trust anchor {anchor} ({check.Verdict}): refused." );
                 return RefuseAnchored( check );
+        }
+    }
+
+    // Must be called with _trustLock held, once the presented events verified from the anchor up to their head. The pin
+    // follows the verified head as it follows any remote: a pin of another log (the remote incepted again, its anchor was
+    // updated) or before the anchor (the anchor, configured after it, is the authority) is replaced, but a pin at or after
+    // the anchor must be extended: a fork or an older head is refused, even when it verifies from the anchor (a key
+    // committed after the anchor, current or retired, must not be enough to move the pin). Returns null when the pin
+    // followed, the refusal otherwise (not sticky, like for a remote that is not anchored).
+    KeyChainCheck? FollowAnchoredPin( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail, KeyCheckpoint anchor, KeyEvent head )
+    {
+        var pinned = _pinned!;
+        int p = pinned.Seq;
+        var fullName = _remote.FullName;
+        if( !pinned.GetIdentity( fullName ).Span.SequenceEqual( head.GetIdentity( fullName ).Span ) )
+        {
+            logger.Error( ActivityMonitor.Tags.SecurityCritical,
+                          $"The pinned identity #{p} of '{_remote}' contradicts its trust anchor {anchor} (another log): replaced by the verified #{head.Seq}." );
+            DoPin( logger, head );
+            ReplaceHistory( logger, [] );
+            return null;
+        }
+        if( p < anchor.Seq )
+        {
+            // The events from the pin to the anchor are not verified by the anchor: the history is kept only when they
+            // link to the pin.
+            var fromPin = p >= tail[0].Seq ? KeyEventChain.Verify( fullName, TailFrom( tail, p ), pinned ) : default;
+            if( fromPin.Verdict is KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned )
+            {
+                logger.Info( $"Remote '{_remote}' rotated its identity key: #{p} -> #{head.Seq} (verified from its trust anchor)." );
+                MoveOn( logger, tail, fromPin );
+            }
+            else
+            {
+                logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned (was #{p})." );
+                DoPin( logger, head );
+                ReplaceHistory( logger, [] );
+            }
+            return null;
+        }
+        var check = KeyEventChain.Verify( fullName, tail, pinned );
+        switch( check.Verdict )
+        {
+            case KeyChainVerdict.UpToDate:
+                return null;
+            case KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned:
+                logger.Info( $"Remote '{_remote}' moved its identity: #{p} -> #{check.Head!.Seq} ({check.Verdict}, verified from its trust anchor)." );
+                MoveOn( logger, tail, check );
+                return null;
+            case KeyChainVerdict.Duplicity:
+                OnDuplicity( logger, check.Held!, check.Conflicting! );
+                return check;
+            case KeyChainVerdict.Rollback:
+                logger.Warn( $"Remote '{_remote}' presented an identity older than the pinned #{p}: refused." );
+                return check;
+            default:
+                logger.Warn( ActivityMonitor.Tags.SecurityCritical,
+                             $"Remote '{_remote}' presented events that verify from its trust anchor {anchor} but don't extend its pinned #{p} ({check.Verdict}): refused." );
+                return check;
         }
     }
 
@@ -322,15 +379,18 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         // not each see the old pin and each write their own file (M15).
         lock( _trustLock )
         {
-            // A revoked log is refused whatever it presents (and whatever is pinned).
+            // A revoked log is refused whatever it presents (and whatever is pinned). What is presented changes nothing
+            // here: the pin is cleared only when its own identity is revoked (OnRevocations does it when the revocations
+            // change), and a tail that is not a valid log is only invalid.
             if( tail.Count > 0 && _localKeys.IsRevoked( tail[^1].GetIdentity( _remote.FullName ).Span ) )
             {
-                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"Remote '{_remote}' presented a key event log whose identity is revoked: refused." );
-                if( _pinned != null )
+                if( !IsValidLog( tail ) )
                 {
-                    DoPin( logger, null );
-                    ReplaceHistory( logger, [] );
+                    logger.Warn( $"Remote '{_remote}' presented events that are not a valid key event log (they name a revoked identity): refused." );
+                    return new KeyChainCheck( KeyChainVerdict.Invalid );
                 }
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"Remote '{_remote}' presented a key event log whose identity is revoked: refused." );
+                ClearRevokedPin( logger );
                 return RefuseAnchored( new KeyChainCheck( KeyChainVerdict.Revoked ) );
             }
             if( IsAnchored ) return ApplyAnchoredTail( logger, tail );
@@ -495,6 +555,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         }
         _pinned = e;
         _identity = e != null ? CreateKey( e ) : null;
+        if( e != null ) _pinRevoked = false;
         return true;
     }
 

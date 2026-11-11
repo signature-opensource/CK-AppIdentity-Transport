@@ -47,7 +47,13 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
 
     public SignatureVerdict Check( IActivityLineEmitter logger, string purpose, ReadOnlySpan<byte> data, in ApplicationSignature signature )
     {
-        return ApplicationSignature.Check( logger, _fullName, _chain, purpose, data, signature,
+        var chain = _chain;
+        if( chain.Length > 0 && _localKeys.IsRevoked( chain[^1].GetIdentity( _fullName ).Span ) )
+        {
+            logger.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity of '{_fullName}' is revoked: its signature is refused." );
+            return SignatureVerdict.Refused;
+        }
+        return ApplicationSignature.Check( logger, _fullName, chain, purpose, data, signature,
                                            _localKeys.Party.ApplicationIdentityService.SystemClock.UtcNow,
                                            IRemoteKeys.DefaultMaxClockOffset,
                                            _localKeys.KeyRotationDays );
@@ -65,6 +71,12 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
                 return new KeyChainCheck( KeyChainVerdict.AnchorUnavailable );
             }
             if( events.Count == 0 ) return new KeyChainCheck( KeyChainVerdict.Invalid );
+            // A revoked log is refused whatever it presents (what is held of it is forgotten by OnRevocations).
+            if( _localKeys.IsRevoked( events[^1].GetIdentity( _fullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The key events received for '{_fullName}' are of a revoked identity: refused." );
+                return new KeyChainCheck( KeyChainVerdict.Revoked );
+            }
             var held = _chain.Length > 0 ? _chain[^1] : null;
             var check = held == null
                             ? KeyEventChain.VerifyFromAnchor( _fullName, events, anchor )
@@ -102,6 +114,20 @@ sealed class AnchoredPartyKeys : IAnchoredKeys
                 default:
                     logger.Warn( $"The key events received for '{_fullName}' can't be verified ({check.Verdict}): refused." );
                     return check;
+            }
+        }
+    }
+
+    // Called by the local keys when the revocations change: what is held of a revoked identity is forgotten (its events
+    // are verified from the anchor again, and a revoked log is refused).
+    internal void OnRevocations( IActivityLineEmitter logger )
+    {
+        lock( _lock )
+        {
+            if( _chain.Length > 0 && _localKeys.IsRevoked( _chain[^1].GetIdentity( _fullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity of '{_fullName}' is revoked: its keys are forgotten." );
+                _chain = [];
             }
         }
     }

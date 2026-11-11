@@ -62,14 +62,15 @@ public interface IRemoteKeys : IPartyKeys
     /// <summary>
     /// Gets the verdict of the last verification of this remote when it was refused regardless of what is pinned: an
     /// anchored remote (<see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/>,
-    /// <see cref="KeyChainVerdict.AnchorUnavailable"/>...) or a revoked log (<see cref="KeyChainVerdict.Revoked"/>). Null
-    /// when the last one succeeded.
+    /// <see cref="KeyChainVerdict.AnchorUnavailable"/>...) or a revoked log (<see cref="KeyChainVerdict.Revoked"/>), set only
+    /// when the presented events are a valid log (bytes that don't verify are only <see cref="KeyChainVerdict.Invalid"/>).
+    /// Null when the last one succeeded.
     /// </summary>
     KeyChainVerdict? Refusal { get; }
 
     /// <summary>
-    /// Gets whether the log of this remote is revoked: the identity of the last events it presented, or of its pin (see
-    /// <see cref="ILocalKeys.Revocations"/>).
+    /// Gets whether the log of this remote is revoked: the identity of its pin is revoked (see <see cref="ILocalKeys.Revocations"/>),
+    /// or the pin has been cleared because it was and nothing has been pinned since. What a peer presents never sets it.
     /// </summary>
     bool IsRevoked { get; }
 
