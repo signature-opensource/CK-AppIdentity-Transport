@@ -9,7 +9,8 @@ namespace CK.AppIdentity.KeyManagement;
 /// The encryption for a party, with the encryption key it publishes in its description (see <see cref="PartyEncryptionKey"/>,
 /// <see cref="ILocalKeys.GetEncryptionKey"/>).
 /// <para>
-/// HPKE-like: an ephemeral ECDH P-256 key agreement with the recipient's encryption key, HKDF-SHA256, then AES-256-GCM. The
+/// HPKE-like: an ephemeral ECDH P-256 key agreement with the recipient's encryption key, HKDF-SHA256 (salted with the
+/// recipient's key identifier, the ephemeral public key in its info, like HPKE binds enc), then AES-256-GCM. The
 /// associated data binds the ciphertext to its context (what the caller gives) and to its creation time: it cannot be
 /// moved to another context, and an old one is refused. The shared secret also gives a <b>response key</b>: the recipient
 /// encrypts its answer with it (<see cref="EncryptResponse"/>), only the sender can read it.
@@ -100,7 +101,7 @@ public static class PartyEncryption
         using var ephemeral = ECDiffieHellman.Create( ECCurve.NamedCurves.nistP256 );
         var ephemeralSpki = ephemeral.ExportSubjectPublicKeyInfo();
         var keyId = GetKeyId( recipientSpki );
-        var key = DeriveKeys( ephemeral, recipient.PublicKey, keyId, out responseKey );
+        var key = DeriveKeys( ephemeral, recipient.PublicKey, keyId, ephemeralSpki, out responseKey );
         try
         {
             var all = new byte[KeyIdLength + 2 + ephemeralSpki.Length + 8 + _nonceLength + _tagLength + plain.Length];
@@ -178,11 +179,18 @@ public static class PartyEncryption
         try
         {
             using var ephemeral = ECDiffieHellman.Create();
-            ephemeral.ImportSubjectPublicKeyInfo( ephemeralSpki, out _ );
-            key = DeriveKeys( recipient, ephemeral.PublicKey, keyId, out responseKey );
+            ephemeral.ImportSubjectPublicKeyInfo( ephemeralSpki, out int read );
+            // Unauthenticated input: any curve imports, and the key agreement with another curve throws (an ArgumentException
+            // for another size, caught below like any other).
+            if( read != ephemeralSpki.Length || ephemeral.KeySize != 256 )
+            {
+                return Malformed( logger );
+            }
+            key = DeriveKeys( recipient, ephemeral.PublicKey, keyId, ephemeralSpki, out responseKey );
         }
-        catch( CryptographicException )
+        catch( Exception ex ) when( ex is CryptographicException or ArgumentException )
         {
+            responseKey = null;
             return Malformed( logger );
         }
         var result = new byte[cipher.Length];
@@ -252,13 +260,15 @@ public static class PartyEncryption
         }
     }
 
-    static byte[] DeriveKeys( ECDiffieHellman own, ECDiffieHellmanPublicKey other, byte[] keyId, out byte[] responseKey )
+    // The ephemeral public key is in the info: a ciphertext whose ephemeral point is changed (-E gives the same raw secret)
+    // derives other keys and doesn't decrypt.
+    static byte[] DeriveKeys( ECDiffieHellman own, ECDiffieHellmanPublicKey other, byte[] keyId, ReadOnlySpan<byte> ephemeralSpki, out byte[] responseKey )
     {
         var shared = own.DeriveRawSecretAgreement( other );
         try
         {
-            responseKey = HKDF.DeriveKey( HashAlgorithmName.SHA256, shared, 32, salt: keyId, info: _responseInfo );
-            return HKDF.DeriveKey( HashAlgorithmName.SHA256, shared, 32, salt: keyId, info: _encryptionInfo );
+            responseKey = HKDF.DeriveKey( HashAlgorithmName.SHA256, shared, 32, salt: keyId, info: [.. _responseInfo, .. ephemeralSpki] );
+            return HKDF.DeriveKey( HashAlgorithmName.SHA256, shared, 32, salt: keyId, info: [.. _encryptionInfo, .. ephemeralSpki] );
         }
         finally
         {

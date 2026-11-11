@@ -182,7 +182,9 @@ Each local party has encryption keys (ECDH P-256): the other parties encrypt for
   decrypts for `KeyOverlap` more. `ILocalKeys.GetEncryptionKey` gives the current one, `ILocalKeys.FindEncryptionKey` a
   private key by its identifier.
 - **Persisted** in the `LocalFileStore` of the party ("KeyManagement/EncryptionKeys"), protected by its data protector.
-- **HPKE-like:** an ephemeral key agreement, HKDF-SHA256, AES-256-GCM. The associated data binds a ciphertext to its
+- **HPKE-like:** an ephemeral key agreement, HKDF-SHA256 (the ephemeral public key is in its info: a ciphertext can't be
+  re-encoded), AES-256-GCM. A malformed ciphertext (an ephemeral key of another curve...) is refused, never thrown. The
+  associated data binds a ciphertext to its
   context and its creation time (`TryDecrypt` refuses one out of its freshness window). The shared secret also gives a
   response key: the recipient encrypts its answer with it (`EncryptResponse`), only the sender reads it
   (`TryDecryptResponse`).
