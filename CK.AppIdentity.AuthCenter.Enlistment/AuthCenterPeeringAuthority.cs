@@ -173,7 +173,7 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
                 var command = scope.ServiceProvider.GetRequiredService<PocoDirectory>().Create<IGetEnlistmentUrlQCommand>();
                 var sending = center.AuthCenter != null
                                 ? sender.SendAlongPathAsync( monitor, scope.ServiceProvider, local, command, [local.FullName.Path, center.AuthCenterFullName] )
-                                : sender.SendAsync( monitor, scope.ServiceProvider, local, command, AuthCenterFeature.RouteName );
+                                : sender.SendAsync( monitor, scope.ServiceProvider, local, command, AuthCenterFeature.RouteName, center.AuthCenterFullName );
                 result = await sending.WaitAsync( Timeout ).ConfigureAwait( false );
             }
             catch( Exception ex )

@@ -187,8 +187,8 @@ public sealed partial class CrisChannelFeature
 
     /// <summary>
     /// Gets the next hop of a routed command on a local party (the routed command's <see cref="IPartyRoutedCommand.Via"/>
-    /// doesn't contain it yet): its route of the <see cref="IPartyRoutedCommand.RouteName"/>, or the party after it in the
-    /// <see cref="IPartyRoutedCommand.Path"/>.
+    /// doesn't contain it yet): its route of the <see cref="IPartyRoutedCommand.RouteName"/>, that must be hosted by the
+    /// <see cref="IPartyRoutedCommand.Destination"/>, or the party after it in the <see cref="IPartyRoutedCommand.Path"/>.
     /// </summary>
     /// <param name="local">The local party.</param>
     /// <param name="routed">The routed command.</param>
@@ -199,9 +199,10 @@ public sealed partial class CrisChannelFeature
     {
         next = null;
         error = null;
-        if( (routed.RouteName == null) == (routed.Path.Count == 0) )
+        if( (routed.RouteName == null) == (routed.Path.Count == 0)
+            || (routed.RouteName == null) != (routed.Destination == null) )
         {
-            error = "it needs a RouteName or a Path (not both).";
+            error = "it needs a RouteName and a Destination, or a Path.";
             return false;
         }
         if( routed.RouteName != null )
@@ -209,6 +210,12 @@ public sealed partial class CrisChannelFeature
             if( !local.Description.Routes.TryGetValue( routed.RouteName, out var route ) )
             {
                 error = $"'{local.FullName}' has no route '{routed.RouteName}'.";
+                return false;
+            }
+            // Any party of the System can announce a route: it is followed only to the expected party.
+            if( route.Host != routed.Destination )
+            {
+                error = $"the route '{routed.RouteName}' of '{local.FullName}' leads to '{route.Host}' (through '{route.NextHop ?? route.Host}'), not to '{routed.Destination}'.";
                 return false;
             }
             next = route.NextHop;

@@ -114,9 +114,12 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   `IPartySealedResult` (the result and its validation messages, sealed), the origin unseals it; the events of such a
   command are not relayed back. An error made on the way (by a hop, before the execution) is not sealed; any other
   result that the origin expects sealed and receives in clear is refused.
-- **The destination** is the host of a route (`SendAsync( ..., routeName )`: each hop takes its next hop from its own
-  `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path (`SendAlongPathAsync`: for an
-  answer, the way back to the party a request came from).
+- **The destination** is a named party reached along a route (`SendAsync( ..., routeName, destination )`: each hop takes
+  its next hop from its own `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path
+  (`SendAlongPathAsync`: for an answer, the way back to the party a request came from). A route is never followed to
+  whoever hosts it: the origin and each hop refuse the command (fail closed) when their route of that name is not hosted
+  by `IPartyRoutedCommand.Destination`, and the seal is made for the destination, never for the host of a route. See
+  [Route hijacking](docs/RouteHijacking.md): any party of the System can announce a route.
 - **Each hop** is a party command (`ICommandTargetParty`): its target is the next hop, so the usual reception checks
   apply (it is `[Internal]`: inside the System only). The channel handles it, never a command handler: it checks the
   chain (the last of `Via` is the remote that sent it, no loop, at most `PartyRoute.MaxLength` parties), adds the local

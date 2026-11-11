@@ -67,15 +67,10 @@ public partial class TransportFeatureDriver
                                    .ToList();
         var names = new SortedSet<string>( hosted.Keys, StringComparer.Ordinal );
         foreach( var r in remotes ) names.UnionWith( r.Description.Routes.Keys );
+        var keys = party.GetFeature<KeyManagement.ILocalKeys>();
         foreach( var name in names )
         {
-            if( hosted.TryGetValue( name, out var target ) )
-            {
-                builder.SetRoute( name, PartyRoute.Hosted( target, local ) );
-                continue;
-            }
             var accepted = new List<PartyRoute>();
-            var keys = party.GetFeature<KeyManagement.ILocalKeys>();
             foreach( var r in remotes )
             {
                 if( r.Description.Routes.TryGetValue( name, out var route ) )
@@ -89,9 +84,35 @@ public partial class TransportFeatureDriver
                     else ActivityMonitor.StaticLogger.Trace( $"Route '{name}' of '{r.FullName}' ignored by '{local}': {reason}." );
                 }
             }
-            builder.SetRoute( name, PartyRoute.SelectBest( accepted )?.Extend( local ) );
+            bool isHosted = hosted.TryGetValue( name, out var target );
+            CheckRouteHosts( local, name, isHosted, accepted );
+            builder.SetRoute( name, isHosted ? PartyRoute.Hosted( target!, local ) : PartyRoute.SelectBest( accepted )?.Extend( local ) );
         }
         CollectAlongRoutes( local, builder, remotes );
+    }
+
+    // The last conflict reported for a route name of a local party: a conflict is reported when it appears or changes.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<(string Local, string Name), string> _routeConflicts = new();
+
+    // A route name has one host: two hosts (announced by the remotes, or one of them and the local party) mean that a
+    // party announces a route it doesn't host. The routed commands are safe (they name their destination, and every hop
+    // checks it), but the conflict is reported: it is not silent.
+    void CheckRouteHosts( string local, string name, bool isHosted, List<PartyRoute> accepted )
+    {
+        var hosts = accepted.Select( r => r.Host );
+        if( isHosted ) hosts = hosts.Append( local );
+        var distinct = hosts.Distinct( StringComparer.Ordinal ).Order( StringComparer.Ordinal ).ToList();
+        if( distinct.Count <= 1 )
+        {
+            _routeConflicts.TryRemove( (local, name), out _ );
+            return;
+        }
+        var announcers = string.Join( ", ", accepted.Select( r => $"'{r.Announcer}' (to '{r.Host}')" ) );
+        var conflict = $"{string.Join( ", ", distinct.Select( h => $"'{h}'" ) )} by {announcers}";
+        if( _routeConflicts.TryGetValue( (local, name), out var last ) && last == conflict ) return;
+        _routeConflicts[(local, name)] = conflict;
+        ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical,
+                                           $"The route '{name}' has more than one host for '{local}'{(isHosted ? " (that hosts it)" : "")}: {conflict}. A party announces a route it doesn't host." );
     }
 
     /// <summary>

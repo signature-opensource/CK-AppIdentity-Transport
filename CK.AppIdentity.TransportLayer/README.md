@@ -224,6 +224,10 @@ CK.AppIdentity), in the second phase of its description
   ones) extended with the local party. A route counts only from a connected remote: when a remote disconnects, its
   routes are withdrawn. The routes are computed again when a remote connects or disconnects and when a remote
   announces another description (`ILocalParty.RemoteDescriptionChanged`).
+- **A route name has one host.** A route is announced, not proven: any party of the System can announce that it hosts
+  a route, or a path shorter than the real one. When the routes of a name lead to more than one host (among the remotes,
+  or a remote and the local party that hosts it), a `SecurityCritical` warning names the hosts and the announcers, once
+  per change of the conflict. The best route is still the shortest one: what uses a route must check where it leads.
 - **The "Enlistment" route is the approval page of the System** (`EnlistmentRouteName`): a local party hosts it when
   one of its client applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its target is
   the URL of that client application followed by `/app-identity/enlist` (`EnlistmentPageSuffix`).

@@ -22,8 +22,8 @@ namespace CK.AppIdentity.AuthCenter;
 ///   (encrypt, then sign). The envelope carries the seal, not the proof: the hops see neither the command nor the proof.
 ///   </item>
 ///   <item>
-///   When the key of the destination can't be known, the command is signed only, in clear, with the proof in the
-///   envelope (a warning).
+///   When the key of the destination can't be known, the command is not sent (a <see cref="ActivityMonitor.Tags.SecurityCritical"/>
+///   warning): a command that carries a proof never travels in clear.
 ///   </item>
 ///   <item>
 ///   At the destination, an encrypted command is decrypted with the encryption keys of the local party: the proof goes
@@ -66,9 +66,10 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
                     : null;
         if( key == null )
         {
-            monitor.Warn( $"No verified encryption key for '{destination}': the command routed to it is signed only, in clear." );
-            (proof.RoutedSeal, proof.RoutedSignature) = RoutedCommandSeal.Create( keys, destination, token, routed.SealedCommand, utcNow );
-            return (true, null);
+            // Never in clear: a withheld key (a hop can withhold the statement of the Authentication Center) must not
+            // expose the command and the user's token to the hops.
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"No verified encryption key for '{destination}': the command that carries a user's proof is not sent." );
+            return (false, null);
         }
         var header = RoutedCommandSeal.CreateHeader( destination, token, utcNow, encrypted: true );
         var plain = Pack( token, proof.BindingSecretHash, routed.SealedCommand );

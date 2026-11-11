@@ -39,18 +39,22 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
     }
 
     /// <summary>
-    /// Sends a command to the host of a route of the <paramref name="origin"/> (see <see cref="PartyDescription.Routes"/>).
+    /// Sends a command to a party along a route of the <paramref name="origin"/> (see <see cref="PartyDescription.Routes"/>)
+    /// that this party hosts. Any party of the System can announce a route: when the route of the origin or of a hop leads
+    /// to another party, the command is refused, never delivered to that party.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the sending scope (for the envelope contributors).</param>
     /// <param name="origin">The originating local party.</param>
-    /// <param name="command">The command to execute on the host of the route.</param>
+    /// <param name="command">The command to execute on the destination.</param>
     /// <param name="routeName">The route name.</param>
+    /// <param name="destination">The full name of the party that must host the route: the destination.</param>
     /// <returns>The result of the command, or a <see cref="ICrisResultError"/>.</returns>
-    public Task<object?> SendAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, string routeName )
+    public Task<object?> SendAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, string routeName, string destination )
     {
         Throw.CheckNotNullOrWhiteSpaceArgument( routeName );
-        return DoSendAsync( monitor, services, origin, command, r => r.RouteName = routeName );
+        Throw.CheckNotNullOrWhiteSpaceArgument( destination );
+        return DoSendAsync( monitor, services, origin, command, r => { r.RouteName = routeName; r.Destination = destination; } );
     }
 
     /// <summary>
@@ -103,8 +107,8 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         object? resultState = null;
         if( _seal != null )
         {
-            // The destination: the last party of the path, or the host of the route (checked by TryGetNextHop).
-            var destination = routed.Path.Count > 0 ? routed.Path[^1] : origin.Description.Routes[routed.RouteName!].Host;
+            // The destination: the last party of the path, or the expected host of the route (checked by TryGetNextHop).
+            var destination = routed.Path.Count > 0 ? routed.Path[^1] : routed.Destination!;
             (bool success, resultState) = await _seal.SealAsync( monitor, services, origin, destination, command, routed, envelope ).ConfigureAwait( false );
             if( !success )
             {

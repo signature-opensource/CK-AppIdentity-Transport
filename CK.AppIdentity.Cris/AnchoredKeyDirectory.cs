@@ -178,7 +178,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         object? result;
         try
         {
-            result = await _sender.SendAsync( monitor, services, local, query, routeName ).WaitAsync( FetchTimeout ).ConfigureAwait( false );
+            result = await _sender.SendAsync( monitor, services, local, query, routeName, keys.FullName ).WaitAsync( FetchTimeout ).ConfigureAwait( false );
         }
         catch( TimeoutException )
         {

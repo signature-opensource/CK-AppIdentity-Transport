@@ -169,8 +169,8 @@ its level, `Critical` included, across any number of parties of the System:
   the command are encrypted with the header as associated data, then signed (encrypt, then sign). The envelope carries
   the seal, not the proof: a hop sees neither the command nor the proof. The destination decrypts it with its
   party's encryption keys, puts the proof back into the envelope and reads the command from the decrypted bytes. Without
-  a verified key for the destination, the command is signed only, in clear, with the proof in the envelope (a
-  warning).
+  a verified key for the destination, the command is not sent (a `SecurityCritical` warning): a command that carries a
+  proof never travels in clear, so a hop that withholds the key of the destination gets nothing from it.
 - **The result of an encrypted command is encrypted for the origin**, with the response key of the encryption (only the
   origin and the destination hold it): the hops relay a sealed result.
 - **Forwarding it** ([`AuthCenterProofForwardFilter`](AuthCenterProofForwardFilter.cs)): a party that forwards a routed

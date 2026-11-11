@@ -165,7 +165,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
         try
         {
             var command = create( services.GetRequiredService<PocoDirectory>() );
-            result = await _sender.SendAsync( monitor, services, _center.Owner, command, AuthCenterFeature.RouteName )
+            result = await _sender.SendAsync( monitor, services, _center.Owner, command, AuthCenterFeature.RouteName, _center.AuthCenterFullName )
                                   .WaitAsync( RemoteAuthCenter.Timeout ).ConfigureAwait( false );
         }
         catch( Exception ex )

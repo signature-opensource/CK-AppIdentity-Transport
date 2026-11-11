@@ -511,12 +511,17 @@ public class RemoteAuthCenterTests
         proof.BindingSecretHash.ShouldBe( binding );
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, route, proof )).ShouldNotBeNull()
             .ActualActor.Level.ShouldBe( AuthLevel.Critical );
-        // No verified encryption key for the destination: signed only, in clear, the proof in the envelope.
+        // No verified encryption key for the destination: the command is not sent (never in clear).
+        var unknown = Routed( p.Center, origin, command );
+        var unknownProof = Proof( p.Center, token, binding );
+        using( TestHelper.Monitor.CollectTexts( out var texts ) )
+        {
+            (await seal.SealAsync( TestHelper.Monitor, null!, sessionParty, "Test/$Unknown", null!, unknown, unknownProof )).Success.ShouldBeFalse();
+            texts.ShouldContain( t => t.Contains( "the command that carries a user's proof is not sent" ) );
+        }
+        // A command signed only, in clear (by another origin), is still unsealed as is: the verifier checks its seal.
         var signedOnly = Routed( p.Center, origin, command );
-        var (signedOnlyProof, signedOnlyState) = await SealedByTheHookAsync( "Test/$Unknown", signedOnly );
-        signedOnlyState.ShouldBeNull( "The result of a command in clear is not sealed." );
-        signedOnly.SealedCommand.ShouldBe( command );
-        signedOnlyProof.Token.ShouldBe( token );
+        var signedOnlyProof = Sealed( centerName, command );
         var (signedOnlyCommand, signedOnlyDestinationState) = await seal.UnsealAsync( TestHelper.Monitor, lastHop, signedOnly, signedOnlyProof );
         signedOnlyCommand.ShouldBe( command );
         signedOnlyDestinationState.ShouldBeNull();

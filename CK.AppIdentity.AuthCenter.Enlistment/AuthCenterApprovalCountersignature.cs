@@ -117,7 +117,7 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             // the remote, or along its route. The operator's proof travels with it, sealed.
             result = center.AuthCenter != null
                         ? await _sender.SendAlongPathAsync( monitor, services, host, command, [host.FullName.Path, center.AuthCenterFullName] ).ConfigureAwait( false )
-                        : await _sender.SendAsync( monitor, services, host, command, AuthCenterFeature.RouteName ).ConfigureAwait( false );
+                        : await _sender.SendAsync( monitor, services, host, command, AuthCenterFeature.RouteName, center.AuthCenterFullName ).ConfigureAwait( false );
         }
         catch( Exception ex )
         {
