@@ -32,7 +32,7 @@ public sealed class AuthCenterTokenReader : IAuthenticationTokenReader
             monitor.Warn( $"Token refused: '{_localParty.LocalParty}' has no AuthCenter." );
             return null;
         }
-        var read = await center.ReadTokenAsync( monitor, token, DateTime.UtcNow ).ConfigureAwait( false );
+        var read = await center.ReadTokenAsync( monitor, token, center.UtcNow ).ConfigureAwait( false );
         return read == null ? null : new AuthenticationTokenData( read.Info, read.BindingSecretHash );
     }
 }

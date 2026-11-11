@@ -130,7 +130,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     // The heartbeat runs on the agent loop: the purge (that enumerates files) runs in the background.
     Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
     {
-        var utcNow = DateTime.UtcNow;
+        var utcNow = _center.UtcNow;
         if( utcNow >= _nextPurge && Interlocked.CompareExchange( ref _purging, 1, 0 ) == 0 )
         {
             _nextPurge = utcNow + PurgePeriod;
@@ -139,7 +139,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 var m = new ActivityMonitor( $"AuthCenter '{_party}' session purge." );
                 try
                 {
-                    await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
+                    await _sessions.PurgeExpiredAsync( m, _center.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
                 }
                 catch( Exception ex )
                 {
@@ -147,7 +147,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 }
                 try
                 {
-                    _sealNonces.Compact( m, DateTime.UtcNow );
+                    _sealNonces.Compact( m, _center.UtcNow );
                 }
                 catch( Exception ex )
                 {
@@ -265,7 +265,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
     public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash, RoutedProofSeal? seal, string destination )
     {
-        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
+        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, _center.UtcNow ).ConfigureAwait( false );
         if( read == null )
         {
             monitor.Warn( "An invalid user's proof is ignored." );
@@ -295,7 +295,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         {
             return null;
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = _center.UtcNow;
         var session = await _sessions.TryReadAsync( monitor, read.Info.UnsafeActualActor.ActorId, read.SessionId ).ConfigureAwait( false );
         if( session == null
             || session.Expires <= utcNow
@@ -319,7 +319,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     public async ValueTask<(byte[] PublicKey, DateTime Expires)?> GetPartyEncryptionKeyAsync( IActivityMonitor monitor, string partyFullName )
     {
         Throw.CheckNotNullArgument( partyFullName );
-        var utcNow = DateTime.UtcNow;
+        var utcNow = _center.UtcNow;
         if( partyFullName == _party.FullName.Path )
         {
             var own = _party.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( utcNow );
@@ -373,7 +373,7 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     // Checks the seal of a routed command: made by the session party, for this destination, with this proof, used once.
     async ValueTask<bool> CheckSealAsync( IActivityMonitor monitor, string token, AuthCenterTokenContent read, RoutedProofSeal seal, string destination )
     {
-        var utcNow = DateTime.UtcNow;
+        var utcNow = _center.UtcNow;
         bool valid = RoutedCommandSeal.CheckHeader( monitor, seal.Header, destination, token, utcNow, out var nonce, out var created );
         if( valid )
         {

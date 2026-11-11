@@ -50,7 +50,7 @@ public sealed class AuthCenterProofVerifier : ICallerProofVerifier
             monitor.Warn( $"'{caller.Owner}' has no Authentication Center: the user's proof sent by '{caller}' is ignored." );
             return null;
         }
-        var read = await center.ReadProofAsync( monitor, proof.Token, proof.BindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
+        var read = await center.ReadProofAsync( monitor, proof.Token, proof.BindingSecretHash, center.UtcNow ).ConfigureAwait( false );
         if( read == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof that doesn't verify: it is ignored." );
@@ -83,7 +83,7 @@ public sealed class AuthCenterProofVerifier : ICallerProofVerifier
         {
             // Only the session party may present the proof at the Critical level.
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent a user's proof of a session opened by '{read.SessionParty}': its level is capped at Normal." );
-            info = info.WithCriticalExpires( null, DateTime.UtcNow );
+            info = info.WithCriticalExpires( null, center.UtcNow );
         }
         return info;
     }

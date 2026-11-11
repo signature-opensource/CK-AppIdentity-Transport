@@ -60,7 +60,7 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
             proof.BindingSecretHash = null;
             return (true, null);
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = origin.ApplicationIdentityService.SystemClock.UtcNow;
         var key = origin.GetFeature<IPartyEncryptionKeyDirectory>() is { } directory
                     ? await directory.GetPartyEncryptionKeyAsync( monitor, destination ).ConfigureAwait( false )
                     : null;
@@ -101,7 +101,7 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
             return ValueTask.FromResult<(byte[]?, object?)>( (routed.SealedCommand, null) );
         }
         var keys = sender.Owner.GetFeature<ILocalKeys>();
-        var utcNow = DateTime.UtcNow;
+        var utcNow = sender.Owner.ApplicationIdentityService.SystemClock.UtcNow;
         if( keys == null
             || !PartyEncryption.TryDecrypt( monitor,
                                             routed.SealedCommand,

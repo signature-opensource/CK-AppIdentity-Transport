@@ -31,7 +31,7 @@ public sealed class AuthCenterFieldEncryptor : ICrisOutgoingCommandTransformer
         if( spki == null ) return null;
         var copy = Copy( monitor, command );
         if( copy == null ) return null;
-        var utcNow = DateTime.UtcNow;
+        var utcNow = remote.Center.UtcNow;
         var center = channel.Party.FullName;
         var sender = channel.Party.Owner.FullName;
         bool success = copy.CrisPocoModel.TransformSensitiveStrings( copy, ( owner, property, value ) =>

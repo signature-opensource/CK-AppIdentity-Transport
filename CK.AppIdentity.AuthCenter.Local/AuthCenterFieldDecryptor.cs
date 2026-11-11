@@ -26,7 +26,7 @@ public sealed class AuthCenterFieldDecryptor : ICrisIncomingCommandTransformer
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{caller}' sent '{command.CrisPocoModel.PocoName}' with sensitive values but is not a remote of an AuthCenter here. Refused." );
             return false;
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = local.Center.UtcNow;
         // The encryption keys of the Authentication Center's party (published in its description).
         var keys = local.Party.GetRequiredFeature<ILocalKeys>();
         bool success = command.CrisPocoModel.TransformSensitiveStrings( command, ( owner, property, value ) =>

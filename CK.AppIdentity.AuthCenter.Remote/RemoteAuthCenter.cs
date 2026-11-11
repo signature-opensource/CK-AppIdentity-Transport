@@ -56,7 +56,7 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
         var cached = _encryptionKey;
         if( cached.HasValue
             && cached.Value.Published.Equals( published )
-            && cached.Value.Expires - TimeSpan.FromMinutes( 1 ) > DateTime.UtcNow )
+            && cached.Value.Expires - TimeSpan.FromMinutes( 1 ) > _center.UtcNow )
         {
             return cached.Value.Spki;
         }
@@ -89,7 +89,7 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
             var cachedCenter = _encryptionKey;
             return spki != null && cachedCenter.HasValue ? (spki, cachedCenter.Value.Expires) : null;
         }
-        if( _partyKeys.TryGet( partyFullName, DateTime.UtcNow, out var cached ) )
+        if( _partyKeys.TryGet( partyFullName, _center.UtcNow, out var cached ) )
         {
             return cached;
         }
@@ -137,7 +137,7 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
     public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash )
     {
-        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
+        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, _center.UtcNow ).ConfigureAwait( false );
         if( read == null )
         {
             monitor.Warn( "An invalid user's proof is ignored." );
@@ -198,6 +198,6 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
                             : $"The AuthCenter '{center}' refused the user's proof of a routed command: its session ended or changed, or its seal is invalid." );
             return null;
         }
-        return AuthCenterProofVerifier.FromAuthCenterAnswer( answer, DateTime.UtcNow );
+        return AuthCenterProofVerifier.FromAuthCenterAnswer( answer, _center.UtcNow );
     }
 }

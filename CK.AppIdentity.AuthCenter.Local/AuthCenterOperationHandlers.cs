@@ -188,7 +188,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             bindingSessionKey = session.SessionKey;
         }
         var pendings = center.PendingRemoteLogins;
-        if( !pendings.HasRoom( DateTime.UtcNow ) )
+        if( !pendings.HasRoom( center.Center.UtcNow ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Too many pending logins ({pendings.Count}): '{login.Scheme}' login refused." );
             Throw.CKException( "Too many logins in progress. Please retry later." );
@@ -208,7 +208,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                                               start.SchemeData,
                                               bindingSessionKey,
                                               bindingSessionKey != null ? authentication : null );
-        if( !pendings.TryAdd( state, pending, DateTime.UtcNow ) )
+        if( !pendings.TryAdd( state, pending, center.Center.UtcNow ) )
         {
             Throw.CKException( "Too many logins in progress. Please retry later." );
         }
@@ -245,7 +245,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
             {
                 return AuthCenterResults.Failure( monitor, command, $"'{localParty.LocalParty}' is not an AuthCenter.", "Authentication.NoAuthCenter" );
             }
-            var pending = center.PendingRemoteLogins.TryTake( command.State, DateTime.UtcNow, out bool expired );
+            var pending = center.PendingRemoteLogins.TryTake( command.State, center.Center.UtcNow, out bool expired );
             if( pending == null )
             {
                 return expired
@@ -311,7 +311,7 @@ public sealed class AuthCenterOperationHandlers : ISingletonAutoService
                         ? await center.Sessions.TryReadAsync( monitor, actualActorId, sessionId ).ConfigureAwait( false )
                         : null;
         if( session == null
-            || session.Expires <= DateTime.UtcNow
+            || session.Expires <= center.Center.UtcNow
             || session.ActualActorId != actorId
             || session.ActorId != actorId )
         {

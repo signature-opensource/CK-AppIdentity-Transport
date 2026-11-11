@@ -112,6 +112,13 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// </summary>
     public bool IsAvailable => !(_authCenter is IRemoteParty r && r.IsDestroyed);
 
+    /// <summary>
+    /// Gets the current time of the clock of the application (<see cref="ApplicationIdentityService.SystemClock"/>, the
+    /// clock of the key management and of the transport): the times of the Authentication Center packages (signatures,
+    /// tokens, sessions, lists) come from it.
+    /// </summary>
+    public DateTime UtcNow => _owner.ApplicationIdentityService.SystemClock.UtcNow;
+
     /// <inheritdoc />
     public bool Verify( IActivityLineEmitter logger, ReadOnlySpan<byte> data, in ApplicationSignature signature )
         => Check( logger, data, signature ) == SignatureVerdict.Valid;

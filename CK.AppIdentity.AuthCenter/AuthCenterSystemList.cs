@@ -266,7 +266,7 @@ public sealed class AuthCenterSystemList
     // Authentication Center pulls the list and checks its staleness, the Authentication Center renews its list.
     Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount, CancellationToken cancel )
     {
-        var utcNow = DateTime.UtcNow;
+        var utcNow = _center.UtcNow;
         if( utcNow >= _nextPull && Interlocked.CompareExchange( ref _pulling, 1, 0 ) == 0 )
         {
             _nextPull = utcNow + PullPeriod;
@@ -282,12 +282,12 @@ public sealed class AuthCenterSystemList
                     if( _pull != null )
                     {
                         await PullAsync( m ).ConfigureAwait( false );
-                        CheckStaleness( m, DateTime.UtcNow );
+                        CheckStaleness( m, _center.UtcNow );
                     }
                     else
                     {
                         // The System list is signed again before its signature expires.
-                        await RenewIfNeededAsync( m, DateTime.UtcNow ).ConfigureAwait( false );
+                        await RenewIfNeededAsync( m, _center.UtcNow ).ConfigureAwait( false );
                     }
                 }
                 catch( Exception ex )
@@ -406,7 +406,7 @@ public sealed class AuthCenterSystemList
                                       .ThenBy( h => h.Host, StringComparer.Ordinal )
                                       .ToList();
             if( newEntries.SequenceEqual( entries ) && sortedHosts.SequenceEqual( hosts ) ) return current;
-            var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, DateTime.UtcNow );
+            var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, _center.UtcNow );
             return await AdoptOwnAsync( monitor, list ).ConfigureAwait( false );
         }
         finally

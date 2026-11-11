@@ -27,9 +27,11 @@ public sealed class AuthCenterPasskey : IAuthCenterScheme
     readonly bool _hasStore;
     readonly AuthCenterPendingStore<PasskeyCeremony>? _ceremonies;
     readonly AuthCenterPendingStore<PasskeyCeremony>? _registrations;
+    readonly ISystemClock _clock;
 
-    internal AuthCenterPasskey( AuthCenterPasskeyOptions? options, bool hasStore )
+    internal AuthCenterPasskey( AuthCenterPasskeyOptions? options, bool hasStore, ISystemClock clock )
     {
+        _clock = clock;
         _options = options;
         _hasStore = hasStore;
         if( options != null && hasStore )
@@ -60,6 +62,9 @@ public sealed class AuthCenterPasskey : IAuthCenterScheme
     public AuthCenterPendingStore<PasskeyCeremony>? Registrations => _registrations;
 
     internal AuthCenterPendingStore<PasskeyCeremony> GetCeremonies( bool isRegistration ) => isRegistration ? _registrations! : _ceremonies!;
+
+    // The clock of the application.
+    internal DateTime UtcNow => _clock.UtcNow;
 
     /// <inheritdoc />
     public string ProviderName => PasskeyLoginPayload.Scheme;

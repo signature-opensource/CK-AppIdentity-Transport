@@ -31,7 +31,7 @@ public sealed class AuthCenterProofForwardFilter : ICrisForwardedEnvelopeFilter
             Clear( proof );
             return;
         }
-        if( await center.ReadProofAsync( monitor, token, proof.BindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false ) == null )
+        if( await center.ReadProofAsync( monitor, token, proof.BindingSecretHash, center.UtcNow ).ConfigureAwait( false ) == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{sender}' sent a user's proof that doesn't verify: it is not relayed to '{target}'." );
             Clear( proof );

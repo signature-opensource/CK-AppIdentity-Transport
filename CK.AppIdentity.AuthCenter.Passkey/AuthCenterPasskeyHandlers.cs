@@ -300,7 +300,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
     static void AddCeremony( IActivityMonitor monitor, AuthCenterPasskey family, byte[] challenge, PasskeyCeremony ceremony )
     {
         var store = family.GetCeremonies( ceremony.IsRegistration );
-        if( !store.TryAdd( Base64Url.EncodeToString( challenge ), ceremony, DateTime.UtcNow ) )
+        if( !store.TryAdd( Base64Url.EncodeToString( challenge ), ceremony, family.UtcNow ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Too many pending passkey ceremonies ({store.Count}): a new one is refused." );
             Throw.CKException( "Too many passkey operations in progress. Please retry later." );
@@ -331,7 +331,7 @@ public sealed class AuthCenterPasskeyHandlers : ISingletonAutoService
         catch( JsonException )
         {
         }
-        var ceremony = family.GetCeremonies( isRegistration ).TryTake( challenge, DateTime.UtcNow, out bool expired );
+        var ceremony = family.GetCeremonies( isRegistration ).TryTake( challenge, family.UtcNow, out bool expired );
 
         if( ceremony == null )
         {

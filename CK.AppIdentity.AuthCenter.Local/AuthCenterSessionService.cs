@@ -84,7 +84,7 @@ public sealed class AuthCenterSessionService
         var callerParty = _current.CallerPartyFullName ?? center.Party.FullName.Path;
         if( callerParty != session.SessionParty )
         {
-            if( revokeOnMismatch && (session.Matches( proof ) || session.MatchesPrevious( proof, DateTime.UtcNow, center.Options.RefreshGraceWindow )) )
+            if( revokeOnMismatch && (session.Matches( proof ) || session.MatchesPrevious( proof, center.Center.UtcNow, center.Options.RefreshGraceWindow )) )
             {
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The session of actor #{actualActorId}, opened by '{session.SessionParty}', is presented by '{callerParty}': the session is revoked." );
                 store.TryDelete( monitor, actualActorId, sessionId );
@@ -96,7 +96,7 @@ public sealed class AuthCenterSessionService
             return (null, "Invalid session.", "Authentication.InvalidSession");
         }
         bool fromPrevious = false;
-        if( !session.Matches( proof ) && session.MatchesPrevious( proof, DateTime.UtcNow, center.Options.RefreshGraceWindow ) )
+        if( !session.Matches( proof ) && session.MatchesPrevious( proof, center.Center.UtcNow, center.Options.RefreshGraceWindow ) )
         {
             if( !acceptPrevious ) return (null, "Invalid session.", "Authentication.InvalidSession");
             monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"The previous secrets of the session of actor #{actualActorId} are used (the answer of its last rotation may have been lost): accepted once." );
@@ -111,7 +111,7 @@ public sealed class AuthCenterSessionService
             }
             return (null, "Invalid session.", "Authentication.InvalidSession");
         }
-        if( session.Expires <= DateTime.UtcNow )
+        if( session.Expires <= center.Center.UtcNow )
         {
             store.TryDelete( monitor, actualActorId, sessionId );
             return (null, "The session expired.", "Authentication.SessionExpired");
@@ -186,7 +186,7 @@ public sealed class AuthCenterSessionService
             _endpoint.Clear();
             return AuthCenterResults.Failure( monitor, source, "The actor cannot be used anymore.", "Authentication.InvalidActor" );
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = c.Value.Center.Center.UtcNow;
         // The session slides: it ends SessionLifetime after its last refresh.
         var expires = utcNow + c.Value.Center.Options.SessionLifetime;
         var info = AuthenticationInfo.Create( ToNormal( actual ), ToNormal( actor ), expires, null, s.DeviceId, utcNow );
@@ -253,7 +253,7 @@ public sealed class AuthCenterSessionService
         {
             return AuthCenterResults.Failure( monitor, source, "Impersonation is not allowed.", "Authentication.ImpersonationNotAllowed" );
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = c.Value.Center.Center.UtcNow;
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow )
                                      .Impersonate( target, utcNow );
         monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"{actual} impersonates {target}." );
@@ -277,7 +277,7 @@ public sealed class AuthCenterSessionService
         {
             return AuthCenterResults.Failure( monitor, source, "The authentication doesn't match the session.", "Authentication.InvalidSession" );
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = c.Value.Center.Center.UtcNow;
         var info = AuthenticationInfo.Create( actual, c.Value.Session.Expires, _current.CriticalExpires, c.Value.Session.DeviceId, utcNow );
         return await IssueAsync( monitor, source, c.Value, actual.ActorId, c.Value.Session.Expires, info, utcNow ).ConfigureAwait( false );
     }

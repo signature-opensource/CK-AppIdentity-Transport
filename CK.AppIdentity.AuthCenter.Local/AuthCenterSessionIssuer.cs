@@ -161,7 +161,7 @@ public sealed class AuthCenterSessionIssuer
                                               DateTime? authenticationTime )
     {
         var options = center.Options;
-        var utcNow = DateTime.UtcNow;
+        var utcNow = center.Center.UtcNow;
         var expires = utcNow + options.SessionLifetime;
         DateTime? criticalExpires = null;
         var criticalLifetime = options.GetCriticalLifetime( scheme );

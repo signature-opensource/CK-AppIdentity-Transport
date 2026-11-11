@@ -42,7 +42,7 @@ public sealed class VerifyRoutedProofHandler : ISingletonAutoService
         }
         var keys = center.Party.GetRequiredFeature<ILocalKeys>();
         // The proof crossed the hops encrypted for this Authentication Center.
-        if( !AuthCenterProofStatement.TryDecryptProof( monitor, keys, command.EncryptedProof, command.Destination, command.Nonce, DateTime.UtcNow, out var token, out var bindingSecretHash ) )
+        if( !AuthCenterProofStatement.TryDecryptProof( monitor, keys, command.EncryptedProof, command.Destination, command.Nonce, center.Center.UtcNow, out var token, out var bindingSecretHash ) )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The user's proof routed to '{command.Destination}' can't be decrypted: it is refused." );
             return null;
@@ -53,7 +53,7 @@ public sealed class VerifyRoutedProofHandler : ISingletonAutoService
         if( info == null ) return null;
         var signature = keys.Sign( AuthCenterProofStatement.Purpose,
                                    AuthCenterProofStatement.GetSignedData( command.Destination, command.Nonce, token!, seal ),
-                                   DateTime.UtcNow + AuthCenterProofStatement.Lifetime );
+                                   center.Center.UtcNow + AuthCenterProofStatement.Lifetime );
 
         monitor.Trace( $"A user's proof routed to '{command.Destination}' is verified: actor #{info.UnsafeActor.ActorId}." );
         return pocos.Create<IAuthCenterProofStatement>( s => s.Signature = signature.Encoded.ToArray() );

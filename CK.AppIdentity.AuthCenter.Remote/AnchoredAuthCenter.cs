@@ -59,7 +59,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     /// <returns>The proved identity, or null when the proof is not valid (the reason is logged).</returns>
     public async ValueTask<AuthenticationInfo?> CheckProofAsync( IActivityMonitor monitor, string token, byte[] bindingSecretHash )
     {
-        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, DateTime.UtcNow ).ConfigureAwait( false );
+        var read = await _center.ReadProofAsync( monitor, token, bindingSecretHash, _center.UtcNow ).ConfigureAwait( false );
         if( read == null )
         {
             monitor.Warn( "An invalid user's proof is ignored." );
@@ -121,7 +121,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"No verified encryption key for the AuthCenter '{_center.AuthCenterFullName}': the user's proof routed to '{destination}' can't be verified, it is ignored." );
             return null;
         }
-        return AuthCenterProofStatement.EncryptProof( key.Value.PublicKey, destination, nonce, token, bindingSecretHash, DateTime.UtcNow );
+        return AuthCenterProofStatement.EncryptProof( key.Value.PublicKey, destination, nonce, token, bindingSecretHash, _center.UtcNow );
     }
 
     internal static IVerifyRoutedProofQCommand CreateVerifyQuery( PocoDirectory pocos, string destination, byte[] nonce, byte[] encryptedProof, RoutedProofSeal seal )
@@ -148,7 +148,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     public async ValueTask<(byte[] PublicKey, DateTime Expires)?> GetPartyEncryptionKeyAsync( IActivityMonitor monitor, string partyFullName )
     {
         Throw.CheckNotNullArgument( partyFullName );
-        if( _partyKeys.TryGet( partyFullName, DateTime.UtcNow, out var cached ) )
+        if( _partyKeys.TryGet( partyFullName, _center.UtcNow, out var cached ) )
         {
             return cached;
         }

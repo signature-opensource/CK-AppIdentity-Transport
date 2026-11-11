@@ -63,7 +63,7 @@ public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureD
                 monitor.Warn( $"'{section.Path}' is configured but there is no IPasskeyStore: the passkeys are not available." );
             }
         }
-        local.AddFeature( new AuthCenterPasskey( options, _hasStore ) );
+        local.AddFeature( new AuthCenterPasskey( options, _hasStore, local.ApplicationIdentityService.SystemClock ) );
         return true;
     }
 }

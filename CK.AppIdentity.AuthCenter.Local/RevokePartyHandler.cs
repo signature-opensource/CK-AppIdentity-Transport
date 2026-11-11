@@ -54,7 +54,7 @@ public sealed class RevokePartyHandler : ISingletonAutoService
             monitor.Warn( $"Invalid identity to revoke for '{command.PartyFullName}'." );
             return null;
         }
-        var utcNow = DateTime.UtcNow;
+        var utcNow = local.ApplicationIdentityService.SystemClock.UtcNow;
         // The revoked party is no more an authorized host of any route: UpdateAsync drops the hosts of a banned name.
         var list = await revocations.UpdateAsync( monitor, ( entries, hosts ) =>
         {
