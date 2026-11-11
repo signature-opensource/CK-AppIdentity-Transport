@@ -30,8 +30,11 @@ public interface IPartyKeyEvents : IPoco
     string PartyFullName { get; set; }
 
     /// <summary>
-    /// Gets or sets the encoded events (see <see cref="KeyManagement.KeyEvent.Encoded"/>), consecutive, oldest first, one
-    /// after the other (each one says its length: see <see cref="KeyManagement.KeyEvent.Read(System.ReadOnlySpan{byte}, out int)"/>).
+    /// Gets or sets the encoded events (see <see cref="KeyManagement.KeyEvent.Encoded"/>), consecutive, oldest first.
+    /// <para>
+    /// An array of arrays: a collection of a poco property can't contain another collection (an <c>IList&lt;byte[]&gt;</c>
+    /// is refused by the engine), arrays of arrays are allowed.
+    /// </para>
     /// </summary>
-    byte[] Events { get; set; }
+    byte[][] Events { get; set; }
 }

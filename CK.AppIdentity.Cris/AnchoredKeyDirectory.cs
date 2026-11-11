@@ -180,17 +180,15 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
             monitor.Warn( $"The key events of '{keys.FullName}' can't be fetched along the route '{routeName}': {error}" );
             return false;
         }
-        var events = new List<KeyEvent>();
+        if( answer.Events.Length == 0 || answer.Events.Length > KeyEventChain.MaxEventWindow )
+        {
+            monitor.Warn( $"Invalid key events of '{keys.FullName}' received along the route '{routeName}': {answer.Events.Length} events." );
+            return false;
+        }
+        var events = new List<KeyEvent>( answer.Events.Length );
         try
         {
-            var data = answer.Events.AsSpan();
-            while( data.Length > 0 )
-            {
-                Throw.CheckData( events.Count < KeyEventChain.MaxEventWindow );
-                events.Add( KeyEvent.Read( data, out int read ) );
-                data = data.Slice( read );
-            }
-            Throw.CheckData( events.Count > 0 );
+            foreach( var e in answer.Events ) events.Add( KeyEvent.Read( e ) );
         }
         catch( Exception ex )
         {
@@ -222,9 +220,7 @@ public sealed class KeyEventsHandler : ISingletonAutoService
         return pocos.Create<IPartyKeyEvents>( r =>
         {
             r.PartyFullName = local.FullName.Path;
-            var w = new System.Buffers.ArrayBufferWriter<byte>();
-            foreach( var e in events ) System.Buffers.BuffersExtensions.Write( w, e.Encoded.Span );
-            r.Events = w.WrittenSpan.ToArray();
+            r.Events = events.Select( e => e.Encoded.ToArray() ).ToArray();
         } );
     }
 }
