@@ -208,6 +208,27 @@ Authentication Center vouches for it. It has pinned the keys of its remotes, and
   ([`PartyEncryptionKeyStatement`](IPartyEncryptionKeyDirectory.cs): the full name of the party and its key, until the
   end of use of the key), verified like a token and cached until the key ends.
 
+## The revocation ([`RevocationList`](RevocationList.cs), [`AuthCenterRevocations`](AuthCenterRevocations.cs))
+
+The Authentication Center revokes the identity of a party System-wide: `IRevokePartyCommand` (Critical, the operator's
+live proof; who may revoke is decided by the application, a validator of the command), handled by the
+`RevokePartyHandler` of CK.AppIdentity.AuthCenter.Local. What is revoked is the identity of a key event log (the digest
+of its inception, given or read from the pin of the remote), never refused again once revoked; the entry also bans the
+full name in the routed commands and the routes until it is readmitted.
+
+- **The list:** the revoked identities, a sequence number and a time, signed by the Authentication Center
+  (`RevocationList.Purpose`). It is signed again (the next sequence number) when its signature reaches the middle of its
+  life: a signature lasts at most `MaxSignatureDays`.
+- **Every party that has an Authentication Center** (local, remote, or anchored without channel) holds the newest list
+  it verified (`AuthCenterRevocations`, a feature of the local party), in its local store. It applies it to its keys:
+  the revoked remotes are cut (see CK.AppIdentity.TransportLayer).
+- **The distribution:** the list is sent on every channel that becomes available, and relayed to the other remotes of
+  the System when a newer one is adopted (`IRevocationListCommand`, internal and endpoint-only). A list is adopted when
+  its sequence number is greater and its signature is the Authentication Center's (verified with its pinned or
+  anchored keys): a hop can withhold a list, not forge one. A party without Authentication Center ignores it (its
+  operator cuts its remotes).
+- **The freshness is open:** a hop can serve an older list. The relay by every channel makes it hard, not impossible.
+
 ## The encryption of the sensitive fields ([`AuthCenterFieldEncryption`](AuthCenterFieldEncryption.cs))
 
 The sensitive fields ([Sensitive] strings, like the Basic login password) of the commands that a remote sends to its

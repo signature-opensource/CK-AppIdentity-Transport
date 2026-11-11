@@ -122,6 +122,11 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   the stated checkpoint). A mismatch with the anchor, or two validly signed events at the same position, is a
   `SecurityCritical` error and changes nothing. A signature it can't check yet is an `UnknownIssuer`: its events must be
   fetched first.
+- **A revoked log** ([`RevocationEntry`](RevocationEntry.cs)): `ILocalKeys.Revocations` are the identities of the logs
+  revoked by the Authentication Center (its signed list, verified and set by CK.AppIdentity.AuthCenter:
+  `SetRevocationsAsync`, then `RevocationsChanged`). A remote whose log identity is revoked is refused whatever it
+  presents (`KeyChainVerdict.Revoked`, `IRemoteKeys.Refusal`, a `SecurityCritical` error), its pin is cleared and it can
+  be neither trusted on first use nor approved. A party that incepts again starts another log: it is not revoked.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
   has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
   every accepted nonce is first journaled to disk (`Nonce.journal`), so a crash forgets nothing. It is bounded by time and,

@@ -364,10 +364,15 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         // Check the signature if it must be signed.
                         if( currentKeyData != null && !signatureVerified )
                         {
-                            if( remote.RemoteKeys.AnchorRefusal != null )
+                            if( remote.RemoteKeys.Refusal != null )
                             {
-                                // The listener is anchored here and its events don't verify from its anchor.
-                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, PeeringIssueKind.AnchorMismatch, null, null, false, null );
+                                // The listener's identity is revoked, or it is anchored here and its events don't verify
+                                // from its anchor.
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote,
+                                                                                    remote.RemoteKeys.Refusal == KeyChainVerdict.Revoked
+                                                                                        ? PeeringIssueKind.Revoked
+                                                                                        : PeeringIssueKind.AnchorMismatch,
+                                                                                    null, null, false, null );
                                 return 30;
                             }
                             // Weird: the sent signatures cannot be verified.
@@ -478,6 +483,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval => PeeringIssueKind.RequiresLocalApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval => PeeringIssueKind.RequiresBothApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch => PeeringIssueKind.RemoteAnchorMismatch,
+                            ZeroProtocol.ConfigurationOrTrustIssue.Revoked => PeeringIssueKind.RevokedByRemote,
                             // Unknown and DisallowedTransport are already handled.
                             ZeroProtocol.ConfigurationOrTrustIssue.Unknown => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
                             ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
@@ -570,10 +576,15 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( !protocolMap.IsValid )
                         {
                             await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
-                            if( !foundTrustKey && remote.RemoteKeys.AnchorRefusal != null )
+                            if( !foundTrustKey && remote.RemoteKeys.Refusal != null )
                             {
-                                // The listener is anchored here and its events don't verify from its anchor.
-                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, PeeringIssueKind.AnchorMismatch, null, null, false, null );
+                                // The listener's identity is revoked, or it is anchored here and its events don't verify
+                                // from its anchor.
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote,
+                                                                                    remote.RemoteKeys.Refusal == KeyChainVerdict.Revoked
+                                                                                        ? PeeringIssueKind.Revoked
+                                                                                        : PeeringIssueKind.AnchorMismatch,
+                                                                                    null, null, false, null );
                             }
                             else if( !foundTrustKey )
                             {

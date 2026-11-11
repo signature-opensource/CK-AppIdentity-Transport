@@ -1,5 +1,6 @@
 using CK.AppIdentity.Cris;
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
@@ -35,7 +36,9 @@ public class AnchoredAuthCenterTests
                                        typeof( KeyEventsHandler ),
                                        typeof( AnchoredKeyDirectory ),
                                        typeof( IVerifyRoutedProofQCommand ),
-                                       typeof( IAuthCenterProofStatement )];
+                                       typeof( IAuthCenterProofStatement ),
+                                       typeof( IRevocationListCommand ),
+                                       typeof( RevocationListHandler )];
 
     sealed class Chain : IAsyncDisposable
     {
@@ -80,7 +83,7 @@ public class AnchoredAuthCenterTests
             c["Parties:0:PartyName"] = "$Hop";
             c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
-        }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler )] );
+        }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( RevokePartyHandler )] );
         try
         {
             var checkpoint = center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().Checkpoint;
@@ -102,7 +105,7 @@ public class AnchoredAuthCenterTests
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{HopPort}";
                 c[$"Local:TrustAnchors:{centerName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString();
                 c["Local:AuthCenterParty"] = centerName;
-            }, RemoteAuthCenterTests.RemoteServices, [.. RemoteAuthCenterTests._common, .. _routing, typeof( RemoteAuthCenterFeatureDriver ), typeof( AuthCenterProofVerifier )] );
+            }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. _routing, typeof( RemoteAuthCenterFeatureDriver ), typeof( AuthCenterProofVerifier )] );
             var chain = new Chain { Center = center, Hop = hop, A = a };
             for( int i = 0; i < 100 && !a.ApplicationIdentityService.Description.Routes.ContainsKey( AuthCenterFeature.RouteName ); ++i ) await Task.Delay( 100 );
             a.ApplicationIdentityService.Description.Routes.ShouldContainKey( AuthCenterFeature.RouteName, "The route of the center reaches A through the hop." );
@@ -189,5 +192,69 @@ public class AnchoredAuthCenterTests
             (await c.A.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>().ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldBeNull();
             logs.ShouldContain( l => l.StartsWith( $"The key events received for '{c.CenterName}' don't match its trust anchor" ) );
         }
+    }
+
+    static async Task<bool> WaitForAsync( Func<bool> condition, int seconds = 40 )
+    {
+        for( int i = 0; i < seconds * 10; ++i )
+        {
+            if( condition() ) return true;
+            await Task.Delay( 100 );
+        }
+        return false;
+    }
+
+    static Task<int?> RevokeAsync( Chain c, string fullName, byte[]? identity )
+    {
+        var center = c.Center.ApplicationIdentityService;
+        var command = c.Center.PocoDirectory.Create<IRevokePartyCommand>( r =>
+        {
+            r.PartyFullName = fullName;
+            r.Identity = identity;
+        } );
+        return new RevokePartyHandler().HandleAsync( TestHelper.Monitor, command, new CurrentLocalParty( center ) );
+    }
+
+    static int? SeqOf( RunningApplication app ) => app.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>().Current?.Seq;
+
+    [Test]
+    public async Task the_revocation_list_reaches_every_party_and_cuts_the_revoked_one_Async()
+    {
+        await using var c = await StartAsync();
+        var a = c.A.ApplicationIdentityService;
+        // A party unknown here: the list reaches A (without channel to the center) through the hop.
+        var ghost = new byte[KeyEvent.HashSize];
+        ghost[0] = 42;
+        (await RevokeAsync( c, "Test/$Ghost/#Dev", ghost )).ShouldBe( 1 );
+        (await WaitForAsync( () => SeqOf( c.Hop ) == 1 && SeqOf( c.A ) == 1 )).ShouldBeTrue( "Relayed by the hop, verified with the anchored keys on A." );
+        a.GetRequiredFeature<ILocalKeys>().IsRevoked( ghost ).ShouldBeTrue();
+
+        // A is revoked: the hop cuts it, and refuses it when it comes back.
+        var aIdentity = a.GetRequiredFeature<ILocalKeys>().State.Head.GetIdentity( c.AName ).ToArray();
+        (await RevokeAsync( c, c.AName, aIdentity )).ShouldBe( 2 );
+        var hopToA = c.Hop.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == c.AName ).GetRequiredFeature<TransportFeature>();
+        (await WaitForAsync( () => SeqOf( c.Hop ) == 2 && hopToA.RemoteKeys.IsRevoked )).ShouldBeTrue();
+        hopToA.RemoteKeys.TrustedEvent.ShouldBeNull( "The pin of a revoked identity is cleared." );
+        var hopIssues = c.Hop.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>();
+        (await WaitForAsync( () => hopIssues.Find( c.AName )?.Kind == PeeringIssueKind.Revoked )).ShouldBeTrue();
+        var aToHop = a.Remotes.Single().GetRequiredFeature<TransportFeature>();
+        (await WaitForAsync( () => a.GetRequiredFeature<TransportManagerFeature>().Find( c.HopName )?.Kind == PeeringIssueKind.RevokedByRemote ))
+            .ShouldBeTrue( "A reconnects and is refused by the hop." );
+        aToHop.ConnectionAvailability.ShouldNotBe( ConnectionAvailability.Connected );
+    }
+
+    [Test]
+    public async Task a_list_that_is_not_signed_by_the_center_is_refused_Async()
+    {
+        await using var c = await StartAsync();
+        var hop = c.Hop.ApplicationIdentityService;
+        var forged = RevocationList.Create( hop.GetRequiredFeature<ILocalKeys>(), 7, [], DateTime.UtcNow );
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            (await c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterRevocations>()
+                                                 .TryAdoptAsync( TestHelper.Monitor, forged.Encode(), c.A.ApplicationIdentityService.Remotes.Single() )).ShouldBeFalse();
+            logs.ShouldContain( l => l.Contains( $"is not signed by its AuthCenter '{c.CenterName}'" ) );
+        }
+        SeqOf( c.A ).ShouldBeNull();
     }
 }

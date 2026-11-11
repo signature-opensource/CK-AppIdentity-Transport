@@ -236,6 +236,8 @@ sealed partial class TransportManager : MicroAgent
         Throw.DebugAssert( remote != null && remote.TargetAddress != null );
         Throw.DebugAssert( kind is PeeringIssueKind.AnchorMismatch
                                 or PeeringIssueKind.RemoteAnchorMismatch
+                                or PeeringIssueKind.Revoked
+                                or PeeringIssueKind.RevokedByRemote
                                 or PeeringIssueKind.RequiresRemoteCreation
                                 or PeeringIssueKind.RemoteDisallowedTransport
                                 or PeeringIssueKind.InvalidClockOffset
@@ -276,13 +278,14 @@ sealed partial class TransportManager : MicroAgent
     }
 
     /// <summary>
-    /// Listener only: an anchored initiator whose key event log doesn't verify from its anchor (it is refused before its
-    /// initial message is accepted: there is no message).
+    /// Listener only: an initiator refused before its initial message is accepted (there is no message): an anchored one
+    /// whose key event log doesn't verify from its anchor, or a revoked one.
     /// </summary>
-    internal void OnIncomingAnchorRefused( TransportFeature remote )
+    internal void OnIncomingRefused( TransportFeature remote, PeeringIssueKind kind )
     {
         Throw.DebugAssert( remote != null && remote.TargetAddress == null );
-        PushTypedJob( new PeeringIssueJob( PeeringIssueKind.AnchorMismatch,
+        Throw.DebugAssert( kind is PeeringIssueKind.AnchorMismatch or PeeringIssueKind.Revoked );
+        PushTypedJob( new PeeringIssueJob( kind,
                                            Message: null,
                                            remote,
                                            EnlistUrl: null,
@@ -360,6 +363,25 @@ sealed partial class TransportManager : MicroAgent
         {
             PushTypedJob( new KillTransportJob( transport, outgoingReconnectDelay, Delayed: false ) );
         }
+    }
+
+    /// <summary>
+    /// The identity of a remote has been revoked: its current transport (if any) is killed (an initiator retries in 30
+    /// seconds: it will be refused) and the <see cref="PeeringIssueKind.Revoked"/> issue is raised.
+    /// </summary>
+    internal void OnRevoked( TransportFeature remote )
+    {
+        if( remote.CurrentTransport is { } current ) KillTransport( current, 30 );
+        PushTypedJob( new PeeringIssueJob( PeeringIssueKind.Revoked,
+                                           Message: null,
+                                           remote,
+                                           EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
+                                           InvalidClockOffset: null,
+                                           RemoteKeyForApproval: null,
+                                           LocalMissing: null,
+                                           RemoteMissing: null,
+                                           RemoteOffMessage: null ) );
     }
 
     internal void SwitchOff( TransportFeature feature, GoodbyeMessage reason )

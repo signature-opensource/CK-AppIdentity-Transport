@@ -73,6 +73,11 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
                 try
                 {
                     await _sessions.PurgeExpiredAsync( m, DateTime.UtcNow, _options.SessionLifetime ).ConfigureAwait( false );
+                    // The revocation list is signed again before its signature expires.
+                    if( _party.GetFeature<AuthCenterRevocations>() is { } revocations )
+                    {
+                        await revocations.RenewIfNeededAsync( m, DateTime.UtcNow ).ConfigureAwait( false );
+                    }
                 }
                 catch( Exception ex )
                 {

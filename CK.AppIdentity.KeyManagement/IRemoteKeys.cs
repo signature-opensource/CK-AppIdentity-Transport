@@ -60,11 +60,18 @@ public interface IRemoteKeys : IPartyKeys
     bool IsAnchored { get; }
 
     /// <summary>
-    /// Gets the verdict of the last verification of this anchored remote when it was refused
-    /// (<see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/>,
-    /// <see cref="KeyChainVerdict.AnchorUnavailable"/>...), null when the last one succeeded or when it is not anchored.
+    /// Gets the verdict of the last verification of this remote when it was refused regardless of what is pinned: an
+    /// anchored remote (<see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/>,
+    /// <see cref="KeyChainVerdict.AnchorUnavailable"/>...) or a revoked log (<see cref="KeyChainVerdict.Revoked"/>). Null
+    /// when the last one succeeded.
     /// </summary>
-    KeyChainVerdict? AnchorRefusal { get; }
+    KeyChainVerdict? Refusal { get; }
+
+    /// <summary>
+    /// Gets whether the log of this remote is revoked: the identity of the last events it presented, or of its pin (see
+    /// <see cref="ILocalKeys.Revocations"/>).
+    /// </summary>
+    bool IsRevoked { get; }
 
     /// <summary>
     /// Gets what this local party states it holds of the remote's key event log, in its identity block: the trust anchor

@@ -3,6 +3,8 @@ using CK.PerfectEvent;
 using System;
 using Microsoft.AspNetCore.DataProtection;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
 
@@ -261,6 +263,35 @@ public interface ILocalKeys : IPartyKeys
     /// remotes need to move their pin: the transport pushes it to the connected ones).
     /// </summary>
     PerfectEvent<LocalIdentityState> KeyEventAppended { get; }
+
+    /// <summary>
+    /// Gets the revoked identities: the entries of the last verified revocation list of the Authentication Center (set by
+    /// <see cref="SetRevocationsAsync"/>). A remote whose log identity is revoked is refused at the peering (its pin is
+    /// cleared), whatever it presents.
+    /// </summary>
+    IReadOnlyList<RevocationEntry> Revocations { get; }
+
+    /// <summary>
+    /// Gets whether a log identity is revoked (see <see cref="KeyEvent.GetIdentity"/>).
+    /// </summary>
+    /// <param name="identity">The identity of a log.</param>
+    /// <returns>True when it is revoked.</returns>
+    bool IsRevoked( ReadOnlySpan<byte> identity );
+
+    /// <summary>
+    /// Sets the revoked identities: the entries of a verified revocation list (the caller verified it). The pins of the
+    /// revoked remotes are cleared, then <see cref="RevocationsChanged"/> is raised (the transport cuts their connections).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="entries">The entries.</param>
+    /// <param name="cancel">Optional cancellation token.</param>
+    /// <returns>The awaitable.</returns>
+    Task SetRevocationsAsync( IActivityMonitor monitor, IReadOnlyList<RevocationEntry> entries, CancellationToken cancel = default );
+
+    /// <summary>
+    /// Raised by <see cref="SetRevocationsAsync"/>, with the new <see cref="Revocations"/>.
+    /// </summary>
+    PerfectEvent<IReadOnlyList<RevocationEntry>> RevocationsChanged { get; }
 
     /// <summary>
     /// Acknowledges an alert: it is removed and stops being logged at start. This does not fix what

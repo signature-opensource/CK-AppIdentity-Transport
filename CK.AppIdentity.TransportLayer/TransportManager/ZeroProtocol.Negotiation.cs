@@ -63,7 +63,10 @@ static partial class ZeroProtocol // Negotiation
         // in the signed rejection): the initiator retries at once with its events from there.
         EventsRequired = 10,
 
-        MaxValue = 10
+        // The identity of the initiator (its key event log) is revoked here.
+        Revoked = 11,
+
+        MaxValue = 11
     }
 
 

@@ -109,7 +109,7 @@ public class TrustAnchorTests
         held.ShouldNotBeNull( "The listener can't verify the initiator from its anchor." );
         held.ApprovalCode.ShouldBeNull( "No approval applies to an anchored remote." );
         held.EnlistUrl.ShouldBeNull();
-        listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.AnchorRefusal.ShouldBe( KeyChainVerdict.AnchorMismatch );
+        listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.Refusal.ShouldBe( KeyChainVerdict.AnchorMismatch );
         (await WaitForAsync( () => Issue( initiator, PeeringIssueKind.RemoteAnchorMismatch ), 40, token ))
             .ShouldNotBeNull( "The initiator learns that its remote must update its anchor." );
         Connected( initiator ).ShouldBeNull();

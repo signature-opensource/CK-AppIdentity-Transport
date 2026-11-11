@@ -61,6 +61,29 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         return Task.CompletedTask;
     }
 
+    // The revocations of a local party: the connections of its revoked remotes are cut.
+    Task OnRevocationsChangedAsync( IActivityMonitor monitor, ILocalParty local )
+    {
+        Throw.DebugAssert( _transportManager != null );
+        foreach( var r in local.Remotes )
+        {
+            if( r.GetFeature<TransportFeature>() is { } transport && transport.RemoteKeys.IsRevoked )
+            {
+                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity of remote '{r}' is revoked: its connection is cut." );
+                _transportManager.OnRevoked( transport );
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    void SubscribeRevocations( ILocalParty local )
+    {
+        if( local.GetFeature<ILocalKeys>() is { } keys )
+        {
+            keys.RevocationsChanged.Async += ( m, entries, cancel ) => OnRevocationsChangedAsync( m, local );
+        }
+    }
+
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
         _transportManager = new TransportManager( context.Agent, _protocolDirectory );
@@ -79,6 +102,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
             SubscribeRoutes( local );
+            SubscribeRevocations( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
         // Local and External remote parties have no Transport.

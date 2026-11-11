@@ -82,7 +82,13 @@ public enum KeyChainVerdict
     /// The party is anchored but its anchor can't be read yet: a <c>"#Dev"</c> anchor whose party has not written its
     /// running status in the dev store (it is not started). Nothing is accepted until it can be read.
     /// </summary>
-    AnchorUnavailable
+    AnchorUnavailable,
+
+    /// <summary>
+    /// The identity of the log is revoked (see <see cref="ILocalKeys.Revocations"/>): nothing of it is accepted, whatever
+    /// the events.
+    /// </summary>
+    Revoked
 }
 
 /// <summary>

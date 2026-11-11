@@ -261,6 +261,11 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
   updated. An initiator
   declares that it can trust an anchored listener without an operator (`RemoteTrustInfo.CanAutoTrust`).
 
+- **A revoked remote** (its log identity is in the revocations of its local party, see
+  [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)) is cut as soon as the revocations change
+  (its connection is killed), and refused at every handshake: the issue is `Revoked` here and `RevokedByRemote` on its
+  side (a signed rejection). An unknown caller whose identity is revoked is dropped: it never becomes a pending approval.
+
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
   presented (`RemoteIdentityForApproval`). `AcceptRemoteIdentity` pins it. Nothing in the protocol proves that this key
   belongs to the named party: an approval UI must show `RemoteKeyFingerprintForApproval` and have it compared out of band.

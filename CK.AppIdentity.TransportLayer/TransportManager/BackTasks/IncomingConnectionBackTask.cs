@@ -335,7 +335,11 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                         // here (no approval applies to it).
                         if( conflict.Value.Issue == ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch && remote != null )
                         {
-                            transportManager.OnIncomingAnchorRefused( remote );
+                            transportManager.OnIncomingRefused( remote, PeeringIssueKind.AnchorMismatch );
+                        }
+                        else if( conflict.Value.Issue == ZeroProtocol.ConfigurationOrTrustIssue.Revoked && remote != null )
+                        {
+                            transportManager.OnIncomingRefused( remote, PeeringIssueKind.Revoked );
                         }
                         await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming, conflict.Value.Keys,
                                                                               conflict.Value.Issue,
@@ -422,7 +426,13 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             foundTrustKey = signatureCheck == SignatureCheck.Trusted;
             if( signatureCheck == SignatureCheck.Failed )
             {
-                if( remote != null && remote.RemoteKeys.IsAnchored && remote.RemoteKeys.AnchorRefusal == block.Verdict )
+                // A revoked identity: refused whatever it presents (and whatever is pinned or anchored).
+                if( remote != null && block.Verdict == KeyManagement.KeyChainVerdict.Revoked )
+                {
+                    conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.Revoked);
+                    return null;
+                }
+                if( remote != null && remote.RemoteKeys.IsAnchored && remote.RemoteKeys.Refusal == block.Verdict )
                 {
                     // An anchor older than the events presented: the initiator can send its events from it (when it is
                     // within the window of its head). Otherwise, the anchor doesn't match (or is too old to be reached).
@@ -441,6 +451,12 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 // This is a serious issue and we cannot do a lot here.
                 transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                $"Unable to verify the signature's incoming message from '{fullName}'." );
+                return null;
+            }
+            // A caller that we don't know and whose identity is revoked here: dropped (it never becomes a pending approval).
+            if( remote == null && block.Head != null && IsRevokedHere( transportManager, fullName, block.Head ) )
+            {
+                transportManager.Logger.Warn( ActivityMonitor.Tags.SecurityCritical, $"The identity of the unknown caller '{fullName}' is revoked: it is refused." );
                 return null;
             }
             // A pinned initiator whose events don't reach our pin (it was offline for long): it can send its events from our
@@ -546,6 +562,18 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
     {
         var held = keys.GetStatedCheckpoint( ActivityMonitor.StaticLogger );
         return held != null && held.Seq <= initiatorHead.Seq && initiatorHead.Seq - held.Seq < KeyManagement.KeyEventChain.MaxEventWindow;
+    }
+
+    // Whether the identity of a key event log is revoked by one of the local parties.
+    static bool IsRevokedHere( TransportManager transportManager, string fullName, KeyManagement.KeyEvent head )
+    {
+        var app = transportManager.ApplicationIdentityAgent.ApplicationIdentityService;
+        var identity = head.GetIdentity( fullName ).Span;
+        foreach( var local in app.TenantDomains.Cast<ILocalParty>().Prepend( app ) )
+        {
+            if( local.GetFeature<KeyManagement.ILocalKeys>() is { } keys && keys.IsRevoked( identity ) ) return true;
+        }
+        return false;
     }
 
     static PeeringIssueKind DetectConfigurationOrTrustIssue( TransportManager transportManager,

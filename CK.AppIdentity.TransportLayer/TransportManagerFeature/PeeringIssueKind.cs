@@ -135,5 +135,17 @@ public enum PeeringIssueKind
     /// The remote anchors us and refused our key event log (its <see cref="AnchorMismatch"/>): its configuration must be
     /// updated, on its side.
     /// </summary>
-    RemoteAnchorMismatch
+    RemoteAnchorMismatch,
+
+    /// <summary>
+    /// The identity of the remote (its key event log) is revoked by the Authentication Center (see the revocations of
+    /// CK.AppIdentity.KeyManagement): its connection is cut and it is refused, whatever it presents. No approval applies:
+    /// a repaired party incepts again (a new log) and comes back by a new enlistment or a new anchor.
+    /// </summary>
+    Revoked,
+
+    /// <summary>
+    /// The remote refused us because our identity is revoked (its <see cref="Revoked"/>).
+    /// </summary>
+    RevokedByRemote
 }

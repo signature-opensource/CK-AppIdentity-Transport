@@ -45,7 +45,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
     readonly AutoTrustKey _autoTrustKey;
     // The anchor read from the running status of the remote in the dev store ("#Dev"), once read.
     KeyCheckpoint? _devAnchor;
-    KeyChainVerdict? _anchorRefusal;
+    KeyChainVerdict? _refusal;
 
     // The replay cache belongs here, with the remote it protects: one cache, one lock, one file per
     // remote. Holding it on LocalKeys behind an index keyed by remote name would be a hand-rolled
@@ -124,7 +124,31 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 
     public bool IsAnchored => _localKeys.IsAnchored( _remote.FullName );
 
-    public KeyChainVerdict? AnchorRefusal => _anchorRefusal;
+    public KeyChainVerdict? Refusal => _refusal;
+
+    public bool IsRevoked
+    {
+        get
+        {
+            var p = _pinned;
+            return _refusal == KeyChainVerdict.Revoked || (p != null && _localKeys.IsRevoked( p.GetIdentity( _remote.FullName ).Span ));
+        }
+    }
+
+    // Called by the local keys when the revocations change: a revoked pin is cleared (the identity is refused forever).
+    internal void OnRevocations( IActivityLineEmitter logger )
+    {
+        lock( _trustLock )
+        {
+            if( _pinned != null && _localKeys.IsRevoked( _pinned.GetIdentity( _remote.FullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity of remote '{_remote}' is revoked: its pin #{_pinned.Seq} is cleared." );
+                DoPin( logger, null );
+                ReplaceHistory( logger, [] );
+                _refusal = KeyChainVerdict.Revoked;
+            }
+        }
+    }
 
     public int? HeldByRemoteSeq { get; set; }
 
@@ -203,7 +227,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
                         MoveOn( logger, tail, KeyEventChain.Verify( _remote.FullName, TailFrom( tail, p ), _pinned ) );
                     }
                 }
-                _anchorRefusal = null;
+                _refusal = null;
                 return check;
             case KeyChainVerdict.AnchorMismatch:
                 logger.Error( ActivityMonitor.Tags.SecurityCritical,
@@ -220,7 +244,7 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 
     KeyChainCheck RefuseAnchored( KeyChainCheck check )
     {
-        _anchorRefusal = check.Verdict;
+        _refusal = check.Verdict;
         return check;
     }
 
@@ -249,6 +273,11 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
                              trusted == null || trusted.VerifySignature( _remote.FullName ) );
         lock( _trustLock )
         {
+            if( trusted != null && _localKeys.IsRevoked( trusted.GetIdentity( _remote.FullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity proposed for remote '{_remote}' is revoked: it can't be pinned." );
+                return false;
+            }
             // An operator's pin proves no link to what was pinned before: the history goes.
             if( !DoPin( logger, trusted ) ) return false;
             ReplaceHistory( logger, [] );
@@ -263,7 +292,19 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         // not each see the old pin and each write their own file (M15).
         lock( _trustLock )
         {
+            // A revoked log is refused whatever it presents (and whatever is pinned).
+            if( tail.Count > 0 && _localKeys.IsRevoked( tail[^1].GetIdentity( _remote.FullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"Remote '{_remote}' presented a key event log whose identity is revoked: refused." );
+                if( _pinned != null )
+                {
+                    DoPin( logger, null );
+                    ReplaceHistory( logger, [] );
+                }
+                return RefuseAnchored( new KeyChainCheck( KeyChainVerdict.Revoked ) );
+            }
             if( IsAnchored ) return ApplyAnchoredTail( logger, tail );
+            if( _refusal == KeyChainVerdict.Revoked ) _refusal = null;
             var check = KeyEventChain.Verify( _remote.FullName, tail, _pinned );
             switch( check.Verdict )
             {
@@ -306,8 +347,8 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
             // Re-read under the lock: another connection may have pinned something meanwhile.
             if( _pinned == null )
             {
-                // An anchored remote is never trusted on first use: it is verified from its anchor.
-                if( _autoTrustKey == AutoTrustKey.Never || IsAnchored ) return false;
+                // An anchored remote is never trusted on first use: it is verified from its anchor. A revoked log never.
+                if( _autoTrustKey == AutoTrustKey.Never || IsAnchored || _localKeys.IsRevoked( head.GetIdentity( _remote.FullName ).Span ) ) return false;
                 logger.Warn( $"Pinning the identity presented by remote '{_remote}' because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}." );
                 return DoPin( logger, head );
             }

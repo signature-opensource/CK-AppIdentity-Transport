@@ -134,6 +134,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         var center = CrisAuthCenter.TryCreateAnchored( monitor, local, authCenterFullName, directory );
         if( center == null ) return false;
         local.AddFeature( new AnchoredAuthCenter( center, sender, _services ) );
+        AuthCenterRevocations.Plug( monitor, center );
         return true;
     }
 
@@ -143,6 +144,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         var center = CrisAuthCenter.TryCreate( monitor, local, authCenter );
         if( center == null ) return false;
         local.AddFeature( new RemoteAuthCenter( center ) );
+        AuthCenterRevocations.Plug( monitor, center );
         return true;
     }
 }

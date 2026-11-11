@@ -60,6 +60,8 @@ sealed partial class LocalKeys : ILocalKeys
     readonly IdentityAlertBook _alerts;
     readonly PerfectEventSender<IdentityAlert> _alertRaised;
     readonly PerfectEventSender<LocalIdentityState> _keyEventAppended;
+    readonly PerfectEventSender<IReadOnlyList<RevocationEntry>> _revocationsChanged;
+    RevocationEntry[] _revocations;
     // The head of the log last announced by KeyEventAppended (only the heartbeat reads and writes it).
     KeyEvent _announcedHead;
     // The driver's event, raised after ours: one place for an application to subscribe for every local party.
@@ -96,6 +98,8 @@ sealed partial class LocalKeys : ILocalKeys
         _alerts = alerts;
         _alertRaised = new PerfectEventSender<IdentityAlert>();
         _keyEventAppended = new PerfectEventSender<LocalIdentityState>();
+        _revocationsChanged = new PerfectEventSender<IReadOnlyList<RevocationEntry>>();
+        _revocations = [];
         _announcedHead = _state.Log[^1];
         _driverAlertRaised = driverAlertRaised;
         _encryption = new LocalEncryptionKeys( ActivityMonitor.StaticLogger, local, protector );
@@ -114,6 +118,30 @@ sealed partial class LocalKeys : ILocalKeys
     public PerfectEvent<IdentityAlert> AlertRaised => _alertRaised.PerfectEvent;
 
     public PerfectEvent<LocalIdentityState> KeyEventAppended => _keyEventAppended.PerfectEvent;
+
+    public IReadOnlyList<RevocationEntry> Revocations => _revocations;
+
+    public PerfectEvent<IReadOnlyList<RevocationEntry>> RevocationsChanged => _revocationsChanged.PerfectEvent;
+
+    public bool IsRevoked( ReadOnlySpan<byte> identity )
+    {
+        foreach( var e in _revocations )
+        {
+            if( e.Matches( identity ) ) return true;
+        }
+        return false;
+    }
+
+    public async Task SetRevocationsAsync( IActivityMonitor monitor, IReadOnlyList<RevocationEntry> entries, CancellationToken cancel = default )
+    {
+        Throw.CheckNotNullArgument( entries );
+        _revocations = entries.ToArray();
+        foreach( var r in _local.Remotes )
+        {
+            if( r.GetFeature<IRemoteKeys>() is RemoteKeys keys ) keys.OnRevocations( monitor );
+        }
+        await _revocationsChanged.SafeRaiseAsync( monitor, _revocations, cancel ).ConfigureAwait( false );
+    }
 
     public bool Acknowledge( IActivityMonitor monitor, IdentityAlert alert ) => _alerts.Acknowledge( monitor, alert );
 
