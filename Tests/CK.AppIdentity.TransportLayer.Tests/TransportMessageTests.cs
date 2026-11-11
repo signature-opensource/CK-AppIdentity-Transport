@@ -37,6 +37,22 @@ public class TransportMessageTests
 
 
     [Test]
+    public void the_builder_refuses_a_message_longer_than_the_protocol_bound()
+    {
+        // TR-8: CreateMessage() checked only the int.MaxValue limit, not the bound that the receiver applies.
+        var directory = new MessageProtocolDirectoryService();
+        directory.TryRegister( TestHelper.Monitor, "TR8", 0, out var protocol, maxIncomingMessageLength: 100 ).ShouldBeTrue();
+        using var factory = new OutgoingMessageFactory( protocol );
+        using var builder = factory.CreateBuilder();
+        var sequence = builder.ObtainSequence();
+        sequence.GetSpan( 101 ).Slice( 0, 101 ).Fill( 1 );
+        sequence.Advance( 101 );
+        builder.ReleaseSequence( sequence );
+        Should.Throw<InvalidOperationException>( () => builder.CreateMessage() );
+        builder.IsDisposed.ShouldBeFalse( "The builder can still be disposed." );
+    }
+
+    [Test]
     public async Task basic_TransportMessage_read_write_Async( )
     {
         using var ctx = new Context();

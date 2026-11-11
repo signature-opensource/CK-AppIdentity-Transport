@@ -152,15 +152,14 @@ public sealed partial class OutgoingMessageBuilder: IDisposable
         // By obtaining the buffer, we preserve any future change and
         // if the writer has not been released, then this fails.
         var buffer = ObtainSequence();
-        if( buffer.Length == 0 )
+        try
         {
-            ReleaseSequence( buffer );
-            Throw.InvalidOperationException( "No data has been written to the outgoing message." );
+            _messageFactory.CheckMessageLength( buffer.Length );
         }
-        if( buffer.Length > int.MaxValue )
+        catch
         {
             ReleaseSequence( buffer );
-            Throw.InvalidOperationException( $"Buffered {buffer.Length} bytes exceeds {int.MaxValue} maximum message size." );
+            throw;
         }
         // We have a unique access to the buffer. We can easily detect that Dispose has
         // been called (and the buffer should not be used).

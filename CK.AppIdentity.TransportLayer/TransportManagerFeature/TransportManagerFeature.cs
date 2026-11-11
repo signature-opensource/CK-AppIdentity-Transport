@@ -362,9 +362,9 @@ public sealed class TransportManagerFeature
             lock( _peeringIssues )
             {
                 _peeringIssues.Remove( issue.FullName );
+                _exposedClonedIssues = null;
             }
             _exposedIssues = null;
-            _exposedClonedIssues = null;
             return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
         }
         return Task.CompletedTask;
@@ -392,27 +392,33 @@ public sealed class TransportManagerFeature
         return Task.CompletedTask;
     }
 
+    // The clones are published under the _peeringIssues lock (GetClonedPeeringIssues): an issue that is changed in place
+    // is changed, and the clones are invalidated, under this lock too. Otherwise a reader that cloned the issue before
+    // the change can publish its stale clones after the invalidation.
     void OnRemoteTornDown( PeeringIssue issue )
     {
         // The issue either disappears or survives with a null Remote: either way
         // UnknownRemoteCount follows from the dictionary, there is nothing to maintain here.
-        if( issue.OnRemoteTornDown() )
+        // Under the lock like every other mutation: readers (Find, GetPeeringIssues,
+        // UnknownRemoteCount) can run on any thread.
+        lock( _peeringIssues )
         {
-            // Under the lock like every other mutation: readers (Find, GetPeeringIssues,
-            // UnknownRemoteCount) can run on any thread.
-            lock( _peeringIssues )
+            if( issue.OnRemoteTornDown() )
             {
                 _peeringIssues.Remove( issue.FullName );
+                _exposedIssues = null;
             }
-            _exposedIssues = null;
+            _exposedClonedIssues = null;
         }
-        _exposedClonedIssues = null;
     }
 
     void OnRemoteAppeared( PeeringIssue issue, TransportFeature remote )
     {
-        issue.OnRemoteAppeared( remote );
-        _exposedClonedIssues = null;
+        lock( _peeringIssues )
+        {
+            issue.OnRemoteAppeared( remote );
+            _exposedClonedIssues = null;
+        }
     }
 
     internal Task AddOrUpdateIssueAsync( IActivityMonitor monitor,
@@ -443,18 +449,21 @@ public sealed class TransportManagerFeature
                 if( remote != null ) OnRemoteAppeared( exist, remote );
                 else OnRemoteTornDown( exist );
             }
-            exist.Update( kind,
-                            _transportManager.SystemClock.UtcNow,
-                            message,
-                            remote,
-                            enlistUrl,
-                            enlistUrlIsAuthenticated,
-                            invalidClockOffset,
-                            remoteKeyForApproval,
-                            localMissing,
-                            remoteMissing,
-                            remoteOffMessage );
-            _exposedClonedIssues = null;
+            lock( _peeringIssues )
+            {
+                exist.Update( kind,
+                              _transportManager.SystemClock.UtcNow,
+                              message,
+                              remote,
+                              enlistUrl,
+                              enlistUrlIsAuthenticated,
+                              invalidClockOffset,
+                              remoteKeyForApproval,
+                              localMissing,
+                              remoteMissing,
+                              remoteOffMessage );
+                _exposedClonedIssues = null;
+            }
             return _peeringIssueChanged.SafeRaiseAsync( monitor, exist );
         }
         // If there is no remote then cleanup in excess unknown remotes if any
@@ -478,7 +487,6 @@ public sealed class TransportManagerFeature
                                                         inExcess );
             }
         }
-        _exposedClonedIssues = null;
         return AddNewPeeringIssueAsync( monitor,
                                         fullName,
                                         kind,
@@ -514,6 +522,7 @@ public sealed class TransportManagerFeature
         lock( _peeringIssues )
         {
             foreach( var i in toRemove ) _peeringIssues.Remove( i.FullName );
+            _exposedClonedIssues = null;
         }
         _exposedIssues = null;
         foreach( var i in toRemove )
@@ -521,7 +530,6 @@ public sealed class TransportManagerFeature
             i.SetNoneIssueKind();
             await _peeringIssueChanged.SafeRaiseAsync( monitor, i );
         }
-        _exposedClonedIssues = null;
         await AddNewPeeringIssueAsync( monitor,
                                        fullName,
                                        kind,
@@ -562,6 +570,7 @@ public sealed class TransportManagerFeature
         lock( _peeringIssues )
         {
             _peeringIssues.Add( fullName, issue );
+            _exposedClonedIssues = null;
         }
         _exposedIssues = null;
         return _peeringIssueChanged.SafeRaiseAsync( monitor, issue );
