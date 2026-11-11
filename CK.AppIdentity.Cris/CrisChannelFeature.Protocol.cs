@@ -66,7 +66,7 @@ public sealed partial class CrisChannelFeature
 
         internal void SendFinalEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e ) => SendEvent( monitor, DFinalEvent, key, e );
 
-        internal void SendAccepted( IActivityMonitor monitor, List<string> names, PartyDescription description )
+        internal void SendAccepted( IActivityMonitor monitor, IReadOnlyList<string> names, PartyDescription description )
         {
             Enqueue( monitor, MessageFactory.Create( bytes =>
             {

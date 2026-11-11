@@ -245,8 +245,7 @@ public sealed partial class CrisChannelFeature
         {
             return (null, $"Party '{next}' is not available.");
         }
-        var name = channel._crisDirectory.CrisPocoModels.First( m => typeof( IPartyRoutedCommand ).IsAssignableFrom( m.CommandType ) ).PocoName;
-        if( channel.AcceptedCommands?.Contains( name ) is not true ) return (null, $"Party '{next}' doesn't accept routed commands.");
+        if( channel._models.RoutedCommand is not { } routed || channel.AcceptedCommands?.Contains( routed.PocoName ) is not true ) return (null, $"Party '{next}' doesn't accept routed commands.");
         return (channel, null);
     }
 

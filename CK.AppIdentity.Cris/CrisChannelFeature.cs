@@ -30,7 +30,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     readonly IPocoFactory<ICrisResultError> _errorFactory;
     readonly IPocoFactory<ICrisCallResult> _callResultFactory;
     readonly IncomingCommandExecutor _executor;
-    readonly CrisDirectory _crisDirectory;
+    readonly CrisChannelModels _models;
     readonly ICrisChannelReceptionHandler? _receptionHandler;
     readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
     readonly IEnumerable<ICrisForwardedEnvelopeFilter> _forwardedEnvelopeFilters;
@@ -59,7 +59,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                                  IPocoFactory<ICrisCallResult> callResultFactory,
                                  CrisExecutionHost executionHost,
                                  IDIContainer<AppIdentityDIContainerDefinition.Data> endpoint,
-                                 CrisDirectory crisDirectory,
+                                 CrisChannelModels models,
                                  ICrisChannelReceptionHandler? receptionHandler,
                                  IEnumerable<ICrisIncomingCommandTransformer> incomingTransformers,
                                  IEnumerable<ICrisForwardedEnvelopeFilter> forwardedEnvelopeFilters,
@@ -70,7 +70,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         _forwardedEnvelopeFilters = forwardedEnvelopeFilters;
         _routedCommandSeal = routedCommandSeal;
         _pocoDirectory = pocoDirectory;
-        _crisDirectory = crisDirectory;
+        _models = models;
         _receptionHandler = receptionHandler;
         _envelopes = new ConcurrentDictionary<ActivityMonitor.LogKey, ICrisCallEnvelope>();
         _firstAccepted = new TaskCompletionSource( TaskCreationOptions.RunContinuationsAsynchronously );
@@ -105,9 +105,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     void SendAccepted( IActivityMonitor monitor, Protocol h )
     {
-        h.SendAccepted( monitor,
-                        _crisDirectory.CrisPocoModels.Where( IsAcceptedFromRemote ).Select( m => m.PocoName ).ToList(),
-                        Party.Owner.Description );
+        h.SendAccepted( monitor, IsRemoteInsideSystem ? _models.AcceptedFromInside : _models.AcceptedFromOutside, Party.Owner.Description );
     }
 
     // Our description changed (the HTTP endpoints know their URL once the host has started): it is announced again.
@@ -131,23 +129,16 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// </summary>
     /// <param name="model">The command model.</param>
     /// <returns>True if the remote may send it.</returns>
-    public bool IsAcceptedFromRemote( ICrisPocoModel model )
-    {
-        // The routed command has no handler: the channel handles it (see IPartyRoutedCommand). It is [Internal].
-        if( typeof( IPartyRoutedCommand ).IsAssignableFrom( model.CommandType ) ) return IsRemoteInsideSystem;
-        return model.Kind is CrisPocoKind.Command or CrisPocoKind.CommandWithResult
-               && model.IsHandled
-               && model.Exposure switch
-               {
-                   CrisExposure.Public => true,
-                   CrisExposure.Internal => IsRemoteInsideSystem,
-                   _ => false
-               };
-    }
+    public bool IsAcceptedFromRemote( ICrisPocoModel model ) => _models.IsAcceptedFromRemote( model, IsRemoteInsideSystem );
 
     /// <summary>
     /// Gets the names of the commands that the remote accepts from us (its advertisement, received on each connection),
     /// or null until the first one is received.
+    /// <para>
+    /// An <see cref="CrisExposure.Internal"/> command never leaves the System: the ones advertised by a remote outside the
+    /// System are ignored (a <see cref="ActivityMonitor.Tags.SecurityCritical"/> warning). Such a remote never receives
+    /// them, nor captures their dispatch.
+    /// </para>
     /// </summary>
     public IReadOnlySet<string>? AcceptedCommands => _acceptedCommands;
 
@@ -173,6 +164,10 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     internal void OnAccepted( IActivityMonitor monitor, HashSet<string> names, PartyDescription? description )
     {
         if( description != null ) Party.SetDescription( monitor, description );
+        if( !IsRemoteInsideSystem && names.RemoveWhere( _models.IsInternal ) > 0 )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{Party.FullName}' is outside the System of '{Party.Owner.FullName}' and advertises [Internal] commands: they are ignored." );
+        }
         _acceptedCommands = names;
         _firstAccepted.TrySetResult();
         monitor.Info( $"'{Party.FullName}' accepts {names.Count} commands from '{Party.Owner.FullName}'." );
@@ -184,10 +179,7 @@ public sealed partial class CrisChannelFeature : ChannelFeature
             if( other == Party || other.GetFeature<CrisChannelFeature>()?.AcceptedCommands is not { } o ) continue;
             foreach( var name in names )
             {
-                if( o.Contains( name )
-                    && _crisDirectory.CrisPocoModels.FirstOrDefault( m => m.PocoName == name ) is { IsHandled: false } m
-                    && !typeof( ICommandTargetParty ).IsAssignableFrom( m.CommandType )
-                    && !typeof( ICommandEndpointOnly ).IsAssignableFrom( m.CommandType ) )
+                if( o.Contains( name ) && _models.IsDispatched( name ) )
                 {
                     monitor.Error( $"Deployment error: command '{name}' is handled by '{Party.FullName}' and '{other.FullName}' for '{Party.Owner.FullName}'. It cannot be dispatched." );
                 }

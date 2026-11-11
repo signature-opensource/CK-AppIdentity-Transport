@@ -53,7 +53,9 @@ topology, what this party accepts from the remote of the channel:
 
 Endpoint-only commands are accepted when they are handled: they are sent explicitly with `SendCommand`. On each
 connection, each side advertises the names of the commands it accepts from the other: `AcceptedCommands` is what the
-remote accepts from us (null until its first advertisement, see `WaitForAcceptedCommandsAsync`).
+remote accepts from us (null until its first advertisement, see `WaitForAcceptedCommandsAsync`). An `[Internal]` command
+never leaves the System: the ones advertised by a remote outside the System are ignored (a `SecurityCritical` warning),
+so that such a remote can neither receive nor block their dispatch.
 
 The advertisement also carries the description of the party (`IParty.Description` of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md#the-description-of-a-party):

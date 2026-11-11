@@ -17,7 +17,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
     readonly IPocoFactory<ICrisCallResult> _callResultFactory;
     readonly IDIContainer<AppIdentityDIContainerDefinition.Data> _endpoint;
     readonly CrisExecutionHost _executionHost;
-    readonly CrisDirectory _crisDirectory;
+    readonly CrisChannelModels _models;
     readonly ICrisChannelReceptionHandler? _receptionHandler;
     readonly IEnumerable<ICrisIncomingCommandTransformer> _incomingTransformers;
     readonly IEnumerable<ICrisForwardedEnvelopeFilter> _forwardedEnvelopeFilters;
@@ -36,7 +36,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
                                      ICrisRoutedCommandSeal? routedCommandSeal = null )
         : base( transport, isAllowedByDefault: true )
     {
-        _crisDirectory = crisDirectory;
+        _models = new CrisChannelModels( crisDirectory );
         _receptionHandler = receptionHandler;
         _incomingTransformers = incomingTransformers;
         _forwardedEnvelopeFilters = forwardedEnvelopeFilters;
@@ -50,7 +50,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
 
     protected override bool TryCreateChannel( FeatureLifetimeContext context, TransportFeature transport, out CrisChannelFeature? channel )
     {
-        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _crisDirectory, _receptionHandler, _incomingTransformers, _forwardedEnvelopeFilters, _routedCommandSeal );
+        channel = new CrisChannelFeature( transport, _pocoDirectory, _errorFactory, _callResultFactory, _executionHost, _endpoint, _models, _receptionHandler, _incomingTransformers, _forwardedEnvelopeFilters, _routedCommandSeal );
         return true;
     }
 }

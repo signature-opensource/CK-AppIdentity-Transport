@@ -258,6 +258,16 @@ public class DispatchTests
         Error( await ExecuteAsync( sender, sender.PocoDirectory.Create<IInternalPingCommand>() ) ).ShouldBe( "Cris.NoRoute" );
         var refused = await sender.CrisChannel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IInternalPingCommand>() ).ExecutedCommand.WaitAsync( _timeout );
         refused.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.First().Text.ShouldContain( "is not accepted" );
+
+        // A remote outside the System that advertises an [Internal] command (a dishonest one) never captures it.
+        var internalName = sender.PocoDirectory.Create<IInternalPingCommand>().CrisPocoModel.PocoName;
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            sender.CrisChannel.OnAccepted( TestHelper.Monitor, [.. sender.CrisChannel.AcceptedCommands!, internalName], null );
+            logs.ShouldContain( l => l.Contains( "advertises [Internal] commands: they are ignored" ) );
+        }
+        sender.CrisChannel.AcceptedCommands.ShouldNotContain( internalName );
+        Error( await ExecuteAsync( sender, sender.PocoDirectory.Create<IInternalPingCommand>() ) ).ShouldBe( "Cris.NoRoute" );
     }
 
     [Test]
