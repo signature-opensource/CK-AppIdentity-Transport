@@ -17,6 +17,12 @@ public readonly struct MessageProtocolMap
     /// </summary>
     public const int MaxCount = 7;
 
+    /// <summary>
+    /// The order of the protocols in a map, by their <see cref="MessageProtocol.Name"/>: the channels of a remote are
+    /// in this order and both parties use it.
+    /// </summary>
+    public static StringComparer NameComparer => StringComparer.OrdinalIgnoreCase;
+
     readonly MessageProtocol[] _protocols;
 
     MessageProtocolMap( MessageProtocol[] protocols )
@@ -36,7 +42,7 @@ public readonly struct MessageProtocolMap
     public static MessageProtocolMap Get( IEnumerable<MessageProtocol> protocols )
     {
         Throw.CheckNotNullArgument( protocols );
-        return InternalGet( protocols.OrderBy( p => p.Name ).ToArray() );
+        return InternalGet( protocols.OrderBy( p => p.Name, NameComparer ).ToArray() );
     }
 
     internal static MessageProtocolMap InternalGet( MessageProtocol[] protocols )
@@ -49,7 +55,7 @@ public readonly struct MessageProtocolMap
             Throw.CheckNotNullArgument( protocols );
             Throw.CheckArgument( protocols.Length <= MaxCount );
             Throw.CheckArgument( protocols.All( p => p != null && p != MessageProtocol.ZeroProtocol ) );
-            Throw.CheckArgument( protocols.Select( p => p.Name ).IsSortedStrict() );
+            Throw.CheckArgument( protocols.Select( p => p.Name ).IsSortedStrict( NameComparer.Compare ) );
         }
     }
 

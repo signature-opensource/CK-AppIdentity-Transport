@@ -93,7 +93,7 @@ public sealed class TransportFeature
     {
         Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
         Throw.DebugAssert( protocols.Protocols.Count == _bestRegisteredProtocols.Count );
-        Throw.DebugAssert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), StringComparer.OrdinalIgnoreCase ) );
+        Throw.DebugAssert( protocols.Protocols.Select( p => p.Name ).SequenceEqual( _bestRegisteredProtocols.Select( p => p.Name ), MessageProtocolMap.NameComparer ) );
 
         // First, instantiates or rebinds the TransportController so that it can be
         // provided to the protocol handlers.
@@ -477,13 +477,14 @@ public sealed class TransportFeature
             int i = 0;
             for( ; i < _bestRegisteredProtocols.Count; i++ )
             {
-                int cmp = StringComparer.OrdinalIgnoreCase.Compare( messageProtocol.Name, _bestRegisteredProtocols[i].Name );
+                int cmp = MessageProtocolMap.NameComparer.Compare( messageProtocol.Name, _bestRegisteredProtocols[i].Name );
                 if( cmp == 0 )
                 {
                     monitor.Error( $"Channel '{channelFeatureName}' for remote '{_party.FullName}': protocol '{messageProtocol.FullName}' is already managed by another channel." );
                     return -1;
                 }
-                if( cmp > 0 ) break;
+                // Ascending order: the order of the negotiated MessageProtocolMap.
+                if( cmp < 0 ) break;
             }
             _bestRegisteredProtocols.Insert( i, messageProtocol );
             _registeredProtocols.Add( messageProtocol );

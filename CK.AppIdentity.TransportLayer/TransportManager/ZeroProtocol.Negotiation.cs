@@ -860,7 +860,7 @@ static partial class ZeroProtocol // Negotiation
         // does not classify as a peer fault - and this runs BEFORE the signature check below, so an
         // unauthenticated peer could raise a full-stack Error with ToBeInvestigated per connection.
         Throw.CheckData( "Protocol names must be unique and sorted.",
-                         protocols.Select( p => p.Name ).IsSortedStrict() );
+                         protocols.Select( p => p.Name ).IsSortedStrict( MessageProtocolMap.NameComparer.Compare ) );
         var map = MessageProtocolMap.InternalGet( protocols );
         // The listener's half of the key agreement and the algorithm it selected.
         uint lenEphemeral = r.ReadSmallUInt32();

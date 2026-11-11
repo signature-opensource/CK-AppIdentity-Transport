@@ -852,10 +852,12 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
     {
         // Let's check the full protocol list we received by intersecting it
         // with our declared protocol (and selecting the highest common version for each of them).
+        // The map is in the order of the channels (MessageProtocolMap.NameComparer), not in the registration order.
         MessageProtocol[] commonBest = remote.RegisteredProtocols.IntersectBy( initialMessage.AvailableProtocols, p => p.FullName )
                                                                  .GroupBy( p => p.Name )
-                                                                 .Select( g => g.MaxBy( g => g.Version ) )
-                                                                 .ToArray()!;
+                                                                 .Select( g => g.MaxBy( g => g.Version )! )
+                                                                 .OrderBy( p => p.Name, MessageProtocolMap.NameComparer )
+                                                                 .ToArray();
         // If the protocols from the other side don't satisfy us or if cannot satisfy him, we compute the
         // sets of missing on both sides for the PeeringIssues.
         // We send the MissingProtocolsMessage and let the caller close the connection (if it can do it quick enough).
