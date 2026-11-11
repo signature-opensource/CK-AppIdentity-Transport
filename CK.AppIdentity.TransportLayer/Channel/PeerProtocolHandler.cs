@@ -72,12 +72,13 @@ public abstract class PeerProtocolHandler
     /// <summary>
     /// Attempts to transfer the message to the transport high priority queue.
     /// <para>
-    /// This returns false if and only if the channel is closed (the remote is destroyed).
+    /// This returns false if and only if the channel is closed (the remote is switched off or destroyed: a handler
+    /// is replaced by a new one on the connection that follows a switch off).
     /// When false is returned, the <paramref name="message"/> should be released.
     /// </para>
     /// </summary>
     /// <param name="message">The message to enqueue.</param>
-    /// <returns>true if the message has been enqueued, false if the remote has been destroyed.</returns>
+    /// <returns>true if the message has been enqueued, false if the remote has been switched off or destroyed.</returns>
     public bool TryEnqueueHighPriority( IOutgoingMessage message )
     {
         return _controller.TryEnqueueHighPriority( message );
@@ -92,7 +93,7 @@ public abstract class PeerProtocolHandler
     /// <param name="message">The message to enqueue.</param>
     /// <param name="cancellationToken">Optional <see cref="CancellationToken"/>.</param>
     /// <returns>
-    /// True if the message has been be enqueued, false if the channel is closed (the remote is destroyed)
+    /// True if the message has been be enqueued, false if the channel is closed (the remote is switched off or destroyed)
     /// or the <paramref name="cancellationToken"/> has been signaled.
     /// </returns>
     public ValueTask<bool> TryEnqueueAsync( IOutgoingMessage message, CancellationToken cancellationToken = default ) => _controller.TryEnqueueAsync( message, cancellationToken );

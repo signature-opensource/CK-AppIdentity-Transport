@@ -40,6 +40,11 @@ public sealed partial class CountingChannelFeature
                 _feature.GateEntered.Set();
                 _feature.SendGate.Wait( 20_000 );
             }
+            if( id == _feature.BlockedId )
+            {
+                _feature.BlockEntered.Set();
+                _feature.BlockToken.WaitHandle.WaitOne( 30_000 );
+            }
             if( id == _feature.ThrowOnSendId )
             {
                 throw new CKException( $"OnSendMessage for {id}." );
@@ -63,6 +68,11 @@ public sealed partial class CountingChannelFeature
             message.Message.Slice( 0, 4 ).CopyTo( b );
             message.Dispose();
             int id = BinaryPrimitives.ReadInt32LittleEndian( b );
+            if( id == _feature.ReceiveBlockedId )
+            {
+                _feature.ReceiveBlockEntered.Set();
+                _feature.ReceiveBlockToken.WaitHandle.WaitOne( 30_000 );
+            }
             if( id == _feature.ThrowOnReceiveId )
             {
                 throw new CKException( $"ReceiveAsync for {id}." );

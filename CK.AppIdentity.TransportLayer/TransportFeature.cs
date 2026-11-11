@@ -133,6 +133,16 @@ public sealed class TransportFeature
         _readyTask.TrySetResult();
     }
 
+    /// <summary>
+    /// Called when the current transport of a listening remote has been killed: its connection availability
+    /// becomes <see cref="ConnectionAvailability.None"/> (the channels lose their current handler).
+    /// </summary>
+    internal Task OnListenedTransportKilledAsync( IActivityMonitor monitor )
+    {
+        Throw.DebugAssert( IsListening && _controller != null && _controller.CurrentTransport.Lifetime.IsCancellationRequested );
+        return UpdateExtremeConnectionAvailabilityAsync( monitor );
+    }
+
     Task UpdateExtremeConnectionAvailabilityAsync( IActivityMonitor monitor )
     {
         Throw.DebugAssert( "Called from the TransportManager loop.", _transportManager.IsInLoop( monitor ) );
@@ -140,8 +150,8 @@ public sealed class TransportFeature
         // TODO: Consider _controller queue load.
         // Currently we are connected if no off reason exists and a controller has been created and its lifetime has not been signaled.
         // Eviction is transparent (the previous transport ends its receive works) but errors followed by a successful reconnection can be observed.
-        // But since this is currently called by OnTransportAppearAsync (reconnection case) and DoSwithOff (explicit disconnection case),
-        // no intermediate state will be emitted.
+        // This is called by OnTransportAppearAsync (reconnection case), DoSwithOff (explicit disconnection case), the keep-alive
+        // and OnListenedTransportKilledAsync (lost connection of a remote that connects to us).
         // We definitely need a more complex code with:
         //  - controller sender channel load.
         //  - disconnection time (based on LastReceived and may be a LastSent - when the remote is passive).
@@ -732,6 +742,10 @@ public sealed class TransportFeature
                 // Setup a new ready task only if necessary.
                 if( _readyTask.Task.IsCompleted ) _readyTask = new TaskCompletionSource();
                 await c.CloseAsync( monitor, offReason ).ConfigureAwait( false );
+                foreach( var channel in _channels )
+                {
+                    channel.OnControllerClosed( monitor );
+                }
             }
             await UpdateExtremeConnectionAvailabilityAsync( monitor ).ConfigureAwait( false );
             // When tearing down or not, raises the TransportManagerFeature event: IsOff has changed

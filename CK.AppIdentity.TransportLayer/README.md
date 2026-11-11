@@ -172,7 +172,7 @@ with the ConnectionAvailability enumeration. This should be used before sending 
 
 | Value | Name       | Description  |
 |-------|------------|--------------|
-|0      | None       | No connection at all. This is the initial state, and the state of a remote that is switched off (along with a new pending `ReadyTask`). |
+|0      | None       | No connection at all. This is the initial state, the state of a remote that is switched off (along with a new pending `ReadyTask`), and the state of a remote that connects to us once its connection is lost. |
 |1      | DangerZone | Connected, but no longer answering: a keep-alive probe has gone unanswered. Any traffic from the remote clears it. |
 |2      | Low        | A connection to a remote we connect to was lost and a reconnection is under way.  |
 |3      | Connected  | The remote is connected.  |

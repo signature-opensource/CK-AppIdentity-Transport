@@ -530,6 +530,12 @@ sealed partial class TransportManager : MicroAgent
                     _backTasks.Initialize<OutgoingConnectionBackTask>( monitor, _headOutgoingConnection, back => back.OnInitialize( remote, reconnectDelay ) );
                 }
             }
+            else if( t.Controller.Feature.TransportController == t.Controller && t.Controller.CurrentTransport == t )
+            {
+                // A remote that connects to us lost its current connection: nothing reconnects from here, the
+                // connection is gone until the remote comes back (an evicted transport is not the current one).
+                await t.Controller.Feature.OnListenedTransportKilledAsync( monitor );
+            }
         }
     }
 

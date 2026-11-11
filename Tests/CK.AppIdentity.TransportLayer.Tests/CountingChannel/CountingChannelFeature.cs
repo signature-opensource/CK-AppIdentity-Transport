@@ -69,6 +69,39 @@ public sealed partial class CountingChannelFeature : ChannelFeature
     public ManualResetEventSlim GateEntered { get; } = new ManualResetEventSlim( false );
 
     /// <summary>
+    /// When set, <see cref="PeerProtocolHandler.OnSendMessage"/> for this identity blocks until <see cref="BlockToken"/>
+    /// is signaled (at most 30 seconds). With the <see cref="Transport.Lifetime"/> of a transport, this is a send that
+    /// is stuck on a peer that doesn't read anymore: only the kill of the transport ends it.
+    /// </summary>
+    public int BlockedId { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the token that releases <see cref="BlockedId"/>.
+    /// </summary>
+    public CancellationToken BlockToken { get; set; }
+
+    /// <summary>
+    /// Signaled once the <see cref="BlockedId"/> message has entered <see cref="PeerProtocolHandler.OnSendMessage"/>.
+    /// </summary>
+    public ManualResetEventSlim BlockEntered { get; } = new ManualResetEventSlim( false );
+
+    /// <summary>
+    /// When set, <see cref="PeerProtocolHandler.ReceiveAsync"/> for this identity blocks until <see cref="ReceiveBlockToken"/>
+    /// is signaled (at most 30 seconds): the receive loop doesn't read anything else meanwhile.
+    /// </summary>
+    public int ReceiveBlockedId { get; set; } = -1;
+
+    /// <summary>
+    /// Gets or sets the token that releases <see cref="ReceiveBlockedId"/>.
+    /// </summary>
+    public CancellationToken ReceiveBlockToken { get; set; }
+
+    /// <summary>
+    /// Signaled once the <see cref="ReceiveBlockedId"/> message has entered <see cref="PeerProtocolHandler.ReceiveAsync"/>.
+    /// </summary>
+    public ManualResetEventSlim ReceiveBlockEntered { get; } = new ManualResetEventSlim( false );
+
+    /// <summary>
     /// When true, <see cref="PeerProtocolHandler.OnMessageSent"/> throws. The send must be unaffected.
     /// </summary>
     public bool ThrowOnMessageSent { get; set; }

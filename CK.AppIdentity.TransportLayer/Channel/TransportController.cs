@@ -25,6 +25,21 @@ sealed partial class TransportController
     Task<IActivityMonitor>? _receiveTask;
     // Never null: initialized with a completed task.
     Task _sendTask;
+    // The transport the _sendTask sends to: after a Rebind, the previous one until the new send loop starts.
+    Transport _sendTransport;
+    // The answer to a key events request of the peer that waits in the high priority queue.
+    IOutgoingMessage? _pendingKeyEventsAnswer;
+
+    /// <summary>
+    /// How long the TransportManager loop waits for a send loop to end (after its transport has been condemned)
+    /// before killing its transport.
+    /// <para>
+    /// A send loop can block on a peer that stops reading (a zero TCP window): only the transport's
+    /// <see cref="Transport.Lifetime"/> unblocks it, and the delayed kill that would signal it is a job of the
+    /// very loop that waits. So the loop never waits longer than this: it kills the transport itself.
+    /// </para>
+    /// </summary>
+    internal static readonly TimeSpan SendLoopGracePeriod = TimeSpan.FromSeconds( 2 );
 
     internal TransportController( TransportManager transportManager, TransportFeature feature, Transport transport )
     {
@@ -32,7 +47,8 @@ sealed partial class TransportController
         _feature = feature;
         // The high priority channel stays UNBOUNDED on purpose: it carries control traffic and the
         // goodbye path, it is low volume, and dropping one of those would be worse than the memory
-        // it can hold.
+        // it can hold. What a peer can trigger in it is bounded: at most one answer to its key events
+        // requests waits in it (see Receive0Message).
         _highPriorityChannel = Channel.CreateUnbounded<IOutgoingMessage>( _unboundOptions );
         // The normal sender channel is bounded. While a remote is down nothing drains it, so an
         // unbounded one let producers grow memory without limit and then flooded everything out on
@@ -48,7 +64,7 @@ sealed partial class TransportController
                                 FullMode = BoundedChannelFullMode.Wait
                             } );
         _sendTask = Task.CompletedTask;
-        _transport = transport;
+        _sendTransport = _transport = transport;
         _transport.SetController( this );
     }
 
@@ -152,17 +168,41 @@ sealed partial class TransportController
         {
             return WaitToStartSendAsync( monitor );
         }
-        _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
+        StartSendLoop();
         return default;
+    }
+
+    void StartSendLoop()
+    {
+        var t = _sendTransport = _transport;
+        _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, t, _senderChannel.Reader, _highPriorityChannel.Reader ) );
     }
 
     async ValueTask WaitToStartSendAsync( IActivityMonitor monitor )
     {
         monitor.Warn( $"Current send task for '{_feature.Party.FullName}' is pending. Waiting for its completion." );
+        // The pending send loop is the one of the previous transport (_sendTransport): the Rebind has condemned it
+        // and scheduled its kill. The current _transport is the new one that must not be killed.
+        await WaitForSendLoopAsync( monitor ).ConfigureAwait( false );
+        StartSendLoop();
+    }
 
-        _transportManager.DelayedKillTransport( _transport, int.MaxValue );
-        await _sendTask.ConfigureAwait( false );
-        _sendTask = Task.Run( () => RunSendAsync( _transportManager, this, _transport, _senderChannel.Reader, _highPriorityChannel.Reader ) );
+    // Waits for the send loop of the condemned _sendTransport to end, at most SendLoopGracePeriod: then its
+    // transport is killed, which cancels the Lifetime token that its blocked send uses.
+    async ValueTask WaitForSendLoopAsync( IActivityMonitor monitor )
+    {
+        Throw.DebugAssert( _transportManager.IsInLoop( monitor ) );
+        if( _sendTask.IsCompleted ) return;
+        try
+        {
+            await _sendTask.WaitAsync( SendLoopGracePeriod ).ConfigureAwait( false );
+        }
+        catch( TimeoutException )
+        {
+            monitor.Warn( $"The send loop of '{_feature.Party.FullName}' to '{_sendTransport.RemoteEndPointDescription}' did not end in {SendLoopGracePeriod.TotalSeconds} seconds. Killing its transport." );
+            _transportManager.KillTransport( _sendTransport, int.MaxValue );
+            await _sendTask.ConfigureAwait( false );
+        }
     }
 
     internal async ValueTask CloseAsync( IActivityMonitor monitor, GoodbyeMessage reason )
@@ -174,10 +214,7 @@ sealed partial class TransportController
         _senderChannel.Writer.Complete();
         // We must wait for the send task to end otherwise we'll have 2 readers activities on "single reader" channels
         // while clearing pending outgoing messages.
-        if( !_sendTask.IsCompleted )
-        {
-            await _sendTask.ConfigureAwait( false );
-        }
+        await WaitForSendLoopAsync( monitor ).ConfigureAwait( false );
         // Drain queued outgoing messages: they must be released.
         ClearPendingOutgoingMessages( monitor );
         // Kill the transport and don't trigger any retry if this is an outgoing transport.
@@ -208,8 +245,8 @@ sealed partial class TransportController
             //   - and this eventually completes the _sendTask...
             _senderChannel.Writer.TryWrite( null );
             // But if something is blocked in the message sending (that uses the transport.LifeTime token),
-            // the _sendTask may block "too much" (especially because we await the _sendTask from the
-            // TransportManager loop).
+            // the _sendTask may block "too much". When the TransportManager loop awaits it, WaitForSendLoopAsync
+            // kills the transport after SendLoopGracePeriod (the delayed kill below is a job of that same loop).
             // Let some time to the sendTask to end before killing the transport and don't trigger
             // any retry if this is an outgoing transport: we are rebinding (to a new transport with an eviction message
             // to send to the current transport or we are closing this controller because the TransportFeature is switched off). 
@@ -245,7 +282,7 @@ sealed partial class TransportController
                 }
                 if( highPriorityReader.TryPeek( out var m ) )
                 {
-                    if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
+                    if( !await SendMessageAsync( transportManager, transportController, transport, m, handlers ).ConfigureAwait( false ) )
                     {
                         // Breaks the send loop. The unsent message is let in the queue.
                         break;
@@ -264,7 +301,7 @@ sealed partial class TransportController
                     }
                     else
                     {
-                        if( !await SendMessageAsync( transportManager, transport, m, handlers ).ConfigureAwait( false ) )
+                        if( !await SendMessageAsync( transportManager, transportController, transport, m, handlers ).ConfigureAwait( false ) )
                         {
                             // Breaks the send loop. The unsent message is let in the queue.
                             break;
@@ -295,6 +332,7 @@ sealed partial class TransportController
         }
 
         static async ValueTask<bool> SendMessageAsync( TransportManager transportManager,
+                                                       TransportController transportController,
                                                        Transport transport,
                                                        IOutgoingMessage m,
                                                        IReadOnlyList<PeerProtocolHandler> handlers )
@@ -304,6 +342,8 @@ sealed partial class TransportController
                 // Even if the send is canceled in "0 Protocol", always consume the message:
                 // the "0 Protocol" must not interact with different transports.
                 await transport.SendAsync( 0, m ).ConfigureAwait( false );
+                // Sent (or lost with its transport): the next key events request of the peer can be answered.
+                Interlocked.CompareExchange( ref transportController._pendingKeyEventsAnswer, null, m );
             }
             else
             {
@@ -500,9 +540,18 @@ sealed partial class TransportController
                             return false;
                         }
                         _transport.RemoteKeys.HeldByRemoteSeq = held;
+                        // The requests come from the peer, at its rate: one answer at most waits in the unbounded high
+                        // priority queue, the requests received while it waits are dropped (the peer asks again if needed).
+                        if( _pendingKeyEventsAnswer != null )
+                        {
+                            receiveMonitor.Trace( $"Key events request of '{_transport.RemoteEndPointDescription}' ignored: an answer is already queued." );
+                            break;
+                        }
                         var answer = ZeroProtocol.CreateKeyEventsMessage( _transport.RemoteKeys.LocalKeys.State, held );
+                        _pendingKeyEventsAnswer = answer;
                         if( !TryEnqueueHighPriority( answer ) )
                         {
+                            _pendingKeyEventsAnswer = null;
                             answer.Release();
                             receiveMonitor.Warn( $"Unable to answer the key events request of '{_transport.RemoteEndPointDescription}'." );
                         }

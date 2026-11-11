@@ -109,6 +109,14 @@ public abstract class ChannelFeature
         SetCurrentHandler( monitor, null );
     }
 
+    // The handlers enqueue into the controller they have been created with: once it is closed (the remote is switched off),
+    // they are useless and the next connection creates new ones for its new controller.
+    internal void OnControllerClosed( IActivityMonitor monitor )
+    {
+        SetCurrentHandler( monitor, null );
+        _firstHandler = null;
+    }
+
     void SetCurrentHandler( IActivityMonitor monitor, PeerProtocolHandler? h )
     {
         var prev = _currentHandler;
