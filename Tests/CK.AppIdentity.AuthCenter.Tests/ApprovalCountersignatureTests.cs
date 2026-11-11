@@ -40,14 +40,14 @@ public class ApprovalCountersignatureTests
         (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
         var host = p.Remote.ApplicationIdentityService;
         int operatorId = p.Browser.Current.Actor.ActorId;
-        IPartyApprovalStatement Statement( int op ) => p.Remote.PocoDirectory.Create<IPartyApprovalStatement>( s =>
+        IPartyApprovalStatement Statement( int op, DateTime? time = null ) => p.Remote.PocoDirectory.Create<IPartyApprovalStatement>( s =>
         {
             s.PartyFullName = "Test/$Waiting/#Dev";
             s.KeyFingerprint = "ABCD-EFGH";
             s.HolderFullName = host.FullName;
             s.HostFullName = host.FullName;
             s.OperatorActorId = op;
-            s.Time = DateTime.UtcNow;
+            s.Time = time ?? DateTime.UtcNow;
             s.HostSignature = host.GetRequiredFeature<ILocalKeys>().Sign( PartyApprovalStatement.Purpose,
                                                                          PartyApprovalStatement.GetSignedData( s ),
                                                                          s.Time + PartyApprovalStatement.Lifetime ).Encoded.ToArray();
@@ -73,6 +73,41 @@ public class ApprovalCountersignatureTests
         (success, signature, _) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, Statement( operatorId + 1 ), withPinGrant: false );
         success.ShouldBeFalse();
         signature.ShouldBeNull();
+
+        // The lifetime of the countersignature comes from the clock of the AuthCenter: a statement dated in the future
+        // (a host that would extend the window of the operator's gesture) is refused, an old one expires with its time.
+        (await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, Statement( operatorId, DateTime.UtcNow.AddDays( 6 ) ), withPinGrant: false ))
+            .Success.ShouldBeFalse();
+        var old = Statement( operatorId, DateTime.UtcNow.AddMinutes( -5 ) );
+        (success, signature, _) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, old, withPinGrant: false );
+        success.ShouldBeTrue();
+        ApplicationSignature.TryRead( signature, out var oldSignature ).ShouldBeTrue();
+        oldSignature.Expiration.ShouldBeLessThanOrEqualTo( old.Time + PartyApprovalStatement.Lifetime );
+    }
+
+    [Test]
+    public async Task without_the_countersignature_an_application_that_has_an_AuthCenter_refuses_every_approval_Async()
+    {
+        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: [.. _types, typeof( IApprovePendingPartyCommand )] );
+        var holder = p.Remote.ApplicationIdentityService;
+        var handlers = new PartyApprovalHandlers( p.Remote.Services.GetRequiredService<PartyRoutedCommandSender>(), countersignature: null, proofVerifier: new AuthCenterProofVerifier() );
+        var command = p.Remote.PocoDirectory.Create<IApprovePendingPartyCommand>( a =>
+        {
+            a.Statement = p.Remote.PocoDirectory.Create<IPartyApprovalStatement>( s =>
+            {
+                s.PartyFullName = "Test/$Waiting/#Dev";
+                s.KeyFingerprint = "ABCD-EFGH";
+                s.HolderFullName = holder.FullName;
+                s.HostFullName = holder.FullName;
+                s.Time = DateTime.UtcNow;
+            } );
+        } );
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            (await handlers.HandleAsync( TestHelper.Monitor, command, new CurrentLocalParty( holder ), p.Browser.Current ))
+                .ShouldBe( PartyApprovalStatus.Refused );
+            logs.ShouldContain( l => l.Contains( "not the countersignature of the approvals (CK.AppIdentity.AuthCenter.Enlistment)" ) );
+        }
     }
 
     static async Task<bool> WaitForAsync( Func<bool> condition )
@@ -137,7 +172,15 @@ public class ApprovalCountersignatureTests
         } );
         await using var scope = p.Remote.CreateAsyncScopeServices();
         var countersignature = scope.ServiceProvider.GetRequiredService<IPartyApprovalCountersignature>();
-        (await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement, withPinGrant: false )).Success.ShouldBeTrue();
+        var (success, signature, _) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement, withPinGrant: false );
+        success.ShouldBeTrue();
+        // Nothing is authorized before a holder approved the key.
+        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldBeNull();
+        // Not countersigned by the center: refused.
+        await countersignature.ApprovedAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement );
+        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldBeNull();
+        statement.CenterCountersignature = signature;
+        await countersignature.ApprovedAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement );
         center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldNotBeNull();
         (await WaitForAsync( () => remoteHosts.RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ) != null )).ShouldBeTrue();
     }

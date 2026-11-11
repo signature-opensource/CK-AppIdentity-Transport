@@ -30,16 +30,34 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
 {
     readonly PartyRoutedCommandSender _sender;
     readonly IPartyApprovalCountersignature? _countersignature;
+    readonly bool _missingCountersignature;
 
     /// <summary>
     /// Initializes the handlers.
     /// </summary>
     /// <param name="sender">The sender of the routed commands.</param>
     /// <param name="countersignature">The countersignature by the Authentication Center, if any.</param>
-    public PartyApprovalHandlers( PartyRoutedCommandSender sender, IPartyApprovalCountersignature? countersignature = null )
+    /// <param name="proofVerifier">
+    /// The verifier of the users' proofs: it exists when the application has an Authentication Center. The countersignature
+    /// is then required (CK.AppIdentity.AuthCenter.Enlistment): without it, every approval is refused (fail closed).
+    /// </param>
+    public PartyApprovalHandlers( PartyRoutedCommandSender sender,
+                                  IPartyApprovalCountersignature? countersignature = null,
+                                  ICallerProofVerifier? proofVerifier = null )
     {
         _sender = sender;
         _countersignature = countersignature;
+        _missingCountersignature = countersignature == null && proofVerifier != null;
+    }
+
+    // An application that has an Authentication Center and the enlistment must have the countersignature: the holder would
+    // otherwise accept an approval from the chain of hops alone.
+    bool CheckCountersignature( IActivityMonitor monitor )
+    {
+        if( !_missingCountersignature ) return true;
+        monitor.Error( ActivityMonitor.Tags.SecurityCritical,
+                       "This application has an Authentication Center and the enlistment, but not the countersignature of the approvals (CK.AppIdentity.AuthCenter.Enlistment): every approval is refused." );
+        return false;
     }
 
     /// <summary>
@@ -109,6 +127,9 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
     {
         var host = current.LocalParty;
         var outcomes = new List<IPartyApprovalOutcome>();
+        if( !CheckCountersignature( monitor ) ) return outcomes;
+        // The routes are authorized once, by the first holder that approves the key.
+        bool routesAuthorized = false;
         if( host.Description.Collected.TryGetValue( TransportFeatureDriver.EnlistmentRouteName, out var items ) )
         {
             var keys = host.GetRequiredFeature<ILocalKeys>();
@@ -179,6 +200,11 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                         status = PartyApprovalStatus.Unreachable;
                     }
                 }
+                if( status == PartyApprovalStatus.Approved && !routesAuthorized && _countersignature != null && statement.Routes.Count > 0 )
+                {
+                    routesAuthorized = true;
+                    await _countersignature.ApprovedAsync( monitor, services, host, statement ).ConfigureAwait( false );
+                }
                 outcomes.Add( pocos.Create<IPartyApprovalOutcome>( o =>
                 {
                     o.HolderFullName = item.Holder;
@@ -210,7 +236,9 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
     async Task<PartyApprovalStatus> ApprovePendingAsync( IActivityMonitor monitor, ILocalParty holder, string? caller, IApprovePendingPartyCommand command )
     {
         var statement = command.Statement!;
+        if( !CheckCountersignature( monitor ) ) return PartyApprovalStatus.Refused;
         // Fail closed: only from a host of the route (an approval page of the System), about a pending approval of this holder.
+
         if( caller == null || holder.Description.FindRoute( TransportFeatureDriver.EnlistmentRouteName, caller ) == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical,

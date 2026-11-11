@@ -25,8 +25,10 @@ public static class PartyApprovalStatement
 
     /// <summary>
     /// Gets the data signed by a statement: its party, key fingerprint, holder and host (each one: its UTF-8 length on 4
-    /// bytes, then its UTF-8 bytes), the operator's actor identifier (4 bytes) and the ticks of its time (8 bytes), big-endian.
+    /// bytes, then its UTF-8 bytes), the operator's actor identifier (4 bytes), the ticks of its time (8 bytes), then the
+    /// count of its routes (4 bytes) and each route like the strings above, big-endian.
     /// </summary>
+
     /// <param name="statement">The statement.</param>
     /// <returns>The signed data.</returns>
     public static byte[] GetSignedData( IPartyApprovalStatement statement )

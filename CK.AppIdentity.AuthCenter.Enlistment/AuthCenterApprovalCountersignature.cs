@@ -33,6 +33,13 @@ public interface ICountersignApprovalCommand : ICommand<ICountersignApprovalResu
     /// holder (its pin of a remote, or its anchor).
     /// </summary>
     bool WithPinGrant { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether a holder approved the key of the <see cref="Statement"/>, that the Authentication Center
+    /// countersigned before (its countersignature is in the statement): the Authentication Center then authorizes the
+    /// routes of the statement for the approved party, it doesn't sign again.
+    /// </summary>
+    bool Approved { get; set; }
 }
 
 /// <summary>
@@ -54,7 +61,9 @@ public interface ICountersignApprovalResult : IPoco
 
 /// <summary>
 /// The countersignature of an approval statement by the Authentication Center (<see cref="Purpose"/>): it covers the same
-/// data as the host's signature (<see cref="PartyApprovalStatement.GetSignedData"/>) and lives as long.
+/// data as the host's signature (<see cref="PartyApprovalStatement.GetSignedData"/>) and lives as long, from the time of
+/// the statement or from the clock of the Authentication Center when it is earlier. A statement whose time is ahead of
+/// this clock (more than <see cref="ClockSkew"/>) or that already expired is not countersigned.
 /// </summary>
 public static class ApprovalCountersignature
 {
@@ -62,6 +71,11 @@ public static class ApprovalCountersignature
     /// The purpose of the countersignature by the Authentication Center.
     /// </summary>
     public const string Purpose = "CK.AuthCenter.PartyApproval";
+
+    /// <summary>
+    /// The tolerated advance of the time of a statement on the clock of the Authentication Center: 1 minute.
+    /// </summary>
+    public static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes( 1 );
 }
 
 /// <summary>
@@ -73,6 +87,8 @@ public static class ApprovalCountersignature
 ///   <item>On the holder, it is required when the holder has an Authentication Center, and verified with its keys (pinned
 ///   or anchored): an approval without it, or with an invalid one, is refused.</item>
 ///   <item>On the Authentication Center, the command is handled: the operator's live proof, its identity and the host.</item>
+///   <item>On the host, once a holder approved the key, the routes of the statement are authorized by the Authentication
+///   Center (<see cref="ApprovedAsync"/>): the same command, <see cref="ICountersignApprovalCommand.Approved"/>.</item>
 /// </list>
 /// A party without Authentication Center neither asks nor requires a countersignature.
 /// </summary>
@@ -101,16 +117,49 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         if( center.AuthCenter == host )
         {
             // The host is the Authentication Center: the operator's request is executed here, at the Critical level.
-            await AuthorizeRoutesAsync( monitor, host, statement ).ConfigureAwait( false );
-            return (true, Sign( host, statement ), withPinGrant ? CreatePinGrant( monitor, host, statement ) : null);
+            var signature = Sign( monitor, host, statement );
+            if( signature == null ) return (false, null, null);
+            return (true, signature, withPinGrant ? CreatePinGrant( monitor, host, statement ) : null);
         }
+        var result = await SendAsync( monitor, services, host, center, statement, withPinGrant, approved: false ).ConfigureAwait( false );
+        if( result is ICountersignApprovalResult r ) return (true, r.Countersignature, r.PinGrant);
+        return (false, null, null);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask ApprovedAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty host, IPartyApprovalStatement statement )
+    {
+        var center = host.GetFeature<CrisAuthCenter>();
+        if( center == null || statement.Routes.Count == 0 ) return;
+        if( center.AuthCenter == host )
+        {
+            await AuthorizeRoutesAsync( monitor, host, statement ).ConfigureAwait( false );
+            return;
+        }
+        if( await SendAsync( monitor, services, host, center, statement, withPinGrant: false, approved: true ).ConfigureAwait( false ) == null )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The routes of '{statement.PartyFullName}' are not authorized by the AuthCenter '{center.AuthCenterFullName}'." );
+        }
+    }
+
+    // Sends the command to the Authentication Center. Null when it can't be sent or is refused (the reason is logged).
+    async Task<ICountersignApprovalResult?> SendAsync( IActivityMonitor monitor,
+                                                       IServiceProvider services,
+                                                       ILocalParty host,
+                                                       CrisAuthCenter center,
+                                                       IPartyApprovalStatement statement,
+                                                       bool withPinGrant,
+                                                       bool approved )
+    {
         var command = services.GetRequiredService<PocoDirectory>().Create<ICountersignApprovalCommand>( c =>
         {
             // The operator: its live proof travels with the command.
             c.ActorId = statement.OperatorActorId;
             c.Statement = statement;
             c.WithPinGrant = withPinGrant;
+            c.Approved = approved;
         } );
+        var what = approved ? "authorize the routes of" : "countersign the approval of";
         object? result;
         try
         {
@@ -122,13 +171,13 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         }
         catch( Exception ex )
         {
-            monitor.Warn( $"Unable to ask the AuthCenter '{center.AuthCenterFullName}' to countersign the approval of '{statement.PartyFullName}'.", ex );
-            return (false, null, null);
+            monitor.Warn( $"Unable to ask the AuthCenter '{center.AuthCenterFullName}' to {what} '{statement.PartyFullName}'.", ex );
+            return null;
         }
-        if( result is ICountersignApprovalResult r ) return (true, r.Countersignature, r.PinGrant);
+        if( result is ICountersignApprovalResult r ) return r;
         var error = result is ICrisResultError e ? e.Errors.Select( m => m.Text ).Concatenate() : "refused";
-        monitor.Warn( $"The AuthCenter '{center.AuthCenterFullName}' doesn't countersign the approval of '{statement.PartyFullName}': {error}" );
-        return (false, null, null);
+        monitor.Warn( $"The AuthCenter '{center.AuthCenterFullName}' doesn't {what} '{statement.PartyFullName}': {error}" );
+        return null;
     }
 
     /// <inheritdoc />
@@ -165,14 +214,32 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
                       $"'{statement.PartyFullName}' is authorized to host the route(s) '{string.Join( "', '", statement.Routes )}' with its approval, by actor #{statement.OperatorActorId}: {updated}." );
     }
 
-    // The Authentication Center signs the same data as the host, for the same lifetime.
-    static byte[] Sign( ILocalParty center, IPartyApprovalStatement statement )
+    // The Authentication Center signs the same data as the host, for the same lifetime, from the time of the statement or
+    // from its own clock when it is earlier: the host can't extend the window of the operator's gesture. Null when the time
+    // of the statement is ahead of the clock (more than ClockSkew) or when the statement already expired.
+    static byte[]? Sign( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
     {
+        var utcNow = center.ApplicationIdentityService.SystemClock.UtcNow;
+        if( statement.Time > utcNow + ApprovalCountersignature.ClockSkew || statement.Time + PartyApprovalStatement.Lifetime <= utcNow )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
+                          $"The AuthCenter '{center}' refuses to countersign the approval of '{statement.PartyFullName}': its time {statement.Time:O} is out of the window of its clock ({utcNow:O})." );
+            return null;
+        }
+        var from = statement.Time < utcNow ? statement.Time : utcNow;
         return center.GetRequiredFeature<ILocalKeys>()
                      .Sign( ApprovalCountersignature.Purpose,
                             PartyApprovalStatement.GetSignedData( statement ),
-                            statement.Time + PartyApprovalStatement.Lifetime )
+                            from + PartyApprovalStatement.Lifetime )
                      .Encoded.ToArray();
+    }
+
+    // The statement of an approved key: countersigned here before (the routes are authorized once the holder approved it).
+    static bool IsCountersigned( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
+    {
+        return statement.CenterCountersignature != null
+               && ApplicationSignature.TryRead( statement.CenterCountersignature, out var signature )
+               && center.GetRequiredFeature<IPartyKeys>().Check( monitor, ApprovalCountersignature.Purpose, PartyApprovalStatement.GetSignedData( statement ), signature ) == SignatureVerdict.Valid;
     }
 
     // The Authentication Center signs a pin grant of the holder for the approved party: the checkpoint of the holder is what
@@ -238,18 +305,27 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         else if( authentication.ActualActor.Level < AuthLevel.Critical ) refusal = "the operator is not at the Critical level";
         else if( authentication.Actor.ActorId != statement.OperatorActorId ) refusal = $"the operator #{authentication.Actor.ActorId} is not the one of the statement (#{statement.OperatorActorId})";
         else if( authentication.CallerPartyFullName != statement.HostFullName ) refusal = $"the caller party '{authentication.CallerPartyFullName}' is not the host of the statement ('{statement.HostFullName}')";
+        else if( command.Approved && !IsCountersigned( monitor, local, statement ) ) refusal = "the approved statement is not countersigned by it";
         if( refusal != null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The AuthCenter '{local}' refuses to countersign the approval of '{statement.PartyFullName}': {refusal}." );
             return null;
         }
+        if( command.Approved )
+        {
+            // A holder approved the key: the routes of the statement are authorized.
+            await AuthorizeRoutesAsync( monitor, local, statement ).ConfigureAwait( false );
+            return pocos.Create<ICountersignApprovalResult>( r => r.Countersignature = statement.CenterCountersignature! );
+        }
+        var signature = Sign( monitor, local, statement );
+        if( signature == null ) return null;
         monitor.Info( ActivityMonitor.Tags.SecurityCritical,
                       $"The AuthCenter '{local}' countersigns the approval of '{statement.PartyFullName}' (key '{statement.KeyFingerprint}') pending on '{statement.HolderFullName}', by actor #{statement.OperatorActorId} on '{statement.HostFullName}'." );
-        await AuthorizeRoutesAsync( monitor, local, statement ).ConfigureAwait( false );
         return pocos.Create<ICountersignApprovalResult>( r =>
         {
-            r.Countersignature = Sign( local, statement );
+            r.Countersignature = signature;
             r.PinGrant = command.WithPinGrant ? CreatePinGrant( monitor, local, statement ) : null;
         } );
     }
+
 }

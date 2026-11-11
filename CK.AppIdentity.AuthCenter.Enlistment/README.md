@@ -31,12 +31,21 @@ CK.AppIdentity.Enlistment:
 - **On the Authentication Center,** the command is handled: the operator must be at the Critical level, not
   impersonated, the operator of the statement, and the caller party must be the host of the statement. The
   countersignature (`ApprovalCountersignature.Purpose`, `"CK.AuthCenter.PartyApproval"`) covers the same data as the
-  host's signature and lives as long (10 minutes). Who may enlist can be checked here by the application: a validator
-  of `ICountersignApprovalCommand`. The routes of the statement are authorized for the approved party: they are added
-  to the System list of the Authentication Center (`AuthCenterSystemList.AuthorizeAsync`, see CK.AppIdentity.AuthCenter).
+  host's signature and lives as long (10 minutes), counted from the time of the statement or from the clock of the
+  Authentication Center when it is earlier: a statement dated ahead of this clock (more than
+  `ApprovalCountersignature.ClockSkew`, 1 minute) or already expired is not countersigned, so a host can't extend the
+  window of the operator's gesture. Who may enlist can be checked here by the application: a validator of
+  `ICountersignApprovalCommand`.
+- **Once a holder approved the key,** the host asks the Authentication Center again (`ICountersignApprovalCommand.Approved`,
+  the countersigned statement, the operator's proof): the routes of the statement are authorized for the approved party,
+  added to the System list of the Authentication Center (`AuthCenterSystemList.AuthorizeAsync`, see
+  CK.AppIdentity.AuthCenter). A wrong code or a holder that refuses authorizes nothing.
 - **On the holder,** when it has an Authentication Center, the countersignature is required and verified with its keys
   (`CrisAuthCenter.CheckWithKeyEventsAsync`): an approval without it, or with an invalid one, is `Refused`. A holder
   without Authentication Center ignores it.
+
+An application that has an Authentication Center and the enlistment references this package: without it, CK.AppIdentity.Enlistment
+refuses every approval (an error), since the holder would accept an approval from the chain of hops alone.
 
 A System without Authentication Center neither asks nor requires a countersignature.
 
@@ -55,7 +64,8 @@ gesture on the approval page connects them, nothing is done on W.
 is its Authentication Center (`CrisAuthCenter`, pinned or anchored).
 
 - **On the Authentication Center,** the `EnlistmentUrlStatement` states the target of its "Enlistment" route: signed on
-  demand, again at half-life (3 days) or when the target changes.
+  demand, again at half its lifetime (the lifetime is 3 days, bounded by `MaxSignatureDays`) or when the target changes.
+
 - **The other parties** ask it (`IGetEnlistmentUrlQCommand`, on the channel or along the "AuthCenter" route) at start,
   then every hour (every 30 seconds while it can't be obtained), and keep the newest one that verifies. They send it
   instead of the bare enlistment URL: a waiting party that anchors the Authentication Center sees an authenticated URL

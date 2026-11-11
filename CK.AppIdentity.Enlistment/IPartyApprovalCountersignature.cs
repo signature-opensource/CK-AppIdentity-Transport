@@ -35,7 +35,20 @@ public interface IPartyApprovalCountersignature : ISingletonAutoService
                                                                                           bool withPinGrant );
 
     /// <summary>
+    /// On the host of the approval page, in the request of the operator, once a holder approved the key of the statement
+    /// (countersigned by <see cref="CountersignAsync"/>): the Authentication Center authorizes the routes of the statement
+    /// for the approved party. Nothing is authorized before (a wrong code, a holder that refuses).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="services">The services of the operator's request (its proof is sent with the request).</param>
+    /// <param name="host">The local party that hosts the approval page.</param>
+    /// <param name="statement">The countersigned statement.</param>
+    /// <returns>The awaitable.</returns>
+    ValueTask ApprovedAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty host, IPartyApprovalStatement statement );
+
+    /// <summary>
     /// On the holder of the pending approval: checks the countersignature of the statement. It is required when the holder
+
     /// has an Authentication Center (fail closed), ignored otherwise.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
