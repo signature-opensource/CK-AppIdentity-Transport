@@ -58,10 +58,11 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     // The private data of a pending login.
     sealed record PendingData( OidcSchemeOptions Scheme, string Nonce, string CodeVerifier );
 
-    internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes )
+    // The HTTP client is the one of the driver, shared by the Authentication Centers of the application.
+    internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes, HttpClient http )
     {
         _schemes = schemes;
-        _http = new HttpClient() { Timeout = TimeSpan.FromSeconds( 30 ) };
+        _http = http;
         _configurations = new ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>>( StringComparer.OrdinalIgnoreCase );
         // The state is checked by the core (the pending logins). The nonce lives as long as a pending login.
         _validator = new OpenIdConnectProtocolValidator { RequireStateValidation = false, NonceLifetime = LocalAuthCenter.PendingRemoteLoginLifetime };
