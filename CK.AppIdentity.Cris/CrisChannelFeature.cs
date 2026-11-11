@@ -197,6 +197,11 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     internal void OnFinalEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
     {
+        if( e.CrisPocoModel.Kind != CrisPocoKind.CallerOnlyEvent )
+        {
+            RefuseEvent( monitor, key, e );
+            return;
+        }
         if( !_executing.ContainsKey( key ) )
         {
             monitor.Warn( $"Received final event '{e.CrisPocoModel.PocoName}' from '{Party.FullName}' for unknown command '{key}'. Ignored." );
@@ -288,12 +293,25 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     internal Task OnImmediateEventAsync( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
     {
+        if( e.CrisPocoModel.Kind != CrisPocoKind.CallerOnlyImmediateEvent )
+        {
+            RefuseEvent( monitor, key, e );
+            return Task.CompletedTask;
+        }
         if( _executing.TryGetValue( key, out var c ) )
         {
             return c.DarkSide.AddImmediateEventAsync( monitor, e );
         }
         monitor.Warn( $"Received immediate event '{e.CrisPocoModel.PocoName}' from '{Party.FullName}' for unknown command '{key}'. Ignored." );
         return Task.CompletedTask;
+    }
+
+    // Only the caller-only events cross the channel: another event (a local one would be dispatched to the local handlers,
+    // in the caller's identity) is refused, and its command fails: the remote doesn't follow the protocol.
+    void RefuseEvent( IActivityMonitor monitor, ActivityMonitor.LogKey key, IEvent e )
+    {
+        monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"Received event '{e.CrisPocoModel.PocoName}' ({e.CrisPocoModel.Kind}) from '{Party.FullName}' for command '{key}': only the caller-only events cross the channel. Refused." );
+        SetError( key, $"Remote '{Party.FullName}' sent an event that is not caller-only." );
     }
 
     internal void OnExecuted( IActivityMonitor monitor, ActivityMonitor.LogKey key, ICrisCallResult? result )

@@ -57,6 +57,17 @@ public class DispatchTests
     {
     }
 
+    // Local events: never sent by a remote (they are dispatched where the command executes).
+    [LocalEvent]
+    public interface ILocalPongEvent : IEvent
+    {
+    }
+
+    [LocalEvent, ImmediateEvent]
+    public interface ILocalImmediatePongEvent : IEvent
+    {
+    }
+
     // The listener's handlers.
     public sealed class ListenerSide : ISingletonAutoService
     {
@@ -110,6 +121,8 @@ public class DispatchTests
                                       typeof( ISendersCommand ),
                                       typeof( IPongEvent ),
                                       typeof( IPongImmediateEvent ),
+                                      typeof( ILocalPongEvent ),
+                                      typeof( ILocalImmediatePongEvent ),
                                       typeof( BothSides ),
                                       typeof( CurrentLocalParty ),
                                       typeof( CurrentLocalPartyDefaultProvider ),
@@ -170,6 +183,33 @@ public class DispatchTests
         Error( await ExecuteAsync( sender, sender.PocoDirectory.Create<IPrivatePingCommand>() ) ).ShouldBe( "Cris.MissingCommandHandler" );
         var refused = await sender.CrisChannel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPrivatePingCommand>() ).ExecutedCommand.WaitAsync( _timeout );
         refused.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.First().Text.ShouldContain( "is not accepted" );
+    }
+
+    [Test]
+    public async Task only_the_caller_only_events_are_accepted_from_a_remote_Async()
+    {
+        // No listener: the commands stay pending, the "answers" of the remote are simulated.
+        await using var sender = await StartSenderAsync( withHeartBeat: false );
+        var channel = sender.CrisChannel;
+
+        // A caller-only immediate event is accepted.
+        var executing = channel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPingCommand>() );
+        await channel.OnImmediateEventAsync( TestHelper.Monitor, executing.IssuerToken.Key, sender.PocoDirectory.Create<IPongImmediateEvent>() );
+        executing.ImmediateEvents.ShouldHaveSingleItem().ShouldBeAssignableTo<IPongImmediateEvent>();
+        executing.ExecutedCommand.IsCompleted.ShouldBeFalse();
+
+        // A local immediate event is refused: the command fails.
+        executing = channel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPingCommand>() );
+        await channel.OnImmediateEventAsync( TestHelper.Monitor, executing.IssuerToken.Key, sender.PocoDirectory.Create<ILocalImmediatePongEvent>() );
+        executing.ImmediateEvents.ShouldBeEmpty();
+        (await executing.ExecutedCommand.WaitAsync( _timeout )).Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "not caller-only" );
+
+        // A local final event too.
+        executing = channel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPingCommand>() );
+        channel.OnFinalEvent( TestHelper.Monitor, executing.IssuerToken.Key, sender.PocoDirectory.Create<ILocalPongEvent>() );
+        var executed = await executing.ExecutedCommand.WaitAsync( _timeout );
+        executed.Events.ShouldBeEmpty();
+        executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "not caller-only" );
     }
 
     [Test]

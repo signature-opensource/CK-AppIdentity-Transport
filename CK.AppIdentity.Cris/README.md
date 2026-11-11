@@ -33,7 +33,9 @@ destroyed, the commands still waiting complete with an error.
 
 Only the caller-only events cross the channel: they travel with the response. The caller-only immediate events appear
 in `IExecutingCommand.ImmediateEvents`, the caller-only final events in the `Events` of the executed command. The routed
-events stay in the remote party: they are dispatched where the command executed.
+events stay in the remote party: they are dispatched where the command executed. The receiver enforces it: any other
+event received from the remote (a local event would be dispatched to the local handlers, in the caller's identity) is
+refused with a `SecurityCritical` warning, and its command completes with an error.
 
 A command is executed by the remote only if the remote accepts it from us (see below).
 
