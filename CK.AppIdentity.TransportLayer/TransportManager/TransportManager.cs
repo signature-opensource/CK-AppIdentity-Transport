@@ -188,7 +188,8 @@ sealed partial class TransportManager : MicroAgent
     /// </summary>
     internal void OnIncomingConfigurationOrTrustIssue( InitialMessage message, TransportFeature? remote, PeeringIssueKind kind, string? enlistUrl )
     {
-        Throw.DebugAssert( kind is PeeringIssueKind.IncomingUnknown
+        Throw.DebugAssert( kind is PeeringIssueKind.AnchorMismatch
+                                  or PeeringIssueKind.IncomingUnknown
                                   or PeeringIssueKind.IncomingDisallowedTransport
                                   or PeeringIssueKind.InvalidClockOffset
                                   or PeeringIssueKind.IncomingUnsupportedTransport
@@ -233,7 +234,9 @@ sealed partial class TransportManager : MicroAgent
                                                      KeyEvent? remoteKeyForApproval )
     {
         Throw.DebugAssert( remote != null && remote.TargetAddress != null );
-        Throw.DebugAssert( kind is PeeringIssueKind.RequiresRemoteCreation
+        Throw.DebugAssert( kind is PeeringIssueKind.AnchorMismatch
+                                or PeeringIssueKind.RemoteAnchorMismatch
+                                or PeeringIssueKind.RequiresRemoteCreation
                                 or PeeringIssueKind.RemoteDisallowedTransport
                                 or PeeringIssueKind.InvalidClockOffset
                                 or PeeringIssueKind.RemoteUnsupportedTransport
@@ -270,6 +273,25 @@ sealed partial class TransportManager : MicroAgent
                                            LocalMissing: null,
                                            RemoteMissing: null,
                                            RemoteOffMessage: offMessage ) );
+    }
+
+    /// <summary>
+    /// Listener only: an anchored initiator whose key event log doesn't verify from its anchor (it is refused before its
+    /// initial message is accepted: there is no message).
+    /// </summary>
+    internal void OnIncomingAnchorRefused( TransportFeature remote )
+    {
+        Throw.DebugAssert( remote != null && remote.TargetAddress == null );
+        PushTypedJob( new PeeringIssueJob( PeeringIssueKind.AnchorMismatch,
+                                           Message: null,
+                                           remote,
+                                           EnlistUrl: null,
+                                           EnlistUrlIsAuthenticated: true,
+                                           InvalidClockOffset: null,
+                                           RemoteKeyForApproval: null,
+                                           LocalMissing: null,
+                                           RemoteMissing: null,
+                                           RemoteOffMessage: null ) );
     }
 
     internal void OnRemoteDisallowEvictionIssue( TransportFeature remote )

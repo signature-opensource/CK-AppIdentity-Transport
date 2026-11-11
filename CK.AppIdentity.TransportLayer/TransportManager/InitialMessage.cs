@@ -105,7 +105,7 @@ sealed class InitialMessage : IIncomingRequest
         _environmentName = local.EnvironmentName;
         _fullName = local.FullName;
         _instanceId = CoreApplicationIdentity.InstanceId;
-        _canAutoTrust = f.RemoteKeys.AutoTrustKey == AutoTrustKey.Once && f.RemoteKeys.TrustedEvent == null;
+        _canAutoTrust = (f.RemoteKeys.AutoTrustKey == AutoTrustKey.Once || f.RemoteKeys.IsAnchored) && f.RemoteKeys.TrustedEvent == null;
         _endPointDescription = string.Empty;
         _remoteEndPointDescription = string.Empty;
         _availableProtocols = new ProtocolAdapter( f.RegisteredProtocols );

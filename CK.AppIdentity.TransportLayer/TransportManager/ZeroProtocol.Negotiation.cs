@@ -56,7 +56,10 @@ static partial class ZeroProtocol // Negotiation
         /// </summary>
         IdentityConflict = 8,
 
-        MaxValue = 8
+        // The listener anchors the initiator and can't verify its key event log from its anchor.
+        AnchorMismatch = 9,
+
+        MaxValue = 9
     }
 
 

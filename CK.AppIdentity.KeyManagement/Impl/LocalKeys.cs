@@ -38,6 +38,12 @@ sealed partial class LocalKeys : ILocalKeys
     readonly int _operationalKeyDays;
     readonly int _maxSignatureDays;
     readonly IReadOnlyDictionary<string, KeyCheckpoint> _trustAnchors;
+    readonly IReadOnlySet<string> _devAnchors;
+
+    /// <summary>
+    /// The value of a trust anchor read from the running status of the anchored party in the dev store.
+    /// </summary>
+    internal const string DevAnchor = "#Dev";
     // The cached application credential and the identity that issued it: a rotation is detected by
     // reference. Issued lazily by Sign, renewed there at half its life.
     readonly object _signLock;
@@ -68,6 +74,7 @@ sealed partial class LocalKeys : ILocalKeys
                int operationalKeyDays,
                int maxSignatureDays,
                IReadOnlyDictionary<string, KeyCheckpoint> trustAnchors,
+               IReadOnlySet<string> devAnchors,
                IdentityAlertBook alerts,
                PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
@@ -79,6 +86,7 @@ sealed partial class LocalKeys : ILocalKeys
         _operationalKeyDays = operationalKeyDays;
         _maxSignatureDays = maxSignatureDays;
         _trustAnchors = trustAnchors;
+        _devAnchors = devAnchors;
         _signLock = new object();
         _state = new LocalIdentityState( current, log, OperationalCredential.Issue( current, local.ApplicationIdentityService.SystemClock.UtcNow, operationalKeyDays ) );
         _rotationLock = new object();
@@ -236,6 +244,12 @@ sealed partial class LocalKeys : ILocalKeys
     public KeyCheckpoint Checkpoint => KeyCheckpoint.Of( _local.FullName, _state.Head );
 
     public IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors => _trustAnchors;
+
+    // Whether a party is anchored, by a checkpoint or by "#Dev".
+    internal bool IsAnchored( string fullName ) => _trustAnchors.ContainsKey( fullName ) || _devAnchors.Contains( fullName );
+
+    // Whether a party is anchored by "#Dev" (its checkpoint is read from its running status in the dev store).
+    internal bool IsDevAnchored( string fullName ) => _devAnchors.Contains( fullName );
 
     public bool IsDecommissioned => _state.Head.IsAbandonment;
 

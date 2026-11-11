@@ -364,6 +364,12 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         // Check the signature if it must be signed.
                         if( currentKeyData != null && !signatureVerified )
                         {
+                            if( remote.RemoteKeys.AnchorRefusal != null )
+                            {
+                                // The listener is anchored here and its events don't verify from its anchor.
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, PeeringIssueKind.AnchorMismatch, null, null, false, null );
+                                return 30;
+                            }
                             // Weird: the sent signatures cannot be verified.
                             transportManager.Logger.Error( ActivityMonitor.Tags.ToBeInvestigated,
                                                            $"Unable to verify the signature's reply message from '{remote.Party}'. Retrying in 30 seconds." );
@@ -457,6 +463,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval => PeeringIssueKind.RequiresRemoteApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval => PeeringIssueKind.RequiresLocalApproval,
                             ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval => PeeringIssueKind.RequiresBothApproval,
+                            ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch => PeeringIssueKind.RemoteAnchorMismatch,
                             // Unknown and DisallowedTransport are already handled.
                             ZeroProtocol.ConfigurationOrTrustIssue.Unknown => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
                             ZeroProtocol.ConfigurationOrTrustIssue.DisallowedTransport => Throw.Exception<PeeringIssueKind>( pIssue.ToString() ),
@@ -549,7 +556,12 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( !protocolMap.IsValid )
                         {
                             await ZeroProtocol.SendFinalFailureMessageAsync( transport ).ConfigureAwait( false );
-                            if( !foundTrustKey )
+                            if( !foundTrustKey && remote.RemoteKeys.AnchorRefusal != null )
+                            {
+                                // The listener is anchored here and its events don't verify from its anchor.
+                                transportManager.OnRemoteConfigurationOrTrustIssue( remote, PeeringIssueKind.AnchorMismatch, null, null, false, null );
+                            }
+                            else if( !foundTrustKey )
                             {
                                 // This should not happen because the InitialMessage.RemoteTrustInfo told the remote listener
                                 // that we didn't trust him and had no way to automatically trust him, but this is safer

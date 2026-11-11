@@ -43,6 +43,9 @@ sealed partial class RemoteKeys : IRemoteKeys
     readonly List<KeyEvent> _history;
     readonly TimeSpan _maxClockOffset;
     readonly AutoTrustKey _autoTrustKey;
+    // The anchor read from the running status of the remote in the dev store ("#Dev"), once read.
+    KeyCheckpoint? _devAnchor;
+    KeyChainVerdict? _anchorRefusal;
 
     // The replay cache belongs here, with the remote it protects: one cache, one lock, one file per
     // remote. Holding it on LocalKeys behind an index keyed by remote name would be a hand-rolled
@@ -119,10 +122,132 @@ sealed partial class RemoteKeys : IRemoteKeys
 
     public AutoTrustKey AutoTrustKey => _autoTrustKey;
 
+    public bool IsAnchored => _localKeys.IsAnchored( _remote.FullName );
+
+    public KeyChainVerdict? AnchorRefusal => _anchorRefusal;
+
+    // The anchor of this remote: configured, or read from its running status in the dev store ("#Dev"). Null when it
+    // can't be read yet (the remote has not started) or when it is not anchored.
+    KeyCheckpoint? GetAnchor( IActivityLineEmitter logger )
+    {
+        if( _localKeys.TrustAnchors.TryGetValue( _remote.FullName, out var a ) ) return a;
+        if( !_localKeys.IsDevAnchored( _remote.FullName ) ) return null;
+        if( _devAnchor != null ) return _devAnchor;
+        // The remote writes its running status in its shared folder of the dev store: the folder of this remote party.
+        var bytes = StoreFileReader.TryReadAllBytes( _remote.SharedFileStore.FolderPath.AppendPart( DevRunningStatusFeatureDriver.FileName ) );
+        if( bytes == null ) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse( bytes );
+            if( doc.RootElement.TryGetProperty( "KeyManagement", out var km ) && km.TryGetProperty( "Checkpoints", out var cs ) )
+            {
+                foreach( var c in cs.EnumerateArray() )
+                {
+                    if( c.GetProperty( "FullName" ).GetString() == _remote.FullName.Path
+                        && KeyCheckpoint.TryParse( c.GetProperty( "Checkpoint" ).GetString(), out var checkpoint, out _ ) )
+                    {
+                        logger.Info( $"The trust anchor of '{_remote}' is read from its running status in the dev store: {checkpoint}." );
+                        return _devAnchor = checkpoint;
+                    }
+                }
+            }
+        }
+        catch( Exception ex ) when( ex is System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException )
+        {
+            logger.Warn( $"Unable to read the running status of '{_remote}' in the dev store: {ex.Message}" );
+        }
+        return null;
+    }
+
+    // Must be called with _trustLock held. The events of an anchored remote are verified from its anchor, at each
+    // handshake: the pin comes only from there.
+    KeyChainCheck ApplyAnchoredTail( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail )
+    {
+        var anchor = GetAnchor( logger );
+        if( anchor == null )
+        {
+            logger.Warn( $"The trust anchor of '{_remote}' can't be read yet (the remote has not written its running status in the dev store): refused." );
+            return RefuseAnchored( new KeyChainCheck( KeyChainVerdict.AnchorUnavailable ) );
+        }
+        var check = KeyEventChain.VerifyFromAnchor( _remote.FullName, tail, anchor );
+        switch( check.Verdict )
+        {
+            case KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered or KeyChainVerdict.Abandoned:
+                var head = check.Head!;
+                if( _pinned == null )
+                {
+                    logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned." );
+                    DoPin( logger, head );
+                }
+                else
+                {
+                    // The pin must be on the anchored chain: the presented event at its sequence must be the pinned one
+                    // (a pin before the presented events can't be compared: it is replaced by the verified head).
+                    int a = tail[0].Seq;
+                    int p = _pinned.Seq;
+                    bool comparable = p >= a && p <= head.Seq;
+                    bool onChain = comparable
+                                   && tail[p - a].GetDigest( _remote.FullName ).Span.SequenceEqual( _pinned.GetDigest( _remote.FullName ).Span );
+                    if( comparable && !onChain )
+                    {
+                        logger.Error( ActivityMonitor.Tags.SecurityCritical,
+                                      $"The pinned identity #{p} of '{_remote}' contradicts its trust anchor {anchor}: replaced by the verified #{head.Seq}." );
+                        DoPin( logger, head );
+                        ReplaceHistory( logger, [] );
+                    }
+                    else if( !comparable )
+                    {
+                        // The pin is before the anchored events (or after the head): the verified head replaces it.
+                        logger.Info( $"Remote '{_remote}' is verified from its trust anchor {anchor}: #{head.Seq} pinned (was #{p})." );
+                        DoPin( logger, head );
+                        ReplaceHistory( logger, [] );
+                    }
+                    else if( head.Seq > p )
+                    {
+                        logger.Info( $"Remote '{_remote}' rotated its identity key: #{p} -> #{head.Seq} (verified from its trust anchor)." );
+                        MoveOn( logger, tail, KeyEventChain.Verify( _remote.FullName, TailFrom( tail, p ), _pinned ) );
+                    }
+                }
+                _anchorRefusal = null;
+                return check;
+            case KeyChainVerdict.AnchorMismatch:
+                logger.Error( ActivityMonitor.Tags.SecurityCritical,
+                              $"Remote '{_remote}' presented a key event log that doesn't match its trust anchor {anchor}: refused (an impostor, a party that incepted again, or a stale anchor)." );
+                return RefuseAnchored( check );
+            case KeyChainVerdict.AnchorTooOld:
+                logger.Warn( $"The trust anchor {anchor} of '{_remote}' is older than the events it presented (from #{tail[0].Seq}): refused." );
+                return RefuseAnchored( check );
+            default:
+                logger.Warn( $"Remote '{_remote}' presented events that can't be verified from its trust anchor {anchor} ({check.Verdict}): refused." );
+                return RefuseAnchored( check );
+        }
+    }
+
+    KeyChainCheck RefuseAnchored( KeyChainCheck check )
+    {
+        _anchorRefusal = check.Verdict;
+        return check;
+    }
+
+    // The events of a tail from the predecessor-linkable point of a pinned sequence on: at most MaxEventTail, for Verify.
+    static IReadOnlyList<KeyEvent> TailFrom( IReadOnlyList<KeyEvent> tail, int seq )
+    {
+        int a = tail[0].Seq;
+        int from = Math.Max( seq - a, tail.Count - KeyEventChain.MaxEventTail );
+        var r = new List<KeyEvent>( tail.Count - from );
+        for( int i = from; i < tail.Count; ++i ) r.Add( tail[i] );
+        return r;
+    }
+
     public TimeSpan MaxClockOffset => _maxClockOffset;
 
     public bool SetTrustedIdentity( IActivityLineEmitter logger, KeyEvent? trusted )
     {
+        if( IsAnchored )
+        {
+            logger.Warn( $"Remote '{_remote}' is anchored: its identity is verified from its trust anchor, never set by an operator. Update its anchor instead." );
+            return false;
+        }
         // An operator pins what a peer presented (a PeeringIssue approval) or a file it was handed. Its
         // signature is the one thing that can be checked without the chain behind it.
         Throw.CheckArgument( "The event must be signed by the key it reveals, for this remote.",
@@ -143,6 +268,7 @@ sealed partial class RemoteKeys : IRemoteKeys
         // not each see the old pin and each write their own file (M15).
         lock( _trustLock )
         {
+            if( IsAnchored ) return ApplyAnchoredTail( logger, tail );
             var check = KeyEventChain.Verify( _remote.FullName, tail, _pinned );
             switch( check.Verdict )
             {
@@ -185,7 +311,8 @@ sealed partial class RemoteKeys : IRemoteKeys
             // Re-read under the lock: another connection may have pinned something meanwhile.
             if( _pinned == null )
             {
-                if( _autoTrustKey == AutoTrustKey.Never ) return false;
+                // An anchored remote is never trusted on first use: it is verified from its anchor.
+                if( _autoTrustKey == AutoTrustKey.Never || IsAnchored ) return false;
                 logger.Warn( $"Pinning the identity presented by remote '{_remote}' because its '{nameof( AutoTrustKey )}' is {_autoTrustKey}." );
                 return DoPin( logger, head );
             }

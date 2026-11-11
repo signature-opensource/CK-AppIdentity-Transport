@@ -331,8 +331,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                         // A known remote presented a log that does not extend what we pin for it: a rollback or a
                         // fork. The refusal is signed and carries our pin statement: if the initiator's identity
                         // was taken over, this is how it learns it.
+                        // Or an anchored remote whose log doesn't verify from its anchor: its own refusal, and an issue
+                        // here (no approval applies to it).
+                        if( conflict.Value.Issue == ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch && remote != null )
+                        {
+                            transportManager.OnIncomingAnchorRefused( remote );
+                        }
                         await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming, conflict.Value.Keys,
-                                                                              ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict,
+                                                                              conflict.Value.Issue,
                                                                               null, null, null, conflict.Value.Nonce ).ConfigureAwait( false );
                         return null;
                     }
@@ -369,7 +375,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                          out int otherVersion,
                                          out TransportFeature? remote,
                                          out bool foundTrustKey,
-                                         out (IRemoteKeys Keys, ulong Nonce)? conflict )
+                                         out (IRemoteKeys Keys, ulong Nonce, ZeroProtocol.ConfigurationOrTrustIssue Issue)? conflict )
         {
             conflict = null;
             Throw.DebugAssert( "We are listening.", incoming.Listener != null );
@@ -416,9 +422,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             foundTrustKey = signatureCheck == SignatureCheck.Trusted;
             if( signatureCheck == SignatureCheck.Failed )
             {
+                if( remote != null && remote.RemoteKeys.IsAnchored && remote.RemoteKeys.AnchorRefusal == block.Verdict )
+                {
+                    conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch);
+                    return null;
+                }
                 if( remote != null && block.Verdict is KeyManagement.KeyChainVerdict.Rollback or KeyManagement.KeyChainVerdict.Duplicity )
                 {
-                    conflict = (remote.RemoteKeys, timedNonce.Nonce);
+                    conflict = (remote.RemoteKeys, timedNonce.Nonce, ZeroProtocol.ConfigurationOrTrustIssue.IdentityConflict);
                     return null;
                 }
                 // The message's signature, regardless of whether we know the remote and have a trusted key for it, is NOT verified!
@@ -568,6 +579,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // Computing the ternary issue.
         // On our side it's easy:
         bool weTrustHim = foundTrustKey;
+        // An anchored initiator that we don't trust is not verified from its anchor: no approval applies to it.
+        if( !weTrustHim && remote.RemoteKeys.IsAnchored ) return PeeringIssueKind.AnchorMismatch;
         // But does he trust us? Thanks to the RemoteTrustInfo (SupposedIdentity and CanAutoTrust) in the InitialMessage we can
         // check whether or not he will be able to trust us.
         // If he can, everything is fine (he will obviously check this on its side with our identities and the signatures).
@@ -626,6 +639,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             PeeringIssueKind.RequiresLocalApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval,
             PeeringIssueKind.RequiresRemoteApproval => ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval,
             PeeringIssueKind.RequiresBothApproval => ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval,
+            PeeringIssueKind.AnchorMismatch => ZeroProtocol.ConfigurationOrTrustIssue.AnchorMismatch,
             _ => Throw.NotSupportedException<ZeroProtocol.ConfigurationOrTrustIssue>()
         };
         // Our enlistment URL (the approval page of our System, for the caller) is sent when we must approve the caller: the

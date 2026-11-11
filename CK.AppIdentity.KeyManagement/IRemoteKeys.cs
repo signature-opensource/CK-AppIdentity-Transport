@@ -53,6 +53,20 @@ public interface IRemoteKeys : IPartyKeys
     AutoTrustKey AutoTrustKey { get; }
 
     /// <summary>
+    /// Gets whether this remote is anchored (<see cref="ILocalKeys.TrustAnchors"/>, or <c>"#Dev"</c>): its pin comes only
+    /// from the verification of its events from the anchor (<see cref="KeyEventChain.VerifyFromAnchor"/>), never from
+    /// <see cref="AutoTrustKey"/> nor from an operator (<see cref="SetTrustedIdentity"/>, an approval).
+    /// </summary>
+    bool IsAnchored { get; }
+
+    /// <summary>
+    /// Gets the verdict of the last verification of this anchored remote when it was refused
+    /// (<see cref="KeyChainVerdict.AnchorMismatch"/>, <see cref="KeyChainVerdict.AnchorTooOld"/>,
+    /// <see cref="KeyChainVerdict.AnchorUnavailable"/>...), null when the last one succeeded or when it is not anchored.
+    /// </summary>
+    KeyChainVerdict? AnchorRefusal { get; }
+
+    /// <summary>
     /// Gets the "MaxClockOffset" configuration option.
     /// Defaults to <see cref="DefaultMaxClockOffset"/>.
     /// Cannot be less than 1 minute and greater than 20 minutes.

@@ -232,7 +232,14 @@ sealed partial class RemoteKeys
             }
             if( autoTrust != AutoTrustKey.Never )
             {
-                monitor.Info( $"Remote '{_remote}' uses {nameof( AutoTrustKey )}: \"{autoTrust}\"." );
+                if( _localKeys.IsAnchored( _remote.FullName ) )
+                {
+                    monitor.Warn( $"Remote '{_remote}' is anchored: its {nameof( AutoTrustKey )} \"{autoTrust}\" is ignored (it is verified from its trust anchor)." );
+                }
+                else
+                {
+                    monitor.Info( $"Remote '{_remote}' uses {nameof( AutoTrustKey )}: \"{autoTrust}\"." );
+                }
             }
             return autoTrust;
         }

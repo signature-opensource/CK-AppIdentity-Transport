@@ -76,7 +76,13 @@ public enum KeyChainVerdict
     /// The trust anchor is older than the first event presented (<see cref="KeyEventChain.VerifyFromAnchor"/>): the
     /// events from the anchor must be asked (up to <see cref="KeyEventChain.MaxAnchorWindow"/>), or the anchor updated.
     /// </summary>
-    AnchorTooOld
+    AnchorTooOld,
+
+    /// <summary>
+    /// The party is anchored but its anchor can't be read yet: a <c>"#Dev"</c> anchor whose party has not written its
+    /// running status in the dev store (it is not started). Nothing is accepted until it can be read.
+    /// </summary>
+    AnchorUnavailable
 }
 
 /// <summary>

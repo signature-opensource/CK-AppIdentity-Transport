@@ -252,6 +252,12 @@ When two parties cannot connect for a reason an operator can fix, the
 two initiators, a disallowed or unsupported transport, a switched off or evicted remote, missing protocols, or keys that
 one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCount` issues for callers it does not know.
 
+- **An anchored remote** (a trust anchor, see [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md))
+  is verified from its anchor during the handshake, on both sides, never approved. When its key event log doesn't verify
+  from the anchor, the issue is `AnchorMismatch` here and `RemoteAnchorMismatch` on its side (the listener refuses the
+  initiator with its own rejection): no approval code, no enlistment URL, never in the pending approvals. An initiator
+  declares that it can trust an anchored listener without an operator (`RemoteTrustInfo.CanAutoTrust`).
+
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
   presented (`RemoteIdentityForApproval`). `AcceptRemoteIdentity` pins it. Nothing in the protocol proves that this key
   belongs to the named party: an approval UI must show `RemoteKeyFingerprintForApproval` and have it compared out of band.

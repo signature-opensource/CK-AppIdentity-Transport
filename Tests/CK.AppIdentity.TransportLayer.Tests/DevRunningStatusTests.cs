@@ -146,4 +146,30 @@ public class DevRunningStatusTests
         checkpoint.GetProperty( "FullName" ).GetString().ShouldBe( "Test/$DevCheckpoint/#Dev" );
         checkpoint.GetProperty( "Checkpoint" ).GetString().ShouldBe( party.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>().Checkpoint.ToString() );
     }
+
+    [Test]
+    [CancelAfter( 40000 )]
+    public async Task a_dev_anchor_is_read_from_the_running_status_of_the_anchored_party_Async( CancellationToken cancel )
+    {
+        TestHelper.CleanupFolder( TestHelper.TestProjectFolder.Combine( StorePath ) );
+        // The listener never trusts the sender on first use: "#Dev" reads its checkpoint from its running status.
+        await using var listener = await StartAsync( c =>
+        {
+            c["FullName"] = "Test/$DevAnchListener";
+            c["Parties:0:PartyName"] = "$DevAnchSender";
+            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Local:TrustAnchors:Test/$DevAnchSender/#Dev"] = "#Dev";
+            c["Defaults:ListeningAddress:0"] = "tcp:127.0.0.1:37131";
+        }, cancel );
+        await using var sender = await StartAsync( c =>
+        {
+            c["FullName"] = "Test/$DevAnchSender";
+            c["Parties:0:PartyName"] = "$DevAnchListener";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37131";
+        }, cancel );
+        await WaitForAsync( GetStatusPath( sender ), e => e.GetProperty( "Ready" ).GetBoolean(), cancel );
+        var pinned = listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent;
+        pinned.ShouldNotBeNull();
+        sender.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>().Checkpoint.Matches( "Test/$DevAnchSender/#Dev", pinned ).ShouldBeTrue();
+    }
 }

@@ -98,6 +98,11 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
 - **First use.** With `AutoTrustKey` set to `Once` and nothing pinned, `AdoptSelfAsserted` pins the head a remote
   presented. This is a trust-on-first-use decision, not a proof. There is deliberately no "always": over an existing pin,
   an unrelated identity is a takeover.
+- **An anchored remote** (`IsAnchored`: its full name has a trust anchor, see `TrustAnchors` below) is verified from its
+  anchor at each `ApplyTail` (`KeyEventChain.VerifyFromAnchor`): its first pin comes from there, a pin that contradicts
+  the anchor is replaced (a `SecurityCritical` error), and `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity`
+  never apply to it (an approval doesn't either: the anchor is updated by whoever configures it). A refused verification
+  is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`, `AnchorUnavailable`).
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
   has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
   every accepted nonce is first journaled to disk (`Nonce.journal`), so a crash forgets nothing. It is bounded by time and,
@@ -189,7 +194,7 @@ On a local party (read from its `"Local"` section only, never from a `"Defaults"
 | `AllowedOfflineDays` | 60 | How long this party or a remote can stay offline without losing their identities (7 to 3650). It drives the rotation period and bounds the credentials this party accepts. |
 | `OperationalKeyDays` | 7 | Lifetime of the operational credential (1 to 31). |
 | `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `AllowedOfflineDays`). It must not exceed the `AllowedOfflineDays` of the parties that verify the signatures. |
-| `TrustAnchors` | none | The trust anchors of this party: `"TrustAnchors": { "{FullName}": "{seq}:{digest}" }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`). An invalid anchor, or an anchor of the party itself, fails the setup. |
+| `TrustAnchors` | none | The trust anchors of this party: `"TrustAnchors": { "{FullName}": "{seq}:{digest}" }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`), or `"#Dev"` in the dev store of a development solution (the checkpoint is read from the running status of the anchored party when it is verified). An invalid anchor, an anchor of the party itself, or `"#Dev"` outside the dev store fails the setup. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 
 On a remote (its own entry, otherwise the nearest `"Defaults"` above it, see

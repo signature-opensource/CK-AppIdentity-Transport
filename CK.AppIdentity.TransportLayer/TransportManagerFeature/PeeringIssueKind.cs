@@ -122,5 +122,18 @@ public enum PeeringIssueKind
     /// <see cref="PeeringIssue.LocalMissingProtocols"/> and <see cref="PeeringIssue.RemoteMissingProtocols"/> contain
     /// the culprits.
     /// </summary>
-    MissingProtocols
+    MissingProtocols,
+
+    /// <summary>
+    /// The remote is anchored here (a trust anchor, see CK.AppIdentity.KeyManagement) and its key event log can't be
+    /// verified from its anchor: it doesn't match (an impostor, a party that incepted again, a stale anchor), the anchor
+    /// is too old, or it can't be read yet ("#Dev"). No approval applies: the anchor is updated by whoever configures it.
+    /// </summary>
+    AnchorMismatch,
+
+    /// <summary>
+    /// The remote anchors us and refused our key event log (its <see cref="AnchorMismatch"/>): its configuration must be
+    /// updated, on its side.
+    /// </summary>
+    RemoteAnchorMismatch
 }

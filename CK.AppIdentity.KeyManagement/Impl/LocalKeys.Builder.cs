@@ -47,7 +47,7 @@ sealed partial class LocalKeys
             int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
             int operationalKeyDays = ReadOperationalKeyDays( monitor );
             int maxSignatureDays = ReadMaxSignatureDays( monitor, allowedOfflineDays );
-            var trustAnchors = ReadTrustAnchors( monitor );
+            var (trustAnchors, devAnchors) = ReadTrustAnchors( monitor );
             var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
             var keysPath = _store.FolderPath.AppendPart( "Keys" );
             var kelPath = keysPath.AppendPart( KelFolderName );
@@ -69,7 +69,7 @@ sealed partial class LocalKeys
                 if( log[^1].IsRecovery ) CompleteRecovery( monitor, kelPath, log, now );
                 current = LoadCurrent( monitor, keysPath, log, allowedOfflineDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, maxSignatureDays, trustAnchors, alerts, _driverAlertRaised );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, maxSignatureDays, trustAnchors, devAnchors, alerts, _driverAlertRaised );
 
             keys.RotateIfDue( monitor, now );
             var c = keys.CurrentIdentity;
@@ -355,18 +355,30 @@ sealed partial class LocalKeys
             return days;
         }
 
-        // "Local:TrustAnchors:{FullName}": a checkpoint of the key event log of the anchored party. An invalid anchor is an
-        // error, never ignored: the party would be trusted on first use instead of verified.
-        Dictionary<string, KeyCheckpoint> ReadTrustAnchors( IActivityMonitor monitor )
+        // "Local:TrustAnchors:{FullName}": a checkpoint of the key event log of the anchored party, or "#Dev" in the dev store
+        // (read from the running status of the anchored party when it is verified). An invalid anchor is an error, never
+        // ignored: the party would be trusted on first use instead of verified.
+        (Dictionary<string, KeyCheckpoint>, HashSet<string>) ReadTrustAnchors( IActivityMonitor monitor )
         {
             var anchors = new Dictionary<string, KeyCheckpoint>( StringComparer.Ordinal );
+            var devAnchors = new HashSet<string>( StringComparer.Ordinal );
             var section = _local.LocalConfiguration.Configuration.TryGetSection( "TrustAnchors" );
-            if( section == null ) return anchors;
+            if( section == null ) return (anchors, devAnchors);
             foreach( var a in section.GetChildren() )
             {
                 if( a.Key == _local.FullName.Path )
                 {
                     Throw.CKException( $"Invalid '{a.Path}': a party doesn't anchor itself." );
+                }
+                if( a.Value == LocalKeys.DevAnchor )
+                {
+                    if( !_local.ApplicationIdentityService.Configuration.IsDevStore )
+                    {
+                        Throw.CKException( $"Invalid '{a.Path}': \"{LocalKeys.DevAnchor}\" is allowed only in the dev store of a development solution." );
+                    }
+                    devAnchors.Add( a.Key );
+                    monitor.Info( $"'{_local.FullName}' anchors '{a.Key}' at its checkpoint in the dev store." );
+                    continue;
                 }
                 if( !KeyCheckpoint.TryParse( a.Value, out var checkpoint, out var error ) )
                 {
@@ -375,7 +387,7 @@ sealed partial class LocalKeys
                 anchors.Add( a.Key, checkpoint );
                 monitor.Info( $"'{_local.FullName}' anchors '{a.Key}' at {checkpoint}." );
             }
-            return anchors;
+            return (anchors, devAnchors);
         }
 
         int ReadAllowedOfflineDays( IActivityMonitor monitor )
