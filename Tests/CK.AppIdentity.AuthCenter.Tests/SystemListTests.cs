@@ -89,6 +89,33 @@ public class SystemListTests
     }
 
     [Test]
+    public async Task decoding_allocates_nothing_from_an_announced_count_or_length_Async()
+    {
+        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types );
+        var list = SystemList.Create( p.Center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>(), 1, [], [], DateTime.UtcNow );
+        var encoded = list.Encode();
+        // The count of revocations (after the length, the version, the sequence number and the time) announces the maximum.
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian( encoded.AsSpan( 4 + 1 + 4 + 8 ), SystemList.MaxEntryCount );
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        SystemList.TryDecode( encoded, out _ ).ShouldBeFalse();
+        (GC.GetAllocatedBytesForCurrentThread() - before).ShouldBeLessThan( 100_000 );
+
+        // A decrypted routed command that announces a 2 GB command.
+        var m = new System.IO.MemoryStream();
+        using( var w = new System.IO.BinaryWriter( m, System.Text.Encoding.UTF8, leaveOpen: true ) )
+        {
+            w.Write( "token" );
+            w.Write7BitEncodedInt( 0 );
+            w.Write7BitEncodedInt( 0x7FFFFFC0 );
+            w.Write( (byte)1 );
+        }
+        var plain = m.ToArray();
+        before = GC.GetAllocatedBytesForCurrentThread();
+        AuthCenterRoutedCommandSeal.TryUnpack( plain, out _, out _, out _ ).ShouldBeFalse();
+        (GC.GetAllocatedBytesForCurrentThread() - before).ShouldBeLessThan( 100_000 );
+    }
+
+    [Test]
     public async Task a_revoked_party_is_no_more_a_route_host_even_when_configured_Async()
     {
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types,

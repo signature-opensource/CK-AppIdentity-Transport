@@ -149,7 +149,7 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
         return m.ToArray();
     }
 
-    static bool TryUnpack( byte[] plain, out string? token, out byte[]? binding, out byte[]? command )
+    internal static bool TryUnpack( byte[] plain, out string? token, out byte[]? binding, out byte[]? command )
     {
         token = null;
         binding = null;
@@ -158,12 +158,14 @@ public sealed class AuthCenterRoutedCommandSeal : ICrisRoutedCommandSeal
         {
             using var r = new BinaryReader( new MemoryStream( plain, writable: false ), Encoding.UTF8 );
             token = r.ReadString();
+            // The lengths are bounded by the remaining bytes before any allocation: the sender is not authenticated yet.
             var bindingLength = r.Read7BitEncodedInt();
-            if( bindingLength < 0 || bindingLength > 1024 ) return false;
+            if( bindingLength < 0 || bindingLength > 1024 || bindingLength > r.BaseStream.Length - r.BaseStream.Position ) return false;
             binding = bindingLength > 0 ? r.ReadBytes( bindingLength ) : null;
             var commandLength = r.Read7BitEncodedInt();
-            if( commandLength < 0 ) return false;
+            if( commandLength < 0 || commandLength != r.BaseStream.Length - r.BaseStream.Position ) return false;
             command = r.ReadBytes( commandLength );
+
             return command.Length == commandLength
                    && (binding == null || binding.Length == bindingLength)
                    && r.BaseStream.Position == r.BaseStream.Length

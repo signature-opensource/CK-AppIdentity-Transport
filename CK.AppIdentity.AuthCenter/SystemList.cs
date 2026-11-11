@@ -168,7 +168,9 @@ public sealed class SystemList
             int seq = r.ReadInt32();
             var time = new DateTime( r.ReadInt64(), DateTimeKind.Utc );
             int count = r.ReadInt32();
-            if( seq <= 0 || count < 0 || count > MaxEntryCount ) return false;
+            // The counts are bounded by the remaining bytes (the minimal size of an entry) before any allocation: the
+            // signature is verified after the decoding.
+            if( seq <= 0 || count < 0 || count > MaxEntryCount || count > Remaining( r ) / (2 + KeyEvent.HashSize + 8 + 1) ) return false;
             var entries = new RevocationEntry[count];
             for( int i = 0; i < count; ++i )
             {
@@ -178,7 +180,7 @@ public sealed class SystemList
                 entries[i] = new RevocationEntry( name, identity, new DateTime( r.ReadInt64(), DateTimeKind.Utc ), r.ReadBoolean() );
             }
             int hostCount = r.ReadInt32();
-            if( hostCount < 0 || hostCount > MaxEntryCount ) return false;
+            if( hostCount < 0 || hostCount > MaxEntryCount || hostCount > Remaining( r ) / (2 + 2 + 1) ) return false;
             var hosts = new RouteHost[hostCount];
             for( int i = 0; i < hostCount; ++i )
             {
@@ -200,6 +202,9 @@ public sealed class SystemList
         }
     }
 
+    static long Remaining( BinaryReader r ) => r.BaseStream.Length - r.BaseStream.Position;
+
     /// <inheritdoc />
-    public override string ToString() => $"System list #{Seq} ({Entries.Count} revocations, {RouteHosts.Count} route hosts, {Time:O})";
+    public override string ToString()
+ => $"System list #{Seq} ({Entries.Count} revocations, {RouteHosts.Count} route hosts, {Time:O})";
 }
