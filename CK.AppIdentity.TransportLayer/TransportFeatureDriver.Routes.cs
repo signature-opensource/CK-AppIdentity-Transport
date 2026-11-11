@@ -29,10 +29,10 @@ public partial class TransportFeatureDriver
 
     // The configured "RouteHosts" of the local parties (null when not configured), read at their setup.
     readonly ConcurrentDictionary<string, RouteHosts?> _configuredRouteHosts = new( StringComparer.Ordinal );
-    // The local parties whose routes are believed as announced (no authority, no configuration): warned once.
-    readonly ConcurrentDictionary<string, bool> _believedWarned = new( StringComparer.Ordinal );
-    // The last refusals reported for a route name of a local party: reported when they appear or change.
-    readonly ConcurrentDictionary<(string Local, string Name), string> _routeRefusals = new();
+    // The last SecurityCritical warnings of the route computation of a local party, per subject (a route name, or the
+    // empty string for "the routes are believed as announced"): a warning is logged when it appears or changes, and
+    // forgotten when it disappears (it is logged again if it comes back).
+    readonly ConcurrentDictionary<(string Local, string Subject), string> _routeWarnings = new();
 
     bool ReadConfiguredRouteHosts( IActivityMonitor monitor, IEnumerable<ILocalParty> locals )
     {
@@ -121,11 +121,11 @@ public partial class TransportFeatureDriver
                                                 && r.GetFeature<TransportFeature>()?.ConnectionAvailability == ConnectionAvailability.Connected )
                                    .ToList();
         var authorized = GetRouteHosts( party );
-        if( authorized == null && remotes.Any( r => r.Description.Routes.Count > 0 ) && _believedWarned.TryAdd( local, true ) )
+        var warnings = new Dictionary<string, string>( StringComparer.Ordinal );
+        if( authorized == null && remotes.Any( r => r.Description.Routes.Count > 0 ) )
         {
-            ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical,
-                                               $"'{local}' has no authority of its routes (no Authentication Center) and no \"RouteHosts\" configuration: " +
-                                               $"the routes of its remotes are believed as announced." );
+            warnings.Add( string.Empty, $"'{local}' has no authority of its routes (no Authentication Center) and no \"RouteHosts\" configuration: " +
+                                        $"the routes of its remotes are believed as announced." );
         }
         var names = new SortedSet<string>( hosted.Keys, StringComparer.Ordinal );
         foreach( var r in remotes ) names.UnionWith( r.Description.Routes.Keys );
@@ -141,7 +141,7 @@ public partial class TransportFeatureDriver
                 {
                     if( keys != null && route.Path.FirstOrDefault( keys.IsNameBanned ) is { } banned )
                     {
-                        ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical, $"Route '{name}' of '{r.FullName}' ignored by '{local}': it goes through '{banned}', a revoked party." );
+                        refused.Add( $"'{r.FullName}' announces '{route}': it goes through '{banned}', a revoked party" );
                         continue;
                     }
                     if( !route.TryAccept( r.FullName, local, out var reason ) )
@@ -157,7 +157,9 @@ public partial class TransportFeatureDriver
                     accepted.Add( route );
                 }
             }
-            ReportRefusedRoutes( local, name, refused );
+            // A route through a revoked party, or to a host that is not authorized: a party announces a route it has no
+            // right to.
+            if( refused.Count > 0 ) warnings.Add( name, $"Routes '{name}' refused by '{local}': {string.Join( "; ", refused )}." );
             // The best route per host; the local party uses its own route when it hosts the name.
             var best = accepted.GroupBy( a => a.Host, StringComparer.Ordinal )
                                .Select( g => PartyRoute.SelectBest( g )!.Extend( local ) )
@@ -165,22 +167,24 @@ public partial class TransportFeatureDriver
             if( hosted.TryGetValue( name, out var target ) ) best.Add( PartyRoute.Hosted( target, local ) );
             builder.SetRoutes( name, best );
         }
+        ReportRouteWarnings( local, warnings );
         CollectAlongRoutes( local, builder, remotes );
     }
 
-    // A route to a host that is not authorized means that a party announces a route it has no right to: it is refused,
-    // and reported once per change (not at each computation).
-    void ReportRefusedRoutes( string local, string name, List<string> refused )
+    // The routes are computed again on every description or connection change: their warnings are reported once per
+    // change, not at each computation. A warning that is no more raised is forgotten.
+    void ReportRouteWarnings( string local, Dictionary<string, string> warnings )
     {
-        if( refused.Count == 0 )
+        foreach( var (subject, text) in warnings )
         {
-            _routeRefusals.TryRemove( (local, name), out _ );
-            return;
+            if( _routeWarnings.TryGetValue( (local, subject), out var last ) && last == text ) continue;
+            _routeWarnings[(local, subject)] = text;
+            ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical, text );
         }
-        var text = string.Join( "; ", refused );
-        if( _routeRefusals.TryGetValue( (local, name), out var last ) && last == text ) return;
-        _routeRefusals[(local, name)] = text;
-        ActivityMonitor.StaticLogger.Warn( ActivityMonitor.Tags.SecurityCritical, $"Routes '{name}' refused by '{local}': {text}." );
+        foreach( var key in _routeWarnings.Keys )
+        {
+            if( key.Local == local && !warnings.ContainsKey( key.Subject ) ) _routeWarnings.TryRemove( key, out _ );
+        }
     }
 
     /// <summary>

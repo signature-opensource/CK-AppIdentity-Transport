@@ -239,8 +239,9 @@ CK.AppIdentity), in the second phase of its description
   ```
 
   A route to a host that is not authorized for its name, or whose target is not the authorized one, is refused (a
-  `SecurityCritical` warning names its announcer, once per change). With neither an authority nor a configuration, the
-  routes are believed as announced (a warning says so). The authority calls `TransportFeatureDriver.OnRouteHostsChangedAsync`
+  `SecurityCritical` warning names its announcer). With neither an authority nor a configuration, the routes are
+  believed as announced (a warning says so). These warnings are logged once per change, not at each computation of the
+  routes: a warning that is no more raised is forgotten, and logged again if it comes back. The authority calls `TransportFeatureDriver.OnRouteHostsChangedAsync`
   when the hosts change.
 - **The "Enlistment" route is the approval page of the System** (`EnlistmentRouteName`): a local party hosts it when
   one of its client applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its target is
@@ -289,8 +290,8 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
   [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)) is cut as soon as the revocations change
   (its connection is killed), and refused at every handshake: the issue is `Revoked` here and `RevokedByRemote` on its
   side (a signed rejection). An unknown caller whose identity is revoked is dropped: it never becomes a pending approval.
-  The routes that go through a banned name (a revoked party not readmitted) are ignored, and computed again when the
-  revocations change.
+  The routes that go through a banned name (a revoked party not readmitted) are ignored (a `SecurityCritical` warning,
+  like a refused route), and computed again when the revocations change.
 
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
   presented (`RemoteIdentityForApproval`). `AcceptRemoteIdentity` pins it. Nothing in the protocol proves that this key

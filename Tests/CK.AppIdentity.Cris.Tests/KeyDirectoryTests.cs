@@ -1,5 +1,7 @@
 using CK.AppIdentity.KeyManagement;
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
+using CK.Monitoring;
 using CK.Testing.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -196,10 +198,17 @@ public class KeyDirectoryTests
         await Task.Delay( AnchoredKeyDirectory.MinFetchInterval );
         (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
 
-        // A route that goes through a banned name is ignored.
+        // A route that goes through a banned name is ignored...
+        using var collected = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 5000 );
         await a.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>()
                .SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( cName, other, DateTime.UtcNow, nameBanned: true )] );
         for( int i = 0; i < 100 && a.ApplicationIdentityService.Description.Routes.ContainsKey( "Keys" ); ++i ) await Task.Delay( 100 );
         a.ApplicationIdentityService.Description.Routes.ShouldNotContainKey( "Keys" );
+        // ...and reported once, not at each computation of the routes.
+        var transport = a.Services.GetRequiredService<TransportFeatureDriver>();
+        await transport.OnRouteHostsChangedAsync( TestHelper.Monitor, a.ApplicationIdentityService );
+        await transport.OnRouteHostsChangedAsync( TestHelper.Monitor, a.ApplicationIdentityService );
+        await Task.Delay( 500 );
+        collected.ExtractCurrentTexts().Count( t => t.Contains( $"goes through '{cName}', a revoked party" ) ).ShouldBe( 1 );
     }
 }
