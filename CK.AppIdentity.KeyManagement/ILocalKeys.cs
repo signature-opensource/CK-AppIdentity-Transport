@@ -95,6 +95,20 @@ public interface ILocalKeys : IPartyKeys
     new ILocalParty Party { get; }
 
     /// <summary>
+    /// Gets the checkpoint of the head of the key event log of this party: what another party configures as the trust
+    /// anchor of this one (see <see cref="TrustAnchors"/>). It changes with each event (a rotation, a recovery, a
+    /// decommission); it is logged at start and after each event.
+    /// </summary>
+    KeyCheckpoint Checkpoint { get; }
+
+    /// <summary>
+    /// Gets the trust anchors of this party, by the full name of the anchored party: a checkpoint of its key event log,
+    /// given by the configuration ("Local:TrustAnchors:{FullName}"). An anchored party is verified from its checkpoint,
+    /// never trusted on first use nor approved by an operator.
+    /// </summary>
+    IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors { get; }
+
+    /// <summary>
     /// Signs <paramref name="data"/> for the application, until <paramref name="expiration"/>.
     /// <para>
     /// Every verifier (<see cref="IPartyKeys.Verify"/>) refuses the signature after its expiration, and

@@ -134,4 +134,16 @@ public class DevRunningStatusTests
         status.GetProperty( "Transport" ).GetProperty( "Pending" ).EnumerateArray().Single().GetString()
               .ShouldStartWith( "'Test/$DevApprover/#Dev' must accept this party: " );
     }
+
+    [Test]
+    [CancelAfter( 20000 )]
+    public async Task the_key_management_contributes_the_checkpoint_of_the_party_Async( CancellationToken cancel )
+    {
+        TestHelper.CleanupFolder( TestHelper.TestProjectFolder.Combine( StorePath ) );
+        await using var party = await StartAsync( c => c["FullName"] = "Test/$DevCheckpoint", cancel );
+        var status = await WaitForAsync( GetStatusPath( party ), e => e.TryGetProperty( "KeyManagement", out _ ), cancel );
+        var checkpoint = status.GetProperty( "KeyManagement" ).GetProperty( "Checkpoints" ).EnumerateArray().Single();
+        checkpoint.GetProperty( "FullName" ).GetString().ShouldBe( "Test/$DevCheckpoint/#Dev" );
+        checkpoint.GetProperty( "Checkpoint" ).GetString().ShouldBe( party.GetRequiredFeature<CK.AppIdentity.KeyManagement.ILocalKeys>().Checkpoint.ToString() );
+    }
 }

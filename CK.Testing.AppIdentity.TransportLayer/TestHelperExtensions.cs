@@ -82,6 +82,7 @@ public static class TestHelperExtensions
         serviceBuilder.AddSingleton<ICoreKeyStore>( sp => sp.GetRequiredService<DefaultCoreKeyStore>() );
         serviceBuilder.AddSingleton<KeyManagementFeatureDriver>();
         serviceBuilder.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
+        serviceBuilder.AddSingleton<IDevRunningStatusContributor>( sp => sp.GetRequiredService<KeyManagementFeatureDriver>() );
 
         serviceBuilder.AddSingleton<TcpSocketTransportTypeService>();
         serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<TcpSocketTransportTypeService>() );

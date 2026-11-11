@@ -41,6 +41,13 @@ pinned event and returns a [`KeyChainVerdict`](KeyEventChain.cs): `UpToDate`, `A
 re-pin), `Duplicity` (two validly signed events at the pinned position: proof that a committed key leaked), `Unpinned`
 (nothing pinned: the head is only self-asserted) or `Invalid`. It is pure: the caller applies the verdict.
 
+**A checkpoint names a point of the log:** [`KeyCheckpoint`](KeyCheckpoint.cs), the sequence of an event and its digest
+(`KeyEvent.GetDigest`, that covers the full name of the party), written `{seq}:{digest}` (the digest in lowercase hex).
+Every event commits to the previous one and to the next key, so the events after a checkpoint are verified from it. A
+party exposes the checkpoint of its head (`ILocalKeys.Checkpoint`): it is logged at start and after each event, and it is
+in the "KeyManagement" section of the running status of a development party (`DevRunningStatus.json`). Another party
+configures it as its trust anchor of this one (`TrustAnchors`, below).
+
 ## Local keys
 
 The identity of a local party ([`ILocalKeys`](ILocalKeys.cs)) lives in its `LocalFileStore`, under `Keys`:
@@ -182,6 +189,7 @@ On a local party (read from its `"Local"` section only, never from a `"Defaults"
 | `AllowedOfflineDays` | 60 | How long this party or a remote can stay offline without losing their identities (7 to 3650). It drives the rotation period and bounds the credentials this party accepts. |
 | `OperationalKeyDays` | 7 | Lifetime of the operational credential (1 to 31). |
 | `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `AllowedOfflineDays`). It must not exceed the `AllowedOfflineDays` of the parties that verify the signatures. |
+| `TrustAnchors` | none | The trust anchors of this party: `"TrustAnchors": { "{FullName}": "{seq}:{digest}" }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`). An invalid anchor, or an anchor of the party itself, fails the setup. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 
 On a remote (its own entry, otherwise the nearest `"Defaults"` above it, see

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
 
-public class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
+public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;
     readonly ICoreKeyStore _keyStore;

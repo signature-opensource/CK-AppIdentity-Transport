@@ -37,6 +37,7 @@ sealed partial class LocalKeys : ILocalKeys
     readonly int _allowedOfflineDays;
     readonly int _operationalKeyDays;
     readonly int _maxSignatureDays;
+    readonly IReadOnlyDictionary<string, KeyCheckpoint> _trustAnchors;
     // The cached application credential and the identity that issued it: a rotation is detected by
     // reference. Issued lazily by Sign, renewed there at half its life.
     readonly object _signLock;
@@ -66,6 +67,7 @@ sealed partial class LocalKeys : ILocalKeys
                int allowedOfflineDays,
                int operationalKeyDays,
                int maxSignatureDays,
+               IReadOnlyDictionary<string, KeyCheckpoint> trustAnchors,
                IdentityAlertBook alerts,
                PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
@@ -76,6 +78,7 @@ sealed partial class LocalKeys : ILocalKeys
         _allowedOfflineDays = allowedOfflineDays;
         _operationalKeyDays = operationalKeyDays;
         _maxSignatureDays = maxSignatureDays;
+        _trustAnchors = trustAnchors;
         _signLock = new object();
         _state = new LocalIdentityState( current, log, OperationalCredential.Issue( current, local.ApplicationIdentityService.SystemClock.UtcNow, operationalKeyDays ) );
         _rotationLock = new object();
@@ -140,6 +143,7 @@ sealed partial class LocalKeys : ILocalKeys
         if( state.Log[^1] != _announcedHead )
         {
             _announcedHead = state.Log[^1];
+            monitor.Info( $"The key checkpoint of '{_local.FullName}' is now {KeyCheckpoint.Of( _local.FullName, state.Head )}." );
             await _keyEventAppended.SafeRaiseAsync( monitor, state, cancel ).ConfigureAwait( false );
         }
     }
@@ -228,6 +232,10 @@ sealed partial class LocalKeys : ILocalKeys
     public int Seq => _state.Head.Seq;
 
     public IReadOnlyList<KeyEvent> EventTail => _state.Tail;
+
+    public KeyCheckpoint Checkpoint => KeyCheckpoint.Of( _local.FullName, _state.Head );
+
+    public IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors => _trustAnchors;
 
     public bool IsDecommissioned => _state.Head.IsAbandonment;
 
