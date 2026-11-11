@@ -205,7 +205,8 @@ it carries the `IdentityAlert.LogTag` tag. The kinds:
 | `RotationFailing` | A scheduled rotation could not happen. |
 
 The first two come from `ReportPinStatement`: what an authenticated remote states it pins for this party. The transport
-layer reports these statements from its handshakes.
+layer reports these statements from its handshakes. A remote can lie about them: each reporter raises at most
+`ILocalKeys.MaxAlertsPerReporter` (4) unacknowledged alerts of each kind, the next ones are only logged.
 
 ## Key custody
 

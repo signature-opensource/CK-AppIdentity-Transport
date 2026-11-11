@@ -94,10 +94,12 @@ sealed class IdentityAlertBook
     }
 
     /// <summary>
-    /// Records an alert, or a repetition of one.
+    /// Records an alert, or a repetition of one. A new alert from a reporter that already has
+    /// <see cref="ILocalKeys.MaxAlertsPerReporter"/> unacknowledged alerts of this kind is only logged: a remote
+    /// can't fill the disk nor drown the other alerts.
     /// </summary>
-    /// <returns>The alert, as it now stands.</returns>
-    public IdentityAlert Raise( IActivityLineEmitter logger,
+    /// <returns>The alert, as it now stands, or null when it is dropped.</returns>
+    public IdentityAlert? Raise( IActivityLineEmitter logger,
                                 IdentityAlertKind kind,
                                 string subject,
                                 bool isAboutSelf,
@@ -125,6 +127,13 @@ sealed class IdentityAlertBook
             }
             else
             {
+                if( reportedBy != null
+                    && _alerts.Values.Count( e => e.Kind == kind && e.ReportedBy.Contains( reportedBy ) ) >= ILocalKeys.MaxAlertsPerReporter )
+                {
+                    logger.Log( LogLevel.Warn, _tags, $"Identity alert {kind} about '{subject}' (#{seq}) reported by '{reportedBy}' is not recorded: " +
+                                                      $"it already reported {ILocalKeys.MaxAlertsPerReporter} unacknowledged ones of this kind." );
+                    return null;
+                }
                 a = new IdentityAlert( id, kind, subject, isAboutSelf,
                                        reportedBy != null ? [reportedBy] : [],
                                        seq, expectedDigest.ToArray(), observedDigest.ToArray(), now, now, 1 );

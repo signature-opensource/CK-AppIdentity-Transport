@@ -128,6 +128,30 @@ public class IdentityAlertTests
     }
 
     [Test, CancelAfter( 30000 )]
+    public async Task A_reporter_raises_a_bounded_number_of_alerts_of_a_kind_Async( CancellationToken token )
+    {
+        // An authenticated remote may lie about its own statements: a new digest or sequence at each handshake must not
+        // be a new persisted alert each time.
+        const string partyName = "AlertQuota";
+        IdentityStoreHelper.ClearKeys( partyName );
+        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, FastClock() );
+        var keys = s.GetRequiredFeature<ILocalKeys>();
+
+        for( int i = 0; i < 3 * ILocalKeys.MaxAlertsPerReporter; ++i )
+        {
+            keys.ReportPinStatement( TestHelper.Monitor, "Test/$Liar/#Dev", 10 + i, RandomNumberGenerator.GetBytes( 32 ) ).ShouldBeTrue();
+            keys.ReportPinStatement( TestHelper.Monitor, "Test/$Liar/#Dev", 0, RandomNumberGenerator.GetBytes( 32 ) ).ShouldBeTrue();
+        }
+        keys.Alerts.Count( a => a.Kind == IdentityAlertKind.IdentityTakenOver ).ShouldBe( ILocalKeys.MaxAlertsPerReporter );
+        keys.Alerts.Count( a => a.Kind == IdentityAlertKind.IdentityForked ).ShouldBe( ILocalKeys.MaxAlertsPerReporter );
+        Directory.EnumerateFiles( AlertsFolder( partyName ), "*.alert" ).Count().ShouldBe( 2 * ILocalKeys.MaxAlertsPerReporter );
+
+        // Another reporter has its own quota.
+        keys.ReportPinStatement( TestHelper.Monitor, "Test/$Other/#Dev", 99, RandomNumberGenerator.GetBytes( 32 ) ).ShouldBeTrue();
+        keys.Alerts.Count( a => a.Kind == IdentityAlertKind.IdentityTakenOver ).ShouldBe( ILocalKeys.MaxAlertsPerReporter + 1 );
+    }
+
+    [Test, CancelAfter( 30000 )]
     public async Task A_new_reporter_fires_the_event_again_and_a_repetition_does_not_Async( CancellationToken token )
     {
         const string partyName = "AlertReporters";

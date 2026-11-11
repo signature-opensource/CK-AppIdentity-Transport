@@ -312,6 +312,11 @@ public interface ILocalKeys : IPartyKeys
     bool Acknowledge( IActivityMonitor monitor, IdentityAlert alert );
 
     /// <summary>
+    /// The maximal number of unacknowledged alerts of one kind that one reporter can raise (see <see cref="ReportPinStatement"/>).
+    /// </summary>
+    const int MaxAlertsPerReporter = 4;
+
+    /// <summary>
     /// Judges what an authenticated remote states it pins for this party: an event digest at a
     /// sequence. A sequence beyond this party's log raises <see cref="IdentityAlertKind.IdentityTakenOver"/>;
     /// a digest that is not this party's event at that sequence raises <see cref="IdentityAlertKind.IdentityForked"/>.
@@ -319,12 +324,16 @@ public interface ILocalKeys : IPartyKeys
     /// The caller must only report statements of a remote it has authenticated: otherwise anyone could
     /// raise alerts about this party.
     /// </para>
+    /// <para>
+    /// A remote lies about its own statements as it likes: each reporter raises at most
+    /// <see cref="MaxAlertsPerReporter"/> unacknowledged alerts of each kind, the next ones are only logged.
+    /// </para>
     /// </summary>
     /// <param name="logger">The logger to use.</param>
     /// <param name="reporter">The full name of the authenticated remote.</param>
     /// <param name="seq">The sequence the remote pins.</param>
     /// <param name="eventDigest">The digest of the event the remote pins.</param>
-    /// <returns>True if an alert was raised.</returns>
+    /// <returns>True if the statement contradicts the log of this party (an alert is raised, unless the quota of the reporter is reached).</returns>
     bool ReportPinStatement( IActivityLineEmitter logger, string reporter, int seq, ReadOnlySpan<byte> eventDigest );
 
     /// <summary>
