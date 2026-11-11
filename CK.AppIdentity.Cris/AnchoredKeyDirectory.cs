@@ -170,16 +170,8 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
             return false;
         }
         var query = _pocoDirectory.Create<IGetKeyEventsQCommand>( c => c.FromSeq = stated.Seq );
-        object? result;
-        try
-        {
-            result = await _sender.SendAsync( monitor, services, local, query, routeName, keys.FullName ).WaitAsync( FetchTimeout ).ConfigureAwait( false );
-        }
-        catch( TimeoutException )
-        {
-            monitor.Warn( $"The key events of '{keys.FullName}' didn't come back along the route '{routeName}' within {FetchTimeout}." );
-            return false;
-        }
+        // The sender is bounded by the timeout: the scope of the caller (or the one created above) outlives the send.
+        var result = await _sender.SendAsync( monitor, services, local, query, routeName, keys.FullName, FetchTimeout ).ConfigureAwait( false );
         if( result is not IPartyKeyEvents answer )
         {
             var error = result is ICrisResultError e ? e.Errors.Select( m => m.Text ).Concatenate() : result?.GetType().Name ?? "null";

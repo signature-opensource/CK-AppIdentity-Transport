@@ -216,6 +216,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// The command is sent as soon as a connection to the remote is established.
     /// </para>
     /// <para>
+    /// With a <paramref name="timeout"/>, a command that is not executed in time completes with a "Cris.Timeout" error: it
+    /// is abandoned (a command not sent yet is never sent, a late answer is ignored). Without it, the command waits for its
+    /// answer (or for the destruction of the remote): never wait for it with a <c>WaitAsync</c>, the command would stay
+    /// pending.
+    /// </para>
+    /// <para>
     /// Only the caller-only events cross the channel (they travel with the response): the immediate ones appear in
     /// <see cref="IExecutingCommand.ImmediateEvents"/>, the final ones in <see cref="IExecutedCommand.Events"/>. The routed
     /// events are dispatched in the remote party, where the command executed.
@@ -226,12 +232,18 @@ public sealed partial class CrisChannelFeature : ChannelFeature
     /// <param name="command">The command to send.</param>
     /// <param name="issuerToken">Optional issuer token. When null a new token is obtained from the <paramref name="monitor"/>.</param>
     /// <param name="envelope">Optional envelope in which the command is sent (see <see cref="ICrisCallEnvelope"/>): its <see cref="ICrisCallEnvelope.Command"/> is set when it is sent. By default, an empty one.</param>
+    /// <param name="timeout">Optional maximal time to wait for the answer. Must be positive.</param>
     /// <returns>The executing command.</returns>
-    public IExecutingCommand<T> SendCommand<T>( IActivityMonitor monitor, T command, ActivityMonitor.Token? issuerToken = null, ICrisCallEnvelope? envelope = null )
+    public IExecutingCommand<T> SendCommand<T>( IActivityMonitor monitor,
+                                                T command,
+                                                ActivityMonitor.Token? issuerToken = null,
+                                                ICrisCallEnvelope? envelope = null,
+                                                TimeSpan? timeout = null )
         where T : class, IAbstractCommand
     {
         Throw.CheckNotNullArgument( monitor );
         Throw.CheckNotNullArgument( command );
+        Throw.CheckArgument( timeout == null || timeout.Value > TimeSpan.Zero );
         issuerToken ??= monitor.CreateToken( $"Sending '{command.CrisPocoModel.PocoName}' command to '{Party.FullName}'." );
         var executing = new ExecutingCommand<T>( command, issuerToken );
         if( !_executing.TryAdd( issuerToken.Key, executing ) )
@@ -248,7 +260,28 @@ public sealed partial class CrisChannelFeature : ChannelFeature
         {
             monitor.Info( $"No connection to '{Party.FullName}' yet. Command '{command.CrisPocoModel.PocoName}' will be sent once connected." );
         }
+        if( timeout != null && !executing.ExecutedCommand.IsCompleted )
+        {
+            _ = AbandonOnTimeoutAsync( issuerToken.Key, command.CrisPocoModel.PocoName, executing.ExecutedCommand, timeout.Value );
+        }
         return executing;
+    }
+
+    // Runs in the background: the caller's monitor is not used.
+    async Task AbandonOnTimeoutAsync( ActivityMonitor.LogKey key, string commandName, Task executed, TimeSpan timeout )
+    {
+        try
+        {
+            await executed.WaitAsync( timeout ).ConfigureAwait( false );
+        }
+        catch( TimeoutException )
+        {
+            var text = $"Party '{Party.FullName}' did not answer '{commandName}' within {timeout}.";
+            if( Complete( key, CreateError( text, "Cris.Timeout" ), ImmutableArray<UserMessage>.Empty ) )
+            {
+                ActivityMonitor.StaticLogger.Warn( text );
+            }
+        }
     }
 
     async Task SendLoopAsync()
@@ -261,6 +294,8 @@ public sealed partial class CrisChannelFeature : ChannelFeature
                 SetError( c.IssuerToken.Key, $"Remote '{Party.FullName}' is no more available." );
                 continue;
             }
+            // A command abandoned before it is sent (see SendCommand's timeout) is never sent.
+            if( !_executing.ContainsKey( c.IssuerToken.Key ) ) continue;
             // A reconnection may have created a new handler.
             h = _handler ?? h;
             IOutgoingMessage message;
@@ -319,10 +354,12 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     bool SetError( ActivityMonitor.LogKey key, string message ) => Complete( key, CreateError( message ), ImmutableArray<UserMessage>.Empty );
 
-    internal ICrisResultError CreateError( string message )
+    internal ICrisResultError CreateError( string message, string? resName = null )
     {
-        return _errorFactory.Create( e => e.Errors.Add( new UserMessage( UserMessageLevel.Error,
-                                                                         MCString.CreateNonTranslatable( NormalizedCultureInfo.CodeDefault, message ) ) ) );
+        return _errorFactory.Create( e => e.Errors.Add( resName == null
+                                                            ? new UserMessage( UserMessageLevel.Error,
+                                                                               MCString.CreateNonTranslatable( NormalizedCultureInfo.CodeDefault, message ) )
+                                                            : UserMessage.Error( NormalizedCultureInfo.CodeDefault, message, resName ) ) );
     }
 
     bool Complete( ActivityMonitor.LogKey key, object? result, ImmutableArray<UserMessage> validationMessages )

@@ -174,8 +174,8 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         {
             var channel = authCenter.GetFeature<CrisChannelFeature>();
             if( channel == null ) return null;
-            return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetSystemListQCommand>() )
-                                 .ExecutedCommand.WaitAsync( RemoteAuthCenter.Timeout ).ConfigureAwait( false )).Result;
+            return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetSystemListQCommand>(), timeout: ChannelCrisRemoteDispatcher.Timeout )
+                                 .ExecutedCommand.ConfigureAwait( false )).Result;
         }, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
         return true;
 

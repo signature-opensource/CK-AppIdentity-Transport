@@ -46,11 +46,6 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
     /// </summary>
     public static readonly TimeSpan RetryPeriod = TimeSpan.FromSeconds( 30 );
 
-    /// <summary>
-    /// The maximal time a pull waits for the answer: 30 seconds.
-    /// </summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
-
     readonly ApplicationIdentityService _identity;
     readonly IServiceProvider _services;
     readonly ConcurrentDictionary<ILocalParty, AnchoredStatement> _urls;
@@ -175,7 +170,8 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
                 var sending = center.AuthCenter != null
                                 ? sender.SendAlongPathAsync( monitor, scope.ServiceProvider, local, command, [local.FullName.Path, center.AuthCenterFullName] )
                                 : sender.SendAsync( monitor, scope.ServiceProvider, local, command, AuthCenterFeature.RouteName, center.AuthCenterFullName );
-                result = await sending.WaitAsync( Timeout ).ConfigureAwait( false );
+                // Bounded by the sender's timeout: the scope outlives the send.
+                result = await sending.ConfigureAwait( false );
             }
             catch( Exception ex )
             {

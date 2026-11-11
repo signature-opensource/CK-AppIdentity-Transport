@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using System;
 using System.Collections.Generic;
 
 namespace CK.AppIdentity.Cris;
@@ -65,4 +66,13 @@ public interface IPartyRoutedCommand : ICommand<object?>, ICommandTargetParty
     /// before forwarding it.
     /// </summary>
     IList<string> Via { get; }
+
+    /// <summary>
+    /// Gets or sets the time the party that receives this command has to answer: its sender (the origin, then each hop)
+    /// waits for the answer a little longer (see <see cref="PartyRoutedCommandSender"/>). A hop forwards it only when
+    /// time is left (at most the <see cref="ChannelCrisRemoteDispatcher.Timeout"/>), with the time it has left minus a
+    /// margin: its error (an unavailable next hop, no answer in time) reaches its sender before the sender gives up. The
+    /// destination ignores it.
+    /// </summary>
+    TimeSpan TimeBudget { get; set; }
 }

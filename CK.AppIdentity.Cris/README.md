@@ -29,7 +29,9 @@ var executed = await executing.ExecutedCommand;
 `SendCommand` never throws for a remote failure: the `ExecutedCommand` eventually carries the remote result, or an
 `ICrisResultError` when the command cannot be sent or its result cannot be read. A command is queued and sent as soon as
 a connection to the remote exists; once connected, what is queued survives a reconnection. When the remote is
-destroyed, the commands still waiting complete with an error.
+destroyed, the commands still waiting complete with an error. With a `timeout`, a command that is not executed in time
+completes with a "Cris.Timeout" error and is abandoned: not sent if it is still queued, its late answers ignored. Bound
+the wait with this `timeout`, never with a `WaitAsync` on the `ExecutedCommand`: the command would stay pending.
 
 Only the caller-only events cross the channel: they travel with the response. The caller-only immediate events appear
 in `IExecutingCommand.ImmediateEvents`, the caller-only final events in the `Events` of the executed command. The routed
@@ -85,7 +87,7 @@ the code that executes a command doesn't care whether it runs here or on a remot
   a remote of the current local party receives it if it accepts it; anything else is "no route".
 
 While a remote has not advertised yet, a command without route waits for it, up to `ChannelCrisRemoteDispatcher.Timeout`
-(30 seconds), which also bounds the wait for an answer. It fails closed: no route, an unavailable remote or no answer
+(30 seconds), which also bounds the wait for an answer (the command is then abandoned). It fails closed: no route, an unavailable remote or no answer
 is an error result, never a local execution. The caller-only events of the remote execution are emitted in the caller's
 execution context.
 
@@ -130,6 +132,11 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   party to `Via` and forwards it with its envelope, on its own task (no runner is held). The envelope is relayed as
   received, once the `ICrisForwardedEnvelopeFilter` cleared what this party can't vouch for (the authentication packages
   remove a user's proof that the hop can't verify). The answers come back by the chain of calls.
+- **Time:** the `PartyRoutedCommandSender` waits at most its `timeout` (by default `ChannelCrisRemoteDispatcher.Timeout`)
+  for the first hop and the answer: never wrap it in a `WaitAsync`, it would go on with the caller's monitor and services.
+  Each party gives the next one less time than it has (`IPartyRoutedCommand.TimeBudget`, half a second less): a hop
+  forwards only when time is left, at most the `ChannelCrisRemoteDispatcher.Timeout`, so that its error (an unavailable
+  next hop, no answer) reaches the origin before the origin gives up.
 - **The destination** unseals the bytes (on its own task), reads the command (refused when they are not a command) and executes it like a
   received one (incoming validation, then execution), as long as it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), and not another routed
   command. The caller party is the originating one ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): an

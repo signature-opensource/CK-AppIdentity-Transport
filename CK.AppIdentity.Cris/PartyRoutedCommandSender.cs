@@ -2,6 +2,7 @@ using CK.Core;
 using CK.Cris;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris;
@@ -15,8 +16,12 @@ namespace CK.AppIdentity.Cris;
 /// <see cref="ICrisOutgoingCommandTransformer"/> are not applied (they prepare a command for the remote that receives it,
 /// not for the destination).
 /// <para>
-/// This fails closed and never throws: no route, an unavailable hop or no answer within the
-/// <see cref="ChannelCrisRemoteDispatcher.Timeout"/> are <see cref="ICrisResultError"/> results.
+/// This fails closed and never throws: no route, an unavailable hop or no answer within the timeout (by default the
+/// <see cref="ChannelCrisRemoteDispatcher.Timeout"/>) are <see cref="ICrisResultError"/> results. The timeout bounds the
+/// wait for the first hop's advertisement and for the answer; the seal's own lookups (an encryption key) are bounded by
+/// their own timeouts. Each hop is given a shorter time (see <see cref="IPartyRoutedCommand.TimeBudget"/>): the error of
+/// a hop reaches the origin before it gives up. Never wrap a send in a <c>WaitAsync</c>: it would keep running (with the
+/// caller's monitor and services) after the caller gave up.
 /// </para>
 /// </summary>
 public sealed class PartyRoutedCommandSender : ISingletonAutoService
@@ -49,12 +54,19 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
     /// <param name="command">The command to execute on the destination.</param>
     /// <param name="routeName">The route name.</param>
     /// <param name="destination">The full name of the party that must host the route: the destination.</param>
+    /// <param name="timeout">The maximal time to wait. Defaults to the <see cref="ChannelCrisRemoteDispatcher.Timeout"/>.</param>
     /// <returns>The result of the command, or a <see cref="ICrisResultError"/>.</returns>
-    public Task<object?> SendAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, string routeName, string destination )
+    public Task<object?> SendAsync( IActivityMonitor monitor,
+                                    IServiceProvider services,
+                                    ILocalParty origin,
+                                    IAbstractCommand command,
+                                    string routeName,
+                                    string destination,
+                                    TimeSpan? timeout = null )
     {
         Throw.CheckNotNullOrWhiteSpaceArgument( routeName );
         Throw.CheckNotNullOrWhiteSpaceArgument( destination );
-        return DoSendAsync( monitor, services, origin, command, r => { r.RouteName = routeName; r.Destination = destination; } );
+        return DoSendAsync( monitor, services, origin, command, r => { r.RouteName = routeName; r.Destination = destination; }, timeout );
     }
 
     /// <summary>
@@ -65,19 +77,28 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
     /// <param name="origin">The originating local party: the first of the path.</param>
     /// <param name="command">The command to execute on the last party of the path.</param>
     /// <param name="path">The full names of the parties, from the origin to the destination.</param>
+    /// <param name="timeout">The maximal time to wait. Defaults to the <see cref="ChannelCrisRemoteDispatcher.Timeout"/>.</param>
     /// <returns>The result of the command, or a <see cref="ICrisResultError"/>.</returns>
-    public Task<object?> SendAlongPathAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, IEnumerable<string> path )
+    public Task<object?> SendAlongPathAsync( IActivityMonitor monitor,
+                                             IServiceProvider services,
+                                             ILocalParty origin,
+                                             IAbstractCommand command,
+                                             IEnumerable<string> path,
+                                             TimeSpan? timeout = null )
     {
         Throw.CheckNotNullArgument( path );
-        return DoSendAsync( monitor, services, origin, command, r => r.Path.AddRange( path ) );
+        return DoSendAsync( monitor, services, origin, command, r => r.Path.AddRange( path ), timeout );
     }
 
-    async Task<object?> DoSendAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, Action<IPartyRoutedCommand> address )
+    async Task<object?> DoSendAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty origin, IAbstractCommand command, Action<IPartyRoutedCommand> address, TimeSpan? timeout )
     {
         Throw.CheckNotNullArgument( monitor );
         Throw.CheckNotNullArgument( services );
         Throw.CheckNotNullArgument( origin );
         Throw.CheckNotNullArgument( command );
+        Throw.CheckArgument( timeout == null || timeout.Value > TimeSpan.Zero );
+        var budget = timeout ?? ChannelCrisRemoteDispatcher.Timeout;
+        var start = Stopwatch.GetTimestamp();
         Throw.CheckArgument( "A routed command never carries another one.", command is not IPartyRoutedCommand );
         var routed = _pocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
@@ -92,7 +113,7 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         {
             return Error( monitor, $"Unable to route '{command.CrisPocoModel.PocoName}': its destination is '{origin.FullName}' itself." );
         }
-        var (channel, channelError) = await CrisChannelFeature.GetNextChannelAsync( origin, next ).ConfigureAwait( false );
+        var (channel, channelError) = await CrisChannelFeature.GetNextChannelAsync( origin, next, CrisChannelFeature.Remaining( start, budget ) ).ConfigureAwait( false );
         if( channel == null )
         {
             return Error( monitor, $"Unable to route '{command.CrisPocoModel.PocoName}' from '{origin.FullName}': {channelError}" );
@@ -115,17 +136,17 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
                 return Error( monitor, $"Unable to seal '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{destination}'." );
             }
         }
+        var remaining = CrisChannelFeature.Remaining( start, budget );
+        if( remaining == TimeSpan.Zero )
+        {
+            return Error( monitor, $"Unable to route '{command.CrisPocoModel.PocoName}' from '{origin.FullName}': no time is left within {budget}." );
+        }
+        routed.TimeBudget = remaining - CrisChannelFeature.HopMargin;
         monitor.Info( $"Sending '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' to '{next}'." );
-        try
-        {
-            var executed = await channel.SendCommand( monitor, routed, envelope: envelope ).ExecutedCommand.WaitAsync( ChannelCrisRemoteDispatcher.Timeout ).ConfigureAwait( false );
-            if( resultState == null ) return executed.Result;
-            return UnsealResult( monitor, channel, command, resultState, executed.Result );
-        }
-        catch( TimeoutException )
-        {
-            return Error( monitor, $"Party '{next}' did not answer '{command.CrisPocoModel.PocoName}' routed from '{origin.FullName}' within {ChannelCrisRemoteDispatcher.Timeout}." );
-        }
+        // On timeout, the channel abandons the command: its result is a "Cris.Timeout" error.
+        var executed = await channel.SendCommand( monitor, routed, envelope: envelope, timeout: remaining ).ExecutedCommand.ConfigureAwait( false );
+        if( resultState == null ) return executed.Result;
+        return UnsealResult( monitor, channel, command, resultState, executed.Result );
     }
 
     // The result of a command whose result is sealed: an error made on the way (by a hop, or before the execution) is not

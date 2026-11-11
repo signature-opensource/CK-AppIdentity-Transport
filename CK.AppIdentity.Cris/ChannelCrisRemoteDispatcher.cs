@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris;
@@ -162,21 +163,17 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
             }
             toSend = transformed;
         }
-        var executing = channel.SendCommand( monitor, toSend, envelope: CreateEnvelope( monitor, services, channel.Party, command ) );
-        // The caller-only immediate events of the remote execution are the ones of the caller.
+        // On timeout, the channel abandons the command: its late answers are ignored (no event is emitted in a context
+        // that moved on) and it leaves the channel.
+        var executing = channel.SendCommand( monitor, toSend, envelope: CreateEnvelope( monitor, services, channel.Party, command ), timeout: Timeout );
+        // The caller-only immediate events of the remote execution are the ones of the caller, until it is executed.
+        bool done = false;
         if( context != null )
         {
-            executing.ImmediateEvents.Added.Async += ( m, e, cancel ) => context.EmitEventAsync( e );
+            executing.ImmediateEvents.Added.Async += ( m, e, cancel ) => Volatile.Read( ref done ) ? Task.CompletedTask : context.EmitEventAsync( e );
         }
-        IExecutedCommand executed;
-        try
-        {
-            executed = await executing.ExecutedCommand.WaitAsync( Timeout ).ConfigureAwait( false );
-        }
-        catch( TimeoutException )
-        {
-            return Error( services, $"Party '{channel.Party.FullName}' did not answer '{command.CrisPocoModel.PocoName}' within {Timeout}.", "Cris.Timeout" );
-        }
+        var executed = await executing.ExecutedCommand.ConfigureAwait( false );
+        Volatile.Write( ref done, true );
         // Its final caller-only events too.
         if( context != null )
         {

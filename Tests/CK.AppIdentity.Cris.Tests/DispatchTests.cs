@@ -71,9 +71,12 @@ public class DispatchTests
     // The listener's handlers.
     public sealed class ListenerSide : ISingletonAutoService
     {
+        public static readonly System.Collections.Concurrent.ConcurrentQueue<string> Pings = new();
+
         [CommandHandler]
         public async Task<string> HandleAsync( IPingCommand c, ICrisCommandContext context )
         {
+            Pings.Enqueue( c.Text );
             await context.EmitEventAsync<IPongImmediateEvent>( _ => { } );
             await context.EmitEventAsync<IPongEvent>( e => e.Text = c.Text );
             return $"pong:{c.Text}";
@@ -210,6 +213,29 @@ public class DispatchTests
         var executed = await executing.ExecutedCommand.WaitAsync( _timeout );
         executed.Events.ShouldBeEmpty();
         executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "not caller-only" );
+    }
+
+    [Test]
+    public async Task a_command_that_times_out_is_abandoned_Async()
+    {
+        ListenerSide.Pings.Clear();
+        await using var sender = await StartSenderAsync( withHeartBeat: true );
+        var channel = sender.CrisChannel;
+        // No listener yet: no answer.
+        var executing = channel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPingCommand>( c => c.Text = "abandoned" ), timeout: TimeSpan.FromMilliseconds( 200 ) );
+        var executed = await executing.ExecutedCommand.WaitAsync( _timeout );
+        Error( executed ).ShouldBe( "Cris.Timeout" );
+        // Its late answers are ignored.
+        using( TestHelper.Monitor.CollectTexts( out var logs ) )
+        {
+            channel.OnFinalEvent( TestHelper.Monitor, executing.IssuerToken.Key, sender.PocoDirectory.Create<IPongEvent>() );
+            logs.ShouldContain( l => l.Contains( "for unknown command" ) );
+        }
+        // Once connected, it is never sent: only the next command executes.
+        await using var listener = await StartListenerAsync();
+        (await channel.SendCommand( TestHelper.Monitor, sender.PocoDirectory.Create<IPingCommand>( c => c.Text = "sent" ) ).ExecutedCommand.WaitAsync( _timeout ))
+            .Result.ShouldBe( "pong:sent" );
+        ListenerSide.Pings.ShouldBe( ["sent"] );
     }
 
     [Test]

@@ -14,11 +14,6 @@ namespace CK.AppIdentity.AuthCenter;
 /// </summary>
 public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryptionKeyDirectory
 {
-    /// <summary>
-    /// The maximal time to wait for the remote Authentication Center: 30 seconds.
-    /// </summary>
-    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds( 30 );
-
     readonly CrisAuthCenter _center;
     // The encryption keys of the other parties stated by the Authentication Center, until their end.
     readonly StatedEncryptionKeys _partyKeys;
@@ -102,8 +97,10 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
         IPartyEncryptionKeyStatement? statement;
         try
         {
-            statement = await channel.SendCommand( monitor, channel.PocoDirectory.Create<IGetRemoteEncryptionKeyQCommand>( c => c.PartyFullName = partyFullName ) )
-                                     .WithResult<IPartyEncryptionKeyStatement?>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
+            statement = await channel.SendCommand( monitor,
+                                                   channel.PocoDirectory.Create<IGetRemoteEncryptionKeyQCommand>( c => c.PartyFullName = partyFullName ),
+                                                   timeout: ChannelCrisRemoteDispatcher.Timeout )
+                                     .WithResult<IPartyEncryptionKeyStatement?>().Result.ConfigureAwait( false );
         }
         catch( Exception ex )
         {
@@ -183,8 +180,8 @@ public sealed class RemoteAuthCenter : IAuthCenterProofChecker, IPartyEncryption
                     c.RoutedSignature = seal.Signature;
                 }
             } );
-            answer = await channel.SendCommand( monitor, command )
-                                  .WithResult<IAuthenticationInfoPoco?>().Result.WaitAsync( Timeout ).ConfigureAwait( false );
+            answer = await channel.SendCommand( monitor, command, timeout: ChannelCrisRemoteDispatcher.Timeout )
+                                  .WithResult<IAuthenticationInfoPoco?>().Result.ConfigureAwait( false );
         }
         catch( Exception ex )
         {

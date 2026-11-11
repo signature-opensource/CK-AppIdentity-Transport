@@ -242,6 +242,37 @@ public class RoutedCommandTests
     }
 
     [Test]
+    public async Task the_error_of_a_hop_reaches_the_origin_before_it_gives_up_Async()
+    {
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderTypes: _common,
+                                                                         listenerConfiguration: c =>
+                                                                         {
+                                                                             c["Parties:1:PartyName"] = "$C";
+                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                         },
+                                                                         listenerTypes: _common );
+        var (a, b) = pair;
+        string aName = a.ApplicationIdentityService.FullName;
+        string bName = b.ApplicationIdentityService.FullName;
+        string cName;
+        await using( var c = await RunningApplication.CreateAsync( TestHelper.Monitor,
+                                                                   isSender: true,
+                                                                   c => c["FullName"] = "Test/$C",
+                                                                   null,
+                                                                   [.. _common, typeof( WhereRoutedHandler )] ) )
+        {
+            cName = c.ApplicationIdentityService.FullName;
+            var toC = b.ApplicationIdentityService.Remotes.Single( r => r.FullName == cName ).GetRequiredFeature<CrisChannelFeature>();
+            (await toC.WaitForAcceptedCommandsAsync( _timeout )).ShouldBeTrue();
+            (await a.CrisChannel.WaitForAcceptedCommandsAsync( _timeout )).ShouldBeTrue();
+        }
+        // C is gone: the hop waits for its answer less long than the origin, its precise error comes back.
+        var r = await SendAsync( a, ( s, sp ) => s.SendAlongPathAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), [aName, bName, cName], TimeSpan.FromSeconds( 3 ) ) );
+        r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( $"'{cName}' did not answer" );
+    }
+
+    [Test]
     public async Task a_route_name_can_have_several_hosts_each_one_is_reached_by_its_name_Async()
     {
         RecordingReceptionHandler.Callers.Clear();
