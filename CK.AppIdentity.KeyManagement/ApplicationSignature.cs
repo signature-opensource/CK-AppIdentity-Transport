@@ -40,7 +40,7 @@ namespace CK.AppIdentity.KeyManagement;
 ///   replaced the key).</item>
 ///   <item>A recovery condemns every credential issued by a key before it.</item>
 ///   <item>A decommission does not: what was signed runs to its expiration.</item>
-///   <item>A credential lives at most the verifier's <see cref="ILocalKeys.AllowedOfflineDays"/>. It bounds
+///   <item>A credential lives at most the verifier's <see cref="ILocalKeys.KeyRotationDays"/>. It bounds
 ///   what the holder of a stolen, replaced key can still sign by backdating a credential.</item>
 /// </list>
 /// </para>
@@ -222,7 +222,7 @@ public readonly struct ApplicationSignature
     /// <param name="applicationSignature">The signature.</param>
     /// <param name="now">The verifier's time.</param>
     /// <param name="maxClockOffset">The offset tolerated on the credential's start (never on the expiration).</param>
-    /// <param name="maxLifetimeDays">The verifier's bound on a credential's validity: its AllowedOfflineDays.</param>
+    /// <param name="maxLifetimeDays">The verifier's bound on a credential's validity: its KeyRotationDays.</param>
     /// <returns>The verdict.</returns>
     internal static SignatureVerdict Check( IActivityLineEmitter logger,
                                  string signerName,
@@ -319,8 +319,8 @@ public readonly struct ApplicationSignature
             // accepts. Said loudly, because both sides must agree on it.
             logger.Log( LogLevel.Warn, ActivityMonitor.Tags.ToBeInvestigated,
                         $"Signature of '{signerName}' refused: its credential is valid for {(notAfter - notBefore).TotalDays:0.#} days, " +
-                        $"more than this party's AllowedOfflineDays = {maxLifetimeDays}. Check that the MaxSignatureDays of '{signerName}' " +
-                        $"is not above the AllowedOfflineDays of the parties that verify its signatures." );
+                        $"more than this party's KeyRotationDays = {maxLifetimeDays}. Check that the MaxSignatureDays of '{signerName}' " +
+                        $"is not above the KeyRotationDays of the parties that verify its signatures." );
             return SignatureVerdict.Refused;
         }
         if( expiration.Value > notAfter )

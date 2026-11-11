@@ -51,7 +51,7 @@ configures it as its trust anchor of this one (`TrustAnchors`, below).
 (`KeyEventChain.MaxEventTail`, 8). The receiver states what it holds of the sender's log (its anchor of it when it is
 anchored, otherwise its pin: `IRemoteKeys.GetStatedCheckpoint`), and the sender then sends its events from that point
 (`IRemoteKeys.HeldByRemoteSeq` remembers it), up to `KeyEventChain.MaxEventWindow` (32) events: about five years of
-rotations with the default `AllowedOfflineDays`. `Verify` and `VerifyFromAnchor` accept that window. A receiver further
+rotations with the default `KeyRotationDays`. `Verify` and `VerifyFromAnchor` accept that window. A receiver further
 behind can't catch up: its anchor must be updated, or its pin re-approved by an operator.
 
 ## Local keys
@@ -70,8 +70,8 @@ the next key is head + 1. When a party starts without a log, it creates a new id
 approve.
 
 - **Rotation.** `Rotate()` replaces the current key by the committed next one and commits to a new next key: this is
-  also how a key is revoked, by rotating early. The identity certificate is minted for twice `AllowedOfflineDays`, and a
-  rotation is scheduled (at start and from the heartbeat) once it has less than `AllowedOfflineDays` plus one day left.
+  also how a key is revoked, by rotating early. The identity certificate is minted for twice `KeyRotationDays`, and a
+  rotation is scheduled (at start and from the heartbeat) once it has less than `KeyRotationDays` plus one day left.
   When a scheduled rotation fails, the party keeps its key under a fresh certificate and raises a `RotationFailing`
   alert.
 - **Recovery.** `Recover()` writes a recovery event (revealing the recovery key, given back from offline or taken from
@@ -129,7 +129,7 @@ its own extended key usage, so an application signature can never pass for a han
   any other, and its expiration cannot be extended.
 - **Expiration.** At most `MaxSignatureDays` ahead; the verifier checks it strictly, with no clock offset.
 - **Validity.** A regular rotation has no effect on what was signed before it, a recovery condemns it, a decommission does
-  not. A verifier refuses a credential that lives longer than its own `AllowedOfflineDays`.
+  not. A verifier refuses a credential that lives longer than its own `KeyRotationDays`.
 
 Any party checks a signature with `IPartyKeys.Verify` or `IPartyKeys.Check`, whose [`SignatureVerdict`](SignatureVerdict.cs)
 tells an `UnknownIssuer` (the signer rotated and this party has not seen its new key events yet: moving the pin may make
@@ -197,9 +197,9 @@ On a local party (read from its `"Local"` section only, never from a `"Defaults"
 
 | Key | Default | |
 |-----|---------|---|
-| `AllowedOfflineDays` | 60 | How long this party or a remote can stay offline without losing their identities (7 to 3650). It drives the rotation period and bounds the credentials this party accepts. |
+| `KeyRotationDays` | 60 | The rotation period of the identity key (7 to 3650). It also caps the validity of the credentials and signatures this party accepts, and of its own signatures (`MaxSignatureDays`). How long a remote can stay offline is 32 rotations (`KeyEventChain.MaxEventWindow`). |
 | `OperationalKeyDays` | 7 | Lifetime of the operational credential (1 to 31). |
-| `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `AllowedOfflineDays`). It must not exceed the `AllowedOfflineDays` of the parties that verify the signatures. |
+| `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `KeyRotationDays`). It must not exceed the `KeyRotationDays` of the parties that verify the signatures. |
 | `TrustAnchors` | none | The trust anchors of this party: `"TrustAnchors": { "{FullName}": "{seq}:{digest}" }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`), or `"#Dev"` in the dev store of a development solution (the checkpoint is read from the running status of the anchored party when it is verified). An invalid anchor, an anchor of the party itself, or `"#Dev"` outside the dev store fails the setup. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 

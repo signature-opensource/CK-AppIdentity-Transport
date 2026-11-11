@@ -44,9 +44,9 @@ sealed partial class LocalKeys
         public LocalKeys Build( IActivityMonitor monitor )
         {
             var protector = _protectionProvider.CreateProtector( _local.FullName.Path );
-            int allowedOfflineDays = ReadAllowedOfflineDays( monitor );
+            int keyRotationDays = ReadKeyRotationDays( monitor );
             int operationalKeyDays = ReadOperationalKeyDays( monitor );
-            int maxSignatureDays = ReadMaxSignatureDays( monitor, allowedOfflineDays );
+            int maxSignatureDays = ReadMaxSignatureDays( monitor, keyRotationDays );
             var (trustAnchors, devAnchors) = ReadTrustAnchors( monitor );
             var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
             var keysPath = _store.FolderPath.AppendPart( "Keys" );
@@ -59,7 +59,7 @@ sealed partial class LocalKeys
             LocalIdentityKey current;
             if( log.Count == 0 )
             {
-                (current, var inception) = Incept( monitor, keysPath, kelPath, allowedOfflineDays, now );
+                (current, var inception) = Incept( monitor, keysPath, kelPath, keyRotationDays, now );
                 log.Add( inception );
             }
             else
@@ -67,9 +67,9 @@ sealed partial class LocalKeys
                 // A recovery that crashed between its two events: its head reveals the recovery key, which
                 // is not a key of the store. The online key it committed to is, and finishes it.
                 if( log[^1].IsRecovery ) CompleteRecovery( monitor, kelPath, log, now );
-                current = LoadCurrent( monitor, keysPath, log, allowedOfflineDays, now, alerts );
+                current = LoadCurrent( monitor, keysPath, log, keyRotationDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), allowedOfflineDays, operationalKeyDays, maxSignatureDays, trustAnchors, devAnchors, alerts, _driverAlertRaised );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), keyRotationDays, operationalKeyDays, maxSignatureDays, trustAnchors, devAnchors, alerts, _driverAlertRaised );
 
             keys.RotateIfDue( monitor, now );
             var c = keys.CurrentIdentity;
@@ -78,7 +78,7 @@ sealed partial class LocalKeys
             return keys;
         }
 
-        (LocalIdentityKey, KeyEvent) Incept( IActivityMonitor monitor, NormalizedPath keysPath, NormalizedPath kelPath, int allowedOfflineDays, DateTime now )
+        (LocalIdentityKey, KeyEvent) Incept( IActivityMonitor monitor, NormalizedPath keysPath, NormalizedPath kelPath, int keyRotationDays, DateTime now )
         {
             // Keys without a log commit to nothing and are owned by no identity: a fresh start means
             // a fresh store.
@@ -97,7 +97,7 @@ sealed partial class LocalKeys
             {
                 var e = KeyEvent.Create( _local.FullName, 0, now, key, KeyEvent.ComputeCommit( nextSpki.Span ), null, recoveryCommit );
                 _store.WriteAllBytes( kelPath.AppendPart( KeyName( 0 ) + EventExtension ), e.Encoded );
-                var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * allowedOfflineDays ), now );
+                var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * keyRotationDays ), now );
                 _store.WriteAllBytes( keysPath.AppendPart( CurrentCertificateFileName ), cert.Export( X509ContentType.Cert ) );
                 return (NewIdentity( e, cert, key ), e);
             }
@@ -108,7 +108,7 @@ sealed partial class LocalKeys
             }
         }
 
-        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, List<KeyEvent> log, int allowedOfflineDays, DateTime now, IdentityAlertBook alerts )
+        LocalIdentityKey LoadCurrent( IActivityMonitor monitor, NormalizedPath keysPath, List<KeyEvent> log, int keyRotationDays, DateTime now, IdentityAlertBook alerts )
         {
             var head = log[^1];
             if( head.IsAbandonment )
@@ -137,7 +137,7 @@ sealed partial class LocalKeys
                 var cert = TryLoadCertificate( monitor, certPath, head, now );
                 if( cert == null )
                 {
-                    cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * allowedOfflineDays ), now );
+                    cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * keyRotationDays ), now );
                     _store.WriteAllBytes( certPath, cert.Export( X509ContentType.Cert ) );
                 }
                 else
@@ -334,7 +334,7 @@ sealed partial class LocalKeys
             return days;
         }
 
-        int ReadMaxSignatureDays( IActivityMonitor monitor, int allowedOfflineDays )
+        int ReadMaxSignatureDays( IActivityMonitor monitor, int keyRotationDays )
         {
             var path = _local.LocalConfiguration.Configuration.Path;
             var s = _local.LocalConfiguration.Configuration["MaxSignatureDays"];
@@ -344,12 +344,12 @@ sealed partial class LocalKeys
                 monitor.Warn( $"Invalid configuration '{path}:MaxSignatureDays' = '{s}': using {nameof( ILocalKeys.DefaultMaxSignatureDays )} = {ILocalKeys.DefaultMaxSignatureDays}." );
                 days = ILocalKeys.DefaultMaxSignatureDays;
             }
-            // Bounded by AllowedOfflineDays: a credential issued just before a rotation must end within
-            // its issuer's life, and a verifier accepts no longer than its own AllowedOfflineDays.
-            if( days < 1 || days > allowedOfflineDays )
+            // Bounded by KeyRotationDays: a credential issued just before a rotation must end within
+            // its issuer's life, and a verifier accepts no longer than its own KeyRotationDays.
+            if( days < 1 || days > keyRotationDays )
             {
-                var clamped = Math.Clamp( days, 1, allowedOfflineDays );
-                monitor.Warn( $"Configuration '{path}:MaxSignatureDays' = {days} is out of 1..AllowedOfflineDays ({allowedOfflineDays}): using {clamped}." );
+                var clamped = Math.Clamp( days, 1, keyRotationDays );
+                monitor.Warn( $"Configuration '{path}:MaxSignatureDays' = {days} is out of 1..KeyRotationDays ({keyRotationDays}): using {clamped}." );
                 days = clamped;
             }
             return days;
@@ -390,31 +390,31 @@ sealed partial class LocalKeys
             return (anchors, devAnchors);
         }
 
-        int ReadAllowedOfflineDays( IActivityMonitor monitor )
+        int ReadKeyRotationDays( IActivityMonitor monitor )
         {
-            var s = _local.LocalConfiguration.Configuration["AllowedOfflineDays"];
+            var s = _local.LocalConfiguration.Configuration["KeyRotationDays"];
             if( s != null )
             {
-                if( int.TryParse( s, out var allowedOfflineDays ) )
+                if( int.TryParse( s, out var keyRotationDays ) )
                 {
-                    if( allowedOfflineDays < ILocalKeys.MinAllowedOfflineDays )
+                    if( keyRotationDays < ILocalKeys.MinKeyRotationDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' is too small: using {nameof(ILocalKeys.MinAllowedOfflineDays)} = {ILocalKeys.MinAllowedOfflineDays}." );
-                        allowedOfflineDays = ILocalKeys.MinAllowedOfflineDays;
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' is too small: using {nameof(ILocalKeys.MinKeyRotationDays)} = {ILocalKeys.MinKeyRotationDays}." );
+                        keyRotationDays = ILocalKeys.MinKeyRotationDays;
                     }
-                    else if( allowedOfflineDays > ILocalKeys.MaxAllowedOfflineDays )
+                    else if( keyRotationDays > ILocalKeys.MaxKeyRotationDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' is too big: using {nameof(ILocalKeys.MaxAllowedOfflineDays)} = {ILocalKeys.MaxAllowedOfflineDays}." );
-                        allowedOfflineDays = ILocalKeys.MaxAllowedOfflineDays;
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' is too big: using {nameof(ILocalKeys.MaxKeyRotationDays)} = {ILocalKeys.MaxKeyRotationDays}." );
+                        keyRotationDays = ILocalKeys.MaxKeyRotationDays;
                     }
-                    return allowedOfflineDays;
+                    return keyRotationDays;
                 }
                 else
                 {
-                    monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:AllowedOfflineDays' = '{s}': using {nameof( ILocalKeys.DefaultAllowedOfflineDays )} = {ILocalKeys.DefaultAllowedOfflineDays}." );
+                    monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' = '{s}': using {nameof( ILocalKeys.DefaultKeyRotationDays )} = {ILocalKeys.DefaultKeyRotationDays}." );
                 }
             }
-            return ILocalKeys.DefaultAllowedOfflineDays;
+            return ILocalKeys.DefaultKeyRotationDays;
         }
     }
 }

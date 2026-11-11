@@ -41,7 +41,7 @@ sealed class TlsCredential
     /// The cache is keyed on the identity instance rather than refreshed on a timer, so a rotation
     /// takes effect on the next connection instead of the next restart. The certificate it replaces
     /// is deliberately NOT disposed: a connection established a moment earlier still holds it for as
-    /// long as it lives, and rotation happens at most once per <see cref="ILocalKeys.AllowedOfflineDays"/>.
+    /// long as it lives, and rotation happens at most once per <see cref="ILocalKeys.KeyRotationDays"/>.
     /// Reference counting every handshake to reclaim one certificate per rotation buys nothing that
     /// the finalizer does not.
     /// </para>

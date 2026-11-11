@@ -17,24 +17,24 @@ public interface ILocalKeys : IPartyKeys
     /// </summary>
     const int DefaultMaxSignatureDays = 7;
     /// <summary>
-    /// Minimal number of days for <see cref="AllowedOfflineDays"/>.
+    /// Minimal number of days for <see cref="KeyRotationDays"/>.
     /// </summary>
-    const int MinAllowedOfflineDays = 7;
+    const int MinKeyRotationDays = 7;
 
     /// <summary>
-    /// Maximal number of days for <see cref="AllowedOfflineDays"/>: ten years.
+    /// Maximal number of days for <see cref="KeyRotationDays"/>: ten years.
     /// <para>
     /// The value is scaled and handed to <c>DateTime.AddDays</c> to compute a certificate expiry, so
     /// leaving it unbounded lets a configuration typo throw out of the key builder and stop the
     /// service from starting at all, rather than being clamped and warned about.
     /// </para>
     /// </summary>
-    const int MaxAllowedOfflineDays = 3650;
+    const int MaxKeyRotationDays = 3650;
 
     /// <summary>
-    /// Default value of <see cref="AllowedOfflineDays"/>.
+    /// Default value of <see cref="KeyRotationDays"/>.
     /// </summary>
-    const int DefaultAllowedOfflineDays = 60;
+    const int DefaultKeyRotationDays = 60;
 
     /// <summary>
     /// The maximum count of simultaneously valid identity keys.
@@ -80,9 +80,9 @@ public interface ILocalKeys : IPartyKeys
     /// <summary>
     /// Gets the longest a signature made by <see cref="Sign"/> can live, in days.
     /// <para>
-    /// Configured by "MaxSignatureDays" (1 to <see cref="AllowedOfflineDays"/>, default
+    /// Configured by "MaxSignatureDays" (1 to <see cref="KeyRotationDays"/>, default
     /// <see cref="DefaultMaxSignatureDays"/>). A verifier accepts a credential valid for no more than its
-    /// own <see cref="AllowedOfflineDays"/>, so a party whose signatures are checked by others must not be
+    /// own <see cref="KeyRotationDays"/>, so a party whose signatures are checked by others must not be
     /// configured above theirs. It also bounds what the holder of a stolen key can still sign once the
     /// key has been replaced (DESIGN-key-pre-rotation §18.4).
     /// </para>
@@ -132,14 +132,15 @@ public interface ILocalKeys : IPartyKeys
     ApplicationSignature Sign( string purpose, ReadOnlySpan<byte> data, DateTime expiration );
 
     /// <summary>
-    /// Gets the number of days during which this party or a remote party can be offline
-    /// without losing their identities.
+    /// Gets the rotation period of the identity key, in days. It also bounds the validity of the
+    /// credentials and signatures this party accepts, and of its own signatures (MaxSignatureDays).
     /// <para>
-    /// This drives the expiration delays of identity keys: identity keys are created with
-    /// a lifetime that is twice this value (with a one day security).
+    /// Identity keys are created with a lifetime that is twice this value (with a one day security).
+    /// How long a party can stay offline is not this value: it is <see cref="KeyEventChain.MaxEventWindow"/>
+    /// rotations (a remote further behind can't catch up from a handshake).
     /// </para>
     /// <para>
-    /// So it is also the rotation period: the current key is replaced by the committed next one
+    /// The current key is replaced by the committed next one
     /// (<see cref="Rotate"/>) once its certificate has less than this left. This is checked at start and
     /// from the heartbeat, so a process that never restarts rotates like one that does.
     /// </para>
@@ -151,7 +152,7 @@ public interface ILocalKeys : IPartyKeys
     /// stolen replaced key can still sign is bounded by this value (see <see cref="ApplicationSignature"/>).
     /// </para>
     /// </summary>
-    int AllowedOfflineDays { get; }
+    int KeyRotationDays { get; }
 
     /// <summary>
     /// Gets the current identity key.

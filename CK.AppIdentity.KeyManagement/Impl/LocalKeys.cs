@@ -34,7 +34,7 @@ sealed partial class LocalKeys : ILocalKeys
     readonly IDataProtector _protector;
     readonly ICoreKeyStore _keyStore;
     readonly NormalizedPath _keysPath;
-    readonly int _allowedOfflineDays;
+    readonly int _keyRotationDays;
     readonly int _operationalKeyDays;
     readonly int _maxSignatureDays;
     readonly IReadOnlyDictionary<string, KeyCheckpoint> _trustAnchors;
@@ -70,7 +70,7 @@ sealed partial class LocalKeys : ILocalKeys
                NormalizedPath keysPath,
                LocalIdentityKey current,
                KeyEvent[] log,
-               int allowedOfflineDays,
+               int keyRotationDays,
                int operationalKeyDays,
                int maxSignatureDays,
                IReadOnlyDictionary<string, KeyCheckpoint> trustAnchors,
@@ -82,7 +82,7 @@ sealed partial class LocalKeys : ILocalKeys
         _protector = protector;
         _keyStore = keyStore;
         _keysPath = keysPath;
-        _allowedOfflineDays = allowedOfflineDays;
+        _keyRotationDays = keyRotationDays;
         _operationalKeyDays = operationalKeyDays;
         _maxSignatureDays = maxSignatureDays;
         _trustAnchors = trustAnchors;
@@ -222,10 +222,10 @@ sealed partial class LocalKeys : ILocalKeys
     {
         // Its own log, complete from the inception: no clock offset with itself.
         return ApplicationSignature.Check( logger, _local.FullName, _state.Log, purpose, data, signature,
-                                            _local.ApplicationIdentityService.SystemClock.UtcNow, TimeSpan.Zero, _allowedOfflineDays );
+                                            _local.ApplicationIdentityService.SystemClock.UtcNow, TimeSpan.Zero, _keyRotationDays );
     }
 
-    public int AllowedOfflineDays => _allowedOfflineDays;
+    public int KeyRotationDays => _keyRotationDays;
 
     public int OperationalKeyDays => _operationalKeyDays;
 
@@ -298,7 +298,7 @@ sealed partial class LocalKeys : ILocalKeys
                 nextOwned = false;
                 // One swap: key and log change together. The replaced key is NOT disposed: a
                 // negotiation may be signing with it right now. One finalizable key per rotation,
-                // rotations being AllowedOfflineDays apart.
+                // rotations being KeyRotationDays apart.
                 _state = new LocalIdentityState( identity, [.. state.Log, e], OperationalCredential.Issue( identity, now, _operationalKeyDays ) );
                 _keyStore.DeleteKey( monitor, _local, KeyName( s ) );
                 ExposeIdentity( monitor, _local.LocalFileStore, _keysPath, e );
@@ -473,7 +473,7 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     /// <summary>
-    /// Scheduled rotation: a current key that cannot guarantee <see cref="AllowedOfflineDays"/> any more is
+    /// Scheduled rotation: a current key that cannot guarantee <see cref="KeyRotationDays"/> any more is
     /// replaced by the committed next one. Called at start and from the heartbeat. When the rotation fails,
     /// the party keeps working with the same key under a fresh certificate, and says so.
     /// </summary>
@@ -487,7 +487,7 @@ sealed partial class LocalKeys : ILocalKeys
             var state = _state;
             if( !IsRotationDue( state, now ) ) return;
             monitor.Info( $"Identity key #{state.Head.Seq} of '{_local.FullName}' expires on {state.Key.NotAfter:yyyy-MM-dd}. " +
-                          $"It is not enough to guarantee AllowedOfflineDays = {_allowedOfflineDays}: rotating." );
+                          $"It is not enough to guarantee KeyRotationDays = {_keyRotationDays}: rotating." );
             if( !Rotate( monitor ) )
             {
                 // Keep working rather than stop: same key, fresh certificate. The failure has been
@@ -499,7 +499,7 @@ sealed partial class LocalKeys : ILocalKeys
     }
 
     bool IsRotationDue( LocalIdentityState state, DateTime now )
-        => !state.Head.IsAbandonment && state.Key.NotAfter < now.AddDays( _allowedOfflineDays + 1 );
+        => !state.Head.IsAbandonment && state.Key.NotAfter < now.AddDays( _keyRotationDays + 1 );
 
     /// <summary>
     /// Renews the operational credential once it has lived half its life. The previous one stays valid
@@ -603,7 +603,7 @@ sealed partial class LocalKeys : ILocalKeys
     /// </summary>
     LocalIdentityKey CreateIdentity( IActivityMonitor monitor, ECDsa key, KeyEvent e, DateTime now )
     {
-        var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * _allowedOfflineDays ), now );
+        var cert = CreateIdentityCertificate( key, _local.FullName, now.AddDays( 2 * _keyRotationDays ), now );
         _local.LocalFileStore.WriteAllBytes( CurrentCertificatePath, cert.Export( X509ContentType.Cert ) );
         return NewIdentity( e, cert, key );
     }

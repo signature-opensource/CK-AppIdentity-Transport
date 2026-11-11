@@ -133,7 +133,7 @@ public class IdentityCertificateTests
     [Test, CancelAfter( 60000 )]
     public async Task A_certificate_near_its_expiry_rotates_to_the_next_key_Async( CancellationToken token )
     {
-        // Any machine: well inside the threshold (AllowedOfflineDays + 1 day), this must rotate.
+        // Any machine: well inside the threshold (KeyRotationDays + 1 day), this must rotate.
         (await RotatesOnRestartAsync( "IdNearExpiry", DateTime.UtcNow.AddDays( 10 ), token )).ShouldBeTrue();
         // And well outside, it must not.
         (await RotatesOnRestartAsync( "IdFarExpiry", DateTime.UtcNow.AddDays( 200 ), token )).ShouldBeFalse();
@@ -151,7 +151,7 @@ public class IdentityCertificateTests
             Assert.Ignore( $"Local offset is {offset}: this case only discriminates east of UTC. " +
                             "The bug is invisible in UTC by construction — the two time bases coincide." );
         }
-        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultAllowedOfflineDays + 1 );
+        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultKeyRotationDays + 1 );
         (await RotatesOnRestartAsync( "M10East", threshold.AddMinutes( -30 ), token )).ShouldBeTrue(
             "30 minutes inside the threshold must rotate. Comparing the certificate's local NotAfter " +
             $"against UtcNow added {offset} to it." );
@@ -167,7 +167,7 @@ public class IdentityCertificateTests
             Assert.Ignore( $"Local offset is {offset}: this case only discriminates west of UTC. " +
                             "The bug is invisible in UTC by construction — the two time bases coincide." );
         }
-        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultAllowedOfflineDays + 1 );
+        var threshold = DateTime.UtcNow.AddDays( ILocalKeys.DefaultKeyRotationDays + 1 );
         (await RotatesOnRestartAsync( "M10West", threshold.AddMinutes( 30 ), token )).ShouldBeFalse(
             "30 minutes outside the threshold must not rotate. Comparing the certificate's local NotAfter " +
             $"against UtcNow shifted it by {offset}." );

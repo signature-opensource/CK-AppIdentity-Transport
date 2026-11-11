@@ -114,7 +114,7 @@ public static class KeyEventChain
     /// <summary>
     /// The maximal number of events a party sends from the point of its log that the receiver holds (its pin or its trust
     /// anchor), and that <see cref="Verify"/> and <see cref="VerifyFromAnchor"/> accept: about five years of rotations with
-    /// the default <c>AllowedOfflineDays</c>. A verifier more than this many rotations behind can't catch up from a
+    /// the default <c>KeyRotationDays</c>. A verifier more than this many rotations behind can't catch up from a
     /// handshake: an anchor must be updated, a pin re-approved by an operator.
     /// </summary>
     public const int MaxEventWindow = 32;

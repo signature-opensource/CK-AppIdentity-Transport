@@ -109,9 +109,9 @@ sealed partial class RemoteKeys : IRemoteKeys
     {
         KeyEvent[] chain;
         lock( _trustLock ) chain = _pinned == null ? [] : [.. _history, _pinned];
-        // Bounded by this party's AllowedOfflineDays: what it accepts, whatever the remote is configured with.
+        // Bounded by this party's KeyRotationDays: what it accepts, whatever the remote is configured with.
         return ApplicationSignature.Check( logger, _remote.FullName, chain, purpose, data, signature,
-                                            _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset, _localKeys.AllowedOfflineDays );
+                                            _remote.ApplicationIdentityService.SystemClock.UtcNow, _maxClockOffset, _localKeys.KeyRotationDays );
     }
 
     public RemoteIdentityKey? TrustedIdentity => _identity;
@@ -391,7 +391,7 @@ sealed partial class RemoteKeys : IRemoteKeys
     {
         Throw.DebugAssert( System.Threading.Monitor.IsEntered( _trustLock ) );
         var limit = _remote.ApplicationIdentityService.SystemClock.UtcNow
-                    - TimeSpan.FromDays( _localKeys.AllowedOfflineDays ) - ApplicationSignature.TimePrecisionSlack;
+                    - TimeSpan.FromDays( _localKeys.KeyRotationDays ) - ApplicationSignature.TimePrecisionSlack;
         int drop = 0;
         while( drop < _history.Count && ReplacedAt( drop ) < limit ) ++drop;
         if( drop == 0 ) return;

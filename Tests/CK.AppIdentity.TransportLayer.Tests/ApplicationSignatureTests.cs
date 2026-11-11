@@ -40,7 +40,7 @@ public class ApplicationSignatureTests
         {
             if( operational.HasValue ) c["Local:OperationalKeyDays"] = operational.Value.ToString();
             if( maxSignature.HasValue ) c["Local:MaxSignatureDays"] = maxSignature.Value.ToString();
-            if( allowedOffline.HasValue ) c["Local:AllowedOfflineDays"] = allowedOffline.Value.ToString();
+            if( allowedOffline.HasValue ) c["Local:KeyRotationDays"] = allowedOffline.Value.ToString();
         };
 
     #region Local side
@@ -131,7 +131,7 @@ public class ApplicationSignatureTests
     }
 
     [Test, CancelAfter( 30000 )]
-    public async Task MaxSignatureDays_is_bounded_by_AllowedOfflineDays_Async( CancellationToken token )
+    public async Task MaxSignatureDays_is_bounded_by_KeyRotationDays_Async( CancellationToken token )
     {
         const string partyName = "AppSigBound";
         IdentityStoreHelper.ClearKeys( partyName );
@@ -171,7 +171,7 @@ public class ApplicationSignatureTests
     public async Task An_old_identity_still_signs_Async( CancellationToken token )
     {
         // A credential states its issue time. Inheriting the identity's NotBefore, a credential issued by
-        // a 55 day old key would claim a validity of 62 days, beyond any AllowedOfflineDays (60): refused.
+        // a 55 day old key would claim a validity of 62 days, beyond any KeyRotationDays (60): refused.
         const string partyName = "AppSigOld";
         IdentityStoreHelper.ClearKeys( partyName );
         var clock = NewClock();
@@ -388,7 +388,7 @@ public class ApplicationSignatureTests
     public async Task A_replaced_key_cannot_sign_after_its_replacement_for_long_Async( CancellationToken token )
     {
         // What a thief holding a replaced key can still do: issue a credential backdated to before the
-        // rotation, for at most this party's AllowedOfflineDays. Anything else is refused.
+        // rotation, for at most this party's KeyRotationDays. Anything else is refused.
         const string name = "AppSigBackdate";
         var clock = NewClock();
         var (service, keys, _) = await CreateRemoteAsync( name, clock, token );
@@ -409,7 +409,7 @@ public class ApplicationSignatureTests
 
         var tooLong = PeerSign( stolen, peer.FullName, expiration, notBefore: DateTime.UtcNow.AddDays( -61 ) );
         keys.Verify( TestHelper.Monitor, Purpose, Data, tooLong ).ShouldBeFalse(
-            "Backdated further than AllowedOfflineDays (60): refused, with a warning." );
+            "Backdated further than KeyRotationDays (60): refused, with a warning." );
 
         var outlives = PeerSign( stolen, peer.FullName, expiration, notBefore: rotatedAt.AddMinutes( -1 ), notAfter: expiration.AddHours( -1 ) );
         keys.Verify( TestHelper.Monitor, Purpose, Data, outlives ).ShouldBeFalse( "A signature cannot outlive its credential." );
@@ -463,7 +463,7 @@ public class ApplicationSignatureTests
 
         clock.Offset = TimeSpan.FromDays( 60 ) - TimeSpan.FromHours( 1 );
         await Task.Delay( 300, token );
-        Directory.EnumerateFiles( HistoryFolder( name ) ).Count().ShouldBe( 1, "Within AllowedOfflineDays of its replacement: kept." );
+        Directory.EnumerateFiles( HistoryFolder( name ) ).Count().ShouldBe( 1, "Within KeyRotationDays of its replacement: kept." );
 
         clock.Offset = TimeSpan.FromDays( 60 ) + TimeSpan.FromHours( 1 );
         for( int i = 0; i < 100 && Directory.EnumerateFiles( HistoryFolder( name ) ).Any(); ++i ) await Task.Delay( 50, token );
