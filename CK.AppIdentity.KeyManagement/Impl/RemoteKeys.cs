@@ -285,6 +285,36 @@ sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
         }
     }
 
+    public bool PinFromCheckpoint( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail, KeyCheckpoint checkpoint )
+    {
+        Throw.CheckNotNullArgument( tail );
+        Throw.CheckNotNullArgument( checkpoint );
+        if( IsAnchored )
+        {
+            logger.Warn( $"Remote '{_remote}' is anchored: its identity is verified from its trust anchor, never pinned from a checkpoint stated by another party." );
+            return false;
+        }
+        if( tail.Count == 0 ) return false;
+        lock( _trustLock )
+        {
+            if( _localKeys.IsRevoked( tail[^1].GetIdentity( _remote.FullName ).Span ) )
+            {
+                logger.Error( ActivityMonitor.Tags.SecurityCritical, $"The identity presented by remote '{_remote}' is revoked: it can't be pinned." );
+                return false;
+            }
+            var check = KeyEventChain.VerifyFromAnchor( _remote.FullName, tail, checkpoint );
+            if( check.Verdict is not (KeyChainVerdict.UpToDate or KeyChainVerdict.Advanced or KeyChainVerdict.Recovered) )
+            {
+                logger.Warn( ActivityMonitor.Tags.SecurityCritical, $"The events presented by remote '{_remote}' don't verify from the checkpoint {checkpoint} ({check.Verdict}): not pinned." );
+                return false;
+            }
+            // Like an operator's pin: it proves no link to what was pinned before, the history goes.
+            if( DoPin( logger, check.Head! ) ) ReplaceHistory( logger, [] );
+            _refusal = null;
+            return true;
+        }
+    }
+
     public KeyChainCheck ApplyTail( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail )
     {
         Throw.CheckNotNullArgument( tail );

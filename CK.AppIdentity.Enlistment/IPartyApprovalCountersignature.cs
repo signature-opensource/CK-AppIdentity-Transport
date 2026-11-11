@@ -19,14 +19,20 @@ public interface IPartyApprovalCountersignature : ISingletonAutoService
     /// <param name="services">The services of the operator's request (its proof is sent with the request).</param>
     /// <param name="host">The local party that hosts the approval page.</param>
     /// <param name="statement">The statement, signed by the host.</param>
+    /// <param name="withPinGrant">
+    /// True when the approved party waits on the holder and must approve it too (a "both approval"): a pin grant of the
+    /// holder for the approved party is asked as well.
+    /// </param>
     /// <returns>
     /// Success false when a countersignature is required (the host has an Authentication Center) and can't be obtained;
-    /// otherwise the countersignature (null when none is required).
+    /// otherwise the countersignature (null when none is required) and the pin grant (null when none is asked or when the
+    /// Authentication Center doesn't know the holder).
     /// </returns>
-    ValueTask<(bool Success, byte[]? Countersignature)> CountersignAsync( IActivityMonitor monitor,
-                                                                        IServiceProvider services,
-                                                                        ILocalParty host,
-                                                                        IPartyApprovalStatement statement );
+    ValueTask<(bool Success, byte[]? Countersignature, byte[]? PinGrant)> CountersignAsync( IActivityMonitor monitor,
+                                                                                          IServiceProvider services,
+                                                                                          ILocalParty host,
+                                                                                          IPartyApprovalStatement statement,
+                                                                                          bool withPinGrant );
 
     /// <summary>
     /// On the holder of the pending approval: checks the countersignature of the statement. It is required when the holder

@@ -23,6 +23,13 @@ public interface IApprovePendingPartyCommand : ICommand<PartyApprovalStatus>
     /// Gets the codes entered by the operator: they travel beside the statement, never in it.
     /// </summary>
     IList<string> Codes { get; }
+
+    /// <summary>
+    /// Gets or sets the pin grant of the Authentication Center for the approved party (it waits on the holder and must
+    /// approve it too): the holder hands it over to the approved party at its next attempt. Null without Authentication
+    /// Center, or when the holder must not be approved by the approved party.
+    /// </summary>
+    byte[]? WaitingPartyGrant { get; set; }
 }
 
 /// <summary>

@@ -24,6 +24,7 @@ public class ApprovalCountersignatureTests
 {
     static readonly Type[] _types = [typeof( AuthCenterApprovalCountersignature ),
                                      typeof( ICountersignApprovalCommand ),
+                                     typeof( ICountersignApprovalResult ),
                                      typeof( IPartyApprovalStatement ),
                                      typeof( PartyRoutedCommandSender ),
                                      typeof( IPartySealedResult ),
@@ -54,7 +55,8 @@ public class ApprovalCountersignatureTests
         await using var scope = p.Remote.CreateAsyncScopeServices();
         var countersignature = scope.ServiceProvider.GetRequiredService<IPartyApprovalCountersignature>();
         var statement = Statement( operatorId );
-        var (success, signature) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement );
+        var (success, signature, grant) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement, withPinGrant: false );
+        grant.ShouldBeNull();
         success.ShouldBeTrue();
         statement.CenterCountersignature = signature.ShouldNotBeNull();
         (await countersignature.VerifyAsync( TestHelper.Monitor, host, statement )).ShouldBeTrue();
@@ -66,7 +68,7 @@ public class ApprovalCountersignatureTests
         (await countersignature.VerifyAsync( TestHelper.Monitor, host, missing )).ShouldBeFalse();
 
         // The AuthCenter refuses to countersign for another operator than the one of the request.
-        (success, signature) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, Statement( operatorId + 1 ) );
+        (success, signature, _) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, Statement( operatorId + 1 ), withPinGrant: false );
         success.ShouldBeFalse();
         signature.ShouldBeNull();
     }

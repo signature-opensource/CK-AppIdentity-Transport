@@ -134,6 +134,11 @@ public sealed class PeeringIssue
     /// What must reach them with it is that <b>following it is a trust decision</b>, to be confirmed
     /// out of band exactly like a key fingerprint. Surface it as such; never auto-follow it.
     /// </para>
+    /// <para>
+    /// It is true, whatever the path and whoever answered, when the URL came in an <see cref="EnlistmentUrlStatement"/> of
+    /// the authority of our System (<see cref="IPeeringAuthority"/>, our Authentication Center) that verifies with the keys
+    /// we hold of it (its trust anchor).
+    /// </para>
     /// </summary>
     public bool IsEnlistUrlAuthenticated => _enlistUrlIsAuthenticated;
 

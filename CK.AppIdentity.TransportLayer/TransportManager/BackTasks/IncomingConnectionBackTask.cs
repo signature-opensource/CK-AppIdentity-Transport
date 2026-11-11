@@ -343,7 +343,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                         }
                         await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming, conflict.Value.Keys,
                                                                               conflict.Value.Issue,
-                                                                              null, null, null, conflict.Value.Nonce ).ConfigureAwait( false );
+                                                                              null, null, null, null, null, conflict.Value.Nonce ).ConfigureAwait( false );
                         return null;
                     }
                     // We have read the first part of the message.
@@ -407,6 +407,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             byte remoteMacCapabilities = r.ReadByte();
             // The commitment to its nonce of the approval code (see ApprovalSession).
             var approvalCommitment = r.ReadBytes( ApprovalSession.NonceLength );
+            // The pin grant the initiator holds for us (it approved us, we may not have approved it yet).
+            var pinGrant = ZeroProtocol.ReadOptionalStatement( ref r );
 
             // What the initiator states about the certificate it presented. Read now because it sits
             // inside the signed region; checked below, once the signature says whose statement it is.
@@ -530,6 +532,15 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                     // foundTrustKey stays the acceptance gate: a SelfAsserted signature only becomes
                     // trusted here if AutoTrustKey adopts the presented key.
                     foundTrustKey = remote.RemoteKeys.IsTrustedAfterRead( transportManager.Logger, signatureCheck, block );
+                    // The initiator approved us and hands over the pin grant of the authority of our System: we pin it
+                    // (it replaces a pin, like an operator's approval) and this attempt goes on.
+                    if( !foundTrustKey
+                        && pinGrant != null
+                        && signatureCheck == SignatureCheck.SelfAsserted
+                        && transportManager.TryPinFromGrant( remote, pinGrant, block ) )
+                    {
+                        foundTrustKey = true;
+                    }
                     // The initiator's operational key verifies its FinalSuccess and Goodbye on this connection,
                     // and its expiry bounds how long this connection may live.
                     if( foundTrustKey ) incoming.SetRemoteCredential( block.OperationalKey!, block.CredentialNotAfter );
@@ -695,11 +706,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         // Our enlistment URL (the approval page of our System, for the caller) is sent when we must approve the caller: the
         // page approves the pending approvals held by the parties of its System. When only the caller must approve us, our
         // page is of no use to it (its own page is).
-        string? enlistUrl = issue is PeeringIssueKind.IncomingUnknown
-                                     or PeeringIssueKind.RequiresLocalApproval
-                                     or PeeringIssueKind.RequiresBothApproval
-                                ? transportManager.GetEnlistRemoteUrl( transportManager.GetEnlistingLocalParty( existingParty, initialMessage.DomainName ), initialMessage.FullName )
-                                : null;
+        // It is the statement of the authority of our System when we have one (verifiable by the caller whatever the path).
+        var (enlistUrl, enlistUrlStatement) = issue is PeeringIssueKind.IncomingUnknown
+                                                       or PeeringIssueKind.RequiresLocalApproval
+                                                       or PeeringIssueKind.RequiresBothApproval
+                                                ? transportManager.GetEnlistUrlToSend( transportManager.GetEnlistingLocalParty( existingParty, initialMessage.DomainName ), initialMessage.FullName )
+                                                : (null, null);
+        // We approved the caller (it must approve us): the pin grant we hold for it, if any.
+        var pinGrant = issue is PeeringIssueKind.RequiresRemoteApproval ? remote?.PinGrantToSend : null;
         // The approval issues carry our nonce of the approval code for the initiator's key: its item keeps it
         // across the attempts (see ApprovalSession).
         bool isApproval = issue is PeeringIssueKind.RequiresLocalApproval
@@ -717,11 +731,14 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                                     ? initialMessage.ClockOffset
                                                                                     : null,
                                                                                 enlistUrl,
+                                                                                enlistUrlStatement,
+                                                                                pinGrant,
                                                                                 approvalNonce,
                                                                                 initialMessage.Nonce ).ConfigureAwait( false );
         if( !messageSent ) return;
         // Only if the transport has not been condemned.
         string? remoteEnlistUrl = null;
+        bool remoteEnlistUrlIsAuthenticated = false;
         if( approvalNonce != null )
         {
             Throw.DebugAssert( remote != null );
@@ -739,6 +756,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                                                initialMessage.Nonce,
                                                                initiatorKey,
                                                                out remoteEnlistUrl,
+                                                               out var remoteEnlistUrlStatement,
                                                                out var revealed ) )
             {
                 // Weird...
@@ -748,7 +766,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             }
             // The initiator's URL (the approval page of its System) is useful only when the initiator must approve us:
             // when only we must approve it, it is dropped (see PeeringIssue.EnlistUrl).
-            if( issue is PeeringIssueKind.RequiresLocalApproval ) remoteEnlistUrl = null;
+            if( issue is PeeringIssueKind.RequiresLocalApproval )
+            {
+                remoteEnlistUrl = null;
+            }
+            else
+            {
+                // A URL stated by the authority of our System is authenticated (the initiator's own URL never is: its
+                // signature verifies against the operational key presented in this very exchange).
+                remoteEnlistUrl = transportManager.ReadReceivedEnlistUrl( remote.Party.Owner, remoteEnlistUrl, remoteEnlistUrlStatement, ref remoteEnlistUrlIsAuthenticated );
+            }
             if( revealed != null )
             {
                 if( remote.Approval.OnReveal( initialMessage.RemoteHead, revealed ) )
@@ -768,7 +795,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 }
             }
         }
-        transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl );
+        transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl, remoteEnlistUrlIsAuthenticated );
     }
 
     static async ValueTask<MessageProtocol[]?> HandleProtocolsAsync( TransportManager transportManager,

@@ -35,6 +35,7 @@ sealed class InitialMessage : IIncomingRequest
                                + 5 // expectedCommonProtocolCount
                                + 1 // RemoteTrustInfo.CanAutoTrust?
                                + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
+                               + (5 + AnchoredStatement.MaxEncodedSize) // The pin grant the initiator holds for the listener.
                                + 1 // Its MAC capabilities.
                                + ApprovalSession.NonceLength // The commitment to its nonce of the approval code.
                                + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.

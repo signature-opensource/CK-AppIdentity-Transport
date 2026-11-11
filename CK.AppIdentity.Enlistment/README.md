@@ -52,4 +52,7 @@ An optional `IPartyApprovalCountersignature` (implemented by
 [CK.AppIdentity.AuthCenter.Enlistment](../CK.AppIdentity.AuthCenter.Enlistment/README.md)) adds the countersignature of
 the Authentication Center to the statement (`CenterCountersignature`): the host obtains it in the operator's request (an
 approval it can't countersign is not sent: `Refused`), and the holder that has an Authentication Center requires and
-verifies it (otherwise `Refused`).
+verifies it (otherwise `Refused`). For a "Both" item (the approved party waits on the holder and must approve it too), it
+also asks a pin grant of the holder for the approved party: it travels down with the approval
+(`IApprovePendingPartyCommand.WaitingPartyGrant`) and the holder hands it over to the approved party (see the authority of
+the System in [CK.AppIdentity.TransportLayer](../CK.AppIdentity.TransportLayer/README.md)).

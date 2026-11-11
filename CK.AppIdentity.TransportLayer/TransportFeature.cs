@@ -621,6 +621,51 @@ public sealed class TransportFeature
     /// </summary>
     internal ApprovalSession Approval { get; } = new ApprovalSession();
 
+    AnchoredStatement? _pinGrant;
+
+    /// <summary>
+    /// Keeps a <see cref="PinGrant"/> for this remote: the approval of this remote (the waiting party) made on the approval
+    /// page of the System, that also approves the local party for it. It is handed over to the remote at its next attempt
+    /// (in our rejection when we listen, in our initial message when we initiate), until it expires or the remote is
+    /// connected. It is kept in memory only. The remote verifies it: here it must only be a grant for this remote.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="grant">The grant.</param>
+    /// <returns>True when the grant is kept, false when it is not a grant for this remote or when it expired.</returns>
+    public bool OfferPinGrant( IActivityMonitor monitor, AnchoredStatement grant )
+    {
+        Throw.CheckNotNullArgument( grant );
+        if( !PinGrant.TryRead( grant, out var waiting, out _, out var holder, out _ )
+            || waiting != Party.FullName.Path
+            || holder != Party.Owner.FullName.Path )
+        {
+            monitor.Warn( $"{grant} is not a pin grant of '{Party}' for '{Party.Owner}': ignored." );
+            return false;
+        }
+        if( grant.Expiration <= _transportManager.SystemClock.UtcNow )
+        {
+            monitor.Warn( $"{grant} expired: ignored." );
+            return false;
+        }
+        _pinGrant = grant;
+        monitor.Info( $"The pin grant of '{Party}' for '{Party.Owner}' is kept until '{Party}' connects (or until {grant.Expiration:O})." );
+        return true;
+    }
+
+    // The grant to hand over to the remote, null when none (or expired).
+    internal AnchoredStatement? PinGrantToSend
+    {
+        get
+        {
+            var g = _pinGrant;
+            if( g != null && g.Expiration <= _transportManager.SystemClock.UtcNow ) _pinGrant = g = null;
+            return g;
+        }
+    }
+
+    // Connected: the grant is useless.
+    internal void ClearPinGrant() => _pinGrant = null;
+
     internal void InitializeOutgoingAndInitiateConnection()
     {
         Throw.DebugAssert( _target != null );

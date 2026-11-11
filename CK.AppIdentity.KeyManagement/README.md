@@ -122,6 +122,14 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   the stated checkpoint). A mismatch with the anchor, or two validly signed events at the same position, is a
   `SecurityCritical` error and changes nothing. A signature it can't check yet is an `UnknownIssuer`: its events must be
   fetched first.
+- **A statement that carries its signer's keys** ([`AnchoredStatement`](AnchoredStatement.cs)): signed data (a purpose,
+  an expiration) with the last events of the signer's log (up to the window). `Verify( logger, verifier, purpose )`
+  checks it with the keys the verifier holds of the signer (anchored, or a remote): when the signer rotated since, the
+  events of the statement are applied first (verified, never believed). No connection, no fetch: a hop can withhold it,
+  not forge it.
+- **A pin from a checkpoint** (`IRemoteKeys.PinFromCheckpoint`): the events a remote presented are verified from a
+  checkpoint stated by an authority the local party trusts (a pin grant of its Authentication Center), their head is
+  pinned. Like an operator's approval, it replaces the pin; never for an anchored remote nor a revoked log.
 - **A revoked log** ([`RevocationEntry`](RevocationEntry.cs)): `ILocalKeys.Revocations` are the identities of the logs
   revoked by the Authentication Center (its signed list, verified and set by CK.AppIdentity.AuthCenter:
   `SetRevocationsAsync`, then `RevocationsChanged`). A remote whose log identity is revoked is refused whatever it

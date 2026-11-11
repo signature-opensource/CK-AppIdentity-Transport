@@ -18,6 +18,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     readonly TcpSocketTransportTypeService _tcp;
     readonly MessageProtocolDirectoryService _protocolDirectory;
     readonly KeyManagementFeatureDriver _keyManagement;
+    readonly IPeeringAuthority? _peeringAuthority;
     TransportManager? _transportManager;
 
     /// <summary>
@@ -27,16 +28,19 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="keyManagement">The Key management is required: the RemoteKeys must be initialized before the TransportFeatures.</param>
     /// <param name="transportTypes">The available type of transports.</param>
     /// <param name="protocolDirectory">The transport protocol directory.</param>
+    /// <param name="peeringAuthority">The optional authority of the System of the local parties (see <see cref="IPeeringAuthority"/>).</param>
     public TransportFeatureDriver( ApplicationIdentityService s,
                                    KeyManagementFeatureDriver keyManagement,
                                    IEnumerable<ITransportTypeService> transportTypes,
-                                   MessageProtocolDirectoryService protocolDirectory )
+                                   MessageProtocolDirectoryService protocolDirectory,
+                                   IPeeringAuthority? peeringAuthority = null )
         : base( s, isAllowedByDefault: true )
     {
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
         _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
         _protocolDirectory = protocolDirectory;
         _keyManagement = keyManagement;
+        _peeringAuthority = peeringAuthority;
     }
 
     // R1: right after a rotation (or a recovery or a decommission), the new key events are pushed to the connected
@@ -87,7 +91,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
-        _transportManager = new TransportManager( context.Agent, _protocolDirectory );
+        _transportManager = new TransportManager( context.Agent, _protocolDirectory, _peeringAuthority );
         bool success = _transportManager.Start();
         if( !success )
         {

@@ -81,6 +81,8 @@ public static class PeerMessages
             w.WriteByte( macCapabilities );
             // The commitment to its nonce of the approval code, inside the signed region.
             w.WriteBytes( approvalCommitment );
+            // No pin grant (an optional statement: length then bytes, 0 meaning none).
+            w.WriteSmallUInt32( 0 );
             // What this side states about the certificate it is presenting, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
             // The timed nonce.
@@ -236,6 +238,9 @@ public static class PeerMessages
             // The listener's nonce of the approval code (the approval issues only): length then bytes.
             w.WriteSmallUInt32( (uint)(approvalNonce?.Length ?? 0) );
             if( approvalNonce != null ) w.WriteBytes( approvalNonce );
+            // No enlistment URL statement, no pin grant (optional statements: length then bytes, 0 meaning none).
+            w.WriteSmallUInt32( 0 );
+            w.WriteSmallUInt32( 0 );
             // The bool says whether an identity block follows.
             w.WriteBool( signWith != null );
         }, signWith, statement );

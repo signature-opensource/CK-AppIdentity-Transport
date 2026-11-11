@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using System;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 
 namespace CK.AppIdentity.TransportLayer;
@@ -14,10 +15,12 @@ namespace CK.AppIdentity.TransportLayer;
 /// <param name="CredentialNotAfter">The expiry of that credential (UTC).</param>
 /// <param name="StatedSeq">What the sender pins for us: the sequence, or null when it pins nothing.</param>
 /// <param name="StatedDigest">What the sender pins for us: the event digest, or null.</param>
+/// <param name="Tail">The events of the tail, oldest first.</param>
 readonly record struct IdentityBlock( KeyChainVerdict Verdict,
                                       KeyEvent Head,
                                       RemoteIdentityKeyData HeadKeyData,
                                       ECDsa? OperationalKey,
                                       DateTime CredentialNotAfter,
                                       int? StatedSeq,
-                                      byte[]? StatedDigest );
+                                      byte[]? StatedDigest,
+                                      IReadOnlyList<KeyEvent> Tail );

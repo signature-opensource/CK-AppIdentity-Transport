@@ -23,6 +23,7 @@ static partial class ZeroProtocol // Negotiation
     public const int FirstAnswerMaxLength = 1 // One byte discriminator.
                                             + (5 + MaxEnlistRemoteUrlLength) // An authenticated RejectRemote carries the enlist URL.
                                             + (5 + ApprovalSession.NonceLength) // ...and the listener's nonce of the approval code.
+                                            + 2 * (5 + AnchoredStatement.MaxEncodedSize) // ...and the enlistment URL statement and the pin grant.
                                             + 8 + 8 + 8 // Nonce, the offset it computed and its current time.
                                             + 5 // Number of common protocol (allows uint.MaxValue even if it's caped by MessageProtocolMap.MaxCount)
                                             + MessageProtocolMap.MaxCount * (2 * MessageProtocol.FullNameMaxLength)
@@ -299,7 +300,7 @@ static partial class ZeroProtocol // Negotiation
             operationalKey.Dispose();
             operationalKey = null;
         }
-        block = new IdentityBlock( chain.Verdict, head, headKeyData, operationalKey, credentialNotAfter, statedSeq, statedDigest );
+        block = new IdentityBlock( chain.Verdict, head, headKeyData, operationalKey, credentialNotAfter, statedSeq, statedDigest, tail );
         return check;
     }
 
@@ -364,7 +365,8 @@ static partial class ZeroProtocol // Negotiation
                                                                    InitialMessage initialMessage,
                                                                    int version,
                                                                    byte macCapabilities,
-                                                                   byte[] approvalCommitment )
+                                                                   byte[] approvalCommitment,
+                                                                   AnchoredStatement? pinGrant )
     {
         // The ephemeral key belongs to THIS connection: it is created on the Transport, never on
         // the TransportFeature, whose OutgoingInitialMessage is cached and reused across attempts.
@@ -372,7 +374,7 @@ static partial class ZeroProtocol // Negotiation
         var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
         Throw.DebugAssert( "We are the initiator: the transport knows its remote.", transport.RemoteKeys != null );
         using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey,
-                                            macCapabilities, approvalCommitment, transport.LocalCertificateBinding, transport.RemoteKeys, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), out var nonce );
+                                            macCapabilities, approvalCommitment, pinGrant, transport.LocalCertificateBinding, transport.RemoteKeys, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
@@ -382,6 +384,7 @@ static partial class ZeroProtocol // Negotiation
                                                       byte[] ephemeralPublicKey,
                                                       byte macCapabilities,
                                                       byte[] approvalCommitment,
+                                                      AnchoredStatement? pinGrant,
                                                       ReadOnlyMemory<byte> certificateBinding,
                                                       IRemoteKeys remoteKeys,
                                                       LocalIdentityState state,
@@ -408,6 +411,8 @@ static partial class ZeroProtocol // Negotiation
             // bound to the identity this message presents.
             Throw.DebugAssert( approvalCommitment.Length == ApprovalSession.NonceLength );
             w.WriteBytes( approvalCommitment );
+            // The pin grant we hold for the listener (we approved it, the listener may not have approved us yet).
+            WriteOptionalStatement( ref w, pinGrant );
 
             // What this side is presenting on the channel underneath, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
@@ -437,11 +442,14 @@ static partial class ZeroProtocol // Negotiation
                                                                            ConfigurationOrTrustIssue protocolIssue,
                                                                            TimeSpan? clockOffset,
                                                                            string? enlistUrl,
+                                                                           AnchoredStatement? enlistUrlStatement,
+                                                                           AnchoredStatement? pinGrant,
                                                                            byte[]? approvalNonce,
                                                                            ulong nonce )
     {
         Throw.DebugAssert( "The approval nonce is signed.", approvalNonce == null || remoteKeys != null );
-        using var m = CreateMessage( remoteKeys, remoteKeys != null ? transport.GetSigningState( remoteKeys.LocalKeys ) : null, protocolIssue, clockOffset, enlistUrl, approvalNonce, nonce );
+        Throw.DebugAssert( "The pin grant is signed.", pinGrant == null || remoteKeys != null );
+        using var m = CreateMessage( remoteKeys, remoteKeys != null ? transport.GetSigningState( remoteKeys.LocalKeys ) : null, protocolIssue, clockOffset, enlistUrl, enlistUrlStatement, pinGrant, approvalNonce, nonce );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
         static IOutgoingMessage CreateMessage( IRemoteKeys? remoteKeys,
@@ -449,6 +457,8 @@ static partial class ZeroProtocol // Negotiation
                                                ConfigurationOrTrustIssue protocolIssue,
                                                TimeSpan? clockOffset,
                                                string? enlistUrl,
+                                               AnchoredStatement? enlistUrlStatement,
+                                               AnchoredStatement? pinGrant,
                                                byte[]? approvalNonce,
                                                ulong nonce )
         {
@@ -463,6 +473,11 @@ static partial class ZeroProtocol // Negotiation
             w.WriteString( enlistUrl ?? string.Empty );
             // The listener's nonce of the approval code (the approval issues only).
             WriteOptionalNonce( ref w, approvalNonce );
+            // The enlistment URL stated by the authority of our System (instead of the bare URL): verifiable by the
+            // initiator whatever the path and even when this reply is not signed.
+            WriteOptionalStatement( ref w, enlistUrlStatement );
+            // The pin grant we hold for the initiator (we approved it, it must approve us).
+            WriteOptionalStatement( ref w, pinGrant );
             // When the incoming remote is not known at all, we don't have local
             // keys (we cannot locate the local party to use so we take no risk: selecting the root
             // ApplicationIdentityService local is not a good idea).
@@ -488,6 +503,8 @@ static partial class ZeroProtocol // Negotiation
                                                      out ConfigurationOrTrustIssue issue,
                                                      out TimeSpan? clockOffset,
                                                      out string? enlistUrl,
+                                                     out AnchoredStatement? enlistUrlStatement,
+                                                     out AnchoredStatement? pinGrant,
                                                      out byte[]? approvalNonce,
                                                      out IdentityBlock? block,
                                                      out SignatureCheck signatureCheck )
@@ -503,6 +520,8 @@ static partial class ZeroProtocol // Negotiation
         enlistUrl = r.ReadString( MaxEnlistUrlLength );
         if( enlistUrl.Length == 0 ) enlistUrl = null;
         approvalNonce = ReadOptionalNonce( ref r );
+        enlistUrlStatement = ReadOptionalStatement( ref r );
+        pinGrant = ReadOptionalStatement( ref r );
         // Do we have the identity keys and the signatures?
         if( r.ReadBool() )
         {
@@ -521,14 +540,14 @@ static partial class ZeroProtocol // Negotiation
     /// Sends the initiator's reply to a rejection that requires an approval: its enlist URL (for a listener that
     /// must approve it) and the reveal of its nonce of the approval code (see <see cref="ApprovalSession"/>).
     /// </summary>
-    public static async ValueTask<bool> SendRequiredEnlistUrlMessageAsync( Transport transport, string? enlistUrl, byte[]? approvalNonce, ulong nonce )
+    public static async ValueTask<bool> SendRequiredEnlistUrlMessageAsync( Transport transport, string? enlistUrl, AnchoredStatement? enlistUrlStatement, byte[]? approvalNonce, ulong nonce )
     {
         Throw.DebugAssert( "We are on the initiator side.", transport.RemoteKeys != null );
 
-        using var m = CreateMessage( transport, enlistUrl, approvalNonce, nonce );
+        using var m = CreateMessage( transport, enlistUrl, enlistUrlStatement, approvalNonce, nonce );
         return await transport.SendAsync( 0, m ).ConfigureAwait( false );
 
-        static IOutgoingMessage CreateMessage( Transport transport, string? enlistUrl, byte[]? approvalNonce, ulong nonce )
+        static IOutgoingMessage CreateMessage( Transport transport, string? enlistUrl, AnchoredStatement? enlistUrlStatement, byte[]? approvalNonce, ulong nonce )
         {
             var builder = _zeroFactory.CreateBuilder();
             var sequence = builder.ObtainSequence();
@@ -538,6 +557,7 @@ static partial class ZeroProtocol // Negotiation
             // To be able to use the ReadString( maxLength ).
             w.WriteString( enlistUrl ?? string.Empty );
             WriteOptionalNonce( ref w, approvalNonce );
+            WriteOptionalStatement( ref w, enlistUrlStatement );
             ComputeSHA512HashAndAppendSignature( ref w, transport.GetSigningState( transport.RemoteKeys!.LocalKeys ).Operational );
             return builder.CreateMessage( sequence );
         }
@@ -547,12 +567,14 @@ static partial class ZeroProtocol // Negotiation
                                                      ulong expectedNonce,
                                                      ECDsa remoteKey,
                                                      out string? enlistUrl,
+                                                     out AnchoredStatement? enlistUrlStatement,
                                                      out byte[]? approvalNonce )
     {
         var r = new FastByteReader( message.Message );
         var discriminator = r.ReadByte();
         Throw.DebugAssert( discriminator == DNegoRequiredEnlistUrl );
         approvalNonce = null;
+        enlistUrlStatement = null;
         if( expectedNonce != r.ReadUInt64() )
         {
             enlistUrl = null;
@@ -561,15 +583,17 @@ static partial class ZeroProtocol // Negotiation
         enlistUrl = r.ReadString( MaxEnlistUrlLength );
         if( enlistUrl.Length == 0 ) enlistUrl = null;
         var revealed = ReadOptionalNonce( ref r );
+        var statement = ReadOptionalStatement( ref r );
         if( !ComputeSHA512HashAndVerifySignature( ref r, remoteKey ) ) return false;
         approvalNonce = revealed;
+        enlistUrlStatement = statement;
         return true;
     }
 
     /// <summary>
     /// The maximal length of a <see cref="SendRequiredEnlistUrlMessageAsync"/> message (3 bytes per UTF-16 character).
     /// </summary>
-    public const int RequiredEnlistUrlMaxLength = 10 + 3 * MaxEnlistUrlLength + (5 + ApprovalSession.NonceLength);
+    public const int RequiredEnlistUrlMaxLength = 10 + 3 * MaxEnlistUrlLength + (5 + ApprovalSession.NonceLength) + (5 + AnchoredStatement.MaxEncodedSize) + 1 + 255;
 
     static void WriteOptionalNonce( ref FastByteWriter w, byte[]? nonce )
     {
@@ -583,6 +607,29 @@ static partial class ZeroProtocol // Negotiation
         var len = r.ReadSmallUInt32();
         Throw.CheckData( len == 0 || len == ApprovalSession.NonceLength );
         return len == 0 ? null : r.ReadBytes( len );
+    }
+
+    // An optional AnchoredStatement: its length (0 for none), then its bytes.
+    internal static void WriteOptionalStatement( ref FastByteWriter w, AnchoredStatement? statement )
+    {
+        if( statement == null )
+        {
+            w.WriteSmallUInt32( 0 );
+            return;
+        }
+        var bytes = statement.Encode();
+        w.WriteSmallUInt32( (uint)bytes.Length );
+        w.WriteBytes( bytes );
+    }
+
+    // Reads an optional AnchoredStatement (malformed bytes are the peer's fault: InvalidDataException).
+    internal static AnchoredStatement? ReadOptionalStatement( ref FastByteReader r )
+    {
+        var len = r.ReadSmallUInt32();
+        if( len == 0 ) return null;
+        Throw.CheckData( len <= AnchoredStatement.MaxEncodedSize );
+        Throw.CheckData( "Invalid statement.", AnchoredStatement.TryDecode( r.ReadBytes( len ), out var statement ) );
+        return statement;
     }
 
     /// <summary>

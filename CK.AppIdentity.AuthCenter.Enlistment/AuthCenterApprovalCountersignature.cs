@@ -4,6 +4,7 @@ using CK.AppIdentity.KeyManagement;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
+using CK.AppIdentity.TransportLayer;
 using CK.IO.AppIdentity.Enlistment;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -19,12 +20,36 @@ namespace CK.AppIdentity.AuthCenter.Enlistment;
 /// right to enlist can be checked here by the application (a validator of this command, on the Authentication Center).
 /// </summary>
 [Internal]
-public interface ICountersignApprovalCommand : ICommand<byte[]?>, ICommandAuthCritical
+public interface ICountersignApprovalCommand : ICommand<ICountersignApprovalResult?>, ICommandAuthCritical
 {
     /// <summary>
     /// Gets or sets the statement, signed by the host.
     /// </summary>
     IPartyApprovalStatement? Statement { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the approved party waits on the holder and must approve it too (a "both approval"): the
+    /// Authentication Center also signs a <see cref="PinGrant"/> of the holder for the approved party, when it knows the
+    /// holder (its pin of a remote, or its anchor).
+    /// </summary>
+    bool WithPinGrant { get; set; }
+}
+
+/// <summary>
+/// The result of the <see cref="ICountersignApprovalCommand"/>.
+/// </summary>
+public interface ICountersignApprovalResult : IPoco
+{
+    /// <summary>
+    /// Gets or sets the encoded countersignature.
+    /// </summary>
+    byte[] Countersignature { get; set; }
+
+    /// <summary>
+    /// Gets or sets the encoded <see cref="PinGrant"/>, null when none is asked or when the holder is unknown to the
+    /// Authentication Center.
+    /// </summary>
+    byte[]? PinGrant { get; set; }
 }
 
 /// <summary>
@@ -65,23 +90,25 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
     }
 
     /// <inheritdoc />
-    public async ValueTask<(bool Success, byte[]? Countersignature)> CountersignAsync( IActivityMonitor monitor,
-                                                                                      IServiceProvider services,
-                                                                                      ILocalParty host,
-                                                                                      IPartyApprovalStatement statement )
+    public async ValueTask<(bool Success, byte[]? Countersignature, byte[]? PinGrant)> CountersignAsync( IActivityMonitor monitor,
+                                                                                                        IServiceProvider services,
+                                                                                                        ILocalParty host,
+                                                                                                        IPartyApprovalStatement statement,
+                                                                                                        bool withPinGrant )
     {
         var center = host.GetFeature<CrisAuthCenter>();
-        if( center == null ) return (true, null);
+        if( center == null ) return (true, null, null);
         if( center.AuthCenter == host )
         {
             // The host is the Authentication Center: the operator's request is executed here, at the Critical level.
-            return (true, Sign( host, statement ));
+            return (true, Sign( host, statement ), withPinGrant ? CreatePinGrant( monitor, host, statement ) : null);
         }
         var command = services.GetRequiredService<PocoDirectory>().Create<ICountersignApprovalCommand>( c =>
         {
             // The operator: its live proof travels with the command.
             c.ActorId = statement.OperatorActorId;
             c.Statement = statement;
+            c.WithPinGrant = withPinGrant;
         } );
         object? result;
         try
@@ -95,12 +122,12 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         catch( Exception ex )
         {
             monitor.Warn( $"Unable to ask the AuthCenter '{center.AuthCenterFullName}' to countersign the approval of '{statement.PartyFullName}'.", ex );
-            return (false, null);
+            return (false, null, null);
         }
-        if( result is byte[] countersignature ) return (true, countersignature);
+        if( result is ICountersignApprovalResult r ) return (true, r.Countersignature, r.PinGrant);
         var error = result is ICrisResultError e ? e.Errors.Select( m => m.Text ).Concatenate() : "refused";
         monitor.Warn( $"The AuthCenter '{center.AuthCenterFullName}' doesn't countersign the approval of '{statement.PartyFullName}': {error}" );
-        return (false, null);
+        return (false, null, null);
     }
 
     /// <inheritdoc />
@@ -133,6 +160,39 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
                      .Encoded.ToArray();
     }
 
+    // The Authentication Center signs a pin grant of the holder for the approved party: the checkpoint of the holder is what
+    // the Authentication Center knows of it (itself, its pin of a remote, or its anchor), never what the page says.
+    static byte[]? CreatePinGrant( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
+    {
+        var keys = center.GetRequiredFeature<ILocalKeys>();
+        var holder = statement.HolderFullName;
+        KeyCheckpoint? checkpoint;
+        if( holder == center.FullName.Path )
+        {
+            checkpoint = KeyCheckpoint.Of( holder, keys.State.Head );
+        }
+        else if( center.Remotes.FirstOrDefault( r => r.FullName.Path == holder )?.GetFeature<IRemoteKeys>()?.TrustedEvent is { } pinned )
+        {
+            checkpoint = KeyCheckpoint.Of( holder, pinned );
+        }
+        else
+        {
+            var anchored = keys.FindAnchoredKeys( holder );
+            checkpoint = anchored?.Head is { } head
+                            ? KeyCheckpoint.Of( holder, head )
+                            : anchored?.GetStatedCheckpoint( monitor );
+        }
+        if( checkpoint == null )
+        {
+            monitor.Warn( $"The AuthCenter '{center}' doesn't know '{holder}' (not a pinned remote, not anchored): no pin grant for '{statement.PartyFullName}', it must approve '{holder}' itself." );
+            return null;
+        }
+        var grant = PinGrant.Create( keys, statement.PartyFullName, statement.KeyFingerprint, holder, checkpoint, center.ApplicationIdentityService.SystemClock.UtcNow );
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical,
+                      $"The AuthCenter '{center}' grants '{statement.PartyFullName}' (key '{statement.KeyFingerprint}') the pin of '{holder}' from {checkpoint}, until {grant.Expiration:O}." );
+        return grant.Encode();
+    }
+
     /// <summary>
     /// Handles the <see cref="ICountersignApprovalCommand"/> on the Authentication Center: the operator (at the Critical
     /// level, checked by <see cref="ICommandAuthCritical"/>) must be the operator of the statement, not impersonated, and the
@@ -142,9 +202,14 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
     /// <param name="command">The command.</param>
     /// <param name="current">The local party.</param>
     /// <param name="authentication">The authentication of the operator.</param>
-    /// <returns>The countersignature, or null when it is refused (the reason is logged).</returns>
+    /// <param name="pocos">The poco directory.</param>
+    /// <returns>The countersignature (and the pin grant), or null when it is refused (the reason is logged).</returns>
     [CommandHandler]
-    public byte[]? Handle( IActivityMonitor monitor, ICountersignApprovalCommand command, CurrentLocalParty current, AuthenticationInfo authentication )
+    public ICountersignApprovalResult? Handle( IActivityMonitor monitor,
+                                               ICountersignApprovalCommand command,
+                                               CurrentLocalParty current,
+                                               AuthenticationInfo authentication,
+                                               PocoDirectory pocos )
     {
         var local = current.LocalParty;
         var statement = command.Statement;
@@ -165,6 +230,10 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         }
         monitor.Info( ActivityMonitor.Tags.SecurityCritical,
                       $"The AuthCenter '{local}' countersigns the approval of '{statement.PartyFullName}' (key '{statement.KeyFingerprint}') pending on '{statement.HolderFullName}', by actor #{statement.OperatorActorId} on '{statement.HostFullName}'." );
-        return Sign( local, statement );
+        return pocos.Create<ICountersignApprovalResult>( r =>
+        {
+            r.Countersignature = Sign( local, statement );
+            r.PinGrant = command.WithPinGrant ? CreatePinGrant( monitor, local, statement ) : null;
+        } );
     }
 }

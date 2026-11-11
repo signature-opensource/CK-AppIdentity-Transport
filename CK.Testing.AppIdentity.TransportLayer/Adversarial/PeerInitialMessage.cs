@@ -104,6 +104,9 @@ public sealed class PeerInitialMessage
         byte macCaps = r.ReadByte();
         // The commitment to its nonce of the approval code.
         var approvalCommitment = r.ReadBytes( 32 );
+        // The pin grant it holds for the listener (an optional statement: length then bytes, 0 meaning none).
+        uint lenGrant = r.ReadSmallUInt32();
+        if( lenGrant != 0 ) r.ReadBytes( lenGrant );
 
         // What the initiator states about the certificate it presented, still inside the signed
         // region: length then bytes, 0 meaning none.

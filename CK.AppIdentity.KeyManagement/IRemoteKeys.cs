@@ -135,6 +135,18 @@ public interface IRemoteKeys : IPartyKeys
     bool SetTrustedIdentity( IActivityLineEmitter logger, KeyEvent? trusted );
 
     /// <summary>
+    /// Pins the remote from a checkpoint stated by an authority that the local party trusts (a pin grant of its
+    /// Authentication Center, say): the events the remote presented must verify from the checkpoint
+    /// (<see cref="KeyEventChain.VerifyFromAnchor"/>), their head is pinned. Like an operator's approval, it replaces the
+    /// pin. An anchored remote is never pinned this way, nor a revoked log.
+    /// </summary>
+    /// <param name="logger">The logger to use.</param>
+    /// <param name="tail">The events the remote presented, oldest first.</param>
+    /// <param name="checkpoint">The checkpoint of the remote's log.</param>
+    /// <returns>True when the head of the events is pinned.</returns>
+    bool PinFromCheckpoint( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> tail, KeyCheckpoint checkpoint );
+
+    /// <summary>
     /// Verifies a tail of events the remote presented against <see cref="TrustedEvent"/> and applies
     /// the verdict, under one lock: a valid rotation advances the pin, an abandonment terminates it, a
     /// fork is stored as evidence and raises <see cref="IdentityAlertKind.RemoteDuplicity"/>.

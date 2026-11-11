@@ -34,6 +34,7 @@ sealed partial class TransportManager : MicroAgent
 
     readonly AppIdentityAgent _agent;
     readonly MessageProtocolDirectoryService _protocolDirectory;
+    readonly IPeeringAuthority? _peeringAuthority;
     readonly List<TransportListener> _listeners;
     readonly TransportManagerFeature _exposedFeature;
     readonly NegotiationGate _negotiationGate;
@@ -45,11 +46,12 @@ sealed partial class TransportManager : MicroAgent
     readonly BackTask<TransportManager>.Head _headDelayedKillTransport;
     readonly BackTask<TransportManager>.Head _headKeepAlive;
 
-    internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory )
+    internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory, IPeeringAuthority? peeringAuthority )
         : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeartBeatPeriod )
     {
         _agent = agent;
         _protocolDirectory = protocolDirectory;
+        _peeringAuthority = peeringAuthority;
         _listeners = new List<TransportListener>();
         // Before _exposedFeature: the feature exposes the gate's settings.
         _negotiationGate = new NegotiationGate( Logger );
@@ -186,7 +188,7 @@ sealed partial class TransportManager : MicroAgent
     /// <summary>
     /// Listener only.
     /// </summary>
-    internal void OnIncomingConfigurationOrTrustIssue( InitialMessage message, TransportFeature? remote, PeeringIssueKind kind, string? enlistUrl )
+    internal void OnIncomingConfigurationOrTrustIssue( InitialMessage message, TransportFeature? remote, PeeringIssueKind kind, string? enlistUrl, bool enlistUrlIsAuthenticated )
     {
         Throw.DebugAssert( kind is PeeringIssueKind.AnchorMismatch
                                   or PeeringIssueKind.IncomingUnknown
@@ -208,8 +210,9 @@ sealed partial class TransportManager : MicroAgent
                                            // remote sent back in its RequiredEnlistUrl reply, kept when the
                                            // remote must approve us (RequiresRemote/BothApproval). Its signature
                                            // verifies against the operational key presented in this very
-                                           // exchange: it is never marked authenticated.
-                                           EnlistUrlIsAuthenticated: false,
+                                           // exchange: it is authenticated only when it is stated by the
+                                           // authority of our System (an EnlistmentUrlStatement).
+                                           EnlistUrlIsAuthenticated: enlistUrlIsAuthenticated,
                                            InvalidClockOffset: kind is PeeringIssueKind.InvalidClockOffset ? message.ClockOffset : null,
                                            usefulRemoteKey,
                                            LocalMissing: null,
@@ -337,8 +340,13 @@ sealed partial class TransportManager : MicroAgent
                                      GoodbyeMessage.Evicted? evictionMessage )
     {
         Throw.DebugAssert( (evictionMessage != null) == (transport.Listener != null) );
-        // Connected: the approval code with this remote is over.
-        remote.GetFeature<TransportFeature>()?.Approval.Clear();
+        // Connected: the approval code with this remote is over,
+        // and so is a pin grant held for it.
+        if( remote.GetFeature<TransportFeature>() is { } f )
+        {
+            f.Approval.Clear();
+            f.ClearPinGrant();
+        }
         PushTypedJob( new NewValidTransportJob( remote, transport, protocolMap, clockOffset, evictionMessage ) );
     }
 

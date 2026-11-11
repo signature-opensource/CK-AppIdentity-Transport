@@ -233,6 +233,8 @@ CK.AppIdentity), in the second phase of its description
   System), so that it can be enlisted, followed by `?party={its full name}`
   (escaped: it selects its pending approval on the page; omitted when the URL would exceed `MaxEnlistRemoteUrlLength`).
   It is handed to unauthenticated callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
+  With an authority of the System (below), the authority's `EnlistmentUrlStatement` is sent instead when it states the
+  target of the route: the receiver appends `?party=` itself.
 - **The pending approvals travel the "Enlistment" route up to its host** (`PartyDescription.Collected`, see
   [`CollectedItem`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/CollectedItem.cs)
   in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each
@@ -287,6 +289,26 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
 - **Enlisting.** `EnlistUrl` is the URL the other side sent so that it can enlist us: the approval page of its System,
   with the issues where it must accept us (`RequiresRemoteCreation`, `RequiresRemoteApproval`, `RequiresBothApproval`). `IsEnlistUrlAuthenticated` is false
   when it came in a reply that is not signed by a key we trust: following it is then a trust decision, never automatic.
+  It is true, whoever sent it, when it came in an `EnlistmentUrlStatement` of the authority of our System (below).
+
+## The authority of the System
+
+An optional [`IPeeringAuthority`](TransportManagerFeature/PeeringStatements.cs) (implemented by
+CK.AppIdentity.AuthCenter.Enlistment: the authority of a local party is its Authentication Center) makes the enlistment
+of a party connected to nothing safer. Its statements are `AnchoredStatement`s (CK.AppIdentity.KeyManagement): they carry
+the authority's last key events, so a party that anchors the authority verifies them with nothing else, whatever the path
+and whoever hands them over. They travel in optional fields of the 0 Protocol (`AnchoredStatement.MaxEncodedSize` each,
+signed with the message when it is signed).
+
+- **`EnlistmentUrlStatement`**: "the approval page of this System is U" (3 days). Sent instead of the bare enlistment URL
+  (the rejection, the `RequiredEnlistUrl` reply); verified by the receiver: `PeeringIssue.IsEnlistUrlAuthenticated`.
+  Without the authority's keys, U is read but not authenticated.
+- **`PinGrant`**: "the waiting party W, whose key is F, may pin the holder H from the checkpoint C" (3 days), signed when
+  an operator approves W on the approval page and W waits on H (a "both approval"). H keeps it on its remote W
+  (`TransportFeature.OfferPinGrant`, in memory, until W connects) and hands it over at W's next attempt: in its rejection
+  when H listens (W pins H and retries at once), in its initial message when H initiates (W pins H in the same attempt).
+  W accepts a grant of its authority that names itself, one of its last keys and the sender, and pins the sender from C
+  (`IRemoteKeys.PinFromCheckpoint`, a `SecurityCritical` log). An anchored remote is never pinned this way.
 
 ## Key events
 

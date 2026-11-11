@@ -132,9 +132,11 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                 statement.HostSignature = keys.Sign( PartyApprovalStatement.Purpose,
                                                      PartyApprovalStatement.GetSignedData( statement ),
                                                      statement.Time + PartyApprovalStatement.Lifetime ).Encoded.ToArray();
+                byte[]? pinGrant = null;
                 if( _countersignature != null )
                 {
-                    var (success, countersignature) = await _countersignature.CountersignAsync( monitor, services, host, statement ).ConfigureAwait( false );
+                    // A "Both" item: the approved party waits on the holder and must approve it too.
+                    var (success, countersignature, grant) = await _countersignature.CountersignAsync( monitor, services, host, statement, pending.Kind == "Both" ).ConfigureAwait( false );
                     if( !success )
                     {
                         monitor.Warn( $"The approval of '{party}' pending on '{item.Holder}' can't be countersigned by the Authentication Center: it is not sent." );
@@ -146,11 +148,13 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                         continue;
                     }
                     statement.CenterCountersignature = countersignature;
+                    pinGrant = grant;
                 }
                 var approve = pocos.Create<IApprovePendingPartyCommand>( a =>
                 {
                     a.Statement = statement;
                     a.Codes.AddRange( command.Codes );
+                    a.WaitingPartyGrant = pinGrant;
                 } );
                 monitor.Info( $"Actor #{statement.OperatorActorId} approves '{party}' (key '{fingerprint}') pending on '{item.Holder}'." );
                 PartyApprovalStatus status;
@@ -261,6 +265,19 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                               $"'{holder.FullName}' approved '{statement.PartyFullName}' (key '{statement.KeyFingerprint}'), approved by actor " +
                               $"#{statement.OperatorActorId} on '{statement.HostFullName}' at {statement.Time:O}, " +
                               $"signature: {Convert.ToBase64String( statement.HostSignature )}." );
+                // The approved party must approve us too: the pin grant of the Authentication Center is handed over to it at
+                // its next attempt (it verifies it).
+                if( command.WaitingPartyGrant != null )
+                {
+                    if( issue.Remote != null && AnchoredStatement.TryDecode( command.WaitingPartyGrant, out var grant ) )
+                    {
+                        issue.Remote.OfferPinGrant( monitor, grant! );
+                    }
+                    else
+                    {
+                        monitor.Warn( $"The pin grant of '{statement.PartyFullName}' for '{holder.FullName}' can't be used: it is ignored." );
+                    }
+                }
                 return PartyApprovalStatus.Approved;
             }
             notReady |= codeNotReady;

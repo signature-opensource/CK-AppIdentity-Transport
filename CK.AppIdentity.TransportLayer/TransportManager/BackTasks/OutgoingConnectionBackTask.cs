@@ -284,7 +284,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
             // The commitment to our nonce of the approval code, kept across the attempts (see ApprovalSession).
             var sentCommitment = remote.Approval.GetCommitment();
-            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities, sentCommitment );
+            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend );
             if( !sentNonce.HasValue )
             {
                 // If we are canceled, let the finally kill the new transport.
@@ -327,6 +327,8 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                                     out ZeroProtocol.ConfigurationOrTrustIssue pIssue,
                                                                     out TimeSpan? clockOffset,
                                                                     out string? enlistUrl,
+                                                                    out AnchoredStatement? enlistUrlStatement,
+                                                                    out AnchoredStatement? pinGrant,
                                                                     out byte[]? approvalNonce,
                                                                     out IdentityBlock? block,
                                                                     out SignatureCheck signatureCheck );
@@ -410,10 +412,22 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                             };
                             // The reply is unsigned by construction here, so the URL is a claim by
                             // whoever answered the connection. It is still the only way a stranger
-                            // learns where to enlist, so it is surfaced — marked.
-                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, enlistUrl,
-                                                                                enlistUrlIsAuthenticated: false, null );
+                            // learns where to enlist, so it is surfaced — marked. Unless it is stated by
+                            // the authority of our System: then it is authenticated whoever sent it.
+                            bool unsignedUrlIsAuthenticated = false;
+                            var unsignedUrl = transportManager.ReadReceivedEnlistUrl( remote.Party.Owner, enlistUrl, enlistUrlStatement, ref unsignedUrlIsAuthenticated );
+                            transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, null, unsignedUrl,
+                                                                                enlistUrlIsAuthenticated: unsignedUrlIsAuthenticated, null );
                             return 5;
+                        }
+                        // The listener approved us and hands over the pin grant of the authority of our System: we pin it
+                        // (it replaces a pin, like an operator's approval) and retry at once.
+                        if( pinGrant != null
+                            && signatureCheck == SignatureCheck.SelfAsserted
+                            && pIssue == ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresRemoteApproval
+                            && transportManager.TryPinFromGrant( remote, pinGrant, block!.Value ) )
+                        {
+                            return 1;
                         }
                         // The signature verifies, but against what?
                         // If we already pinned a key for this remote and the reply does not present it,
@@ -454,13 +468,13 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         {
                             Throw.DebugAssert( block != null );
                             // Our enlistment URL (the target of our "Enlistment" route), for a listener that we must approve.
-                            var hisEnlistUrl = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
-                                                ? null
-                                                : transportManager.GetEnlistRemoteUrl( remote.Party.Owner, remote.Party.FullName );
+                            var (hisEnlistUrl, hisEnlistUrlStatement) = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
+                                                                            ? (null, null)
+                                                                            : transportManager.GetEnlistUrlToSend( remote.Party.Owner, remote.Party.FullName );
                             var reveal = remote.Approval.OnReply( block.Value.Head, approvalNonce, sentCommitment );
                             // We don't care if this is not sent.
                             Throw.DebugAssert( remote.RemoteKeys == transport.RemoteKeys );
-                            await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, reveal, sentNonce.Value );
+                            await ZeroProtocol.SendRequiredEnlistUrlMessageAsync( transport, hisEnlistUrl, hisEnlistUrlStatement, reveal, sentNonce.Value );
                             if( reveal != null )
                             {
                                 var code = remote.Approval.GetInitiatorCodeToLog( remote.Party.Owner.FullName,
@@ -493,9 +507,12 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                                 ? block?.Head
                                                 : null;
                         // Signed — but SelfAsserted only proves the sender holds some key: reaching here
-                        // with SelfAsserted means we had no trusted key to compare against (TOFU).
-                        transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, clockOffset, enlistUrl,
-                                                                            enlistUrlIsAuthenticated: signatureCheck == SignatureCheck.Trusted,
+                        // with SelfAsserted means we had no trusted key to compare against (TOFU). A URL stated by the
+                        // authority of our System is authenticated whoever sent it.
+                        bool enlistUrlIsAuthenticated = signatureCheck == SignatureCheck.Trusted;
+                        var receivedUrl = transportManager.ReadReceivedEnlistUrl( remote.Party.Owner, enlistUrl, enlistUrlStatement, ref enlistUrlIsAuthenticated );
+                        transportManager.OnRemoteConfigurationOrTrustIssue( remote, issue, clockOffset, receivedUrl,
+                                                                            enlistUrlIsAuthenticated,
                                                                             usefulRemoteKey );
                         return 5;
                     }
@@ -542,7 +559,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( !retriedDowngrade )
                         {
                             sentVersion = otherVersion;
-                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities, sentCommitment );
+                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend );
                             if( !sentNonce.HasValue )
                             {
                                 if( !cancellation.IsCancellationRequested )
