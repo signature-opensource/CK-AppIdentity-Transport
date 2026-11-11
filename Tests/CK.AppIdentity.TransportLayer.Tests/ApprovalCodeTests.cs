@@ -100,7 +100,10 @@ public class ApprovalCodeTests
 
         var code = await WaitForAsync( () => Code( initiator ), 40, token );
         code.ShouldNotBeNull();
-        var updated = Issue( listener )!.LastUpdated;
+        // The initiator may know the code before the listener has created its issue (a loaded machine): wait for it.
+        var first = await WaitForAsync( () => Issue( listener ), 40, token );
+        first.ShouldNotBeNull();
+        var updated = first.LastUpdated;
         // A few more attempts (the initiator retries every 5 seconds).
         (await WaitForAsync( () => Issue( listener )!.LastUpdated > updated ? "next" : null, 40, token )).ShouldNotBeNull();
         (await WaitForAsync( () => Code( listener ), 40, token )).ShouldBe( code, "The nonces are kept across the attempts: the code doesn't change." );
