@@ -1,5 +1,6 @@
 using CK.Core;
 using CK.Cris;
+using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -46,6 +47,8 @@ public sealed partial class CrisChannelFeature
         // endpoint-only command: it executes in the channel scope (its handlers may need the IRemoteParty). The current
         // local party of the configured scope is the owner of the remote, as in the channel scope.
         // The inner command of a routed command requires a configured scope: its IRemoteParty would be the last hop.
+        // Without reception handler (no authentication package), it executes with the clean ambient services: no
+        // identity, the owner of the remote as the current local party.
         protected override async ValueTask<(ICrisResultError? Error, AmbientServiceHub? Hub)> ConfigureReceptionAsync( IActivityMonitor monitor,
                                                                                                                           CrisJob job,
                                                                                                                           System.IServiceProvider services )
@@ -54,8 +57,12 @@ public sealed partial class CrisChannelFeature
             var data = Unsafe.As<AppIdentityDIContainerDefinition.Data>( job.ScopedData );
             if( handler == null || job.Command is ICommandEndpointOnly )
             {
+                if( data._route == null ) return (null, null);
                 // Checked by the reception of the routed command: this is a safety net.
-                return data._route == null ? (null, null) : (_feature.CreateError( "A routed command requires a reception handler." ), null);
+                if( job.Command is ICommandEndpointOnly ) return (_feature.CreateError( "A routed command can't be endpoint-only." ), null);
+                var clean = services.GetRequiredService<AmbientServiceHub>().CleanClone();
+                clean.Override( new CurrentLocalParty( data._remoteParty.Owner ) );
+                return (null, clean);
             }
             var caller = new CrisCallerParty( data._remoteParty, data._route );
             var (error, hub) = await handler.ConfigureAsync( monitor, services, caller, job.Command, data._envelope ).ConfigureAwait( false );

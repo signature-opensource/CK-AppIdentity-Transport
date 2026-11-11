@@ -44,8 +44,7 @@ public class KeyDirectoryTests
                                       typeof( IGetKeyEventsQCommand ),
                                       typeof( IPartyKeyEvents ),
                                       typeof( KeyEventsHandler ),
-                                      typeof( AnchoredKeyDirectory ),
-                                      typeof( RoutedCommandTests.RecordingReceptionHandler )];
+                                      typeof( AnchoredKeyDirectory )];
 
     const string Purpose = "Test.KeyDirectory";
 

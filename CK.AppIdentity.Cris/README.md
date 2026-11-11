@@ -124,11 +124,12 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   received, once the `ICrisForwardedEnvelopeFilter` cleared what this party can't vouch for (the authentication packages
   remove a user's proof that the hop can't verify). The answers come back by the chain of calls.
 - **The destination** unseals the bytes (on its own task), reads the command (refused when they are not a command) and executes it like a
-  received one (incoming validation, then execution), as long as it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), not another routed
-  command, and the party has an `ICrisChannelReceptionHandler`. The caller party is the originating one
-  ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): the reception handler must configure its ambient
-  services (the identity), or the command is refused. `Via` holds the full names of the parties: the full name is the
-  identity of a party across the System.
+  received one (incoming validation, then execution), as long as it handles it, it is not `[Private]`, not endpoint-only (its `IRemoteParty` would be the last hop), and not another routed
+  command. The caller party is the originating one ([`CrisCallerParty`](CrisCallerParty.cs), the first of `Via`): an
+  `ICrisChannelReceptionHandler` must configure its ambient services (the identity), or the command is refused. Without
+  reception handler (no authentication package), it executes with the clean ambient services: no identity, the local party
+  as the current one. Routing needs nothing else than this package. `Via` holds the full names of the parties: the full
+  name is the identity of a party across the System.
 
 The destination believes the chain: each hop authenticated its predecessor, inside the System. The outgoing transformers
 (`ICrisOutgoingCommandTransformer`) are not applied: a routed command's sensitive fields can't be encrypted for its
@@ -150,7 +151,7 @@ then the head it holds), applies the events (`IAnchoredKeys.ApplyEvents`) and ch
   issuer can't make a party flood the route.
 - **The answer** ([`KeyEventsHandler`](AnchoredKeyDirectory.cs)): the destination sends its own events from `FromSeq`, up to
   the window of 32 events (its last events when `FromSeq` is out of the window). Key events are public: any party of the
-  System can ask. Like any routed command, it needs an `ICrisChannelReceptionHandler` on the hops and the destination.
+  System can ask: it needs no identity (with or without a reception handler).
 
 ## The protocol
 

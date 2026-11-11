@@ -94,8 +94,7 @@ public sealed partial class CrisChannelFeature
         }
         string? refused = null;
         var m = inner.CrisPocoModel;
-        if( _receptionHandler == null ) refused = "this party has no reception handler (it cannot establish the identity of a routed command)";
-        else if( !m.IsHandled || m.Exposure == CrisExposure.Private ) refused = $"command '{m.PocoName}' is not handled here";
+        if( !m.IsHandled || m.Exposure == CrisExposure.Private ) refused = $"command '{m.PocoName}' is not handled here";
         else if( inner is ICommandEndpointOnly ) refused = $"command '{m.PocoName}' is endpoint-only";
         else if( inner is ICommandTargetParty p && p.TargetPartyFullName != local.FullName ) refused = $"party command '{m.PocoName}' doesn't target '{local.FullName}'";
         if( refused != null )

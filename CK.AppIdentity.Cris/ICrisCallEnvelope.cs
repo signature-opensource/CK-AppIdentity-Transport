@@ -69,9 +69,9 @@ public interface ICrisForwardedEnvelopeFilter : ISingletonAutoService
 /// When a hub is returned, the command is validated and executed in a scope built from it, whose <see cref="CurrentLocalParty"/>
 /// is the owner of the remote.
 /// <para>
-/// The inner command of a <see cref="IPartyRoutedCommand"/> requires it, and requires a hub: its caller party is the
+/// For the inner command of a <see cref="IPartyRoutedCommand"/>, it must return a hub: its caller party is the
 /// originating party of the route, not the remote that sent it (see <see cref="CrisCallerParty"/>). Without a reception
-/// handler, a routed command is refused.
+/// handler, a routed command executes with the clean ambient services (no identity, the local party as the current one).
 /// </para>
 /// </summary>
 public interface ICrisChannelReceptionHandler : ISingletonAutoService
