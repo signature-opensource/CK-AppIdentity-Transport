@@ -218,7 +218,8 @@ public class RemoteAuthCenterTests
                                         bool passkeys = false,
                                         Action<MutableConfigurationSection>? oidcSettings = null,
                                         string? centerPublicUrl = null,
-                                        Type[]? extraTypes = null )
+                                        Type[]? extraTypes = null,
+                                        Action<MutableConfigurationSection>? centerSettings = null )
     {
         // The remote's AuthCenter is its remote "$Listener".
         Type[] remoteTypes = [.. _common, .. _remoteTypes, .. extraTypes ?? [],
@@ -257,6 +258,8 @@ public class RemoteAuthCenterTests
                 c["Local:AuthCenter:Passkey:RpId"] = "example.com";
             }
             if( oidcSettings != null ) oidcSettings( c );
+            centerSettings?.Invoke( c );
+
         }, centerTypes, RemoteServices );
         return new Pair { Remote = remote, Center = center };
     }

@@ -55,13 +55,14 @@ public sealed class RevokePartyHandler : ISingletonAutoService
             return null;
         }
         var utcNow = DateTime.UtcNow;
-        // The revoked party is no more an authorized host of any route.
+        // The revoked party is no more an authorized host of any route: UpdateAsync drops the hosts of a banned name.
         var list = await revocations.UpdateAsync( monitor, ( entries, hosts ) =>
         {
             var e = entries.ToList();
             if( !e.Any( x => x.Matches( identity ) ) ) e.Add( new RevocationEntry( command.PartyFullName, identity, utcNow, nameBanned: true ) );
-            return (e, hosts.Where( h => h.Host != command.PartyFullName ).ToList());
+            return (e, hosts);
         } ).ConfigureAwait( false );
+
         monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.PartyFullName}' is revoked by the AuthCenter '{local}': {list}." );
         return list?.Seq;
     }

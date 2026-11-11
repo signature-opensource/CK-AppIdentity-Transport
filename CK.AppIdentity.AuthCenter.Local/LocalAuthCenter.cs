@@ -23,7 +23,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
 
     readonly ImmutableConfigurationSection? _settings;
     readonly RouteHosts? _configuredRouteHosts;
-    readonly SemaphoreSlim _routeHostsLock;
 
     internal LocalAuthCenter( IActivityMonitor monitor,
                               CrisAuthCenter center,
@@ -37,7 +36,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
         _options = options;
         _settings = settings;
         _configuredRouteHosts = configuredRouteHosts;
-        _routeHostsLock = new SemaphoreSlim( 1, 1 );
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _pendingRemoteLogins = new AuthCenterPendingStore<PendingRemoteLogin>( PendingRemoteLoginLifetime, MaxPendingRemoteLogins );
         party.ApplicationIdentityService.Heartbeat.Async += OnHeartbeatAsync;
@@ -70,41 +68,35 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
 
     // The configured hosts are always authorized (a configured target is fixed); the targets of the other ones follow what
     // their hosts announce, when this center sees their description. A new list is signed only when something changed.
+    // A revoked configured host is not authorized (see AuthCenterSystemList.UpdateAsync, that serializes the updates).
     async Task SyncRouteHostsAsync( IActivityMonitor monitor )
     {
         if( _party.GetFeature<AuthCenterSystemList>() is not { } list ) return;
-        await _routeHostsLock.WaitAsync().ConfigureAwait( false );
-        try
+        await list.UpdateAsync( monitor, ( entries, hosts ) =>
         {
-            await list.UpdateAsync( monitor, ( entries, hosts ) =>
+            var result = new Dictionary<(string, string), RouteHost>();
+            foreach( var h in hosts ) result[(h.RouteName, h.Host)] = h;
+            if( _configuredRouteHosts != null )
             {
-                var result = new Dictionary<(string, string), RouteHost>();
-                foreach( var h in hosts ) result[(h.RouteName, h.Host)] = h;
-                if( _configuredRouteHosts != null )
+                foreach( var c in _configuredRouteHosts.Entries ) result.TryAdd( (c.RouteName, c.Host), c );
+            }
+            foreach( var key in result.Keys.ToList() )
+            {
+                var h = result[key];
+                if( _configuredRouteHosts?.Find( h.RouteName, h.Host ) is { Target: not null } fixedTarget )
                 {
-                    foreach( var c in _configuredRouteHosts.Entries ) result.TryAdd( (c.RouteName, c.Host), c );
+                    result[key] = fixedTarget;
                 }
-                foreach( var key in result.Keys.ToList() )
+                else
                 {
-                    var h = result[key];
-                    if( _configuredRouteHosts?.Find( h.RouteName, h.Host ) is { Target: not null } fixedTarget )
-                    {
-                        result[key] = fixedTarget;
-                    }
-                    else
-                    {
-                        var target = AuthCenterSystemList.FindAnnouncedTarget( _party, h.RouteName, h.Host, out var seen );
-                        if( seen ) result[key] = h with { Target = target };
-                    }
+                    var target = AuthCenterSystemList.FindAnnouncedTarget( _party, h.RouteName, h.Host, out var seen );
+                    if( seen ) result[key] = h with { Target = target };
                 }
-                return (entries, result.Values.ToList());
-            } ).ConfigureAwait( false );
-        }
-        finally
-        {
-            _routeHostsLock.Release();
-        }
+            }
+            return (entries, result.Values.ToList());
+        } ).ConfigureAwait( false );
     }
+
 
     /// <summary>
     /// Gets the configuration sub-section of a scheme family ("AuthCenter:Oidc" for "Oidc"): the families read their own

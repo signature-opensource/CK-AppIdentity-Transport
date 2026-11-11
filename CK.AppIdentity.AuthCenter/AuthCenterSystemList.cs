@@ -47,6 +47,8 @@ public sealed class AuthCenterSystemList
 
     readonly CrisAuthCenter _center;
     readonly SemaphoreSlim _adoptLock;
+    // On the Authentication Center: serializes the signing of the lists (read the current one, compute, sign, adopt).
+    readonly SemaphoreSlim _updateLock;
     readonly Func<IActivityMonitor, Task<object?>>? _pull;
     readonly Func<IActivityMonitor, Task>? _onRouteHostsChanged;
     SystemList? _current;
@@ -60,6 +62,7 @@ public sealed class AuthCenterSystemList
         _pull = pull;
         _onRouteHostsChanged = onRouteHostsChanged;
         _adoptLock = new SemaphoreSlim( 1, 1 );
+        _updateLock = new SemaphoreSlim( 1, 1 );
         _routeHosts = GetRouteHosts( center, null );
     }
 
@@ -295,24 +298,50 @@ public sealed class AuthCenterSystemList
     /// <summary>
     /// On the Authentication Center: signs a new list (the next sequence number) with its revocations and its route hosts
     /// computed from the current ones, and adopts it (it is relayed to every party of the System). Nothing is signed when
-    /// they don't change.
+    /// they don't change. The updates are serialized: <paramref name="update"/> always sees the list of the previous one.
+    /// <para>
+    /// A revoked party is no more an authorized host of any route: the route hosts whose name is banned by an entry of the
+    /// new list are dropped, whatever <paramref name="update"/> returns.
+    /// </para>
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="update">Computes the new revocations and route hosts from the current ones.</param>
-    /// <returns>The new list, the current one when nothing changed.</returns>
+    /// <returns>The new list, the current one when nothing changed (null when there is none).</returns>
     public async Task<SystemList?> UpdateAsync( IActivityMonitor monitor,
                                                 Func<IReadOnlyList<RevocationEntry>, IReadOnlyList<RouteHost>, (IReadOnlyList<RevocationEntry> Entries, IReadOnlyList<RouteHost> RouteHosts)> update )
     {
         Throw.CheckState( "Only the Authentication Center signs its list.", _center.AuthCenter == Local );
         Throw.CheckNotNullArgument( update );
-        var current = _current;
-        IReadOnlyList<RevocationEntry> entries = current?.Entries ?? [];
-        IReadOnlyList<RouteHost> hosts = current?.RouteHosts ?? [];
-        var (newEntries, newHosts) = update( entries, hosts );
-        var sortedHosts = newHosts.OrderBy( h => h.RouteName, StringComparer.Ordinal ).ThenBy( h => h.Host, StringComparer.Ordinal ).ToList();
-        if( newEntries.SequenceEqual( entries ) && sortedHosts.SequenceEqual( hosts ) ) return current;
-        var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, DateTime.UtcNow );
-        return await TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false ) ? list : _current;
+        await _updateLock.WaitAsync().ConfigureAwait( false );
+        try
+        {
+            var current = _current;
+            IReadOnlyList<RevocationEntry> entries = current?.Entries ?? [];
+            IReadOnlyList<RouteHost> hosts = current?.RouteHosts ?? [];
+            var (newEntries, newHosts) = update( entries, hosts );
+            var banned = newEntries.Where( e => e.NameBanned ).Select( e => e.FullName ).ToHashSet( StringComparer.Ordinal );
+            var sortedHosts = newHosts.Where( h => !banned.Contains( h.Host ) )
+                                      .OrderBy( h => h.RouteName, StringComparer.Ordinal )
+                                      .ThenBy( h => h.Host, StringComparer.Ordinal )
+                                      .ToList();
+            if( newEntries.SequenceEqual( entries ) && sortedHosts.SequenceEqual( hosts ) ) return current;
+            var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, DateTime.UtcNow );
+            return await AdoptOwnAsync( monitor, list ).ConfigureAwait( false );
+        }
+        finally
+        {
+            _updateLock.Release();
+        }
+    }
+
+    // Adopts a list signed here (under the update lock): it can't be refused, a failure is an error, never a silent loss.
+    async Task<SystemList> AdoptOwnAsync( IActivityMonitor monitor, SystemList list )
+    {
+        if( !await TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false ) )
+        {
+            Throw.CKException( $"The {list} signed by the AuthCenter '{Local}' has not been adopted: its change is not applied." );
+        }
+        return list;
     }
 
     /// <summary>
@@ -326,11 +355,20 @@ public sealed class AuthCenterSystemList
     public async Task<bool> RenewIfNeededAsync( IActivityMonitor monitor, DateTime utcNow )
     {
         Throw.CheckState( "Only the Authentication Center signs its list.", _center.AuthCenter == Local );
-        var current = _current;
-        var keys = Local.GetRequiredFeature<ILocalKeys>();
-        if( current == null || current.Signature.Expiration - utcNow > TimeSpan.FromDays( keys.MaxSignatureDays ) / 2 ) return false;
-        var list = SystemList.Create( keys, current.Seq + 1, current.Entries, current.RouteHosts, utcNow );
-        return await TryAdoptAsync( monitor, list.Encode(), null ).ConfigureAwait( false );
+        await _updateLock.WaitAsync().ConfigureAwait( false );
+        try
+        {
+            var current = _current;
+            var keys = Local.GetRequiredFeature<ILocalKeys>();
+            if( current == null || current.Signature.Expiration - utcNow > TimeSpan.FromDays( keys.MaxSignatureDays ) / 2 ) return false;
+            var list = SystemList.Create( keys, current.Seq + 1, current.Entries, current.RouteHosts, utcNow );
+            await AdoptOwnAsync( monitor, list ).ConfigureAwait( false );
+            return true;
+        }
+        finally
+        {
+            _updateLock.Release();
+        }
     }
 
     /// <summary>
@@ -349,16 +387,19 @@ public sealed class AuthCenterSystemList
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{from}' sent an invalid System list to '{Local}': it is ignored." );
             return false;
         }
+        if( _current != null && list!.Seq <= _current.Seq ) return false;
+        // Verified before the lock: getting the key events of the AuthCenter may cross the network (a list with an unknown
+        // issuer can come from any remote), the adoption of a genuine list must not wait behind it.
+        var verdict = await _center.CheckWithKeyEventsAsync( monitor, SystemList.Purpose, list!.SignedData.ToArray(), list.Signature ).ConfigureAwait( false );
+        if( verdict != SignatureVerdict.Valid )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} sent by '{from}' to '{Local}' is not signed by its AuthCenter '{_center.AuthCenterFullName}' ({verdict}): it is ignored." );
+            return false;
+        }
         await _adoptLock.WaitAsync().ConfigureAwait( false );
         try
         {
-            if( _current != null && list!.Seq <= _current.Seq ) return false;
-            var verdict = await _center.CheckWithKeyEventsAsync( monitor, SystemList.Purpose, list!.SignedData.ToArray(), list.Signature ).ConfigureAwait( false );
-            if( verdict != SignatureVerdict.Valid )
-            {
-                monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} sent by '{from}' to '{Local}' is not signed by its AuthCenter '{_center.AuthCenterFullName}' ({verdict}): it is ignored." );
-                return false;
-            }
+            if( _current != null && list.Seq <= _current.Seq ) return false;
             Local.LocalFileStore.WriteAtomically( FilePath, s => s.Write( encoded ) );
             var previousHosts = _current?.RouteHosts ?? [];
             _current = list;
