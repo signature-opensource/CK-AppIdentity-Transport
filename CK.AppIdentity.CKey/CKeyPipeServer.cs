@@ -32,9 +32,14 @@ public sealed class CKeyPipeServer
 
     const int MaxInstances = 4;
 
+    // The delay before the loop tries again after a failed accept or a failed creation of an instance.
+    static readonly TimeSpan _retryDelay = TimeSpan.FromSeconds( 1 );
+
     readonly ApplicationIdentityService _app;
     readonly CKeyOperations _operations;
     readonly string _pipeName;
+    // At most MaxInstances - 1 requests are handled at once: with the listening instance, the pipe never needs more.
+    readonly SemaphoreSlim _handlers = new SemaphoreSlim( MaxInstances - 1, MaxInstances - 1 );
     CancellationTokenSource? _cts;
     Task? _loop;
 
@@ -88,8 +93,9 @@ public sealed class CKeyPipeServer
         {
             await _loop!.ConfigureAwait( false );
         }
-        catch( OperationCanceledException )
+        catch( Exception )
         {
+            // The loop logs its errors: the teardown never throws.
         }
         _cts.Dispose();
         _cts = null;
@@ -133,22 +139,63 @@ public sealed class CKeyPipeServer
         return security;
     }
 
-    async Task LoopAsync( NamedPipeServerStream listening, CancellationToken cancel )
+    // A failed accept (a client that connects and leaves) or a failed creation of an instance is logged and the loop goes
+    // on (after a short delay): CKey stays available for the life of the process.
+    async Task LoopAsync( NamedPipeServerStream first, CancellationToken cancel )
     {
+        var monitor = new ActivityMonitor( $"The \"CKey\" pipe '{_pipeName}' of '{_app.FullName}'." );
+        NamedPipeServerStream? listening = first;
         try
         {
             while( !cancel.IsCancellationRequested )
             {
-                await listening.WaitForConnectionAsync( cancel ).ConfigureAwait( false );
-                var connected = listening;
-                // The next instance listens before the request is handled: the name is never free.
-                listening = Create( _pipeName, firstInstance: false );
-                _ = Task.Run( () => HandleAsync( connected, cancel ), cancel );
+                NamedPipeServerStream? connected = null;
+                try
+                {
+                    listening ??= Create( _pipeName, firstInstance: false );
+                    await listening.WaitForConnectionAsync( cancel ).ConfigureAwait( false );
+                    connected = listening;
+                    listening = null;
+                    // The connected instance holds the name while the loop waits for a free handler.
+                    await _handlers.WaitAsync( cancel ).ConfigureAwait( false );
+                    // The next instance listens before the request is handled: the name is never free.
+                    try
+                    {
+                        listening = Create( _pipeName, firstInstance: false );
+                    }
+                    finally
+                    {
+                        var handled = connected;
+                        connected = null;
+                        _ = Task.Run( () => HandleAsync( handled, cancel ) );
+                    }
+                }
+                catch( OperationCanceledException ) when( cancel.IsCancellationRequested )
+                {
+                    connected?.Dispose();
+                    break;
+                }
+                catch( Exception ex )
+                {
+                    connected?.Dispose();
+                    listening?.Dispose();
+                    listening = null;
+                    monitor.Warn( $"The \"CKey\" pipe '{_pipeName}' failed to accept a request: it listens again.", ex );
+                    try
+                    {
+                        await Task.Delay( _retryDelay, cancel ).ConfigureAwait( false );
+                    }
+                    catch( OperationCanceledException )
+                    {
+                        break;
+                    }
+                }
             }
         }
         finally
         {
-            listening.Dispose();
+            listening?.Dispose();
+            monitor.MonitorEnd();
         }
     }
 
@@ -173,8 +220,10 @@ public sealed class CKeyPipeServer
         }
         finally
         {
+            _handlers.Release();
             monitor.MonitorEnd();
         }
+
     }
 
     static async Task<byte[]> ReadMessageAsync( Stream s, CancellationToken cancel )

@@ -131,6 +131,40 @@ public class CKeyTests
     }
 
     [Test]
+    public async Task more_clients_than_instances_do_not_stop_the_pipe_Async()
+    {
+        await using var pair = await StartAsync();
+        var (a, _) = pair;
+        string aName = a.ApplicationIdentityService.FullName;
+        var pipeName = CKeyPipeServer.GetPipeName( a.ApplicationIdentityService.FullName.Path );
+        // Silent clients hold every instance of the pipe (each handler waits for its request).
+        var clients = new System.Collections.Generic.List<System.IO.Pipes.NamedPipeClientStream>();
+        try
+        {
+            for( int i = 0; i < 6; ++i )
+            {
+                var c = new System.IO.Pipes.NamedPipeClientStream( ".", pipeName, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous );
+                clients.Add( c );
+                try
+                {
+                    await c.ConnectAsync( 1000 );
+                }
+                catch( TimeoutException )
+                {
+                    // No instance is listening: the server waits for a handler to end.
+                }
+            }
+            clients.Count( c => c.IsConnected ).ShouldBeGreaterThanOrEqualTo( 4 );
+        }
+        finally
+        {
+            foreach( var c in clients ) c.Dispose();
+        }
+        // They left: the handlers end, the pipe listens again.
+        (await CKeyAsync( "status", "--party", aName )).Code.ShouldBe( 0 );
+    }
+
+    [Test]
     public async Task ckey_approve_completes_a_both_approval_on_each_side_Async()
     {
         await using var pair = await StartAsync();
