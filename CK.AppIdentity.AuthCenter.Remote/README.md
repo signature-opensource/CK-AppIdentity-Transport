@@ -48,9 +48,10 @@ travels along its `"AuthCenter"` route, verified with its keys, whatever the hop
 - **A user's proof received directly** is read here (the token and its binding): its session is not asked. A logout or a
   revocation takes effect at the end of the critical window (the liveness lag accepted without a channel).
 - **A user's proof received with a routed command** is verified by the Authentication Center
-  (`IVerifyRoutedProofQCommand`): only it has the keys of the session party that sealed the command. It also checks the
-  session at once. Its answer is a statement it signs (`AuthCenterProofStatement`: the destination, a nonce chosen by
-  this party, the digests of the token and of the seal).
+  (`IVerifyRoutedProofQCommand`, the proof encrypted for it: a hop never holds it): only it has the keys of the session
+  party that sealed the command. It also checks the session at once. Its answer is a statement it signs
+  (`AuthCenterProofStatement`: the destination, a nonce chosen by this party, the digests of the token and of the seal).
+  Without a verified encryption key of the Authentication Center, nothing is sent: the proof is not verified.
 - **The encryption keys** of the Authentication Center and of its remotes are its statements
   (`IGetRemoteEncryptionKeyQCommand`).
 

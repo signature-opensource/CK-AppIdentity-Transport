@@ -22,8 +22,8 @@ namespace CK.AppIdentity.AuthCenter;
 ///   <item>A user's proof received directly is read here (the token with the keys of the Authentication Center, and its
 ///   binding): its session is not asked, a logout takes effect at the end of the critical window.</item>
 ///   <item>A user's proof received with a routed command is verified by the Authentication Center
-///   (<see cref="IVerifyRoutedProofQCommand"/>): the seal of the session party can be checked only there. The liveness of
-///   its session is checked at the same time.</item>
+///   (<see cref="IVerifyRoutedProofQCommand"/>, the proof encrypted for it: the hops never hold it): the seal of the
+///   session party can be checked only there. The liveness of its session is checked at the same time.</item>
 ///   <item>The encryption keys of the Authentication Center and of its remotes are its statements
 ///   (<see cref="IGetRemoteEncryptionKeyQCommand"/>).</item>
 /// </list>
@@ -72,7 +72,9 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     /// For a proof received directly, its reading is enough: without a channel to the Authentication Center, the liveness
     /// of its session is not asked (a logout or a revocation takes effect at the end of the critical window). For the proof
     /// of a routed command, the Authentication Center is asked along its route: it checks the seal of the session party
-    /// and the liveness, and answers with a statement it signs, verified here with its keys.
+    /// and the liveness, and answers with a statement it signs, verified here with its keys. The proof is encrypted for the
+    /// Authentication Center (its key is its own statement, see <see cref="GetPartyEncryptionKeyAsync"/>): without its
+    /// key, nothing is sent and the proof is not verified (fail closed).
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="token">The user's token.</param>
@@ -90,16 +92,9 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
         }
         var destination = _center.Owner.FullName.Path;
         var nonce = RandomNumberGenerator.GetBytes( AuthCenterProofStatement.NonceSize );
-        var answer = await SendAsync( monitor, pocos => pocos.Create<IVerifyRoutedProofQCommand>( c =>
-        {
-            c.Destination = destination;
-            c.Nonce = nonce;
-            c.Token = token;
-            c.BindingSecretHash = read.BindingSecretHash;
-            c.RoutedSeal = seal.Header;
-            c.RoutedPayloadDigest = seal.PayloadDigest;
-            c.RoutedSignature = seal.Signature;
-        } ), "verify a routed user's proof" ).ConfigureAwait( false );
+        var encryptedProof = await EncryptProofAsync( monitor, destination, nonce, token, read.BindingSecretHash ).ConfigureAwait( false );
+        if( encryptedProof == null ) return null;
+        var answer = await SendAsync( monitor, pocos => CreateVerifyQuery( pocos, destination, nonce, encryptedProof, seal ), "verify a routed user's proof" ).ConfigureAwait( false );
         if( answer is not IAuthCenterProofStatement statement )
         {
             if( answer == null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' refused the user's proof routed to '{destination}' (its session or its seal)." );
@@ -115,6 +110,31 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
             return null;
         }
         return read.Info;
+    }
+
+    // Encrypts the user's proof for the Authentication Center: the hops on its route never hold it.
+    internal async ValueTask<byte[]?> EncryptProofAsync( IActivityMonitor monitor, string destination, byte[] nonce, string token, byte[] bindingSecretHash )
+    {
+        var key = await GetPartyEncryptionKeyAsync( monitor, _center.AuthCenterFullName ).ConfigureAwait( false );
+        if( key == null )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"No verified encryption key for the AuthCenter '{_center.AuthCenterFullName}': the user's proof routed to '{destination}' can't be verified, it is ignored." );
+            return null;
+        }
+        return AuthCenterProofStatement.EncryptProof( key.Value.PublicKey, destination, nonce, token, bindingSecretHash, DateTime.UtcNow );
+    }
+
+    internal static IVerifyRoutedProofQCommand CreateVerifyQuery( PocoDirectory pocos, string destination, byte[] nonce, byte[] encryptedProof, RoutedProofSeal seal )
+    {
+        return pocos.Create<IVerifyRoutedProofQCommand>( c =>
+        {
+            c.Destination = destination;
+            c.Nonce = nonce;
+            c.EncryptedProof = encryptedProof;
+            c.RoutedSeal = seal.Header;
+            c.RoutedPayloadDigest = seal.PayloadDigest;
+            c.RoutedSignature = seal.Signature;
+        } );
     }
 
     /// <summary>

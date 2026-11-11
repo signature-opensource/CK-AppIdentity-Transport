@@ -34,20 +34,27 @@ public sealed class VerifyRoutedProofHandler : ISingletonAutoService
         }
         if( string.IsNullOrEmpty( command.Destination )
             || command.Nonce is not { Length: AuthCenterProofStatement.NonceSize }
-            || command.Token == null || command.BindingSecretHash == null
+            || command.EncryptedProof == null
             || command.RoutedSeal == null || command.RoutedPayloadDigest == null || command.RoutedSignature == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"An incomplete verification of a user's proof routed to '{command.Destination}' is refused." );
             return null;
         }
+        var keys = center.Party.GetRequiredFeature<ILocalKeys>();
+        // The proof crossed the hops encrypted for this Authentication Center.
+        if( !AuthCenterProofStatement.TryDecryptProof( monitor, keys, command.EncryptedProof, command.Destination, command.Nonce, DateTime.UtcNow, out var token, out var bindingSecretHash ) )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The user's proof routed to '{command.Destination}' can't be decrypted: it is refused." );
+            return null;
+        }
         var seal = new RoutedProofSeal( command.RoutedSeal, command.RoutedPayloadDigest, command.RoutedSignature );
         // The seal must have been made for the destination: the statement names it, the asking party checks it is itself.
-        var info = await center.CheckProofAsync( monitor, command.Token, command.BindingSecretHash, seal, command.Destination ).ConfigureAwait( false );
+        var info = await center.CheckProofAsync( monitor, token!, bindingSecretHash!, seal, command.Destination ).ConfigureAwait( false );
         if( info == null ) return null;
-        var signature = center.Party.GetRequiredFeature<ILocalKeys>()
-                              .Sign( AuthCenterProofStatement.Purpose,
-                                     AuthCenterProofStatement.GetSignedData( command.Destination, command.Nonce, command.Token, seal ),
-                                     DateTime.UtcNow + AuthCenterProofStatement.Lifetime );
+        var signature = keys.Sign( AuthCenterProofStatement.Purpose,
+                                   AuthCenterProofStatement.GetSignedData( command.Destination, command.Nonce, token!, seal ),
+                                   DateTime.UtcNow + AuthCenterProofStatement.Lifetime );
+
         monitor.Trace( $"A user's proof routed to '{command.Destination}' is verified: actor #{info.UnsafeActor.ActorId}." );
         return pocos.Create<IAuthCenterProofStatement>( s => s.Signature = signature.Encoded.ToArray() );
     }

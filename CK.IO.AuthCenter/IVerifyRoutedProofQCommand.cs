@@ -5,9 +5,10 @@ namespace CK.IO.AuthCenter;
 
 /// <summary>
 /// Asks the Authentication Center, along its "AuthCenter" route, to verify the user's proof of a command routed to the
-/// asking party (the <see cref="Destination"/>): its token, the hash of the binding secret of its session and the seal of
-/// the session party. A party without a channel to the Authentication Center sends it: the session party's keys are known
-/// by the Authentication Center only.
+/// asking party (the <see cref="Destination"/>): its token and the hash of the binding secret of its session, encrypted for
+/// the Authentication Center (<see cref="EncryptedProof"/>: the hops never hold the proof), and the seal of the session
+/// party. A party without a channel to the Authentication Center sends it: the session party's keys are known by the
+/// Authentication Center only.
 /// <para>
 /// The answer crosses hops: it is a statement signed by the Authentication Center (see <see cref="IAuthCenterProofStatement"/>),
 /// verified with its keys (its trust anchor): a hop can withhold it, not forge it. It binds the <see cref="Nonce"/> chosen by
@@ -28,14 +29,12 @@ public interface IVerifyRoutedProofQCommand : ICommand<IAuthCenterProofStatement
     byte[] Nonce { get; set; }
 
     /// <summary>
-    /// Gets or sets the user's token.
+    /// Gets or sets the user's token and the hash of the binding secret presented with it, encrypted for the
+    /// Authentication Center (its encryption key is its own statement, see <see cref="IGetRemoteEncryptionKeyQCommand"/>)
+    /// with the <see cref="Destination"/> and the <see cref="Nonce"/> as associated data.
     /// </summary>
-    string Token { get; set; }
+    byte[] EncryptedProof { get; set; }
 
-    /// <summary>
-    /// Gets or sets the hash of the binding secret presented with the token.
-    /// </summary>
-    byte[] BindingSecretHash { get; set; }
 
     /// <summary>
     /// Gets or sets the header of the seal of the routed command.

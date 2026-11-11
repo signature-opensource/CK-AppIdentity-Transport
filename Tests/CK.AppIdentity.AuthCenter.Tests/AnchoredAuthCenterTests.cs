@@ -156,6 +156,26 @@ public class AnchoredAuthCenterTests
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, RemoteAuthCenterTests.Routed( c.A, c.HopName, command ), Sealed() ))
             .ShouldNotBeNull().ActualActor.Level.ShouldBe( AuthLevel.Critical );
 
+        // The query that crosses the hops carries the proof encrypted for the center: a hop reads neither the token nor
+        // the binding secret hash.
+        var anchored = a.GetRequiredFeature<AnchoredAuthCenter>();
+        var nonce = new byte[AuthCenterProofStatement.NonceSize];
+        var encrypted = (await anchored.EncryptProofAsync( TestHelper.Monitor, c.AName, nonce, token, binding )).ShouldNotBeNull();
+        var sealedOne = Sealed();
+        var query = AnchoredAuthCenter.CreateVerifyQuery( c.A.PocoDirectory, c.AName, nonce, encrypted, new RoutedProofSeal( sealedOne.RoutedSeal!, [1], sealedOne.RoutedSignature! ) );
+        var w = new System.Buffers.ArrayBufferWriter<byte>();
+        c.A.PocoDirectory.WriteJson( w, query, withType: true );
+        var seen = System.Text.Encoding.UTF8.GetString( w.WrittenSpan );
+        seen.ShouldNotContain( token );
+        seen.ShouldNotContain( Convert.ToBase64String( binding ) );
+        seen.ShouldNotContain( Convert.ToBase64String( binding ).Replace( '+', '-' ).Replace( '/', '_' ).TrimEnd( '=' ) );
+        // Only the center decrypts it, for this destination and nonce.
+        var centerKeys = c.Center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>();
+        AuthCenterProofStatement.TryDecryptProof( TestHelper.Monitor, centerKeys, encrypted, c.AName, nonce, DateTime.UtcNow, out var t, out var b ).ShouldBeTrue();
+        t.ShouldBe( token );
+        b.ShouldBe( binding );
+        AuthCenterProofStatement.TryDecryptProof( TestHelper.Monitor, centerKeys, encrypted, c.HopName, nonce, DateTime.UtcNow, out _, out _ ).ShouldBeFalse();
+
         // After a logout, the routed proof is refused at once (the center is asked); the direct one is still read here
         // (the liveness lag accepted without a channel).
         await c.RequestAsync( pocos => pocos.Create<ILogoutSessionCommand>() );
