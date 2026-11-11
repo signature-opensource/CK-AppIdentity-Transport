@@ -53,6 +53,21 @@ public sealed class LocalIdentityState
     public KeyEvent? GetEvent( int seq ) => seq >= 0 && seq < _log.Length ? _log[seq] : null;
 
     /// <summary>
+    /// Gets the events of the log to send to a party: from the point it holds (its pin or its anchor of this party) when
+    /// it is older than the last <see cref="KeyEventChain.MaxEventTail"/> events and within
+    /// <see cref="KeyEventChain.MaxEventWindow"/> of the head; otherwise the last events (<see cref="Tail"/>).
+    /// </summary>
+    /// <param name="heldSeq">The sequence of the log that the party holds, null if unknown.</param>
+    /// <returns>The events to send, oldest first.</returns>
+    public IReadOnlyList<KeyEvent> GetEventsFrom( int? heldSeq )
+    {
+        if( heldSeq is not int s || s < 0 || s >= _tail[0].Seq || Head.Seq - s >= KeyEventChain.MaxEventWindow ) return _tail;
+        var events = new KeyEvent[Head.Seq - s + 1];
+        for( int i = 0; i < events.Length; ++i ) events[i] = _log[s + i];
+        return events;
+    }
+
+    /// <summary>
     /// Gets the whole log, from the inception.
     /// </summary>
     internal KeyEvent[] Log => _log;

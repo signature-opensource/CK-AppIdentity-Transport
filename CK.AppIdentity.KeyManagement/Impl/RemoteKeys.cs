@@ -23,7 +23,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// nothing they issued can still be valid, and all of them on a recovery, which condemns them.
 /// </para>
 /// </summary>
-sealed partial class RemoteKeys : IRemoteKeys
+sealed partial class RemoteKeys : IRemoteKeys, IAnchoredKeys
 {
     internal const string TrustFilePattern = "Identity.*.trust";
     internal const string LegacyPublicFilePattern = "Identity.*.public";
@@ -145,30 +145,14 @@ sealed partial class RemoteKeys : IRemoteKeys
         if( !_localKeys.IsDevAnchored( _remote.FullName ) ) return null;
         if( _devAnchor != null ) return _devAnchor;
         // The remote writes its running status in its shared folder of the dev store: the folder of this remote party.
-        var bytes = StoreFileReader.TryReadAllBytes( _remote.SharedFileStore.FolderPath.AppendPart( DevRunningStatusFeatureDriver.FileName ) );
-        if( bytes == null ) return null;
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse( bytes );
-            if( doc.RootElement.TryGetProperty( "KeyManagement", out var km ) && km.TryGetProperty( "Checkpoints", out var cs ) )
-            {
-                foreach( var c in cs.EnumerateArray() )
-                {
-                    if( c.GetProperty( "FullName" ).GetString() == _remote.FullName.Path
-                        && KeyCheckpoint.TryParse( c.GetProperty( "Checkpoint" ).GetString(), out var checkpoint, out _ ) )
-                    {
-                        logger.Info( $"The trust anchor of '{_remote}' is read from its running status in the dev store: {checkpoint}." );
-                        return _devAnchor = checkpoint;
-                    }
-                }
-            }
-        }
-        catch( Exception ex ) when( ex is System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException )
-        {
-            logger.Warn( $"Unable to read the running status of '{_remote}' in the dev store: {ex.Message}" );
-        }
-        return null;
+        return _devAnchor = DevAnchors.Read( logger, _remote.FullName.Path, _remote.SharedFileStore.FolderPath );
     }
+
+    string IAnchoredKeys.FullName => _remote.FullName.Path;
+
+    KeyEvent? IAnchoredKeys.Head => _pinned;
+
+    KeyChainCheck IAnchoredKeys.ApplyEvents( IActivityLineEmitter logger, IReadOnlyList<KeyEvent> events ) => ApplyTail( logger, events );
 
     // Must be called with _trustLock held. The events of an anchored remote are verified from its anchor, at each
     // handshake: the pin comes only from there.

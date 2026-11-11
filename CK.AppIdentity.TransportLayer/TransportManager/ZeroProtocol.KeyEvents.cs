@@ -71,26 +71,8 @@ static partial class ZeroProtocol
         return held == 0 ? null : (int)(held - 1);
     }
 
-    /// <summary>
-    /// Gets the events of our log to send to a peer: from the point it holds (its pin or its anchor of us) when it is
-    /// older than our last <see cref="KeyEventChain.MaxEventTail"/> events and within <see cref="KeyEventChain.MaxEventWindow"/>
-    /// of our head; otherwise our last events (<see cref="LocalIdentityState.Tail"/>).
-    /// </summary>
-    /// <param name="state">Our identity state.</param>
-    /// <param name="heldSeq">The sequence of our log that the peer holds, null if unknown.</param>
-    /// <returns>The events to send, oldest first.</returns>
-    internal static IReadOnlyList<KeyEvent> GetEventsFrom( LocalIdentityState state, int? heldSeq )
-    {
-        var tail = state.Tail;
-        if( heldSeq is not int s || s < 0 || s >= tail[0].Seq || state.Head.Seq - s >= KeyEventChain.MaxEventWindow ) return tail;
-        var events = new List<KeyEvent>( state.Head.Seq - s + 1 );
-        for( int seq = s; seq <= state.Head.Seq; ++seq )
-        {
-            if( state.GetEvent( seq ) is not { } e ) return tail;
-            events.Add( e );
-        }
-        return events;
-    }
+    // See LocalIdentityState.GetEventsFrom.
+    internal static IReadOnlyList<KeyEvent> GetEventsFrom( LocalIdentityState state, int? heldSeq ) => state.GetEventsFrom( heldSeq );
 
     /// <summary>
     /// Reads the key events of a <see cref="DRunKeyEvents"/> message.

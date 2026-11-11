@@ -85,6 +85,10 @@ The purpose is fixed (`ICrisAuthCenter.TokenPurpose`, "CK.AuthCenter.Token"): no
 Center can be taken for a token. It fails closed when the feature is not `IsAvailable`. Signing is not here: only a
 local Authentication Center signs, with its `ILocalKeys`.
 
+A local Authentication Center hosts the `"AuthCenter"` route (`AuthCenterFeature.RouteName`, its target is its full
+name): every party of the System has a path to it, whatever its channels. A party that anchors the Authentication
+Center without a channel to it gets its key events along this route (the `AnchoredKeyDirectory` of CK.AppIdentity.Cris).
+
 ## Rules (the two side drivers, [`AuthCenterFeature`](AuthCenterFeature.cs))
 
 - **Names:** a `"Local"` that allows only `"AuthCenterRemote"`, or a remote that allows only `"AuthCenter"`, is a

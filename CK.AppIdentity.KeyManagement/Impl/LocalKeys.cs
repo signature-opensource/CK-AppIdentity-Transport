@@ -39,6 +39,8 @@ sealed partial class LocalKeys : ILocalKeys
     readonly int _maxSignatureDays;
     readonly IReadOnlyDictionary<string, KeyCheckpoint> _trustAnchors;
     readonly IReadOnlySet<string> _devAnchors;
+    // The key directory: the anchored parties that are not remotes.
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, AnchoredPartyKeys> _directory;
 
     /// <summary>
     /// The value of a trust anchor read from the running status of the anchored party in the dev store.
@@ -87,6 +89,7 @@ sealed partial class LocalKeys : ILocalKeys
         _maxSignatureDays = maxSignatureDays;
         _trustAnchors = trustAnchors;
         _devAnchors = devAnchors;
+        _directory = new System.Collections.Concurrent.ConcurrentDictionary<string, AnchoredPartyKeys>( StringComparer.Ordinal );
         _signLock = new object();
         _state = new LocalIdentityState( current, log, OperationalCredential.Issue( current, local.ApplicationIdentityService.SystemClock.UtcNow, operationalKeyDays ) );
         _rotationLock = new object();
@@ -244,6 +247,17 @@ sealed partial class LocalKeys : ILocalKeys
     public KeyCheckpoint Checkpoint => KeyCheckpoint.Of( _local.FullName, _state.Head );
 
     public IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors => _trustAnchors;
+
+    public IAnchoredKeys? FindAnchoredKeys( string fullName )
+    {
+        Throw.CheckNotNullOrEmptyArgument( fullName );
+        if( !IsAnchored( fullName ) ) return null;
+        foreach( var r in _local.Remotes )
+        {
+            if( r.FullName.Path == fullName && r.GetFeature<IRemoteKeys>() is IAnchoredKeys keys ) return keys;
+        }
+        return _directory.GetOrAdd( fullName, n => new AnchoredPartyKeys( this, n ) );
+    }
 
     // Whether a party is anchored, by a checkpoint or by "#Dev".
     internal bool IsAnchored( string fullName ) => _trustAnchors.ContainsKey( fullName ) || _devAnchors.Contains( fullName );

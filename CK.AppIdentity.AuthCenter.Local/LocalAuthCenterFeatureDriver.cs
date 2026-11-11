@@ -33,6 +33,16 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
     }
 
+    /// <summary>
+    /// A local Authentication Center hosts the <see cref="AuthCenterFeature.RouteName"/> route.
+    /// </summary>
+    /// <param name="party">The local party.</param>
+    /// <param name="builder">The first phase of its description.</param>
+    protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
+    {
+        if( IsAllowedFeature( party ) ) builder.HostRoute( AuthCenterFeature.RouteName, party.FullName.Path );
+    }
+
     /// <inheritdoc />
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {

@@ -109,6 +109,14 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   the anchor is replaced (a `SecurityCritical` error), and `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity`
   never apply to it (an approval doesn't either: the anchor is updated by whoever configures it). A refused verification
   is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`, `AnchorUnavailable`).
+- **The keys of any anchored party** ([`IAnchoredKeys`](IAnchoredKeys.cs)): `ILocalKeys.FindAnchoredKeys( fullName )`
+  gives the `IRemoteKeys` of an anchored remote, otherwise the entry of the anchored party in the key directory of the
+  local party: a party with no channel to it can still verify what it signs. The entry is kept in memory only. Its
+  events come from any path (CK.AppIdentity.Cris fetches them along a route hosted by the party) and are verified, never
+  believed: from the anchor the first time (`GetStatedCheckpoint` is the anchor), then from the head held (it becomes
+  the stated checkpoint). A mismatch with the anchor, or two validly signed events at the same position, is a
+  `SecurityCritical` error and changes nothing. A signature it can't check yet is an `UnknownIssuer`: its events must be
+  fetched first.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
   has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
   every accepted nonce is first journaled to disk (`Nonce.journal`), so a crash forgets nothing. It is bounded by time and,

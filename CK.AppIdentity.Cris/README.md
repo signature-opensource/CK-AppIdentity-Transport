@@ -134,6 +134,24 @@ The destination believes the chain: each hop authenticated its predecessor, insi
 (`ICrisOutgoingCommandTransformer`) are not applied: a routed command's sensitive fields can't be encrypted for its
 destination.
 
+## The keys of an anchored party ([`AnchoredKeyDirectory`](AnchoredKeyDirectory.cs))
+
+A party that anchors another one (see the trust anchors of CK.AppIdentity.KeyManagement) without a channel to it gets
+its keys along a route that the anchored party hosts: `CheckAsync` checks a signature of the anchored party and, when its
+issuer is unknown (nothing is held yet, or the party rotated since), sends an
+[`IGetKeyEventsQCommand`](IGetKeyEventsQCommand.cs) along the route, from the point it holds (`FromSeq`: its anchor,
+then the head it holds), applies the events (`IAnchoredKeys.ApplyEvents`) and checks the signature again, once.
+`RefreshAsync` fetches without a signature to check.
+
+- **Checked, never believed:** the events are verified from the anchor (the full name is in the digest of each event): a
+  hop can withhold them, not forge them. The route must lead to the anchored party (its host is its full name).
+- **On demand:** a fetch waits at most `FetchTimeout` (2 seconds); concurrent fetches of the same party share one
+  request, and a party is fetched at most once every `MinFetchInterval` (5 seconds), so signatures with an unknown
+  issuer can't make a party flood the route.
+- **The answer** ([`KeyEventsHandler`](AnchoredKeyDirectory.cs)): the destination sends its own events from `FromSeq`, up to
+  the window of 32 events (its last events when `FromSeq` is out of the window). Key events are public: any party of the
+  System can ask. Like any routed command, it needs an `ICrisChannelReceptionHandler` on the hops and the destination.
+
 ## The protocol
 
 A message starts with a discriminator byte, read by [`CrisChannelFeature.Protocol`](CrisChannelFeature.Protocol.cs):

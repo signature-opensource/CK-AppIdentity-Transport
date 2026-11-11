@@ -109,6 +109,15 @@ public interface ILocalKeys : IPartyKeys
     IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors { get; }
 
     /// <summary>
+    /// Finds the keys of an anchored party (by a checkpoint of <see cref="TrustAnchors"/> or by "#Dev"): its
+    /// <see cref="IRemoteKeys"/> when it is a remote of this party, otherwise its entry in the key directory of this party
+    /// (in memory: its events are obtained by any path, and verified from its anchor). Null when the party is not anchored.
+    /// </summary>
+    /// <param name="fullName">The full name of the anchored party.</param>
+    /// <returns>Its keys, or null.</returns>
+    IAnchoredKeys? FindAnchoredKeys( string fullName );
+
+    /// <summary>
     /// Signs <paramref name="data"/> for the application, until <paramref name="expiration"/>.
     /// <para>
     /// Every verifier (<see cref="IPartyKeys.Verify"/>) refuses the signature after its expiration, and
