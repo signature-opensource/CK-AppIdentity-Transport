@@ -23,6 +23,10 @@ namespace CK.AppIdentity.Cris;
 /// a hop reaches the origin before it gives up. Never wrap a send in a <c>WaitAsync</c>: it would keep running (with the
 /// caller's monitor and services) after the caller gave up.
 /// </para>
+/// <para>
+/// Only the result comes back to the origin: the validation messages of the destination don't (an error result carries
+/// its errors), and neither do the events.
+/// </para>
 /// </summary>
 public sealed class PartyRoutedCommandSender : ISingletonAutoService
 {

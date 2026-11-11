@@ -117,7 +117,7 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   [`ICrisRoutedCommandSeal`](ICrisRoutedCommandSeal.cs) seals them at the origin (once the envelope contributors filled
   the envelope) and unseals them at the destination (before the command is read): the authentication packages sign the
   bytes with the user's proof for the destination. The seal may also seal the result: the destination sends back an
-  `IPartySealedResult` (the result and its validation messages, sealed), the origin unseals it; the events of such a
+  `IPartySealedResult` (the result, sealed), the origin unseals it; the events of such a
   command are not relayed back. An error made on the way (by a hop, before the execution) is not sealed; any other
   result that the origin expects sealed and receives in clear is refused.
 - **The destination** is a named party reached along a route (`SendAsync( ..., routeName, destination )`: each hop takes
@@ -132,6 +132,8 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   party to `Via` and forwards it with its envelope, on its own task (no runner is held). The envelope is relayed as
   received, once the `ICrisForwardedEnvelopeFilter` cleared what this party can't vouch for (the authentication packages
   remove a user's proof that the hop can't verify). The answers come back by the chain of calls.
+- **The answer** is the result only (`Task<object?>`): the validation messages of the destination don't come back (an
+  error result carries its errors).
 - **Time:** the `PartyRoutedCommandSender` waits at most its `timeout` (by default `ChannelCrisRemoteDispatcher.Timeout`)
   for the first hop and the answer: never wrap it in a `WaitAsync`, it would go on with the caller's monitor and services.
   Each party gives the next one less time than it has (`IPartyRoutedCommand.TimeBudget`, half a second less): a hop

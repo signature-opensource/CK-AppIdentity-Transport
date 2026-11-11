@@ -95,7 +95,7 @@ public sealed partial class CrisChannelFeature
             if( data._resultSealState != null )
             {
                 // The result of a routed command is sealed for its origin: the hops relay what they can't read.
-                handler.SendExecuted( monitor, job.IssuerToken.Key, _feature.SealResult( data._resultSealState, result.Result, result.ValidationMessages ), default );
+                handler.SendExecuted( monitor, job.IssuerToken.Key, _feature.SealResult( data._resultSealState, result.Result ), default );
                 return Task.CompletedTask;
             }
             // The final caller-only events precede the result on the same ordered queue.

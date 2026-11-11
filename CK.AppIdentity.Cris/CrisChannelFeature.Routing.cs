@@ -116,15 +116,12 @@ public sealed partial class CrisChannelFeature
         return (inner, resultSealState);
     }
 
-    // Seals the result of a routed command (with its validation messages, as an ICrisCallResult) for its origin.
-    internal IPartySealedResult SealResult( object resultSealState, object? result, System.Collections.Immutable.ImmutableArray<UserMessage> validationMessages )
+    // Seals the result of a routed command (as an ICrisCallResult) for its origin. Only the result goes back to the origin
+    // (see PartyRoutedCommandSender): the validation messages are not sealed.
+    internal IPartySealedResult SealResult( object resultSealState, object? result )
     {
         Throw.DebugAssert( _routedCommandSeal != null );
-        var callResult = _callResultFactory.Create( r =>
-        {
-            r.Result = result;
-            if( !validationMessages.IsDefaultOrEmpty ) r.ValidationMessages = [.. validationMessages];
-        } );
+        var callResult = _callResultFactory.Create( r => r.Result = result );
         var w = new System.Buffers.ArrayBufferWriter<byte>();
         _pocoDirectory.WriteJson( w, callResult, withType: false, Protocol.ExchangeExportOptions );
         var sealedResult = _routedCommandSeal.SealResult( resultSealState, w.WrittenSpan );
