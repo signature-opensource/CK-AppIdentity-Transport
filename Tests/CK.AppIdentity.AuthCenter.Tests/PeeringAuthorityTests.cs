@@ -39,7 +39,7 @@ public class PeeringAuthorityTests
         {
             builder.AddClientApplication( new ClientApplicationDescription( "Admin",
                                                                             "/admin",
-                                                                            ClientApplicationDescription.FactContext.FindOrCreate( TransportFeatureDriver.EnlistmentFact ) ) );
+                                                                            ClientApplicationFacts.Create( (TransportFeatureDriver.EnlistmentFact, "app-identity/enlist") ) ) );
         }
 
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );
@@ -196,7 +196,7 @@ public class PeeringAuthorityTests
         var issue = await WaitForAsync( () => IssueOf( c.W, holderName ) is { IsEnlistUrlAuthenticated: true } i ? i : null );
         issue.ShouldNotBeNull( "The enlistment URL is authenticated by the center's statement." );
         issue.Kind.ShouldBe( PeeringIssueKind.RequiresBothApproval );
-        issue.EnlistUrl.ShouldBe( "https://admin.example.com/admin" + TransportFeatureDriver.EnlistmentPageSuffix + "?party=" + Uri.EscapeDataString( wName ) );
+        issue.EnlistUrl.ShouldBe( "https://admin.example.com/admin" + "/app-identity/enlist" + "?party=" + Uri.EscapeDataString( wName ) );
 
         // (B) One approval on the page: the holder pins W, the center's pin grant reaches W that pins the holder.
         var code = await WaitForAsync( () => IssueOf( c.W, holderName )?.ApprovalCode );
@@ -217,7 +217,7 @@ public class PeeringAuthorityTests
         // W listens: it receives the approval page in the holder's reply to its rejection (RequiredEnlistUrl).
         var issue = await WaitForAsync( () => IssueOf( c.W, holderName ) is { IsEnlistUrlAuthenticated: true } i ? i : null );
         issue.ShouldNotBeNull( "The enlistment URL is authenticated by the center's statement." );
-        issue.EnlistUrl.ShouldBe( "https://admin.example.com/admin" + TransportFeatureDriver.EnlistmentPageSuffix + "?party=" + Uri.EscapeDataString( wName ) );
+        issue.EnlistUrl.ShouldBe( "https://admin.example.com/admin" + "/app-identity/enlist" + "?party=" + Uri.EscapeDataString( wName ) );
 
         // The holder holds the pending approval of W: the grant travels in its next initial message, W pins it in the
         // same attempt.

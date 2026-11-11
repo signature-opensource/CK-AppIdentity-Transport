@@ -18,10 +18,10 @@ namespace CK.AppIdentity.Cris;
 /// <code>
 /// [description]                       a block
 ///     hasPublicUrl, the public URL
-///     count, then [client] per client application: its name, its request path, its facts
+///     count, then [client] per client application: its name, its request path, count, then its facts: key, value
 ///     count, the roles
 ///     count, then the data announcements: name, value
-///     count, then the routes: name, target, count, the full names of the path
+///     count, then the routes (one per name and host): name, hasTarget, the target, count, the full names of the path
 ///     hasEncryptionKey, the public key and the signature (each one: its length, its bytes)
 ///     count, then the collected items per route name: name, count, then per item: value, count, the full names of the path
 /// </code>
@@ -45,8 +45,14 @@ public static class PartyDescriptionCodec
             var c = w.BeginBlock();
             w.WriteString( a.Name );
             w.WriteString( a.RequestPath );
-            // Its facts (a CKTrait): added at the end of the block, an older reader skips them.
-            w.WriteString( a.Facts.ToString() );
+            // Its facts: (key, value) pairs.
+            var facts = a.Facts.Pairs.ToList();
+            w.WriteInt32( facts.Count );
+            foreach( var (factKey, factValue) in facts )
+            {
+                w.WriteString( factKey );
+                w.WriteString( factValue );
+            }
             w.EndBlock( c );
         }
         w.WriteInt32( description.Roles.Length );
@@ -58,13 +64,17 @@ public static class PartyDescriptionCodec
             w.WriteString( name );
             w.WriteString( value );
         }
-        w.WriteInt32( description.Routes.Count );
-        foreach( var (name, route) in description.Routes )
+        w.WriteInt32( description.Routes.Sum( r => r.Value.Length ) );
+        foreach( var (name, routes) in description.Routes )
         {
-            w.WriteString( name );
-            w.WriteString( route.Target );
-            w.WriteInt32( route.Path.Length );
-            foreach( var p in route.Path ) w.WriteString( p );
+            foreach( var route in routes )
+            {
+                w.WriteString( name );
+                w.WriteBool( route.Target != null );
+                if( route.Target != null ) w.WriteString( route.Target );
+                w.WriteInt32( route.Path.Length );
+                foreach( var p in route.Path ) w.WriteString( p );
+            }
         }
         // The encryption key: added at the end of the block, an older reader skips it.
         var key = description.EncryptionKey;
@@ -98,6 +108,11 @@ public static class PartyDescriptionCodec
     public const int MaxEncryptionKeyLength = 8192;
 
     /// <summary>
+    /// The maximal number of facts of a client application.
+    /// </summary>
+    public const int MaxFactCount = 256;
+
+    /// <summary>
     /// Reads a description written by <see cref="Write(ref FastByteWriter, PartyDescription)"/>. The reader is always
     /// moved after the description's block, even when the description is invalid.
     /// </summary>
@@ -118,9 +133,17 @@ public static class PartyDescriptionCodec
             var c = d.ReadBlock();
             var name = c.ReadString();
             var path = c.ReadString();
-            // An older writer doesn't write the facts.
-            var facts = c.IsEnd ? null : ClientApplicationDescription.FactContext.FindOrCreate( c.ReadString() );
+            // A block without facts (they are the last field) has none.
+            int factCount = c.IsEnd ? 0 : c.ReadInt32();
+            Throw.CheckData( "Invalid fact count.", factCount >= 0 && factCount <= MaxFactCount );
+            var pairs = new List<KeyValuePair<string, string>>( factCount );
+            for( int j = 0; j < factCount; ++j )
+            {
+                var key = c.ReadString();
+                pairs.Add( new KeyValuePair<string, string>( key, c.ReadString() ) );
+            }
             if( name.Length == 0 || !path.StartsWith( '/' ) ) error ??= $"Invalid client application '{name}' ('{path}').";
+            else if( !ClientApplicationFacts.TryCreate( pairs, out var facts, out var factError ) ) error ??= $"Invalid facts of the client application '{name}': {factError}";
             else apps.Add( new ClientApplicationDescription( name, path, facts ) );
         }
         int roleCount = d.ReadInt32();
@@ -146,7 +169,7 @@ public static class PartyDescriptionCodec
                 else data.Add( new KeyValuePair<string, string>( name, value ) );
             }
         }
-        var routes = new List<KeyValuePair<string, PartyRoute>>();
+        var routes = new Dictionary<string, List<PartyRoute>>( StringComparer.Ordinal );
         if( !d.IsEnd )
         {
             int routeCount = d.ReadInt32();
@@ -154,7 +177,7 @@ public static class PartyDescriptionCodec
             for( int i = 0; i < routeCount; ++i )
             {
                 var name = d.ReadString();
-                var target = d.ReadString();
+                var target = d.ReadBool() ? d.ReadString() : null;
                 int pathLength = d.ReadInt32();
                 Throw.CheckData( "Invalid route length.", pathLength >= 0 && pathLength <= PartyRoute.MaxLength );
                 var path = new string[pathLength];
@@ -169,8 +192,13 @@ public static class PartyDescriptionCodec
                 }
                 else
                 {
-                    routes.Add( new KeyValuePair<string, PartyRoute>( name, new PartyRoute( target, path ) ) );
+                    if( !routes.TryGetValue( name, out var named ) ) routes.Add( name, named = new List<PartyRoute>() );
+                    named.Add( new PartyRoute( target, path ) );
                 }
+            }
+            foreach( var (name, named) in routes )
+            {
+                if( !PartyDescription.TryNormalizeRoutes( name, named, out _, out var routeError ) ) error ??= routeError;
             }
         }
         // An older writer doesn't write the encryption key.
@@ -211,7 +239,15 @@ public static class PartyDescriptionCodec
                 else error ??= namedError;
             }
         }
-        return error == null ? new PartyDescription( url, apps.ToImmutable(), roles, data, routes, encryptionKey, collected ) : null;
+        return error == null
+                ? new PartyDescription( url,
+                                        apps.ToImmutable(),
+                                        roles,
+                                        data,
+                                        routes.Select( kv => new KeyValuePair<string, IEnumerable<PartyRoute>>( kv.Key, kv.Value ) ),
+                                        encryptionKey,
+                                        collected )
+                : null;
 
         static byte[] ReadKeyBytes( ref FastByteReader r )
         {

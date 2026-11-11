@@ -216,7 +216,7 @@ public class RoutedCommandTests
         string cName = c.ApplicationIdentityService.FullName;
 
         (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
-        a.ApplicationIdentityService.Description.Routes["Routed"].ShouldBe( new PartyRoute( "IWhereRoutedCommand", [aName, bName, cName] ) );
+        a.ApplicationIdentityService.Description.Routes["Routed"].ShouldHaveSingleItem().ShouldBe( new PartyRoute( "IWhereRoutedCommand", [aName, bName, cName] ) );
 
         // By route: executed on its host, the caller party is the origin, the envelope (the user's proof) is relayed.
         var r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", cName ) );
@@ -242,10 +242,10 @@ public class RoutedCommandTests
     }
 
     [Test]
-    public async Task a_hijacked_route_never_delivers_the_command_to_the_liar_Async()
+    public async Task a_route_name_can_have_several_hosts_each_one_is_reached_by_its_name_Async()
     {
         RecordingReceptionHandler.Callers.Clear();
-        // The listener announces the route "Routed" that C hosts: its own hosted route is shorter for the sender.
+        // The listener and C both host the route "Routed" (no authority: the routes are believed as announced).
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                                          senderTypes: [.. _common, typeof( WhereRoutedHandler )],
                                                                          listenerConfiguration: c =>
@@ -263,36 +263,68 @@ public class RoutedCommandTests
         string aName = a.ApplicationIdentityService.FullName;
         string bName = b.ApplicationIdentityService.FullName;
         string cName = c.ApplicationIdentityService.FullName;
-        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
-        a.ApplicationIdentityService.Description.Routes["Routed"].Host.ShouldBe( bName );
+        for( int i = 0; i < 100 && a.ApplicationIdentityService.Description.FindRoute( "Routed", cName ) == null; ++i ) await Task.Delay( 100 );
+        a.ApplicationIdentityService.Description.Routes["Routed"].Select( r => r.Host ).ShouldBe( new[] { bName, cName }.Order( StringComparer.Ordinal ) );
 
-        // The origin refuses to send a command for C along a route that leads to the listener.
+        // Each host is reached by its name.
         var r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", cName ) );
-        r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( $"leads to '{bName}'" );
+        r.ShouldBe( cName );
+        r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", bName ) );
+        r.ShouldBe( bName );
 
-        // A hop refuses it too: the listener's route "Routed" is its own, not C's.
+        // Never to whoever hosts the route: the origin refuses another destination...
+        r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", "Test/$Other/#Dev" ) );
+        r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "doesn't lead to 'Test/$Other/#Dev'" );
+
+        // ...and so does a hop.
+        RecordingReceptionHandler.Callers.Clear();
         var routed = a.PocoDirectory.Create<IPartyRoutedCommand>( r =>
         {
             r.SealedCommand = Serialize( a, a.PocoDirectory.Create<IWhereRoutedCommand>() );
             r.RouteName = "Routed";
-            r.Destination = cName;
+            r.Destination = "Test/$Other/#Dev";
             r.Via.Add( aName );
             r.TargetPartyFullName = bName;
         } );
         var executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, routed ).ExecutedCommand.WaitAsync( _timeout );
-        executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( $"leads to '{bName}'" );
+        executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "doesn't lead to 'Test/$Other/#Dev'" );
 
         // A route name without a destination is refused.
         routed.Destination = null;
         executed = await a.CrisChannel.SendCommand( TestHelper.Monitor, routed ).ExecutedCommand.WaitAsync( _timeout );
         executed.Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( "needs a RouteName and a Destination" );
-
-        // Nothing has been executed by the listener.
         RecordingReceptionHandler.Callers.ShouldBeEmpty();
+    }
 
-        // The listener's own route is followed when the listener is the expected destination.
+    [Test]
+    public async Task a_route_to_a_host_that_is_not_authorized_is_refused_Async()
+    {
+        // The sender authorizes only C for "Routed" (with its target): the listener's own route is refused, C's route through it is kept.
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         senderConfiguration: c => c["Local:RouteHosts:Routed:Test/$C/#Dev"] = "IWhereRoutedCommand",
+                                                                         senderTypes: [.. _common, typeof( WhereRoutedHandler )],
+                                                                         listenerConfiguration: c =>
+                                                                         {
+                                                                             c["Parties:1:PartyName"] = "$C";
+                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                         },
+                                                                         listenerTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver )] );
+        var (a, b) = pair;
+        await using var c = await RunningApplication.CreateAsync( TestHelper.Monitor,
+                                                                  isSender: true,
+                                                                  c => c["FullName"] = "Test/$C",
+                                                                  null,
+                                                                  [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver )] );
+        string bName = b.ApplicationIdentityService.FullName;
+        string cName = c.ApplicationIdentityService.FullName;
+        cName.ShouldBe( "Test/$C/#Dev" );
+        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
+        a.ApplicationIdentityService.Description.Routes["Routed"].ShouldHaveSingleItem().Host.ShouldBe( cName );
+
+        var r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", cName ) );
+        r.ShouldBe( cName );
         r = await SendAsync( a, ( s, sp ) => s.SendAsync( TestHelper.Monitor, sp, a.ApplicationIdentityService, a.PocoDirectory.Create<IWhereRoutedCommand>(), "Routed", bName ) );
-        r.ShouldBe( bName );
+        r.ShouldBeAssignableTo<ICrisResultError>()!.Errors.Single().Text.ShouldContain( $"doesn't lead to '{bName}'" );
     }
 
     [Test]

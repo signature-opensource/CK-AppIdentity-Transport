@@ -158,14 +158,9 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
             await using var scope = _services.CreateAsyncScope();
             return await DoFetchAsync( monitor, scope.ServiceProvider, local, keys, routeName ).ConfigureAwait( false );
         }
-        if( !local.Description.Routes.TryGetValue( routeName, out var route ) )
+        if( local.Description.FindRoute( routeName, keys.FullName ) == null )
         {
-            monitor.Warn( $"'{local.FullName}' has no route '{routeName}': the key events of '{keys.FullName}' can't be fetched." );
-            return false;
-        }
-        if( route.Host != keys.FullName )
-        {
-            monitor.Warn( $"The route '{routeName}' of '{local.FullName}' leads to '{route.Host}', not to '{keys.FullName}': its key events can't be fetched along it." );
+            monitor.Warn( $"'{local.FullName}' has no route '{routeName}' to '{keys.FullName}': its key events can't be fetched." );
             return false;
         }
         var stated = keys.GetStatedCheckpoint( monitor );

@@ -31,7 +31,7 @@ sealed partial class TransportManager
     /// </remarks>
     internal string? GetEnlistRemoteUrl( ILocalParty local, string partyFullName )
     {
-        var u = local.Description.Routes.GetValueOrDefault( TransportFeatureDriver.EnlistmentRouteName )?.Target;
+        var u = TransportFeatureDriver.GetEnlistmentRoute( local )?.Target;
         if( u != null )
         {
             u = AppendParty( u, partyFullName, local.FullName );
@@ -71,7 +71,7 @@ sealed partial class TransportManager
         if( s != null && s.Expiration > SystemClock.UtcNow )
         {
             var u = EnlistmentUrlStatement.TryRead( s );
-            if( u != null && u == local.Description.Routes.GetValueOrDefault( TransportFeatureDriver.EnlistmentRouteName )?.Target )
+            if( u != null && u == TransportFeatureDriver.GetEnlistmentRoute( local )?.Target )
             {
                 return (null, s);
             }

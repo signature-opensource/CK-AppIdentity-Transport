@@ -151,7 +151,7 @@ public class KeyDirectoryTests
         {
             // The "Routed" route is hosted by the listener, not by C.
             (await CheckAsync( a, cName, "Routed", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
-            logs.ShouldContain( $"The route 'Routed' of '{a.ApplicationIdentityService.FullName}' leads to '{bName}', not to '{cName}': its key events can't be fetched along it." );
+            logs.ShouldContain( $"'{a.ApplicationIdentityService.FullName}' has no route 'Routed' to '{cName}': its key events can't be fetched." );
         }
     }
 
@@ -165,7 +165,7 @@ public class KeyDirectoryTests
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
             (await CheckAsync( a, cName, "NoSuchRoute", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
-            logs.ShouldContain( $"'{a.ApplicationIdentityService.FullName}' has no route 'NoSuchRoute': the key events of '{cName}' can't be fetched." );
+            logs.ShouldContain( $"'{a.ApplicationIdentityService.FullName}' has no route 'NoSuchRoute' to '{cName}': its key events can't be fetched." );
         }
         // A party that is not anchored is never looked up.
         (await CheckAsync( a, b.ApplicationIdentityService.FullName.Path, "Keys", Sign( b ) )).ShouldBe( SignatureVerdict.Refused );

@@ -19,6 +19,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     readonly MessageProtocolDirectoryService _protocolDirectory;
     readonly KeyManagementFeatureDriver _keyManagement;
     readonly IPeeringAuthority? _peeringAuthority;
+    readonly IRouteHostAuthority? _routeHostAuthority;
     TransportManager? _transportManager;
 
     /// <summary>
@@ -29,13 +30,16 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="transportTypes">The available type of transports.</param>
     /// <param name="protocolDirectory">The transport protocol directory.</param>
     /// <param name="peeringAuthority">The optional authority of the System of the local parties (see <see cref="IPeeringAuthority"/>).</param>
+    /// <param name="routeHostAuthority">The optional authority of the routes of the local parties (see <see cref="IRouteHostAuthority"/>).</param>
     public TransportFeatureDriver( ApplicationIdentityService s,
                                    KeyManagementFeatureDriver keyManagement,
                                    IEnumerable<ITransportTypeService> transportTypes,
                                    MessageProtocolDirectoryService protocolDirectory,
-                                   IPeeringAuthority? peeringAuthority = null )
+                                   IPeeringAuthority? peeringAuthority = null,
+                                   IRouteHostAuthority? routeHostAuthority = null )
         : base( s, isAllowedByDefault: true )
     {
+        _routeHostAuthority = routeHostAuthority;
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
         _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
         _protocolDirectory = protocolDirectory;
@@ -110,6 +114,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             SubscribeRevocations( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
+        success &= ReadConfiguredRouteHosts( context.Monitor, context.GetAllLocals() );
         // Local and External remote parties have no Transport.
         // Locals hold the Listeners.
         // Starts by creating the remotes.
@@ -142,6 +147,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             SubscribeRoutes( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
+        success &= ReadConfiguredRouteHosts( context.Monitor, context.GetAllLocals() );
         return Task.FromResult( success );
     }
 

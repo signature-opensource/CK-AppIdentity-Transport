@@ -11,12 +11,12 @@ namespace CK.AppIdentity.Cris.Tests;
 public class PartyDescriptionCodecTests
 {
     static PartyDescription Sample() => new PartyDescription( new Uri( "https://front.example.com" ),
-                                                              [new ClientApplicationDescription( "App", "/", ClientApplicationDescription.FactContext.FindOrCreate( "Enlistment|Other" ) ),
+                                                              [new ClientApplicationDescription( "App", "/", ClientApplicationFacts.Create( ("Enlistment", "app-identity/enlist"), ("Other", ""), ("Other", "x") ) ),
                                                                new ClientApplicationDescription( "Admin", "/admin" )],
                                                               ["Manager", "Operator"],
                                                               [new( "Region", "eu-west" )],
-                                                              [new( "Enlistment", new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", ["Test/$Front/#Dev", "Test/$Admin/#Dev"] ) ),
-                                                               new( "Other", PartyRoute.Hosted( "Some.Command", "Test/$Front/#Dev" ) )],
+                                                              [new( "Enlistment", [new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", ["Test/$Front/#Dev", "Test/$Admin/#Dev"] )] ),
+                                                               new( "Mail", [PartyRoute.Hosted( null, "Test/$Front/#Dev" ), new PartyRoute( null, ["Test/$Front/#Dev", "Test/$Mail2/#Dev"] )] )],
                                                               new PartyEncryptionKey( [1, 2, 3, 4], [5, 6, 7] ),
                                                               [new( "Enlistment", [CollectedItem.Own( "{\"Party\":\"X\"}", "Test/$Front/#Dev" ),
                                                                                    new CollectedItem( "{\"Party\":\"Y\"}", ["Test/$Worker/#Dev", "Test/$Front/#Dev"] )] )] );
@@ -53,7 +53,9 @@ public class PartyDescriptionCodecTests
         var c = w.BeginBlock();
         w.WriteString( "App" );
         w.WriteString( "/" );
+        w.WriteInt32( 1 );
         w.WriteString( "Enlistment" );
+        w.WriteString( "app-identity/enlist" );
         w.WriteString( "a newer field of the client" );
         w.EndBlock( c );
         w.WriteInt32( 1 );
@@ -71,7 +73,7 @@ public class PartyDescriptionCodecTests
         var description = PartyDescriptionCodec.Read( ref r, out var error );
         error.ShouldBeNull();
         description.ShouldBe( new PartyDescription( new Uri( "https://front.example.com" ),
-                                                    [new ClientApplicationDescription( "App", "/", ClientApplicationDescription.FactContext.FindOrCreate( "Enlistment" ) )],
+                                                    [new ClientApplicationDescription( "App", "/", ClientApplicationFacts.Create( ("Enlistment", "app-identity/enlist") ) )],
                                                     ["Manager"] ) );
         r.ReadByte().ShouldBe( (byte)42 );
     }

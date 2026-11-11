@@ -207,12 +207,11 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
     async Task<PartyApprovalStatus> ApprovePendingAsync( IActivityMonitor monitor, ILocalParty holder, string? caller, IApprovePendingPartyCommand command )
     {
         var statement = command.Statement!;
-        // Fail closed: only from the host of the route, about a pending approval of this holder.
-        holder.Description.Routes.TryGetValue( TransportFeatureDriver.EnlistmentRouteName, out var route );
-        if( caller == null || route == null || route.Host != caller )
+        // Fail closed: only from a host of the route (an approval page of the System), about a pending approval of this holder.
+        if( caller == null || holder.Description.FindRoute( TransportFeatureDriver.EnlistmentRouteName, caller ) == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
-                          $"'{holder.FullName}' refuses the approval of '{statement.PartyFullName}' from '{caller}': it is not the host of its \"Enlistment\" route ({route?.Host ?? "none"})." );
+                          $"'{holder.FullName}' refuses the approval of '{statement.PartyFullName}' from '{caller}': it is not a host of its \"Enlistment\" route." );
             return PartyApprovalStatus.Refused;
         }
         if( statement.HostFullName != caller || statement.HolderFullName != holder.FullName )

@@ -207,15 +207,16 @@ public sealed partial class CrisChannelFeature
         }
         if( routed.RouteName != null )
         {
-            if( !local.Description.Routes.TryGetValue( routed.RouteName, out var route ) )
+            if( !local.Description.Routes.TryGetValue( routed.RouteName, out var routes ) )
             {
                 error = $"'{local.FullName}' has no route '{routed.RouteName}'.";
                 return false;
             }
-            // Any party of the System can announce a route: it is followed only to the expected party.
-            if( route.Host != routed.Destination )
+            // A route is followed only to the expected party: the one of the name that leads to it.
+            var route = routes.FirstOrDefault( r => r.Host == routed.Destination );
+            if( route == null )
             {
-                error = $"the route '{routed.RouteName}' of '{local.FullName}' leads to '{route.Host}' (through '{route.NextHop ?? route.Host}'), not to '{routed.Destination}'.";
+                error = $"the route '{routed.RouteName}' of '{local.FullName}' doesn't lead to '{routed.Destination}' (its hosts: {string.Join( ", ", routes.Select( r => $"'{r.Host}'" ) )}).";
                 return false;
             }
             next = route.NextHop;

@@ -41,7 +41,7 @@ public class EnlistUrlTests
         {
             builder.AddClientApplication( new ClientApplicationDescription( "Admin",
                                                                             "/admin",
-                                                                            ClientApplicationDescription.FactContext.FindOrCreate( TransportFeatureDriver.EnlistmentFact ) ) );
+                                                                            ClientApplicationFacts.Create( (TransportFeatureDriver.EnlistmentFact, "app-identity/enlist") ) ) );
         }
 
         protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );

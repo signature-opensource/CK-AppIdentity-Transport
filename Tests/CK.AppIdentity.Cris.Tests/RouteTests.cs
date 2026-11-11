@@ -29,7 +29,7 @@ public class RouteTests
         {
             builder.AddClientApplication( new ClientApplicationDescription( "Admin",
                                                                             "/admin",
-                                                                            ClientApplicationDescription.FactContext.FindOrCreate( TransportFeatureDriver.EnlistmentFact ) ) );
+                                                                            ClientApplicationFacts.Create( (TransportFeatureDriver.EnlistmentFact, "app-identity/enlist") ) ) );
             builder.HostRoute( "Other", "Some.Command" );
         }
 
@@ -69,13 +69,13 @@ public class RouteTests
 
             // The listener hosts both routes: the "Enlistment" one is derived from its approval page.
             var l = listener.ApplicationIdentityService.Description;
-            l.Routes[TransportFeatureDriver.EnlistmentRouteName].ShouldBe( PartyRoute.Hosted( "https://admin.example.com/admin/app-identity/enlist", listenerName ) );
-            l.Routes["Other"].ShouldBe( PartyRoute.Hosted( "Some.Command", listenerName ) );
+            l.Routes[TransportFeatureDriver.EnlistmentRouteName].ShouldHaveSingleItem().ShouldBe( PartyRoute.Hosted( "https://admin.example.com/admin/app-identity/enlist", listenerName ) );
+            l.Routes["Other"].ShouldHaveSingleItem().ShouldBe( PartyRoute.Hosted( "Some.Command", listenerName ) );
 
             // The sender relays them: one hop more, the targets unchanged (it has no package for them).
             var s = await WaitForAsync( sender.ApplicationIdentityService, d => d.Routes.Count == 2 );
-            s.Routes[TransportFeatureDriver.EnlistmentRouteName].ShouldBe( new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", [senderName, listenerName] ) );
-            s.Routes["Other"].ShouldBe( new PartyRoute( "Some.Command", [senderName, listenerName] ) );
+            s.Routes[TransportFeatureDriver.EnlistmentRouteName].ShouldHaveSingleItem().ShouldBe( new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", [senderName, listenerName] ) );
+            s.Routes["Other"].ShouldHaveSingleItem().ShouldBe( new PartyRoute( "Some.Command", [senderName, listenerName] ) );
         }
         finally
         {
@@ -131,7 +131,7 @@ public class RouteTests
         string aName = a.ApplicationIdentityService.FullName;
         string bName = b.ApplicationIdentityService.FullName;
         var route = TransportFeatureDriver.EnlistmentRouteName;
-        (await WaitForAsync( b.ApplicationIdentityService, d => d.Routes.ContainsKey( route ) )).Routes[route].Host.ShouldBe( aName );
+        (await WaitForAsync( b.ApplicationIdentityService, d => d.Routes.ContainsKey( route ) )).Routes[route].ShouldHaveSingleItem().Host.ShouldBe( aName );
 
         // D trusts B on first contact, B doesn't trust D: B must approve D's key (RequiresLocalApproval).
         await using var d = await RunningApplication.CreateAsync( TestHelper.Monitor,

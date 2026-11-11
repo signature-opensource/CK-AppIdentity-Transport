@@ -89,7 +89,7 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
     // when the target changes. Null when it knows no approval page.
     AnchoredStatement? GetOrSign( IActivityLineEmitter logger, ILocalParty center )
     {
-        var target = center.Description.Routes.GetValueOrDefault( TransportFeatureDriver.EnlistmentRouteName )?.Target;
+        var target = TransportFeatureDriver.GetEnlistmentRoute( center )?.Target;
         if( target == null )
         {
             _urls.TryRemove( center, out _ );
