@@ -228,6 +228,54 @@ public class TransportRuntimeTests
             .ShouldBe( 1, "One answer for the 10 requests received while it was waiting." );
     }
 
+    [TestCase( false )]
+    [TestCase( true )]
+    [CancelAfter( 60000 )]
+    public async Task a_revoked_remote_is_cut_Async( bool dynamicTenant, CancellationToken token )
+    {
+        // TR-7: the tenant domains added at runtime didn't subscribe to their revocations: a revoked remote kept its
+        // connection.
+        var name = dynamicTenant ? "TR7D" : "TR7S";
+        // A tenant domain is named after its domain.
+        var domain = dynamicTenant ? "TR7Acme" : "Test";
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = $"Test/${name}L";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:AlwaysListening"] = "True";
+            if( !dynamicTenant ) c["Parties:0:PartyName"] = $"${name}S";
+        }, ConfigureServices, token: token );
+        ILocalParty local = listener;
+        if( dynamicTenant )
+        {
+            local = (await listener.AddTenantDomainAsync( TestHelper.Monitor, c =>
+            {
+                c["FullName"] = $"{domain}/${domain}";
+                c["Defaults:AutoTrustKey"] = "Once";
+                c["Parties:0:PartyName"] = $"${name}S";
+            } )).ShouldNotBeNull();
+        }
+        await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = $"{domain}/${name}S";
+            c["Defaults:AutoTrustKey"] = "Once";
+            c["Parties:0:PartyName"] = dynamicTenant ? $"${domain}" : $"${name}L";
+            c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
+        }, ConfigureServices, token: token );
+
+        var remote = local.Remotes.Single();
+        var transport = remote.GetRequiredFeature<TransportFeature>();
+        await transport.ReadyTask.WaitAsync( token );
+        var connection = transport.CurrentTransport.ShouldNotBeNull();
+        var pinned = remote.GetRequiredFeature<IRemoteKeys>().TrustedEvent.ShouldNotBeNull();
+
+        var fullName = remote.FullName.Path;
+        await local.GetRequiredFeature<ILocalKeys>()
+                   .SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( fullName, pinned.GetIdentity( fullName ).Span, DateTime.UtcNow, nameBanned: false )] );
+
+        await WaitForAsync( () => connection.Lifetime.IsCancellationRequested, "the connection of the revoked remote to be cut", token, 10 );
+    }
+
     [Test, CancelAfter( 60000 )]
     public async Task channels_registered_out_of_the_protocol_name_order_connect_Async( CancellationToken token )
     {

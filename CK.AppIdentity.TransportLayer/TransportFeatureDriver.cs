@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using CK.PerfectEvent;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -85,11 +86,24 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         return OnDescriptionChangedAsync( monitor, local );
     }
 
+    // The revocation handler of each local party (they are subscribed and unsubscribed from the ApplicationIdentity agent).
+    readonly Dictionary<ILocalParty, AsyncSequentialEventHandler<IReadOnlyList<RevocationEntry>>> _revocationHandlers = new();
+
     void SubscribeRevocations( ILocalParty local )
     {
         if( local.GetFeature<ILocalKeys>() is { } keys )
         {
-            keys.RevocationsChanged.Async += ( m, entries, cancel ) => OnRevocationsChangedAsync( m, local );
+            AsyncSequentialEventHandler<IReadOnlyList<RevocationEntry>> h = ( m, entries, cancel ) => OnRevocationsChangedAsync( m, local );
+            _revocationHandlers.Add( local, h );
+            keys.RevocationsChanged.Async += h;
+        }
+    }
+
+    void UnsubscribeRevocations( ILocalParty local )
+    {
+        if( _revocationHandlers.Remove( local, out var h ) && local.GetFeature<ILocalKeys>() is { } keys )
+        {
+            keys.RevocationsChanged.Async -= h;
         }
     }
 
@@ -145,6 +159,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         {
             success &= EnsureAlwaysListeningListeners( context, local, releaseOnError.Add );
             SubscribeRoutes( local );
+            SubscribeRevocations( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
         success &= ReadConfiguredRouteHosts( context.Monitor, context.GetAllLocals() );
@@ -182,6 +197,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         if( party is ILocalParty local )
         {
             UnsubscribeRoutes( local );
+            UnsubscribeRevocations( local );
             var listeners = local.GetFeature<TransportListener[]>();
             if( listeners != null ) await ReleaseListenersAsync( context.Monitor, listeners );
         }
@@ -196,6 +212,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
             UnsubscribeRoutes( local );
+            UnsubscribeRevocations( local );
         }
         foreach( var r in context.GetAllRemotes() )
         {
