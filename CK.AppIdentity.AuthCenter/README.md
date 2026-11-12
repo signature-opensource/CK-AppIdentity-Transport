@@ -165,7 +165,7 @@ its level, `Critical` included, across any number of parties of the System:
   Authentication Center verifies it without the command: for its own routed commands, or asked by its remote that is
   the destination (`IVerifyCallerProofCommand`: the asking party must be the destination). A seal is used once (its
   nonce is kept for its 5 minutes lifetime, in a journal of the local store of the Authentication Center flushed to the
-  disk before the seal is accepted: a restart forgets nothing). A routed proof without a valid seal, or routed from another origin than the
+  disk before the seal is accepted: a restart forgets nothing; the seal checks are serialized on this flush). A routed proof without a valid seal, or routed from another origin than the
   session party, is ignored (a `SecurityCritical` warning): the hops can't alter the command, re-target it, nor use the
   proof for another command.
 - **Encrypted for its destination** when its key is known (the origin's `IPartyEncryptionKeyDirectory`): the proof and

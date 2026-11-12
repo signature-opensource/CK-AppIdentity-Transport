@@ -148,7 +148,6 @@ public static class AuthCenterProofStatement
     /// <summary>
     /// Gets the data signed by a statement.
     /// </summary>
-
     /// <param name="destination">The full name of the asking party (the destination of the routed command).</param>
     /// <param name="nonce">The nonce chosen by the asking party.</param>
     /// <param name="token">The user's token.</param>

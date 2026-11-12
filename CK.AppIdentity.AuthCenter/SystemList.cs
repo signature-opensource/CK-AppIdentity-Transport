@@ -205,6 +205,5 @@ public sealed class SystemList
     static long Remaining( BinaryReader r ) => r.BaseStream.Length - r.BaseStream.Position;
 
     /// <inheritdoc />
-    public override string ToString()
- => $"System list #{Seq} ({Entries.Count} revocations, {RouteHosts.Count} route hosts, {Time:O})";
+    public override string ToString() => $"System list #{Seq} ({Entries.Count} revocations, {RouteHosts.Count} route hosts, {Time:O})";
 }

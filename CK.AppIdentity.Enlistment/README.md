@@ -57,7 +57,6 @@ verifies it (otherwise `Refused`). The `Routes` of the statement are authorized 
 holder approved the key (`IPartyApprovalCountersignature.ApprovedAsync`), not before. An application that has an
 Authentication Center (an `ICallerProofVerifier`) must have this countersignature: without it, every approval is refused
 (an error), on the host and on the holder. For a "Both" item (the approved party waits on the holder and must approve it too), it
-
 also asks a pin grant of the holder for the approved party: it travels down with the approval
 (`IApprovePendingPartyCommand.WaitingPartyGrant`) and the holder hands it over to the approved party (see the authority of
 the System in [CK.AppIdentity.TransportLayer](../CK.AppIdentity.TransportLayer/README.md)).

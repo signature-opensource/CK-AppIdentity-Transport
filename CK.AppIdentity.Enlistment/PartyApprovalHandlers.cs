@@ -238,7 +238,6 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
         var statement = command.Statement!;
         if( !CheckCountersignature( monitor ) ) return PartyApprovalStatus.Refused;
         // Fail closed: only from a host of the route (an approval page of the System), about a pending approval of this holder.
-
         if( caller == null || holder.Description.FindRoute( TransportFeatureDriver.EnlistmentRouteName, caller ) == null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical,

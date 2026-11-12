@@ -48,7 +48,6 @@ public interface IPartyApprovalCountersignature : ISingletonAutoService
 
     /// <summary>
     /// On the holder of the pending approval: checks the countersignature of the statement. It is required when the holder
-
     /// has an Authentication Center (fail closed), ignored otherwise.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>

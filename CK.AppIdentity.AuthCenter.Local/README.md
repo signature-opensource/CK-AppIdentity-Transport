@@ -208,9 +208,9 @@ the ceremonies of [CK.AppIdentity.AuthCenter.Passkey](../CK.AppIdentity.AuthCent
   a wrong correlation, a failed provider), the item is gone.
 - **A full store refuses the start:** "Too many logins in progress. Please retry later." The logins are started
   anonymously: the capacity is what bounds the memory.
-- **No timer:** the expired items are purged when an item is added (`TryAdd` calls `HasRoom`, that scans the store),
-  and `TryTake` drops an expired item it finds. An abandoned login stays in memory after its expiry, until the next
-  start: at most the capacity of the store.
+- **No timer:** the expired items are purged when an item is added to a full store (`TryAdd` calls `HasRoom`, that
+  scans the store only when it is full, at most once per second), and `TryTake` drops an expired item it finds. An
+  abandoned login stays in memory after its expiry until the store is full: at most the capacity of the store.
 - **A restart cancels the logins in progress:** nothing is persisted.
 
 **What remains after a login** is the session itself, if one is opened (see "Sessions" above): a file of the
