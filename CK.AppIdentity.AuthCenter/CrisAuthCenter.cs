@@ -29,6 +29,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     readonly IParty? _authCenter;
     readonly string _fullName;
     readonly AnchoredKeyDirectory? _directory;
+    readonly KeyEventsRefreshGate _refreshGate = new KeyEventsRefreshGate();
 
     internal CrisAuthCenter( ILocalParty owner, IParty authCenter )
     {
@@ -147,8 +148,11 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         return keys.Check( logger, purpose, data, signature );
     }
 
-    // The key events of the AuthCenter, when a signature has an unknown issuer: on the channel, or along its route.
-    async ValueTask<bool> RefreshKeysAsync( IActivityLineEmitter logger )
+    // The key events of the AuthCenter, when a signature has an unknown issuer: on the channel, or along its route. Anyone
+    // can send such a signature: concurrent callers share one request, and one request at most is started per second.
+    ValueTask<bool> RefreshKeysAsync( IActivityLineEmitter logger ) => _refreshGate.RunAsync( () => DoRefreshKeysAsync( logger ), () => UtcNow );
+
+    async ValueTask<bool> DoRefreshKeysAsync( IActivityLineEmitter logger )
     {
         if( _authCenter?.GetFeature<TransportFeature>() is TransportFeature transport )
         {
@@ -231,7 +235,9 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// <summary>
     /// Checks a signature of the Authentication Center for a purpose (a statement it signed: a key, a revocation list, a
     /// countersignature...), with the safety net of a remote or anchored one: when its signer is unknown here, its key
-    /// events are obtained (on the channel, or along its route) and the signature is checked again, once.
+    /// events are obtained (on the channel, or along its route) and the signature is checked again, once. Concurrent callers
+    /// share one request, and no request starts within a second of the end of the previous one: anyone can send a
+    /// signature of an unknown issuer.
     /// </summary>
     /// <param name="logger">Receives the reason of a refusal.</param>
     /// <param name="purpose">The purpose of the signature.</param>

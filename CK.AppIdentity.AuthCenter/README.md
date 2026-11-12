@@ -139,7 +139,9 @@ The tokens are signed by the Local side (`LocalAuthCenter.CreateToken`).
 Center. Their audience is the Authentication Center party. After a key rotation, the Authentication Center pushes its new
 key events to its connected remotes (the transport does it, see CK.AppIdentity.TransportLayer). A remote that missed them
 uses `ReadTokenAsync`: when a token is refused because its issuer is not known (`SignatureVerdict.UnknownIssuer`), the key
-events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once.
+events are requested (at most `CrisAuthCenter.KeyEventsTimeout`, 2 seconds) and the token is read again, once. Anyone
+can send a signature of an unknown issuer (a token, a System list): the concurrent requests share one, and none starts
+within a second of the end of the previous one (`CheckWithKeyEventsAsync` follows the same rule).
 
 ## The user's proof
 
