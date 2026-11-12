@@ -117,9 +117,9 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   must then be extended like any pin (a fork is a `Duplicity`, an older head a `Rollback`: refused, the pin stays).
   `AutoTrustKey`, `AdoptSelfAsserted` and `SetTrustedIdentity` never apply to it (an approval doesn't either: the anchor
   is updated by whoever configures it). A refused verification is `AnchorRefusal` (`AnchorMismatch`, `AnchorTooOld`,
-  `AnchorUnavailable`), kept in `IRemoteKeys.Refusal` only when the presented events are a valid log (each event signed
-  and linked): bytes that don't verify are only `Invalid`. Events that verify from the anchor clear it. A verifier that holds nothing yet accepts any event from the
-  anchor on, the anchored one included: after a key leaked, move the anchors past it.
+  `AnchorUnavailable`), kept in `IRemoteKeys.Refusal` only when the presented events are a valid log (each of its last
+  `MaxEventTail` events signed and linked): bytes that don't verify are only `Invalid`. Events that verify from the
+  anchor clear it. A verifier that holds nothing yet accepts any event from the anchor on, the anchored one included: after a key leaked, move the anchors past it.
 - **The keys of any anchored party** ([`IAnchoredKeys`](IAnchoredKeys.cs)): `ILocalKeys.FindAnchoredKeys( fullName )`
   gives the `IRemoteKeys` of an anchored remote, otherwise the entry of the anchored party in the key directory of the
   local party: a party with no channel to it can still verify what it signs. The entry is kept in memory only (after a
@@ -145,8 +145,7 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   verify from its anchor (anchored) or its pin (pinned), or are a valid log (neither). Anything else is only `Invalid`:
   a non-inception event states its identity, so anyone can build a valid log that names a revoked one with a key pair
   of its own. The same holds for an entry of the key directory (from its anchor or its head). A revoked log can be
-  neither trusted on first use nor approved. What
-  is presented changes no pin: a pin is cleared when its own identity is revoked (`IRemoteKeys.IsRevoked`, the transport
+  neither trusted on first use nor approved. What is presented changes no pin: a pin is cleared when its own identity is revoked (`IRemoteKeys.IsRevoked`, the transport
   then cuts its connection). A party that incepts again starts another log: it is not revoked.
 - **Replay protection.** `CheckNonce` checks that a handshake nonce has a UTC creation time within `MaxClockOffset` and
   has never been seen from this remote. The cache is per remote and per local party (`-Nonces/{local full name}/Nonce.cache`),
