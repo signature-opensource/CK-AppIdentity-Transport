@@ -306,8 +306,11 @@ public class TransportRuntimeTests
 
         var listenerRemote = listener.AllRemotes.Single();
         var senderRemote = sender.AllRemotes.Single();
-        listenerRemote.GetRequiredFeature<TransportFeature>().RegisteredProtocols.Select( p => p.Name )
-                      .ShouldBe( ["Counting", "Alpha"], "Registered in this order." );
+        // The premise: the registration order (the order of a HashSet and of the drivers' resolution, not something this
+        // test controls) is not the order of the protocol map. If it changes, the test can't exercise the case.
+        var registered = listenerRemote.GetRequiredFeature<TransportFeature>().RegisteredProtocols.Select( p => p.Name ).ToArray();
+        Assume.That( registered, Is.Not.EqualTo( registered.Order( MessageProtocolMap.NameComparer ).ToArray() ),
+                     "The channels must be registered out of the protocol name order." );
         listenerRemote.GetRequiredFeature<TransportFeature>().BestRegisteredProtocols.Select( p => p.Name )
                       .ShouldBe( ["Alpha", "Counting"], "The channels are in the order of the protocol map." );
 

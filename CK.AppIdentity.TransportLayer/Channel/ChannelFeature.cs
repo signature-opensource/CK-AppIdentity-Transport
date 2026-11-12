@@ -114,6 +114,9 @@ public abstract class ChannelFeature
     internal void OnControllerClosed( IActivityMonitor monitor )
     {
         SetCurrentHandler( monitor, null );
+        // Their message factories cache a pooled buffer: it is returned (disposing a factory is thread safe, a handler
+        // still used meanwhile only allocates a new buffer).
+        for( var h = _firstHandler; h != null; h = h._nextHandler ) h.OnClosed();
         _firstHandler = null;
     }
 

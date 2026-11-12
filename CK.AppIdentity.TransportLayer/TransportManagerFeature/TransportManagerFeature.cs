@@ -358,9 +358,9 @@ public sealed class TransportManagerFeature
                 monitor.Warn( ActivityMonitor.Tags.ToBeInvestigated,
                               $"Transport available for an existing PeeringIssue with no available Remote." );
             }
-            issue.SetNoneIssueKind();
             lock( _peeringIssues )
             {
+                issue.SetNoneIssueKind();
                 _peeringIssues.Remove( issue.FullName );
                 _exposedClonedIssues = null;
             }
@@ -392,9 +392,10 @@ public sealed class TransportManagerFeature
         return Task.CompletedTask;
     }
 
-    // The clones are published under the _peeringIssues lock (GetClonedPeeringIssues): an issue that is changed in place
-    // is changed, and the clones are invalidated, under this lock too. Otherwise a reader that cloned the issue before
-    // the change can publish its stale clones after the invalidation.
+    // The clones are published under the _peeringIssues lock (GetClonedPeeringIssues): an issue of _peeringIssues that is
+    // changed in place is changed, and the clones are invalidated, under this lock too. Otherwise a reader that cloned the
+    // issue before the change can publish its stale clones after the invalidation. An issue removed under the lock (the
+    // trim of the unknown remotes) can be changed after: no clone of it is published any more.
     void OnRemoteTornDown( PeeringIssue issue )
     {
         // The issue either disappears or survives with a null Remote: either way

@@ -86,7 +86,16 @@ public partial class TransportFeatureDriver
 
     void SubscribeRoutes( ILocalParty local ) => local.RemoteDescriptionChanged.Async += OnRemoteDescriptionChangedAsync;
 
-    void UnsubscribeRoutes( ILocalParty local ) => local.RemoteDescriptionChanged.Async -= OnRemoteDescriptionChangedAsync;
+    // Called when a local party is destroyed (a removed tenant domain) or at shutdown: its route warnings are forgotten.
+    void UnsubscribeRoutes( ILocalParty local )
+    {
+        local.RemoteDescriptionChanged.Async -= OnRemoteDescriptionChangedAsync;
+        string name = local.FullName;
+        foreach( var key in _routeWarnings.Keys )
+        {
+            if( key.Local == name ) _routeWarnings.TryRemove( key, out _ );
+        }
+    }
 
     // A remote announced another description: its routes may have changed.
     Task OnRemoteDescriptionChangedAsync( IActivityMonitor monitor, IRemoteParty remote, CancellationToken cancel )

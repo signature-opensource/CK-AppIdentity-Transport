@@ -43,6 +43,9 @@ public abstract class PeerProtocolHandler
         _nextHandler = createParameters._nextHandler;
     }
 
+    // Called when the controller of this handler is closed: the handler is dropped.
+    internal void OnClosed() => _messageFactory.Dispose();
+
     /// <summary>
     /// Gets the handled protocol.
     /// </summary>

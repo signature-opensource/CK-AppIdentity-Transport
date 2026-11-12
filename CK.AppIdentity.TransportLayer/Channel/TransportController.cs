@@ -341,9 +341,10 @@ sealed partial class TransportController
             {
                 // Even if the send is canceled in "0 Protocol", always consume the message:
                 // the "0 Protocol" must not interact with different transports.
-                await transport.SendAsync( 0, m ).ConfigureAwait( false );
-                // Sent (or lost with its transport): the next key events request of the peer can be answered.
+                // Dequeued: the next key events request of the peer can be answered (at most this answer and the next
+                // one exist at once). Cleared before the send: a request received while it is sent is not dropped.
                 Interlocked.CompareExchange( ref transportController._pendingKeyEventsAnswer, null, m );
+                await transport.SendAsync( 0, m ).ConfigureAwait( false );
             }
             else
             {
