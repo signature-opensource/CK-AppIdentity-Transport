@@ -212,18 +212,16 @@ public class PartyDescriptionCodecTests
             var r = new FastByteReader( sequence.GetReadOnlySequence() );
             CrisChannelFeature.Protocol.ReadAccepted( ref r, out _, out _ ).ShouldBeNull();
         }
-        // A huge count: nothing is allocated from it, the end of the message is reached.
+        // A huge count: nothing is allocated from it, the end of the message is reached: the advertisement is invalid (not
+        // an exception, that the receiver would log as an error to investigate at each message).
         using( var sequence = new MutableSequence<byte>() )
         {
             var w = new FastByteWriter( sequence );
             w.WriteInt32( int.MaxValue );
             w.WriteString( "A" );
             w.Commit();
-            Should.Throw<System.IO.InvalidDataException>( () =>
-            {
-                var r = new FastByteReader( sequence.GetReadOnlySequence() );
-                CrisChannelFeature.Protocol.ReadAccepted( ref r, out _, out _ );
-            } );
+            var r = new FastByteReader( sequence.GetReadOnlySequence() );
+            CrisChannelFeature.Protocol.ReadAccepted( ref r, out _, out _ ).ShouldBeNull();
         }
         // An invalid description: the names are read, the description is null with its error.
         using( var sequence = new MutableSequence<byte>() )

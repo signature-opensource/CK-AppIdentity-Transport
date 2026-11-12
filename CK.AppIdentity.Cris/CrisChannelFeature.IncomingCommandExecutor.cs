@@ -103,7 +103,8 @@ public sealed partial class CrisChannelFeature
             {
                 if( e.CrisPocoModel.Kind == CrisPocoKind.CallerOnlyEvent ) handler.SendFinalEvent( monitor, job.IssuerToken.Key, e );
             }
-            handler.SendExecuted( monitor, job.IssuerToken.Key, result.Result, result.ValidationMessages );
+            // A routed command answers its result only (the origin doesn't read the validation messages).
+            handler.SendExecuted( monitor, job.IssuerToken.Key, result.Result, data._route != null ? default : result.ValidationMessages );
             return Task.CompletedTask;
         }
     }

@@ -135,7 +135,7 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
 - **The answer** is the result only (`Task<object?>`): the validation messages of the destination don't come back (an
   error result carries its errors).
 - **Time:** the `PartyRoutedCommandSender` waits at most its `timeout` (by default `ChannelCrisRemoteDispatcher.Timeout`)
-  for the first hop and the answer: never wrap it in a `WaitAsync`, it would go on with the caller's monitor and services.
+  for the first hop and the answer (the seal's lookups have their own timeouts): never wrap it in a `WaitAsync`, it would go on with the caller's monitor and services.
   Each party gives the next one less time than it has (`IPartyRoutedCommand.TimeBudget`, half a second less): a hop
   forwards only when time is left, at most the `ChannelCrisRemoteDispatcher.Timeout`, so that its error (an unavailable
   next hop, no answer) reaches the origin before the origin gives up.
@@ -164,9 +164,10 @@ then the head it holds), applies the events (`IAnchoredKeys.ApplyEvents`) and ch
 
 - **Checked, never believed:** the events are verified from the anchor (the full name is in the digest of each event): a
   hop can withhold them, not forge them. The route must lead to the anchored party (its host is its full name).
-- **On demand:** a fetch waits at most `FetchTimeout` (2 seconds); concurrent fetches of the same party share one
-  request, and a party is fetched at most once every `MinFetchInterval` (5 seconds), so signatures with an unknown
-  issuer can't make a party flood the route.
+- **On demand:** a fetch waits at most `FetchTimeout` (2 seconds) for the answer (when a seal applies to the query,
+  depending on the envelope of the caller's services, it is sealed first: the seal's lookups have their own timeouts);
+  concurrent fetches of the same party share one request, and a party is fetched at most once every `MinFetchInterval`
+  (5 seconds), so signatures with an unknown issuer can't make a party flood the route.
 - **The answer** ([`KeyEventsHandler`](AnchoredKeyDirectory.cs)): the destination sends its own events from `FromSeq`, up to
   the window of 32 events (its last events when `FromSeq` is out of the window). Key events are public: any party of the
   System can ask: it needs no identity (with or without a reception handler).

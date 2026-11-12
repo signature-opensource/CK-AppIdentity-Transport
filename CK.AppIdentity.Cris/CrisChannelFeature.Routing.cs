@@ -303,7 +303,8 @@ public sealed partial class CrisChannelFeature
             };
             var executed = await executing.ExecutedCommand.ConfigureAwait( false );
             foreach( var e in executed.Events ) handler.SendFinalEvent( monitor, token.Key, e );
-            handler.SendExecuted( monitor, token.Key, executed.Result, executed.ValidationMessages );
+            // A routed command answers its result only.
+            handler.SendExecuted( monitor, token.Key, executed.Result, default );
         }
         catch( Exception ex )
         {

@@ -283,9 +283,9 @@ public sealed partial class CrisChannelFeature
             _feature.OnAccepted( monitor, names, description );
         }
 
-        // Reads the content of a DAccepted message: null when the names can't be read. The count comes from the remote:
-        // nothing is allocated from it (each name is read from the bytes that remain). An invalid description is null,
-        // with its error.
+        // Reads the content of a DAccepted message: null when the names can't be read (a negative count, or more names
+        // announced than the message holds). The count comes from the remote: nothing is allocated from it (each name is
+        // read from the bytes that remain). An invalid description is null, with its error.
         internal static HashSet<string>? ReadAccepted( ref FastByteReader r, out PartyDescription? description, out string? error )
         {
             description = null;
@@ -293,7 +293,14 @@ public sealed partial class CrisChannelFeature
             int count = r.ReadInt32();
             if( count < 0 ) return null;
             var names = new HashSet<string>();
-            for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
+            try
+            {
+                for( int i = 0; i < count; ++i ) names.Add( r.ReadString() );
+            }
+            catch( System.IO.InvalidDataException )
+            {
+                return null;
+            }
             description = PartyDescriptionCodec.Read( ref r, out error );
             return names;
         }

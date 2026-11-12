@@ -23,7 +23,9 @@ namespace CK.AppIdentity.Cris;
 public sealed class AnchoredKeyDirectory : ISingletonAutoService
 {
     /// <summary>
-    /// The maximal time a fetch waits for the events: 2 seconds.
+    /// The maximal time a fetch waits for the events: 2 seconds. When a seal applies to the query (an
+    /// <see cref="ICrisRoutedCommandSeal"/>, depending on the envelope of the caller's services), it is sealed first: the
+    /// seal's own lookups (an encryption key) are bounded by their own timeouts, not by this one.
     /// </summary>
     public static readonly TimeSpan FetchTimeout = TimeSpan.FromSeconds( 2 );
 
@@ -59,8 +61,8 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
 
     /// <summary>
     /// Checks a signature of an anchored party: when its issuer is unknown (nothing is held yet, or the party rotated
-    /// since), its events are fetched along the route (at most <see cref="FetchTimeout"/>) and the signature is checked
-    /// again, once.
+    /// since), its events are fetched along the route (the answer is awaited at most <see cref="FetchTimeout"/>, after the
+    /// seal when there is one) and the signature is checked again, once.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">
