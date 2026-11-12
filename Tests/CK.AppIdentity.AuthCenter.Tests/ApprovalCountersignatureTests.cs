@@ -126,6 +126,7 @@ public class ApprovalCountersignatureTests
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: [.. _types,
                                                                                  typeof( IAuthorizeRouteHostCommand ),
                                                                                  typeof( IRemoveRouteHostCommand ),
+                                                                                 typeof( IRevokePartyCommand ),
                                                                                  typeof( ISystemListCommand ),
                                                                                  typeof( IGetSystemListQCommand ),
                                                                                  typeof( SystemListHandler )] );
@@ -154,6 +155,12 @@ public class ApprovalCountersignatureTests
         // The "AuthCenter" route can't be authorized: it is implicit.
         var implicitOne = p.Center.PocoDirectory.Create<IAuthorizeRouteHostCommand>( c => { c.RouteName = AuthCenterFeature.RouteName; c.HostFullName = "Test/$Mail1/#Dev"; } );
         (await handler.HandleAsync( TestHelper.Monitor, implicitOne, new CurrentLocalParty( center ) )).ShouldBeNull();
+        // A banned name can't be authorized: the handler says so (null), it doesn't report the unchanged list.
+        var revoke = p.Center.PocoDirectory.Create<IRevokePartyCommand>( c => { c.PartyFullName = "Test/$Banned/#Dev"; c.Identity = new byte[KeyEvent.HashSize]; c.Identity[0] = 7; } );
+        (await handler.HandleAsync( TestHelper.Monitor, revoke, new CurrentLocalParty( center ) )).ShouldNotBeNull();
+        var banned = p.Center.PocoDirectory.Create<IAuthorizeRouteHostCommand>( c => { c.RouteName = "MailSender"; c.HostFullName = "Test/$Banned/#Dev"; } );
+        (await handler.HandleAsync( TestHelper.Monitor, banned, new CurrentLocalParty( center ) )).ShouldBeNull();
+        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Banned/#Dev" ).ShouldBeNull();
 
         // An approval authorizes the routes the operator approved with it, when the center countersigns it.
         int operatorId = p.Browser.Current.Actor.ActorId;

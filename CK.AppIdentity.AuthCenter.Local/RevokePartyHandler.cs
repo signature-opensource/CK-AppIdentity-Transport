@@ -143,6 +143,12 @@ public sealed class RevokePartyHandler : ISingletonAutoService
             h.Add( new RouteHost( command.RouteName, command.HostFullName, target ) );
             return (entries, h);
         } ).ConfigureAwait( false );
+        // A banned name is dropped from every new list: not authorized.
+        if( updated == null || !updated.RouteHosts.Any( h => h.RouteName == command.RouteName && h.Host == command.HostFullName ) )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.HostFullName}' can't host the route '{command.RouteName}' of the AuthCenter '{local}': its name is banned." );
+            return null;
+        }
         monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.HostFullName}' is authorized to host the route '{command.RouteName}' by the AuthCenter '{local}': {updated}." );
         return updated?.Seq;
     }

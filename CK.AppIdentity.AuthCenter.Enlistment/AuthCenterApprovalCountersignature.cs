@@ -210,8 +210,18 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             return;
         }
         var updated = await list.AuthorizeAsync( monitor, statement.PartyFullName, statement.Routes ).ConfigureAwait( false );
-        monitor.Info( ActivityMonitor.Tags.SecurityCritical,
-                      $"'{statement.PartyFullName}' is authorized to host the route(s) '{string.Join( "', '", statement.Routes )}' with its approval, by actor #{statement.OperatorActorId}: {updated}." );
+        // A banned name is dropped from every new list: not authorized.
+        var authorized = statement.Routes.Where( r => updated != null && updated.RouteHosts.Any( h => h.RouteName == r && h.Host == statement.PartyFullName ) ).ToList();
+        if( authorized.Count < statement.Routes.Count )
+        {
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
+                          $"'{statement.PartyFullName}' is not authorized to host the route(s) '{string.Join( "', '", statement.Routes.Except( authorized ) )}' (a banned name, or an invalid route name)." );
+        }
+        if( authorized.Count > 0 )
+        {
+            monitor.Info( ActivityMonitor.Tags.SecurityCritical,
+                          $"'{statement.PartyFullName}' is authorized to host the route(s) '{string.Join( "', '", authorized )}' with its approval, by actor #{statement.OperatorActorId}: {updated}." );
+        }
     }
 
     // The Authentication Center signs the same data as the host, for the same lifetime, from the time of the statement or
