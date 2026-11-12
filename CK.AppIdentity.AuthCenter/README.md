@@ -264,7 +264,7 @@ transport: `AuthCenterSystemList.RouteHosts`). A name can have several hosts.
   operator cuts its remotes).
 - **The freshness:** a hop can withhold a newer list. Besides the relay by every channel, a party that is not the
   Authentication Center asks it its current list every hour (`IGetSystemListQCommand`, on the channel or along the
-  `"AuthCenter"` route): to withhold, a hop must also block that, and an unreachable center is visible. A list whose
+  `"AuthCenter"` route), every 30 seconds while it can't be obtained (`RetryPeriod`): to withhold, a hop must also block that, and an unreachable center is visible. A list whose
   signature expired (the center signs it again before) raises a `SecurityCritical` alarm: nothing newer reached the
   party (`AuthCenterSystemList.CheckStaleness`). A token that would state the sequence of the list is not done.
 

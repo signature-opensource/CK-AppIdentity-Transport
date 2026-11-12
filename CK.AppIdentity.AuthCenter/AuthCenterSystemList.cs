@@ -28,7 +28,8 @@ namespace CK.AppIdentity.AuthCenter;
 /// </para>
 /// <para>
 /// The freshness: a party that is not the Authentication Center also asks it its current list every
-/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetSystemListQCommand"/>), and raises a
+/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetSystemListQCommand"/>), every
+/// <see cref="RetryPeriod"/> while it can't be obtained, and raises a
 /// <see cref="ActivityMonitor.Tags.SecurityCritical"/> alarm when the signature of the list it holds expired (the
 /// Authentication Center signs it again before: an expired one means that nothing newer reached this party).
 /// </para>
@@ -44,6 +45,12 @@ public sealed class AuthCenterSystemList
     /// The period of the pull of the current list from the Authentication Center: 1 hour.
     /// </summary>
     public static readonly TimeSpan PullPeriod = TimeSpan.FromHours( 1 );
+
+    /// <summary>
+    /// The period of the pull while the current list can't be obtained from the Authentication Center (no answer, or an
+    /// answer that doesn't verify): 30 seconds.
+    /// </summary>
+    public static readonly TimeSpan RetryPeriod = TimeSpan.FromSeconds( 30 );
 
     readonly CrisAuthCenter _center;
     readonly SemaphoreSlim _adoptLock;
@@ -275,24 +282,7 @@ public sealed class AuthCenterSystemList
                 var m = new ActivityMonitor( $"The System list of the AuthCenter of '{Local}'." );
                 try
                 {
-                    if( Interlocked.Exchange( ref _stored, null ) is { } stored )
-                    {
-                        await TryAdoptAsync( m, stored, null ).ConfigureAwait( false );
-                    }
-                    if( _pull != null )
-                    {
-                        await PullAsync( m ).ConfigureAwait( false );
-                        CheckStaleness( m, _center.UtcNow );
-                    }
-                    else
-                    {
-                        // The System list is signed again before its signature expires.
-                        await RenewIfNeededAsync( m, _center.UtcNow ).ConfigureAwait( false );
-                    }
-                }
-                catch( Exception ex )
-                {
-                    m.Error( _pull != null ? "While pulling the System list." : "While renewing the System list.", ex );
+                    await PullOrRenewAsync( m ).ConfigureAwait( false );
                 }
                 finally
                 {
@@ -304,14 +294,50 @@ public sealed class AuthCenterSystemList
         return Task.CompletedTask;
     }
 
+    // The work of the heartbeat. The next pull is scheduled from its outcome: a pull that failed is retried after
+    // RetryPeriod, not after PullPeriod.
+    internal async Task PullOrRenewAsync( IActivityMonitor m )
+    {
+        try
+        {
+            if( Interlocked.Exchange( ref _stored, null ) is { } stored )
+            {
+                await TryAdoptAsync( m, stored, null ).ConfigureAwait( false );
+            }
+            if( _pull != null )
+            {
+                bool obtained = await DoPullAsync( m ).ConfigureAwait( false ) != null;
+                _nextPull = _center.UtcNow + (obtained ? PullPeriod : RetryPeriod);
+                CheckStaleness( m, _center.UtcNow );
+            }
+            else
+            {
+                // The System list is signed again before its signature expires.
+                await RenewIfNeededAsync( m, _center.UtcNow ).ConfigureAwait( false );
+            }
+        }
+        catch( Exception ex )
+        {
+            m.Error( _pull != null ? "While pulling the System list." : "While renewing the System list.", ex );
+            if( _pull != null ) _nextPull = _center.UtcNow + RetryPeriod;
+        }
+    }
+
+    // The next time the heartbeat pulls the list (or renews it on the Authentication Center).
+    internal DateTime NextPull => _nextPull;
+
     /// <summary>
     /// Asks the Authentication Center its current list and adopts it when it is newer (and verifies).
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <returns>True when a newer list has been adopted.</returns>
-    public async Task<bool> PullAsync( IActivityMonitor monitor )
+    public async Task<bool> PullAsync( IActivityMonitor monitor ) => await DoPullAsync( monitor ).ConfigureAwait( false ) == true;
+
+    // Null when the list can't be obtained (no answer, or an answer that doesn't verify), true when a newer list has been
+    // adopted, false when nothing is newer than the list held.
+    async Task<bool?> DoPullAsync( IActivityMonitor monitor )
     {
-        if( _pull == null ) return false;
+        if( _pull == null ) return null;
         object? result;
         try
         {
@@ -320,7 +346,7 @@ public sealed class AuthCenterSystemList
         catch( Exception ex )
         {
             monitor.Warn( $"Unable to ask the AuthCenter '{_center.AuthCenterFullName}' its System list.", ex );
-            return false;
+            return null;
         }
         if( result is byte[] encoded )
         {
@@ -331,10 +357,12 @@ public sealed class AuthCenterSystemList
                 monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The AuthCenter '{_center.AuthCenterFullName}' answers its {pulled}, older than the {_current} held by '{Local}': it is ignored." );
                 return false;
             }
-            return await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false );
+            if( await TryAdoptAsync( monitor, encoded, null ).ConfigureAwait( false ) ) return true;
+            // Not adopted: the list held is the same (or newer), or the answer doesn't verify.
+            return _current != null && SystemList.TryDecode( encoded, out var same ) && same!.Seq <= _current.Seq ? false : null;
         }
         if( result != null ) monitor.Warn( $"The AuthCenter '{_center.AuthCenterFullName}' can't be asked its System list: {result}." );
-        return false;
+        return null;
     }
 
     /// <summary>
@@ -463,9 +491,11 @@ public sealed class AuthCenterSystemList
     public async Task<bool> TryAdoptAsync( IActivityMonitor monitor, byte[] encoded, IRemoteParty? from )
     {
         Throw.CheckNotNullArgument( encoded );
+        // Without a sender, the list is the stored one or the pulled one.
+        var source = from != null ? $"'{from}'" : "the store or the pull";
         if( !SystemList.TryDecode( encoded, out var list ) )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{from}' sent an invalid System list to '{Local}': it is ignored." );
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"An invalid System list from {source} reached '{Local}': it is ignored." );
             return false;
         }
         if( _current != null && list!.Seq <= _current.Seq ) return false;
@@ -474,7 +504,7 @@ public sealed class AuthCenterSystemList
         var verdict = await _center.CheckWithKeyEventsAsync( monitor, SystemList.Purpose, list!.SignedData.ToArray(), list.Signature ).ConfigureAwait( false );
         if( verdict != SignatureVerdict.Valid )
         {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} sent by '{from}' to '{Local}' is not signed by its AuthCenter '{_center.AuthCenterFullName}' ({verdict}): it is ignored." );
+            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The {list} from {source} to '{Local}' is not signed by its AuthCenter '{_center.AuthCenterFullName}' ({verdict}): it is ignored." );
             return false;
         }
         await _adoptLock.WaitAsync().ConfigureAwait( false );

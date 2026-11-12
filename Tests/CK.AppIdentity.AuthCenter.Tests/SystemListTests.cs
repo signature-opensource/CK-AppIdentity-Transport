@@ -89,6 +89,32 @@ public class SystemListTests
     }
 
     [Test]
+    public async Task a_failed_pull_is_retried_after_the_retry_period_Async()
+    {
+        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types );
+        (await RevokeAsync( p, "Test/$GhostPull/#Dev", Identity( 201 ) )).ShouldNotBeNull();
+        var centerList = p.Center.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>().Current.ShouldNotBeNull();
+        var center = p.Remote.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>();
+        // Once the remote holds the list, it knows the keys of the AuthCenter.
+        var held = p.Remote.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>();
+        for( int i = 0; i < 100 && held.Current?.Seq != centerList.Seq; ++i ) await Task.Delay( 100 );
+        bool fail = true;
+        var list = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center,
+                                                           _ => fail ? throw new Exception( "No answer." ) : Task.FromResult<object?>( centerList.Encode() ),
+                                                           null, null );
+        await list.PullOrRenewAsync( TestHelper.Monitor );
+        list.NextPull.ShouldBeLessThanOrEqualTo( center.UtcNow + AuthCenterSystemList.RetryPeriod, "A failed pull is retried soon, not in an hour." );
+
+        fail = false;
+        await list.PullOrRenewAsync( TestHelper.Monitor );
+        list.Current.ShouldNotBeNull().Seq.ShouldBe( centerList.Seq );
+        list.NextPull.ShouldBeGreaterThan( center.UtcNow + AuthCenterSystemList.RetryPeriod );
+        // Nothing newer: obtained all the same.
+        await list.PullOrRenewAsync( TestHelper.Monitor );
+        list.NextPull.ShouldBeGreaterThan( center.UtcNow + AuthCenterSystemList.RetryPeriod );
+    }
+
+    [Test]
     public async Task decoding_allocates_nothing_from_an_announced_count_or_length_Async()
     {
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types );
