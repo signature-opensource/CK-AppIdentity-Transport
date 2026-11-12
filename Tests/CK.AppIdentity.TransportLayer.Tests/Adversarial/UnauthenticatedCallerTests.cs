@@ -172,6 +172,74 @@ public class UnauthenticatedCallerTests
         second.ShouldBe( first, "The item of the remote's key is still there: its code doesn't change." );
     }
 
+    [Test, CancelAfter( 60000 )]
+    public async Task revealed_keys_there_first_do_not_push_the_remote_approval_item_out_at_the_next_key_Async( CancellationToken token )
+    {
+        const string remote = "$TM7Revealed";
+        PeerStore.ClearRemoteTrust( $"Test/{remote}" );
+        await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
+        {
+            c["FullName"] = "Test/$TM7RevealedListen";
+            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:AutoTrustKey"] = "Never";
+            c["Parties:0:PartyName"] = remote;
+        }, ConfigureFastClock, token: token );
+        var fullName = $"Test/{remote}/#Dev";
+        var transport = listener.Remotes.Single().GetRequiredFeature<TransportFeature>();
+
+        // One attempt that reveals its nonce of the approval code (what an attacker that knows its commitments does
+        // too): returns the listener's nonce for the key. Retried when the listener closes before answering.
+        async Task<byte[]?> AttemptAndRevealAsync( PeerIdentity key, byte[] ownNonce )
+        {
+            var protocols = transport.BestRegisteredProtocols.Select( p => p.FullName ).ToArray();
+            for( int retry = 0; ; ++retry )
+            {
+                using var ephemeral = new PeerEphemeral();
+                var nonce = NewNonce();
+                var initial = PeerMessages.InitialMessage( fullName, "AdvInstance", protocols, protocols.Length, _systemClock.UtcNow, nonce,
+                                                           ephemeral.PublicKey, RunPhaseProtection.LocalCapabilities, key,
+                                                           canAutoTrust: true, approvalCommitment: SHA256.HashData( ownNonce ) );
+                await using var c = await AdversarialPeer.ConnectAsync( cancellation: token );
+                await c.SendZeroFrameAsync( initial, token );
+                var reply = await ReadOrNullAsync( c, token );
+                if( reply == null && retry < 3 ) continue;
+                reply.ShouldNotBeNull();
+                reply.Value.Discriminator.ShouldBe( PeerMessages.DNegoRejectRemote, "An approval is required." );
+                await c.SendZeroFrameAsync( PeerMessages.RequiredEnlistUrl( nonce, ownNonce, key ), token );
+                // The listener closes once it handled the reveal.
+                (await ReadOrNullAsync( c, token )).ShouldBeNull();
+                return PeerMessages.ReadApprovalNonce( reply.Value.Payload );
+            }
+        }
+
+        var keys = new System.Collections.Generic.List<PeerIdentity>();
+        try
+        {
+            async Task StrangerAsync()
+            {
+                var stranger = PeerIdentity.Create( fullName );
+                keys.Add( stranger );
+                await AttemptAndRevealAsync( stranger, RandomNumberGenerator.GetBytes( 32 ) );
+            }
+            // The strangers' revealed items are there first.
+            for( int i = 0; i < ApprovalSessionMaxPendingKeys; ++i ) await StrangerAsync();
+            // The remote arrives and reveals.
+            var genuine = PeerIdentity.Create( fullName );
+            keys.Add( genuine );
+            var genuineNonce = RandomNumberGenerator.GetBytes( 32 );
+            var first = await AttemptAndRevealAsync( genuine, genuineNonce );
+            first.ShouldNotBeNull();
+            // New keys: the remote's item is not the oldest one, it stays.
+            for( int i = 0; i < ApprovalSessionMaxPendingKeys - 1; ++i ) await StrangerAsync();
+            var second = await AttemptAndRevealAsync( genuine, genuineNonce );
+            second.ShouldBe( first, "The item of the remote's key is still there: its code doesn't change." );
+        }
+        finally
+        {
+            foreach( var k in keys ) k.Dispose();
+        }
+    }
+
     // ApprovalSession.MaxPendingKeys (internal).
     const int ApprovalSessionMaxPendingKeys = 4;
 

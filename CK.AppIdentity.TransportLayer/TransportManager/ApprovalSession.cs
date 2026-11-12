@@ -32,8 +32,10 @@ sealed class ApprovalSession
 
     /// <summary>
     /// The maximal number of keys a listener keeps per remote. Above, the newest item whose nonce has not been revealed is
-    /// forgotten (the newest one when all have been): the items already there are kept, so that anyone presenting new keys
-    /// under the remote's name only churns the last place, and can't push the remote's own item out.
+    /// forgotten (the items waiting for a reveal are kept, so that new keys that are never revealed only churn the last
+    /// place), else the oldest one: a remote's revealed item stays until <see cref="MaxPendingKeys"/> newer keys arrived.
+    /// Anyone presenting new keys under the remote's name and revealing their nonces can still push it out: this bounds
+    /// the cost of the churn, it doesn't prevent it.
     /// </summary>
     public const int MaxPendingKeys = 4;
 
@@ -179,7 +181,7 @@ sealed class ApprovalSession
                 if( _pending.Count >= MaxPendingKeys )
                 {
                     int evict = _pending.FindLastIndex( p => p.PeerNonce == null );
-                    _pending.RemoveAt( evict >= 0 ? evict : _pending.Count - 1 );
+                    _pending.RemoveAt( evict >= 0 ? evict : 0 );
                 }
                 item = new Pending
                 {

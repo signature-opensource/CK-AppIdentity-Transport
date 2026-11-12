@@ -275,6 +275,30 @@ public static class PeerMessages
     }
 
     /// <summary>
+    /// The initiator's RequiredEnlistUrl reply to a RejectRemote: no enlistment URL, the nonce of the approval code it
+    /// reveals (or null) and no statement, signed by the operational key of <paramref name="signWith"/>.
+    /// </summary>
+    public static byte[] RequiredEnlistUrl( ulong nonce, byte[]? approvalNonce, PeerIdentity signWith )
+    {
+        using var seq = new MutableSequence<byte>();
+        var w = new FastByteWriter( seq );
+        w.WriteByte( DNegoRequiredEnlistUrl );
+        w.WriteUInt64( nonce );
+        w.WriteString( string.Empty );
+        w.WriteSmallUInt32( (uint)(approvalNonce?.Length ?? 0) );
+        if( approvalNonce != null ) w.WriteBytes( approvalNonce );
+        w.WriteSmallUInt32( 0 );
+        w.Commit();
+        Span<byte> hash = stackalloc byte[64];
+        ComputeSha512( seq, hash );
+        var sig = signWith.Credential.Key.SignHash( hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation );
+        w.WriteByte( (byte)sig.Length );
+        w.WriteBytes( sig );
+        w.Commit();
+        return seq.GetReadOnlySequence().ToArray();
+    }
+
+    /// <summary>
     /// Reads the listener's nonce of the approval code from its RejectRemote message (null when it sent none).
     /// </summary>
     public static byte[]? ReadApprovalNonce( byte[] rejectRemote )
