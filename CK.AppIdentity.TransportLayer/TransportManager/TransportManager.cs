@@ -157,8 +157,9 @@ sealed partial class TransportManager : MicroAgent
     internal bool IncomingTransport( Transport t, DateTime incomingTime, string? sourceKey, bool slotReserved, DateTime acceptedAtUtc )
     {
         if( !slotReserved && !_negotiationGate.TryReserve( sourceKey ) ) return false;
-        // Reserved here, released by IncomingConnectionBackTask.Reset: the BackTaskManager calls it
-        // exactly once per Initialize, on every path including the ones that threw.
+        // Reserved here, released by the IncomingConnectionBackTask when its negotiation ends (not when the
+        // heartbeat checks it), and by its Reset otherwise: the BackTaskManager calls it exactly once per
+        // Initialize, on every path including the ones that threw.
         PushTypedJob( new NewIncomingTransport( t, incomingTime, sourceKey, acceptedAtUtc ) );
         return true;
     }
