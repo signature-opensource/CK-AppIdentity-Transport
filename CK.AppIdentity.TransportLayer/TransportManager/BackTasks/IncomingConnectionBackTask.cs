@@ -19,8 +19,20 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
     Transport? _incoming;
     Task? _runTask;
     DateTime _initializeTime;
-    string? _sourceKey;
-    bool _holdsNegotiationSlot;
+    NegotiationSlot? _slot;
+
+    // The admission slot of one negotiation (one Initialize of this pooled task): released once, either when the
+    // negotiation ends or by Reset, whichever comes first. A slot per run, not a flag on the task: a late end of a
+    // previous run must never release the slot of the connection the pooled task handles now.
+    sealed class NegotiationSlot( NegotiationGate gate, string? sourceKey )
+    {
+        int _released;
+
+        public void Release()
+        {
+            if( Interlocked.Exchange( ref _released, 1 ) == 0 ) gate.Release( sourceKey );
+        }
+    }
 
     public override void OnDestroy( IActivityMonitor monitor )
     {
@@ -58,38 +70,43 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
     public override void Reset()
     {
-        // The single release point for the admission slot taken when this connection was accepted.
-        // The BackTaskManager calls Reset exactly once per Initialize, on every path — including the
-        // ones where Check or the initializer threw, which it forces to a reset precisely so nothing
-        // is stranded. A slot leaked here would be permanent: the cap would tighten with every
-        // failure until no connection could ever be accepted again.
-        if( _holdsNegotiationSlot )
-        {
-            _holdsNegotiationSlot = false;
-            TaskManager.Host.NegotiationGate.Release( _sourceKey );
-        }
+        // The safety net of the admission slot taken when this connection was accepted (it is normally released
+        // when the negotiation ends, see OnInitialize). The BackTaskManager calls Reset exactly once per
+        // Initialize, on every path — including the ones where Check or the initializer threw, which it forces
+        // to a reset precisely so nothing is stranded. A slot leaked here would be permanent: the cap would
+        // tighten with every failure until no connection could ever be accepted again.
+        _slot?.Release();
+        _slot = null;
         _incoming = null;
         _runTask = null;
-        _sourceKey = null;
     }
 
     public void OnInitialize( Transport incoming, DateTime incomingTime, string? sourceKey, DateTime acceptedAtUtc )
     {
         Throw.DebugAssert( incoming.Listener != null );
         _incoming = incoming;
-        _sourceKey = sourceKey;
+        var host = TaskManager.Host;
         // TransportManager.IncomingTransport reserved it before queuing this.
-        _holdsNegotiationSlot = true;
+        var slot = new NegotiationSlot( host.NegotiationGate, sourceKey );
+        _slot = slot;
         // The budget starts when the connection was ACCEPTED, not when this task got to run. A
         // listener that handshakes before handing over (mTLS) has already spent part of it, and
         // starting a fresh clock here would let an unauthenticated peer hold a slot for twice the
         // number the concurrency cap is sized against.
         _initializeTime = acceptedAtUtc;
-        var host = TaskManager.Host;
         _runTask = Task.Run( () => RunAsync( host, incoming, incomingTime ) );
         _runTask.ContinueWith( t => ObserveFault( host, incoming, t ),
                                CancellationToken.None,
                                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                               TaskScheduler.Default );
+        // The slot is held while the negotiation runs, not until the heartbeat checks this task: "an entry exists only
+        // while a negotiation is running" (NegotiationGate). Released on the heartbeat, every attempt of a peer that
+        // retries faster than the heartbeat (or every attempt, without heartbeat) kept its slot after its end: the
+        // per source cap then refused the peer, even once trusted.
+        _runTask.ContinueWith( static ( _, s ) => ((NegotiationSlot)s!).Release(),
+                               slot,
+                               CancellationToken.None,
+                               TaskContinuationOptions.ExecuteSynchronously,
                                TaskScheduler.Default );
         NextCheckDelay = 1;
     }
