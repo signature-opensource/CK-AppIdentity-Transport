@@ -4,7 +4,7 @@
     <Description>The commands of the enlistment of a party in a System: the approval of a pending party by an operator on the approval page, and its signed statement sent down to the party that holds the pending approval.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris" Version="3.0.0-0.uc.0.ci.67" />
-    <PackageReference Include="CK.IO.Auth" Version="3.0.0-0.uc.0.ci.67" />
+    <PackageReference Include="CK.Cris" Version="3.0.0-0.uc.0.ci.68" />
+    <PackageReference Include="CK.IO.Auth" Version="3.0.0-0.uc.0.ci.68" />
   </ItemGroup>
 </Project>
