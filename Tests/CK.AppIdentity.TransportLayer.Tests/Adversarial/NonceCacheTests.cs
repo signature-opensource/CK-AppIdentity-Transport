@@ -36,6 +36,12 @@ public class NonceCacheTests
     void ConfigureFastClock( ServiceCollection services )
         => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
 
+    // No heartbeat: the cache is rewritten only when the service stops. A test that simulates a crash between two
+    // rewrites needs it: a rewrite from the heartbeat empties the journal at any time (every 50 ms with the fast clock),
+    // and the simulated crash, that removes the cache, would then lose what the rewrite moved from the journal.
+    static void ConfigureNoHeartBeat( ServiceCollection services )
+        => services.AddSingleton( SystemClockTester.NoHeartBeat );
+
     static TimedNonce Nonce( DateTime now, ulong? value = null )
         => new TimedNonce( now, value ?? BitConverter.ToUInt64( RandomNumberGenerator.GetBytes( 8 ) ) );
 
@@ -54,7 +60,8 @@ public class NonceCacheTests
     /// keyed by remote name and is shared across local parties.
     /// </summary>
     async Task<(ApplicationIdentityService Service, IRemoteKeys A, IRemoteKeys B)> TwoRemotesAsync( string local,
-                                                                                                    CancellationToken token )
+                                                                                                    CancellationToken token,
+                                                                                                    Action<ServiceCollection>? configureServices = null )
     {
         var nameA = $"${local}A";
         var nameB = $"${local}B";
@@ -69,7 +76,7 @@ public class NonceCacheTests
             c["Defaults:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = nameA;
             c["Parties:1:PartyName"] = nameB;
-        }, ConfigureFastClock, token: token );
+        }, configureServices ?? ConfigureFastClock, token: token );
         var remotes = s.AllRemotes.ToArray();
         remotes.Length.ShouldBe( 2 );
         var a = remotes.Single( r => r.PartyName == nameA ).GetRequiredFeature<IRemoteKeys>();
@@ -200,7 +207,7 @@ public class NonceCacheTests
         ApplicationIdentityService? live = null;
         try
         {
-            var (service, a, _) = await TwoRemotesAsync( local, token );
+            var (service, a, _) = await TwoRemotesAsync( local, token, ConfigureNoHeartBeat );
             live = service;
             a.CheckAndAddNonceValue( TestHelper.Monitor, n ).ShouldBeTrue();
             System.IO.File.Exists( cachePath ).ShouldBeFalse( "Not rewritten yet: this is the window a crash would hit." );
@@ -249,7 +256,7 @@ public class NonceCacheTests
                 c["Defaults:AlwaysListening"] = "True";
                 c["Parties:0:PartyName"] = $"${local}A";
                 c["Parties:1:PartyName"] = $"${local}B";
-            }, ConfigureFastClock, token: token );
+            }, ConfigureNoHeartBeat, token: token );
             return live.AllRemotes.Single( r => r.PartyName == $"${local}A" ).GetRequiredFeature<IRemoteKeys>();
         }
     }
