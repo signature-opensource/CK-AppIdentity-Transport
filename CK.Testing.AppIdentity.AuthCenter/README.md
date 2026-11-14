@@ -27,7 +27,7 @@ The test adds what is specific to it:
 `CreateRunningAuthCenterApplicationAsync( identity, configureHost, configureEndpoint )` (an extension of `IStObjMap`)
 creates and starts the application, a party: the `IStObjMap.CreateRunningAspNetServerAsync` of
 [CK.Testing.AspNetServer](https://github.com/signature-opensource/CK-AspNet/blob/stable/CK.Testing.AspNetServer/README.md)
-(a Generic Host whose web application is the "Main" endpoint of its "HttpEndpoint" feature, on a random port):
+(a Generic Host whose web application is the endpoint of its "HttpEndpoint" feature, on a random port):
 
 - its identity: `DefaultIdentity` ("Test/$AuthCenter", whose root is its own Authentication Center:
   `"Local": { "AllowFeatures": "AuthCenter" }`, with the default settings) unless the `identity` callback configures another one;
