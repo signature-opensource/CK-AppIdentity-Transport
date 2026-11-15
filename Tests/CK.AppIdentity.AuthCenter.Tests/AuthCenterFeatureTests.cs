@@ -276,7 +276,7 @@ public class AuthCenterFeatureTests
         }, local: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
 
-        // A remote added later receives the feature (the root's "Defaults" allow "AuthCenterRemote").
+        // A remote added later receives the feature (the root's "Defaults" declare "AuthCenterRemote").
         var r = await s.AddRemoteAsync( TestHelper.Monitor, c => c["PartyName"] = "Late" );
         r.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldBeSameAs( f );
 
@@ -287,7 +287,7 @@ public class AuthCenterFeatureTests
             await ShouldLogAsync( logs, "an AuthCenter is not designated" );
         }
 
-        // A tenant domain added later is its own AuthCenter (the root's "Defaults" allow "AuthCenter" and "AuthCenterRemote").
+        // A tenant domain added later is its own AuthCenter (the root's "Defaults" declare "AuthCenter" and "AuthCenterRemote").
         var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
         {
             c["FullName"] = "Acme/$Acme";

@@ -44,8 +44,9 @@ public static class AuthCenterFeature
 
     /// <summary>
     /// Checks that there is no designation: the "AuthCenter" key of a "Local" declares the feature (<c>true</c>,
-    /// <c>false</c> or the settings of a local AuthCenter), any other value is an error; an "AuthCenter" section or value
-    /// on a remote is an error (a boolean is a declaration: CK.AppIdentity checks the names of an asymmetric feature).
+    /// <c>false</c> or the settings of a local AuthCenter), any other value is an error; the own "AuthCenter" key of a remote
+    /// is an error (the former designation), unless it is <c>false</c>. A "Defaults" that declares "AuthCenter" for the
+    /// parties below it (their "Local" and their remotes) is fine: CK.AppIdentity checks the names of an asymmetric feature.
     /// Used by the two sides of the feature.
     /// </summary>
     /// <param name="monitor">The monitor.</param>
@@ -62,7 +63,7 @@ public static class AuthCenterFeature
             return false;
         }
         var key = party.Configuration.Configuration.TryGetSection( Name );
-        if( key == null || (!key.HasChildren && IsBoolean( key.Value )) ) return true;
+        if( key == null || (!key.HasChildren && string.Equals( key.Value, "false", StringComparison.OrdinalIgnoreCase )) ) return true;
         monitor.Error( $"Invalid '{key.Path}': an AuthCenter is not designated: the remote that is the AuthCenter declares \"AuthCenterRemote\" "
                        + $"(and its settings are its own, in its \"Local\")." );
         return false;
