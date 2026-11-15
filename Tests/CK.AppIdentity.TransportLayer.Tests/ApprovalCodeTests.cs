@@ -33,14 +33,14 @@ public class ApprovalCodeTests
         var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}Listen";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = $"${name}Init";
         }, ConfigureFastClock, token: token );
         var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}Init";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = $"${name}Listen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureFastClock, token: token );

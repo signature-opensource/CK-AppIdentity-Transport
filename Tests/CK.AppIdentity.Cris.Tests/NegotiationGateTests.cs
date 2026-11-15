@@ -26,9 +26,9 @@ public class NegotiationGateTests
         await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
         {
             c["FullName"] = "Test/$GateListener";
-            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$GateSender";
-            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         }, null );
         listener.Transport.MaxConcurrentNegotiationPerSource = 2;
         await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: true, c =>
@@ -36,7 +36,7 @@ public class NegotiationGateTests
             c["FullName"] = "Test/$GateSender";
             c["Parties:0:PartyName"] = "$GateListener";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
-            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         },
         // The initiator retries its connection on its heartbeat.
         RunningApplication.WithHeartBeat() );

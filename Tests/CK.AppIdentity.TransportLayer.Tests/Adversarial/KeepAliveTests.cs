@@ -50,7 +50,7 @@ public class KeepAliveTests
             c["FullName"] = $"Test/${name}";
             c["Parties:0:PartyName"] = remoteName;
             c["Parties:0:Address"] = address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
     static async Task WaitForAsync( Func<bool> condition, string what, CancellationToken token, int seconds = 30 )
@@ -110,14 +110,14 @@ public class KeepAliveTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M13Listen";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = "$M13Send";
         }, ConfigureFastClock, token: token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M13Send";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$M13Listen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureFastClock, token: token );

@@ -52,7 +52,7 @@ public class C2OtherReadersTests
             c["FullName"] = $"Test/{localName}";
             c["Parties:0:PartyName"] = remoteName;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();

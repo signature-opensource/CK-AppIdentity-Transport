@@ -65,7 +65,7 @@ public class UnauthenticatedCallerTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TM2Listen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
         var fullName = $"Test/{remote}/#Dev";
@@ -99,7 +99,7 @@ public class UnauthenticatedCallerTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TM4Listen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = listened;
             // A remote this party initiates to: it doesn't listen for it.
             c["Parties:1:PartyName"] = initiated;
@@ -129,8 +129,8 @@ public class UnauthenticatedCallerTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TM7Listen";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
         var fullName = $"Test/{remote}/#Dev";
@@ -180,8 +180,8 @@ public class UnauthenticatedCallerTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TM7RevealedListen";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
         var fullName = $"Test/{remote}/#Dev";
@@ -252,7 +252,7 @@ public class UnauthenticatedCallerTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TM3Listen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
         var fullName = $"Test/{remote}/#Dev";

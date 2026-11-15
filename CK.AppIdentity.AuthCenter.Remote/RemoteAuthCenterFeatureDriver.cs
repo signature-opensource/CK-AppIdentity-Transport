@@ -15,19 +15,20 @@ namespace CK.AppIdentity.AuthCenter;
 /// <see cref="RemoteAuthCenter"/>. A remote added later can be it. A local party that allows "AuthCenter" is ignored
 /// (CK.AppIdentity.AuthCenter.Local handles it).
 /// <para>
-/// Without such a remote, the Authentication Center can be designated by its full name: "Local:AuthCenterParty". It must
+/// Without such a remote, the Authentication Center can be designated by its full name: "Local:AuthCenterRemote:Party". It must
 /// have a trust anchor: the local party gets a <see cref="CrisAuthCenter"/> without channel and an
 /// <see cref="AnchoredAuthCenter"/> (what it asks the Authentication Center travels along its route). With such a remote,
-/// "Local:AuthCenterParty" must name it.
+/// "Local:AuthCenterRemote:Party" must name it.
 /// </para>
 /// </summary>
 [PartyFeature( AuthCenterFeature.Name, Side = FeatureSide.Remote )]
 public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
     /// <summary>
-    /// The key of the "Local" configuration that designates the Authentication Center by its full name: "AuthCenterParty".
+    /// The path in the "Local" configuration that designates the Authentication Center by its full name: "AuthCenterRemote:Party"
+    /// (the "Party" setting of the "AuthCenterRemote" section of the local party).
     /// </summary>
-    public const string AuthCenterPartyKey = "AuthCenterParty";
+    public const string AuthCenterPartyKey = "AuthCenterRemote:Party";
 
     readonly IServiceProvider _services;
 

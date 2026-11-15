@@ -141,7 +141,6 @@ public sealed class RunningApplication : IAsyncDisposable
                                                     typeof( IWhoAmICommand ),
                                                     typeof( CrisExecutionHost ),
                                                     typeof( ApplicationIdentityService ),
-                                                    typeof( PartyDescriptionFeatureDriver ),
                                                     typeof( MessageProtocolDirectoryService ),
                                                     typeof( TransportFeatureDriver ),
                                                     typeof( CrisChannelFeatureDriver ),
@@ -161,7 +160,7 @@ public sealed class RunningApplication : IAsyncDisposable
                 c["FullName"] = (isSender ? "Test/$Sender" : "Test/$Listener");
                 c["Parties:0:PartyName"] = isSender ? "$Listener" : "$Sender";
                 // Both applications have a fresh key store: they trust each other on first contact.
-                c["Parties:0:AutoTrustKey"] = "Once";
+                c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
                 // A dedicated port: the default 37120 one is used by other test assemblies that
                 // can run concurrently.
                 if( isSender )
@@ -170,7 +169,7 @@ public sealed class RunningApplication : IAsyncDisposable
                 }
                 else
                 {
-                    c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+                    c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
                 }
                 configuration?.Invoke( c );
             } );

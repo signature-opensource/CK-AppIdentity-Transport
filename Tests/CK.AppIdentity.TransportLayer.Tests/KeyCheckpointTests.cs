@@ -13,7 +13,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
 /// The key checkpoint of a party (<see cref="ILocalKeys.Checkpoint"/>) and the trust anchors of its configuration
-/// (<see cref="ILocalKeys.TrustAnchors"/>, "Local:TrustAnchors:{FullName}").
+/// (<see cref="ILocalKeys.TrustAnchors"/>, "Local:KeyManagement:TrustAnchors:{FullName}").
 /// </summary>
 [TestFixture]
 public class KeyCheckpointTests
@@ -67,7 +67,7 @@ public class KeyCheckpointTests
         const string partyName = "AnchorsReader";
         IdentityStoreHelper.ClearKeys( partyName );
         await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                   configure: c => c[$"Local:TrustAnchors:Test/$Center/#Dev"] = $"7:{Hex}" );
+                                                                   configure: c => c[$"Local:KeyManagement:TrustAnchors:Test/$Center/#Dev"] = $"7:{Hex}" );
         var anchors = s.GetRequiredFeature<ILocalKeys>().TrustAnchors;
         anchors.Count.ShouldBe( 1 );
         anchors["Test/$Center/#Dev"].ToString().ShouldBe( $"7:{Hex}" );
@@ -82,13 +82,13 @@ public class KeyCheckpointTests
         using var logs = CK.Monitoring.GrandOutput.Default!.CreateMemoryCollector( 5000 );
         // Never ignored: the anchored party would be trusted on first use instead of verified.
         await Should.ThrowAsync<Exception>( () => IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                                    configure: c => c["Local:TrustAnchors:Test/$Center/#Dev"] = "not-a-checkpoint" ) );
+                                                                                    configure: c => c["Local:KeyManagement:TrustAnchors:Test/$Center/#Dev"] = "not-a-checkpoint" ) );
         // A party doesn't anchor itself.
         await Should.ThrowAsync<Exception>( () => IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                                    configure: c => c[$"Local:TrustAnchors:Test/${partyName}/#Dev"] = $"0:{Hex}" ) );
+                                                                                    configure: c => c[$"Local:KeyManagement:TrustAnchors:Test/${partyName}/#Dev"] = $"0:{Hex}" ) );
         // "#Dev" is allowed only in the dev store of a development solution.
         await Should.ThrowAsync<Exception>( () => IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                                    configure: c => c["Local:TrustAnchors:Test/$Center/#Dev"] = "#Dev" ) );
+                                                                                    configure: c => c["Local:KeyManagement:TrustAnchors:Test/$Center/#Dev"] = "#Dev" ) );
         // The reasons are the exceptions of the failed setups.
         var errors = logs.ExtractCurrentEntries().Select( e => e.Exception?.Message ).Where( m => m != null ).ToList();
         errors.ShouldContain( m => m!.Contains( "Invalid key checkpoint 'not-a-checkpoint'" ) );

@@ -66,8 +66,8 @@ public class ChannelHookFailureTests
         var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{listenerName}";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = senderName;
         }, ConfigureServices( configureListener ), token: token );
@@ -75,7 +75,7 @@ public class ChannelHookFailureTests
         var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{senderName}";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = listenerName;
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";

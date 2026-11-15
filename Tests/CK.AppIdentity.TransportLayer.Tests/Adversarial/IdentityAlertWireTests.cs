@@ -39,9 +39,9 @@ public class IdentityAlertWireTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{Listener}";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = Victim;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
 
     Task<ApplicationIdentityService> CreateVictimAsync( IDataProtectionProvider protector, string address, string autoTrust, CancellationToken token )
@@ -50,7 +50,7 @@ public class IdentityAlertWireTests
             c["FullName"] = $"Test/{Victim}";
             c["Parties:0:PartyName"] = Listener;
             c["Parties:0:Address"] = address;
-            c["Parties:0:AutoTrustKey"] = autoTrust;
+            c["Parties:0:KeyManagement:AutoTrustKey"] = autoTrust;
         }, s =>
         {
             s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );

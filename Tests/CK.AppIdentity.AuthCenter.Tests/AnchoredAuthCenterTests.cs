@@ -21,7 +21,7 @@ namespace CK.AppIdentity.AuthCenter.Tests;
 /// <summary>
 /// An Authentication Center reached without a channel: "Test/$A" &gt; "Test/$Hop" &gt; "Test/$Center". The hop is a remote
 /// of the center (it opens the sessions), A is a remote of the hop only: it anchors the center and designates it by its
-/// full name ("Local:AuthCenterParty").
+/// full name ("Local:AuthCenterRemote:Party").
 /// </summary>
 [TestFixture]
 public class AnchoredAuthCenterTests
@@ -84,7 +84,7 @@ public class AnchoredAuthCenterTests
             c["Parties:0:PartyName"] = "$Hop";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
-            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
+            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( IReadmitPartyNameCommand ), typeof( RevokePartyHandler )] );
         try
         {
@@ -97,16 +97,16 @@ public class AnchoredAuthCenterTests
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{CenterPort}";
                 c["Parties:0:AuthCenterRemote"] = "true";
                 c["Parties:1:PartyName"] = "$A";
-                c["Parties:1:AutoTrustKey"] = "Once";
-                c["Parties:1:ListeningAddress:0"] = $"tcp:127.0.0.1:{HopPort}";
+                c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
+                c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{HopPort}";
             }, RemoteAuthCenterTests.RemoteServices, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._remoteTypes, .. _routing] );
             var a = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: true, c =>
             {
                 c["FullName"] = "Test/$A";
                 c["Parties:0:PartyName"] = "$Hop";
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{HopPort}";
-                c[$"Local:TrustAnchors:{centerName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString();
-                c["Local:AuthCenterParty"] = centerName;
+                c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString();
+                c["Local:AuthCenterRemote:Party"] = centerName;
             }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. _routing, typeof( RemoteAuthCenterFeatureDriver ), typeof( AuthCenterProofVerifier )] );
             var chain = new Chain { Center = center, Hop = hop, A = a };
             for( int i = 0; i < 100 && !a.ApplicationIdentityService.Description.Routes.ContainsKey( AuthCenterFeature.RouteName ); ++i ) await Task.Delay( 100 );

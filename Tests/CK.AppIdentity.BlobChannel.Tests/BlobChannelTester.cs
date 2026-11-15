@@ -156,7 +156,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
         return await TestHelper.CreateApplicationServiceAsync( c =>
         {
             if( !storeSubPath.IsEmptyPath ) c["StoreRootPath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
-            c["Defaults:AutoTrustKey"] = autoTrustKey;
+            c["Defaults:KeyManagement:AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "$Listener";
             c["Parties:0:Address"] = Address;
@@ -182,9 +182,9 @@ public sealed class BlobChannelTester : IAsyncDisposable
         return await TestHelper.CreateApplicationServiceAsync( c =>
         {
             if( !storeSubPath.IsEmptyPath ) c["StoreRootPath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
-            c["Defaults:AutoTrustKey"] = autoTrustKey;
+            c["Defaults:KeyManagement:AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Listener";
-            c["Defaults:ListeningAddress:0"] = Address;
+            c["Defaults:Transport:ListeningAddress:0"] = Address;
             c["Parties:0:PartyName"] = "$Sender";
             c["Defaults:BlobChannel"] = "true";
         }, Configure( configureServices ), token );

@@ -43,7 +43,7 @@ public class ReconnectBackOffTests
             c["FullName"] = $"Test/${name}";
             c["Parties:0:PartyName"] = remoteName;
             c["Parties:0:Address"] = address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
     /// <summary>

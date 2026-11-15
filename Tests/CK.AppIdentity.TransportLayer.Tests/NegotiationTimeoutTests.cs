@@ -68,7 +68,7 @@ public class NegotiationTimeoutTests
     {
         // The reason this is per remote: one fleet on a LAN and another behind a satellite hop cannot
         // share a number, and neither is wrong.
-        await using var s = await CreateAsync( "NTOwn", c => c["Parties:0:NegotiationTimeout"] = "90", token );
+        await using var s = await CreateAsync( "NTOwn", c => c["Parties:0:Transport:NegotiationTimeout"] = "90", token );
         var f = s.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
         var settings = s.GetRequiredFeature<TransportManagerFeature>();
 
@@ -84,7 +84,7 @@ public class NegotiationTimeoutTests
     {
         // A typo in this entry must not stop the service: it is a tuning knob, not a security switch,
         // and the failure mode of refusing to start is worse than the failure mode of using 15 seconds.
-        await using var s = await CreateAsync( "NTBad", c => c["Parties:0:NegotiationTimeout"] = "soon", token );
+        await using var s = await CreateAsync( "NTBad", c => c["Parties:0:Transport:NegotiationTimeout"] = "soon", token );
         var f = s.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
 
         f.OutgoingNegotiationTimeout.ShouldBe( TimeSpan.FromSeconds( 15 ) );

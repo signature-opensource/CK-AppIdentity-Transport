@@ -272,7 +272,7 @@ sealed partial class LocalKeys
         /// </summary>
         byte[] InceptRecovery( IActivityMonitor monitor )
         {
-            var configured = _local.LocalConfiguration.Configuration["RecoveryPublicKey"];
+            var configured = _local.LocalConfiguration.Configuration["KeyManagement:RecoveryPublicKey"];
             if( configured != null )
             {
                 byte[] spki;
@@ -285,7 +285,7 @@ sealed partial class LocalKeys
                 }
                 catch( Exception ex )
                 {
-                    Throw.CKException( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:RecoveryPublicKey' must be the base64 SubjectPublicKeyInfo of a P-256 key.", ex );
+                    Throw.CKException( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:RecoveryPublicKey' must be the base64 SubjectPublicKeyInfo of a P-256 key.", ex );
                     throw;
                 }
                 monitor.Info( $"The identity of '{_local.FullName}' commits to the configured offline recovery key." );
@@ -318,17 +318,17 @@ sealed partial class LocalKeys
 
         int ReadOperationalKeyDays( IActivityMonitor monitor )
         {
-            var s = _local.LocalConfiguration.Configuration["OperationalKeyDays"];
+            var s = _local.LocalConfiguration.Configuration["KeyManagement:OperationalKeyDays"];
             if( s == null ) return ILocalKeys.DefaultOperationalKeyDays;
             if( !int.TryParse( s, out var days ) )
             {
-                monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:OperationalKeyDays' = '{s}': using {nameof( ILocalKeys.DefaultOperationalKeyDays )} = {ILocalKeys.DefaultOperationalKeyDays}." );
+                monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:OperationalKeyDays' = '{s}': using {nameof( ILocalKeys.DefaultOperationalKeyDays )} = {ILocalKeys.DefaultOperationalKeyDays}." );
                 return ILocalKeys.DefaultOperationalKeyDays;
             }
             if( days < 1 || days > ILocalKeys.MaxOperationalKeyDays )
             {
                 var clamped = Math.Clamp( days, 1, ILocalKeys.MaxOperationalKeyDays );
-                monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
+                monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:OperationalKeyDays' = {days} is out of 1..{ILocalKeys.MaxOperationalKeyDays}: using {clamped}." );
                 return clamped;
             }
             return days;
@@ -337,11 +337,11 @@ sealed partial class LocalKeys
         int ReadMaxSignatureDays( IActivityMonitor monitor, int keyRotationDays )
         {
             var path = _local.LocalConfiguration.Configuration.Path;
-            var s = _local.LocalConfiguration.Configuration["MaxSignatureDays"];
+            var s = _local.LocalConfiguration.Configuration["KeyManagement:MaxSignatureDays"];
             int days = ILocalKeys.DefaultMaxSignatureDays;
             if( s != null && !int.TryParse( s, out days ) )
             {
-                monitor.Warn( $"Invalid configuration '{path}:MaxSignatureDays' = '{s}': using {nameof( ILocalKeys.DefaultMaxSignatureDays )} = {ILocalKeys.DefaultMaxSignatureDays}." );
+                monitor.Warn( $"Invalid configuration '{path}:KeyManagement:MaxSignatureDays' = '{s}': using {nameof( ILocalKeys.DefaultMaxSignatureDays )} = {ILocalKeys.DefaultMaxSignatureDays}." );
                 days = ILocalKeys.DefaultMaxSignatureDays;
             }
             // Bounded by KeyRotationDays: a credential issued just before a rotation must end within
@@ -349,20 +349,20 @@ sealed partial class LocalKeys
             if( days < 1 || days > keyRotationDays )
             {
                 var clamped = Math.Clamp( days, 1, keyRotationDays );
-                monitor.Warn( $"Configuration '{path}:MaxSignatureDays' = {days} is out of 1..KeyRotationDays ({keyRotationDays}): using {clamped}." );
+                monitor.Warn( $"Configuration '{path}:KeyManagement:MaxSignatureDays' = {days} is out of 1..KeyRotationDays ({keyRotationDays}): using {clamped}." );
                 days = clamped;
             }
             return days;
         }
 
-        // "Local:TrustAnchors:{FullName}": a checkpoint of the key event log of the anchored party, or "#Dev" in the dev store
+        // "Local:KeyManagement:TrustAnchors:{FullName}": a checkpoint of the key event log of the anchored party, or "#Dev" in the dev store
         // (read from the running status of the anchored party when it is verified). An invalid anchor is an error, never
         // ignored: the party would be trusted on first use instead of verified.
         (Dictionary<string, KeyCheckpoint>, HashSet<string>) ReadTrustAnchors( IActivityMonitor monitor )
         {
             var anchors = new Dictionary<string, KeyCheckpoint>( StringComparer.Ordinal );
             var devAnchors = new HashSet<string>( StringComparer.Ordinal );
-            var section = _local.LocalConfiguration.Configuration.TryGetSection( "TrustAnchors" );
+            var section = _local.LocalConfiguration.Configuration.TryGetSection( "KeyManagement:TrustAnchors" );
             if( section == null ) return (anchors, devAnchors);
             foreach( var a in section.GetChildren() )
             {
@@ -392,26 +392,26 @@ sealed partial class LocalKeys
 
         int ReadKeyRotationDays( IActivityMonitor monitor )
         {
-            var s = _local.LocalConfiguration.Configuration["KeyRotationDays"];
+            var s = _local.LocalConfiguration.Configuration["KeyManagement:KeyRotationDays"];
             if( s != null )
             {
                 if( int.TryParse( s, out var keyRotationDays ) )
                 {
                     if( keyRotationDays < ILocalKeys.MinKeyRotationDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' is too small: using {nameof(ILocalKeys.MinKeyRotationDays)} = {ILocalKeys.MinKeyRotationDays}." );
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:KeyRotationDays' is too small: using {nameof(ILocalKeys.MinKeyRotationDays)} = {ILocalKeys.MinKeyRotationDays}." );
                         keyRotationDays = ILocalKeys.MinKeyRotationDays;
                     }
                     else if( keyRotationDays > ILocalKeys.MaxKeyRotationDays )
                     {
-                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' is too big: using {nameof(ILocalKeys.MaxKeyRotationDays)} = {ILocalKeys.MaxKeyRotationDays}." );
+                        monitor.Warn( $"Configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:KeyRotationDays' is too big: using {nameof(ILocalKeys.MaxKeyRotationDays)} = {ILocalKeys.MaxKeyRotationDays}." );
                         keyRotationDays = ILocalKeys.MaxKeyRotationDays;
                     }
                     return keyRotationDays;
                 }
                 else
                 {
-                    monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:KeyRotationDays' = '{s}': using {nameof( ILocalKeys.DefaultKeyRotationDays )} = {ILocalKeys.DefaultKeyRotationDays}." );
+                    monitor.Warn( $"Invalid configuration '{_local.LocalConfiguration.Configuration.Path}:KeyManagement:KeyRotationDays' = '{s}': using {nameof( ILocalKeys.DefaultKeyRotationDays )} = {ILocalKeys.DefaultKeyRotationDays}." );
                 }
             }
             return ILocalKeys.DefaultKeyRotationDays;

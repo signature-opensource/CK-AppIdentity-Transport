@@ -15,7 +15,7 @@ namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
 /// The Authentication Center of a local party that has no channel to it: it is designated by its full name
-/// ("Local:AuthCenterParty") and has a trust anchor. Its keys come from the key directory (verified from the anchor), and
+/// ("Local:AuthCenterRemote:Party") and has a trust anchor. Its keys come from the key directory (verified from the anchor), and
 /// what this party asks it travels along its <see cref="AuthCenterFeature.RouteName"/> route, answered by statements it
 /// signs: a hop can withhold them, not forge them.
 /// <list type="bullet">

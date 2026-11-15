@@ -15,7 +15,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// The anchored remotes ("Local:TrustAnchors:{FullName}"): a remote whose full name has an anchor is verified from it at
+/// The anchored remotes ("Local:KeyManagement:TrustAnchors:{FullName}"): a remote whose full name has an anchor is verified from it at
 /// each handshake, never trusted on first use nor approved by an operator; a mismatch is a peering issue of its own.
 /// </summary>
 [TestFixture]
@@ -46,8 +46,8 @@ public class TrustAnchorTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = $"${initiator}";
             configure( c );
         }, ConfigureFastClock, token: token );
@@ -56,7 +56,7 @@ public class TrustAnchorTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = $"${listener}";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
             configure( c );
@@ -87,8 +87,8 @@ public class TrustAnchorTests
         var l = await CheckpointOfAsync( "AnchL1", token );
         var i = await CheckpointOfAsync( "AnchI1", token );
         // Both sides are "Never": only the anchors can create the pins.
-        await using var listener = await ListenerAsync( "AnchL1", "AnchI1", c => c[$"Local:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
-        await using var initiator = await InitiatorAsync( "AnchI1", "AnchL1", c => c[$"Local:TrustAnchors:{l.FullName}"] = l.Checkpoint.ToString(), token );
+        await using var listener = await ListenerAsync( "AnchL1", "AnchI1", c => c[$"Local:KeyManagement:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
+        await using var initiator = await InitiatorAsync( "AnchI1", "AnchL1", c => c[$"Local:KeyManagement:TrustAnchors:{l.FullName}"] = l.Checkpoint.ToString(), token );
 
         (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull( "Each one verified the other from its anchor." );
         listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent!.Seq.ShouldBe( i.Checkpoint.Seq );
@@ -102,8 +102,8 @@ public class TrustAnchorTests
         var l = await CheckpointOfAsync( "AnchL2", token );
         var i = await CheckpointOfAsync( "AnchI2", token );
         // The anchor of the initiator is the listener's own checkpoint: its digest covers another full name.
-        await using var listener = await ListenerAsync( "AnchL2", "AnchI2", c => c[$"Local:TrustAnchors:{i.FullName}"] = l.Checkpoint.ToString(), token );
-        await using var initiator = await InitiatorAsync( "AnchI2", "AnchL2", c => c["Parties:0:AutoTrustKey"] = "Once", token );
+        await using var listener = await ListenerAsync( "AnchL2", "AnchI2", c => c[$"Local:KeyManagement:TrustAnchors:{i.FullName}"] = l.Checkpoint.ToString(), token );
+        await using var initiator = await InitiatorAsync( "AnchI2", "AnchL2", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token );
 
         var held = await WaitForAsync( () => Issue( listener, PeeringIssueKind.AnchorMismatch ), 40, token );
         held.ShouldNotBeNull( "The listener can't verify the initiator from its anchor." );
@@ -121,8 +121,8 @@ public class TrustAnchorTests
         Reset( "AnchL3", "AnchI3" );
         var l = await CheckpointOfAsync( "AnchL3", token );
         var i = await CheckpointOfAsync( "AnchI3", token );
-        await using var listener = await ListenerAsync( "AnchL3", "AnchI3", c => c["Parties:0:AutoTrustKey"] = "Once", token );
-        await using var initiator = await InitiatorAsync( "AnchI3", "AnchL3", c => c[$"Local:TrustAnchors:{l.FullName}"] = i.Checkpoint.ToString(), token );
+        await using var listener = await ListenerAsync( "AnchL3", "AnchI3", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token );
+        await using var initiator = await InitiatorAsync( "AnchI3", "AnchL3", c => c[$"Local:KeyManagement:TrustAnchors:{l.FullName}"] = i.Checkpoint.ToString(), token );
 
         (await WaitForAsync( () => Issue( initiator, PeeringIssueKind.AnchorMismatch ), 40, token ))
             .ShouldNotBeNull( "The initiator can't verify the listener from its anchor." );
@@ -134,8 +134,8 @@ public class TrustAnchorTests
     {
         Reset( "AnchL4", "AnchI4" );
         // First, the listener trusts the initiator on first use.
-        await using( var listener = await ListenerAsync( "AnchL4", "AnchI4", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
-        await using( var initiator = await InitiatorAsync( "AnchI4", "AnchL4", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
+        await using( var listener = await ListenerAsync( "AnchL4", "AnchI4", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
+        await using( var initiator = await InitiatorAsync( "AnchI4", "AnchL4", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
         {
             (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull();
         }
@@ -146,10 +146,10 @@ public class TrustAnchorTests
         // The listener is told the new identity by an anchor (its "Once" is ignored, with a warning).
         await using( var listener = await ListenerAsync( "AnchL4", "AnchI4", c =>
                                                          {
-                                                             c["Parties:0:AutoTrustKey"] = "Once";
-                                                             c[$"Local:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString();
+                                                             c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
+                                                             c[$"Local:KeyManagement:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString();
                                                          }, token ) )
-        await using( var initiator = await InitiatorAsync( "AnchI4", "AnchL4", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
+        await using( var initiator = await InitiatorAsync( "AnchI4", "AnchL4", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
         {
             (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull( "The anchor replaced the wrong pin." );
             i.Checkpoint.Matches( i.FullName, listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent! ).ShouldBeTrue();
@@ -174,8 +174,8 @@ public class TrustAnchorTests
         var l = await CheckpointOfAsync( "AnchL5", token );
         // The listener rotates 10 times: its usual 8 events don't reach its inception anymore.
         await RotateAsync( "AnchL5", 10, token );
-        await using var listener = await ListenerAsync( "AnchL5", "AnchI5", c => c["Parties:0:AutoTrustKey"] = "Once", token );
-        await using var initiator = await InitiatorAsync( "AnchI5", "AnchL5", c => c[$"Local:TrustAnchors:{l.FullName}"] = l.Checkpoint.ToString(), token );
+        await using var listener = await ListenerAsync( "AnchL5", "AnchI5", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token );
+        await using var initiator = await InitiatorAsync( "AnchI5", "AnchL5", c => c[$"Local:KeyManagement:TrustAnchors:{l.FullName}"] = l.Checkpoint.ToString(), token );
         (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull( "The listener sent its events from the anchor stated by the initiator." );
         initiator.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent!.Seq.ShouldBe( 10 );
     }
@@ -186,8 +186,8 @@ public class TrustAnchorTests
         Reset( "AnchL6", "AnchI6" );
         var i = await CheckpointOfAsync( "AnchI6", token );
         await RotateAsync( "AnchI6", 10, token );
-        await using var listener = await ListenerAsync( "AnchL6", "AnchI6", c => c[$"Local:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
-        await using var initiator = await InitiatorAsync( "AnchI6", "AnchL6", c => c["Parties:0:AutoTrustKey"] = "Once", token );
+        await using var listener = await ListenerAsync( "AnchL6", "AnchI6", c => c[$"Local:KeyManagement:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
+        await using var initiator = await InitiatorAsync( "AnchI6", "AnchL6", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token );
         (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull( "EventsRequired: the initiator retried with its events from the anchor." );
         listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent!.Seq.ShouldBe( 10 );
         initiator.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().ShouldBeEmpty( "Not an issue: a step of the handshake." );
@@ -197,15 +197,15 @@ public class TrustAnchorTests
     public async Task a_pin_far_behind_catches_up_without_approval_Async( CancellationToken token )
     {
         Reset( "AnchL7", "AnchI7" );
-        await using( var listener = await ListenerAsync( "AnchL7", "AnchI7", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
-        await using( var initiator = await InitiatorAsync( "AnchI7", "AnchL7", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
+        await using( var listener = await ListenerAsync( "AnchL7", "AnchI7", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
+        await using( var initiator = await InitiatorAsync( "AnchI7", "AnchL7", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
         {
             (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull();
         }
         // The initiator rotates 10 times while the listener is away: more than a usual tail.
         await RotateAsync( "AnchI7", 10, token );
         await using( var listener = await ListenerAsync( "AnchL7", "AnchI7", c => { }, token ) )
-        await using( var initiator = await InitiatorAsync( "AnchI7", "AnchL7", c => c["Parties:0:AutoTrustKey"] = "Once", token ) )
+        await using( var initiator = await InitiatorAsync( "AnchI7", "AnchL7", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token ) )
         {
             (await WaitForAsync( () => Connected( initiator ), 40, token )).ShouldNotBeNull( "The pin caught up from the events sent from it." );
             listener.Remotes.Single().GetRequiredFeature<TransportFeature>().RemoteKeys.TrustedEvent!.Seq.ShouldBe( 10 );
@@ -218,8 +218,8 @@ public class TrustAnchorTests
         Reset( "AnchL8", "AnchI8" );
         var i = await CheckpointOfAsync( "AnchI8", token );
         await RotateAsync( "AnchI8", KeyEventChain.MaxEventWindow + 1, token );
-        await using var listener = await ListenerAsync( "AnchL8", "AnchI8", c => c[$"Local:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
-        await using var initiator = await InitiatorAsync( "AnchI8", "AnchL8", c => c["Parties:0:AutoTrustKey"] = "Once", token );
+        await using var listener = await ListenerAsync( "AnchL8", "AnchI8", c => c[$"Local:KeyManagement:TrustAnchors:{i.FullName}"] = i.Checkpoint.ToString(), token );
+        await using var initiator = await InitiatorAsync( "AnchI8", "AnchL8", c => c["Parties:0:KeyManagement:AutoTrustKey"] = "Once", token );
         (await WaitForAsync( () => Issue( listener, PeeringIssueKind.AnchorMismatch ), 40, token )).ShouldNotBeNull( "The anchor is too old to be reached." );
         (await WaitForAsync( () => Issue( initiator, PeeringIssueKind.RemoteAnchorMismatch ), 40, token )).ShouldNotBeNull();
         Connected( initiator ).ShouldBeNull();

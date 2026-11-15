@@ -198,7 +198,7 @@ sealed partial class RemoteKeys
         static TimeSpan GetMaxClockOffset( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
         {
             var maxClockOffset = IRemoteKeys.DefaultMaxClockOffset;
-            var o = configuration.TryResolveValue( nameof( MaxClockOffset ) );
+            var o = configuration.TryResolveValue( "KeyManagement:MaxClockOffset" );
             if( o != null )
             {
                 if( TimeSpan.TryParse( o, CultureInfo.InvariantCulture, out var offset )
@@ -209,7 +209,7 @@ sealed partial class RemoteKeys
                 }
                 else
                 {
-                    monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( MaxClockOffset )}' value, " +
+                    monitor.Warn( $"Unable to parse '{configuration.Path}:KeyManagement:MaxClockOffset' value, " +
                                   $"expected time span between '00:01:00' (1 minute) and '00:20:00' (20 minutes) but got '{o}'. " +
                                   $"Using default '{IRemoteKeys.DefaultMaxClockOffset}'." );
                 }
@@ -220,13 +220,13 @@ sealed partial class RemoteKeys
         AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
         {
             AutoTrustKey autoTrust = AutoTrustKey.Never;
-            var a = configuration.TryResolveValue( nameof( AutoTrustKey ) );
+            var a = configuration.TryResolveValue( "KeyManagement:AutoTrustKey" );
             // Enum.TryParse also accepts numerals and any combination of them, so "1" parses as Once
             // and "7" as an undefined value that passes every "!= Never" test. IsDefined rejects both:
             // this is a security switch, a typo in it must not silently grant trust.
             if( a != null && !(Enum.TryParse( a, true, out autoTrust ) && Enum.IsDefined( autoTrust )) )
             {
-                monitor.Warn( $"Unable to parse '{configuration.Path}:{nameof( AutoTrustKey )}' value, " +
+                monitor.Warn( $"Unable to parse '{configuration.Path}:KeyManagement:AutoTrustKey' value, " +
                               $"expected '{AutoTrustKey.Never}' or '{AutoTrustKey.Once}' but got '{a}'. " +
                               $"Using default '{AutoTrustKey.Never}'." );
             }

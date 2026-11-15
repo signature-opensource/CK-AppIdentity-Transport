@@ -100,7 +100,7 @@ public class EnlistmentTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$D";
-                                                                             c["Parties:1:AutoTrustKey"] = "Never";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Never";
                                                                          },
                                                                          listenerTypes: _common );
         var (a, b) = pair;

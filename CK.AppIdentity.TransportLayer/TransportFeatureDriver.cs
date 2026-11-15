@@ -268,7 +268,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // If AlwaysListening is false (the default), Listeners are created when the first non initiator
         // remote (no Address) appears.
         // We initialize the Listeners only if "AlwaysListening" is true.
-        if( !local.LocalConfiguration.Configuration.ResolveBooleanValue( context.Monitor, "AlwaysListening" ) )
+        if( !local.LocalConfiguration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:AlwaysListening" ) )
         {
             return true;
         }
@@ -312,7 +312,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         {
             listeners = ObtainListeners( context, listen, releaseOnError );
             if( listeners == null ) return false;
-            disallowEviction = r.Configuration.Configuration.ResolveBooleanValue( context.Monitor, nameof( TransportFeature.DisallowEviction ) );
+            disallowEviction = r.Configuration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:" + nameof( TransportFeature.DisallowEviction ) );
         }
         // No direct initialization error: add the TransportFeature to the party.
         // The initialization is not finished: if the party is listening it must be registered in its
@@ -322,7 +322,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // Only meaningful for an initiator, but read regardless: a remote that switches between
         // listening and dialling must not silently lose its configured value.
         TimeSpan? negotiationTimeout = null;
-        var nt = r.Configuration.Configuration.TryResolveValue( "NegotiationTimeout" );
+        var nt = r.Configuration.Configuration.TryResolveValue( "Transport:NegotiationTimeout" );
         if( nt != null )
         {
             if( int.TryParse( nt, out var seconds ) && seconds >= 1 && seconds <= 600 )
@@ -331,7 +331,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             }
             else
             {
-                context.Monitor.Warn( $"Invalid '{r.Configuration.Configuration.Path}:NegotiationTimeout' = '{nt}'. " +
+                context.Monitor.Warn( $"Invalid '{r.Configuration.Configuration.Path}:Transport:NegotiationTimeout' = '{nt}'. " +
                                       $"Expected a number of seconds between 1 and 600. Using the default." );
             }
         }

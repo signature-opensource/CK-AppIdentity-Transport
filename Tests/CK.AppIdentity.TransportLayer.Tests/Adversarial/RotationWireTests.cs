@@ -27,9 +27,9 @@ public class RotationWireTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{Listener}";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = Sender;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
 
     Task<ApplicationIdentityService> CreateSenderAsync( CancellationToken token )
@@ -38,7 +38,7 @@ public class RotationWireTests
             c["FullName"] = $"Test/{Sender}";
             c["Parties:0:PartyName"] = Listener;
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, s => s.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
 
     static Task ReadyAsync( ApplicationIdentityService s, CancellationToken token )

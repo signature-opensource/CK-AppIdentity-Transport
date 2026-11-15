@@ -49,7 +49,7 @@ public class MutualTlsBindingTests
             c["FullName"] = $"Test/{localName}";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureServices, token );
 
     /// <summary>Reads a frame, or null when the peer closes on us instead of replying.</summary>

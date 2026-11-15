@@ -71,10 +71,10 @@ public partial class TransportFeatureDriver
         // Handling "ListeningTypes". This normally applies to Remote (not to a Local party) but this doesn't
         // cost much to equally applies it a Local configuration level: this enables a transport Type to be an
         // "opt-in one"... It's overkill but corresponds to simpler code.
-        var listeningTypesSection = PartyConfiguration( party ).TryResolveSection( "ListeningTypes" );
+        var listeningTypesSection = PartyConfiguration( party ).TryResolveSection( "Transport:ListeningTypes" );
         if( listeningTypesSection == null )
         {
-            monitor.Warn( $"No \"ListeningTypes\" configuration for Party '{party.FullName}'. " +
+            monitor.Warn( $"No \"Transport:ListeningTypes\" configuration for Party '{party.FullName}'. " +
                           $"Using all available ListeningAddress: {available.Values.Select( a => a.ToString() ).Concatenate()}." );
             return available.Values;
         }
@@ -114,7 +114,7 @@ public partial class TransportFeatureDriver
     {
         result = null;
         List<ITransportTypeService>? locally = null;
-        foreach( var config in configuration.ResolveAllSection( "ListeningAddress" ) )
+        foreach( var config in configuration.ResolveAllSection( "Transport:ListeningAddress" ) )
         {
             var onLevel = config.ReadStringArray( monitor );
             if( onLevel == null ) return false;

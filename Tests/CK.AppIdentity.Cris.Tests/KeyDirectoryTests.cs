@@ -89,12 +89,12 @@ public class KeyDirectoryTests
         for( int i = 0; i < rotations; ++i ) cKeys.Rotate( TestHelper.Monitor ).ShouldBeTrue();
         string cName = c.ApplicationIdentityService.FullName.Path;
         var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                             senderConfiguration: s => s[$"Local:TrustAnchors:{cName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString(),
+                                                             senderConfiguration: s => s[$"Local:KeyManagement:TrustAnchors:{cName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString(),
                                                              senderTypes: _common,
                                                              listenerConfiguration: l =>
                                                              {
                                                                  l["Parties:1:PartyName"] = "$C";
-                                                                 l["Parties:1:AutoTrustKey"] = "Once";
+                                                                 l["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                              },
                                                              listenerTypes: [.. _common, typeof( RoutedCommandTests.RouteHostFeatureDriver )] );
         (await WaitForRouteAsync( pair.Sender.ApplicationIdentityService, "Keys" )).ShouldBeTrue( "The route of C reaches the sender through the listener." );

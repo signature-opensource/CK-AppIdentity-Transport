@@ -51,7 +51,7 @@ public class C2SelfAssertedSignatureTests
             c["FullName"] = "Test/$C2Off";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -126,7 +126,7 @@ public class C2SelfAssertedSignatureTests
             c["FullName"] = "Test/$C2OffOk";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();

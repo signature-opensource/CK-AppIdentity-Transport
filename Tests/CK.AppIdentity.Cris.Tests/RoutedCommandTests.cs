@@ -203,7 +203,7 @@ public class RoutedCommandTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: _common );
         var (a, b) = pair;
@@ -250,7 +250,7 @@ public class RoutedCommandTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: _common );
         var (a, b) = pair;
@@ -283,7 +283,7 @@ public class RoutedCommandTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver )] );
         var (a, b) = pair;
@@ -333,12 +333,12 @@ public class RoutedCommandTests
     {
         // The sender authorizes only C for "Routed" (with its target): the listener's own route is refused, C's route through it is kept.
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                                         senderConfiguration: c => c["Local:RouteHosts:Routed:Test/$C/#Dev"] = "IWhereRoutedCommand",
+                                                                         senderConfiguration: c => c["Local:Transport:RouteHosts:Routed:Test/$C/#Dev"] = "IWhereRoutedCommand",
                                                                          senderTypes: [.. _common, typeof( WhereRoutedHandler )],
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: [.. _common, typeof( WhereRoutedHandler ), typeof( RouteHostFeatureDriver )] );
         var (a, b) = pair;
@@ -372,7 +372,7 @@ public class RoutedCommandTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: _common );
         var (a, b) = pair;
@@ -412,7 +412,7 @@ public class RoutedCommandTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
-                                                                             c["Parties:1:AutoTrustKey"] = "Once";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                                          },
                                                                          listenerTypes: [.. _common, typeof( ForwardFilter )] );
         var (a, b) = pair;

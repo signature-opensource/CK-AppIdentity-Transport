@@ -52,9 +52,9 @@ public class ReverseLookupTests
         => CreateAsync( c =>
         {
             c["FullName"] = "Test/$LookupListener";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:Transport:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$LookupSender";
         }, token );
 
@@ -62,7 +62,7 @@ public class ReverseLookupTests
         => CreateAsync( c =>
         {
             c["FullName"] = "Test/$LookupSender";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$LookupListener";
             c["Parties:0:Address"] = $"mtls:127.0.0.1:{Port}";
         }, token );
@@ -141,7 +141,7 @@ public class ReverseLookupTests
             c["FullName"] = "Test/$LookupStrangerInit";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, token );
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
 

@@ -34,7 +34,7 @@ public class UnverifiedTailTests
         {
             c["FullName"] = $"Test/${name}";
             c["Parties:0:PartyName"] = $"${name}Peer";
-            if( anchor != null ) c[$"Local:TrustAnchors:{RemoteFullName( name )}"] = anchor.ToString();
+            if( anchor != null ) c[$"Local:KeyManagement:TrustAnchors:{RemoteFullName( name )}"] = anchor.ToString();
         }, ConfigureFastClock, token: token );
 
     static IRemoteKeys KeysOf( ApplicationIdentityService s ) => s.AllRemotes.Single().GetRequiredFeature<IRemoteKeys>();
@@ -287,7 +287,7 @@ public class UnverifiedTailTests
         await using var service = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c[$"Local:TrustAnchors:{fullName}"] = KeyCheckpoint.Of( fullName, other.Head ).ToString();
+            c[$"Local:KeyManagement:TrustAnchors:{fullName}"] = KeyCheckpoint.Of( fullName, other.Head ).ToString();
         }, ConfigureFastClock, token: token );
         var directory = service.GetRequiredFeature<ILocalKeys>().FindAnchoredKeys( fullName );
         directory.ShouldNotBeNull();

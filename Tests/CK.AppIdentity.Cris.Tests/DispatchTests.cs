@@ -317,7 +317,7 @@ public class DispatchTests
         await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, false, c =>
         {
             c["Parties:1:PartyName"] = "$Sender2";
-            c["Parties:1:AutoTrustKey"] = "Once";
+            c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
         }, null, _common );
         await using var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, true, null, null, [.. _common, typeof( SendersSide )] );
         await using var sender2 = await RunningApplication.CreateAsync( TestHelper.Monitor, true, c => c["FullName"] = "Test/$Sender2", null, [.. _common, typeof( SendersSide )] );

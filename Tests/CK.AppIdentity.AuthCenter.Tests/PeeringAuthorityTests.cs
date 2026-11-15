@@ -101,7 +101,7 @@ public class PeeringAuthorityTests
             c["Parties:0:PartyName"] = "$Holder";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
-            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
+            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _types, typeof( ApprovalPageFeatureDriver )] );
         RunningApplication? holder = null;
         try
@@ -115,21 +115,21 @@ public class PeeringAuthorityTests
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{CenterPort}";
                 c["Parties:0:AuthCenterRemote"] = "true";
                 c["Parties:1:PartyName"] = "$W";
-                c["Parties:1:AutoTrustKey"] = "Never";
+                c["Parties:1:KeyManagement:AutoTrustKey"] = "Never";
                 if( holderInitiates ) c["Parties:1:Address"] = $"tcp:127.0.0.1:{WPort}";
-                else c["Parties:1:ListeningAddress:0"] = $"tcp:127.0.0.1:{HolderPort}";
+                else c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{HolderPort}";
             }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._remoteTypes, .. _types] );
             var w = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: !holderInitiates, c =>
             {
                 c["FullName"] = "Test/$W";
                 c["Parties:0:PartyName"] = "$Holder";
-                if( holderInitiates ) c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{WPort}";
+                if( holderInitiates ) c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{WPort}";
                 else c["Parties:0:Address"] = $"tcp:127.0.0.1:{HolderPort}";
-                c["Parties:0:AutoTrustKey"] = "Never";
+                c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
                 if( anchored )
                 {
-                    c[$"Local:TrustAnchors:{centerName}"] = checkpoint.ToString();
-                    c["Local:AuthCenterParty"] = centerName;
+                    c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = checkpoint.ToString();
+                    c["Local:AuthCenterRemote:Party"] = centerName;
                 }
             }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. _types, typeof( RemoteAuthCenterFeatureDriver ), typeof( AuthCenterProofVerifier )] );
             return new Chain { Center = center, Holder = holder, W = w };

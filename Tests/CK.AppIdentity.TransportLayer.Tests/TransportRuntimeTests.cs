@@ -52,8 +52,8 @@ public class TransportRuntimeTests
         var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{listenerName}";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = senderName;
         }, ConfigureServices, token: token );
@@ -61,7 +61,7 @@ public class TransportRuntimeTests
         var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{senderName}";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = listenerName;
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
@@ -241,8 +241,8 @@ public class TransportRuntimeTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}L";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             if( !dynamicTenant ) c["Parties:0:PartyName"] = $"${name}S";
         }, ConfigureServices, token: token );
         ILocalParty local = listener;
@@ -251,14 +251,14 @@ public class TransportRuntimeTests
             local = (await listener.AddTenantDomainAsync( TestHelper.Monitor, c =>
             {
                 c["FullName"] = $"{domain}/${domain}";
-                c["Defaults:AutoTrustKey"] = "Once";
+                c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
                 c["Parties:0:PartyName"] = $"${name}S";
             } )).ShouldNotBeNull();
         }
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"{domain}/${name}S";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = dynamicTenant ? $"${domain}" : $"${name}L";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureServices, token: token );
@@ -290,8 +290,8 @@ public class TransportRuntimeTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TR5L";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Defaults:CountingChannel"] = "true";
             c["Defaults:AlphaChannel"] = "true";
             c["Parties:0:PartyName"] = "$TR5S";
@@ -299,7 +299,7 @@ public class TransportRuntimeTests
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TR5S";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:CountingChannel"] = "true";
             c["Defaults:AlphaChannel"] = "true";
             c["Parties:0:PartyName"] = "$TR5L";

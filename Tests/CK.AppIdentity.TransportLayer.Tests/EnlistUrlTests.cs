@@ -57,8 +57,6 @@ public class EnlistUrlTests
     void ConfigureServices( ServiceCollection services )
     {
         services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock );
-        services.AddSingleton<PartyDescriptionFeatureDriver>();
-        services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<PartyDescriptionFeatureDriver>() );
         services.AddSingleton<ApprovalPageFeatureDriver>();
         services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<ApprovalPageFeatureDriver>() );
     }
@@ -74,8 +72,8 @@ public class EnlistUrlTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Local:PublicUrl"] = "https://root.example.test";
             c["Parties:0:FullName"] = "Ghost/$Ghost";
             c["Parties:0:Local:PublicUrl"] = "https://ghost.example.test";
@@ -86,7 +84,7 @@ public class EnlistUrlTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"{domain}/${name}";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:FullName"] = $"Test/${listenerName}";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, services => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
@@ -149,14 +147,14 @@ public class EnlistUrlTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothListen";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Parties:0:PartyName"] = "$M8BothInit";
         }, services => services.AddSingleton<ApplicationIdentityService.ISystemClock>( _systemClock ), token: token );
         await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8BothInit";
-            c["Defaults:AutoTrustKey"] = "Never";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Never";
             c["Local:PublicUrl"] = "https://init.example.test";
             c["Parties:0:PartyName"] = "$M8BothListen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
@@ -177,10 +175,10 @@ public class EnlistUrlTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8LocalListen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Local:PublicUrl"] = "https://listen.example.test";
             c["Parties:0:PartyName"] = "$M8LocalInit";
-            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         }, ConfigureServices, token: token );
         await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -188,7 +186,7 @@ public class EnlistUrlTests
             c["Local:PublicUrl"] = "https://init.example.test";
             c["Parties:0:PartyName"] = "$M8LocalListen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureServices, token: token );
 
         var issue = await WaitForIssueAsync( initiator.GetRequiredFeature<TransportManagerFeature>(), 40, token );
@@ -210,10 +208,10 @@ public class EnlistUrlTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M8RemoteListen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Local:PublicUrl"] = "https://listen.example.test";
             c["Parties:0:PartyName"] = "$M8RemoteInit";
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureServices, token: token );
         await using var initiator = await TestHelper.CreateApplicationServiceAsync( c =>
         {
@@ -221,7 +219,7 @@ public class EnlistUrlTests
             c["Local:PublicUrl"] = "https://init.example.test";
             c["Parties:0:PartyName"] = "$M8RemoteListen";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
-            c["Parties:0:AutoTrustKey"] = "Never";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         }, ConfigureServices, token: token );
 
         var issue = await WaitForIssueAsync( listener.GetRequiredFeature<TransportManagerFeature>(), 40, token );

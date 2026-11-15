@@ -47,7 +47,7 @@ public class AdversarialHandshakeTests
             c["FullName"] = "Test/$HandshakeOk";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -93,7 +93,7 @@ public class AdversarialHandshakeTests
             c["FullName"] = "Test/$HandshakeEvil";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         // --- Connection 1: legitimate, establishes trust. ---

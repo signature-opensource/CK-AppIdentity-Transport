@@ -43,9 +43,9 @@ public class ListenerPeeringIssuesTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
                                     {
                                         c["FullName"] = "Test/$Listener";
-                                        c["Defaults:ListeningAddress:0"] = BlobChannelTester.Address;
+                                        c["Defaults:Transport:ListeningAddress:0"] = BlobChannelTester.Address;
                                         c["Defaults:BlobChannel"] = "true";
-                                        c["Defaults:AlwaysListening"] = "true";
+                                        c["Defaults:Transport:AlwaysListening"] = "true";
                                     }, AddFastClockAndBlobChannel, token );
 
         var listenerTransport = listener.GetRequiredFeature<TransportManagerFeature>();

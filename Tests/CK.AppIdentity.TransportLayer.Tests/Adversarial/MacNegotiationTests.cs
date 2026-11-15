@@ -66,15 +66,15 @@ public class MacNegotiationTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/$MacListen{forceHmac}";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = $"$MacSend{forceHmac}";
         }, ConfigureFastClock, token: token );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/$MacSend{forceHmac}";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = $"$MacListen{forceHmac}";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
         }, ConfigureFastClock, token: token );
@@ -118,7 +118,7 @@ public class MacNegotiationTests
             c["FullName"] = "Test/$MacFloor";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -164,7 +164,7 @@ public class MacNegotiationTests
             c["FullName"] = "Test/$MacBogus";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         await using var connection = await peer.AcceptAsync( token );

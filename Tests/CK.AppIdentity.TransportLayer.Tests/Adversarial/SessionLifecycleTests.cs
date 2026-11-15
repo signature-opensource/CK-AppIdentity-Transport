@@ -54,7 +54,7 @@ public class SessionLifecycleTests
             c["FullName"] = "Test/$Lifecycle";
             c["Parties:0:PartyName"] = remote;
             c["Parties:0:Address"] = peer.Address;
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
         var feature = sender.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
@@ -113,15 +113,15 @@ public class SessionLifecycleTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$RelListen";
-            c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = "$RelSend";
         }, ConfigureFastClock, token: token );
 
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$RelSend";
-            c["Defaults:AutoTrustKey"] = "Once";
+            c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Parties:0:PartyName"] = "$RelListen";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{AdversarialPeer.DefaultListenerPort}";
         }, ConfigureFastClock, token: token );

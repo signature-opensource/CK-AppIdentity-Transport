@@ -39,7 +39,7 @@ public partial class TransportFeatureDriver
         bool success = true;
         foreach( var local in locals )
         {
-            if( RouteHosts.TryRead( monitor, local.LocalConfiguration.Configuration.TryResolveSection( "RouteHosts" ), out var hosts ) )
+            if( RouteHosts.TryRead( monitor, local.LocalConfiguration.Configuration.TryResolveSection( "Transport:RouteHosts" ), out var hosts ) )
             {
                 _configuredRouteHosts[local.FullName] = hosts;
             }

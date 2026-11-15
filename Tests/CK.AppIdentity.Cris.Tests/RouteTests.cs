@@ -144,7 +144,7 @@ public class RouteTests
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$D";
-                                                                             c["Parties:1:AutoTrustKey"] = "Never";
+                                                                             c["Parties:1:KeyManagement:AutoTrustKey"] = "Never";
                                                                          } );
         var (a, b) = pair;
         (await a.CrisChannel.WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 10 ) )).ShouldBeTrue();

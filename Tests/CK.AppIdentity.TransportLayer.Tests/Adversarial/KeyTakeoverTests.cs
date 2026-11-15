@@ -41,7 +41,7 @@ public class KeyTakeoverTests
             c["Parties:0:Address"] = address;
             // AutoTrustKey only matters for connection 1, where it lets the legitimate identity be
             // adopted. What happens next goes through the pinned chain, never through AutoTrustKey.
-            c["Parties:0:AutoTrustKey"] = "Once";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Once";
         }, ConfigureFastClock, token: token );
 
     /// <summary>Connection 1: the legitimate party gets pinned.</summary>

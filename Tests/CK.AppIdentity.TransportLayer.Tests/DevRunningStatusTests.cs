@@ -21,7 +21,7 @@ public class DevRunningStatusTests
     static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, CancellationToken cancel )
     {
         var config = new MutableConfigurationSection( "CK-AppIdentity" );
-        config["Defaults:AutoTrustKey"] = "Once";
+        config["Defaults:KeyManagement:AutoTrustKey"] = "Once";
         configuration( config );
         // The "#Dev/Store" of a development solution (a host in Development computes it from its solution).
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor,
@@ -69,7 +69,7 @@ public class DevRunningStatusTests
         {
             c["FullName"] = "Test/$DevListener";
             c["Parties:0:PartyName"] = "$DevSender";
-            c["Defaults:ListeningAddress:0"] = "tcp:127.0.0.1:37128";
+            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37128";
         }, cancel );
         var listenerStatus = await WaitForAsync( GetStatusPath( listener ), e => e.TryGetProperty( "Transport", out _ ), cancel );
         var transport = listenerStatus.GetProperty( "Transport" );
@@ -115,8 +115,8 @@ public class DevRunningStatusTests
             c["FullName"] = "Test/$DevApprover";
             c["Parties:0:PartyName"] = "$DevWaiting";
             // The listener never trusts the sender automatically: an operator must approve it.
-            c["Parties:0:AutoTrustKey"] = "Never";
-            c["Defaults:ListeningAddress:0"] = "tcp:127.0.0.1:37129";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
+            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37129";
         }, cancel );
         await using var sender = await StartAsync( c =>
         {
@@ -157,9 +157,9 @@ public class DevRunningStatusTests
         {
             c["FullName"] = "Test/$DevAnchListener";
             c["Parties:0:PartyName"] = "$DevAnchSender";
-            c["Parties:0:AutoTrustKey"] = "Never";
-            c["Local:TrustAnchors:Test/$DevAnchSender/#Dev"] = "#Dev";
-            c["Defaults:ListeningAddress:0"] = "tcp:127.0.0.1:37131";
+            c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
+            c["Local:KeyManagement:TrustAnchors:Test/$DevAnchSender/#Dev"] = "#Dev";
+            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37131";
         }, cancel );
         await using var sender = await StartAsync( c =>
         {

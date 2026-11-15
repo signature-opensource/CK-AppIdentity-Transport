@@ -125,7 +125,7 @@ public class MessageLengthBoundTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$LenListen";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = remote;
         }, ConfigureFastClock, token: token );
 

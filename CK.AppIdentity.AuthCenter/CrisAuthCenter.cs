@@ -17,7 +17,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// creates it for a local party that uses a remote one and adds a <c>RemoteAuthCenter</c>.
 /// </para>
 /// <para>
-/// Without a channel to it, the Authentication Center is designated by its full name ("Local:AuthCenterParty") and has a
+/// Without a channel to it, the Authentication Center is designated by its full name ("Local:AuthCenterRemote:Party") and has a
 /// trust anchor: its keys are the ones of the key directory (see <see cref="ILocalKeys.FindAnchoredKeys"/>), its key events
 /// are fetched along its <see cref="AuthCenterFeature.RouteName"/> route (CK.AppIdentity.AuthCenter.Remote then adds an
 /// <c>AnchoredAuthCenter</c>). <see cref="AuthCenter"/> is then null.

@@ -41,7 +41,7 @@ public class UnknownRemoteIssueTests
         => TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/{localName}";
-            c["Defaults:AlwaysListening"] = "True";
+            c["Defaults:Transport:AlwaysListening"] = "True";
             c["Parties:0:PartyName"] = knownRemote;
         }, ConfigureFastClock, token: token );
 

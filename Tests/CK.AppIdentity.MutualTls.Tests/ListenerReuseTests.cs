@@ -54,11 +54,11 @@ public class ListenerReuseTests
             await using var s = await TestHelper.CreateApplicationServiceAsync( c =>
             {
                 c["FullName"] = "Test/$M0aBoth";
-                c["Defaults:AlwaysListening"] = "True";
-                c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{port}";
-                c["Defaults:ListeningAddress:1"] = $"mtls:127.0.0.1:{port}";
-                c["Defaults:ListeningTypes:0"] = "tcp";
-                c["Defaults:ListeningTypes:1"] = "mtls";
+                c["Defaults:Transport:AlwaysListening"] = "True";
+                c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{port}";
+                c["Defaults:Transport:ListeningAddress:1"] = $"mtls:127.0.0.1:{port}";
+                c["Defaults:Transport:ListeningTypes:0"] = "tcp";
+                c["Defaults:Transport:ListeningTypes:1"] = "mtls";
                 c["Parties:0:PartyName"] = "$M0aBothPeer";
             }, ConfigureServices, token );
         } );
@@ -86,11 +86,11 @@ public class ListenerReuseTests
         await using var s = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$M0aTwo";
-            c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{tcpPort}";
-            c["Defaults:ListeningAddress:1"] = $"mtls:127.0.0.1:{mtlsPort}";
-            c["Defaults:ListeningTypes:0"] = "tcp";
-            c["Defaults:ListeningTypes:1"] = "mtls";
+            c["Defaults:Transport:AlwaysListening"] = "True";
+            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{tcpPort}";
+            c["Defaults:Transport:ListeningAddress:1"] = $"mtls:127.0.0.1:{mtlsPort}";
+            c["Defaults:Transport:ListeningTypes:0"] = "tcp";
+            c["Defaults:Transport:ListeningTypes:1"] = "mtls";
             c["Parties:0:PartyName"] = "$M0aTwoPeer";
         }, ConfigureServices, token );
 
