@@ -33,9 +33,10 @@ public class EnlistUrlTests
     /// Gives every local party an approval page: a client application "Admin" with the "Enlistment" fact. A local party
     /// hosts the "Enlistment" route when it also has a public URL.
     /// </summary>
+    [PartyFeature( IsOptional = false )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
         {

@@ -13,6 +13,7 @@ namespace CK.AppIdentity.TransportLayer;
 /// Drives the <see cref="TransportFeature"/> remote's and <see cref="TransportManagerFeature"/> lifetime.
 /// The <see cref="TransportManagerFeature"/> is added to the <see cref="ApplicationIdentityService"/>'s features.
 /// </summary>
+[PartyFeature( IsOptional = false )]
 public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly TransportTypeService[] _transportTypes;
@@ -38,7 +39,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
                                    MessageProtocolDirectoryService protocolDirectory,
                                    IPeeringAuthority? peeringAuthority = null,
                                    IRouteHostAuthority? routeHostAuthority = null )
-        : base( s, isAllowedByDefault: true )
+        : base( s )
     {
         _routeHostAuthority = routeHostAuthority;
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();

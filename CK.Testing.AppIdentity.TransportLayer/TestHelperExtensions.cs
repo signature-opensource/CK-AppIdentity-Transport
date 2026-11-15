@@ -88,6 +88,8 @@ public static class TestHelperExtensions
         serviceBuilder.AddSingleton<ITransportTypeService>( sp => sp.GetRequiredService<TcpSocketTransportTypeService>() );
 
         configureServices?.Invoke( serviceBuilder );
+        // The PartyComponentDirectory of the registered feature drivers (the engine generates it in an application).
+        serviceBuilder.AddPartyComponentDirectory();
         var services = serviceBuilder.BuildServiceProvider();
 
         var s = services.GetRequiredService<ApplicationIdentityService>();

@@ -10,6 +10,7 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// included, with its "AuthCenter:Passkey" section (possibly absent: the family then has no scheme). It depends on the
 /// <see cref="LocalAuthCenterFeatureDriver"/>: the local Authentication Centers exist when it runs.
 /// </summary>
+[PartyFeature( IsOptional = false )]
 public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly bool _hasStore;
@@ -21,7 +22,7 @@ public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureD
     /// <param name="authCenter">The AuthCenter feature driver (it must be set up before this one).</param>
     /// <param name="services">The services: the passkeys are available only with an <see cref="IPasskeyStore"/>.</param>
     public AuthCenterPasskeyFeatureDriver( ApplicationIdentityService s, LocalAuthCenterFeatureDriver authCenter, IServiceProvider services )
-        : base( s, isAllowedByDefault: true )
+        : base( s )
     {
         _hasStore = services.GetService<IPasskeyStore>() != null;
     }

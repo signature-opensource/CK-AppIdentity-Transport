@@ -20,9 +20,10 @@ namespace CK.AppIdentity.Cris.Tests;
 [TestFixture]
 public class KeyDirectoryTests
 {
+    [PartyFeature( IsOptional = false )]
     public sealed class KeysRouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        public KeysRouteHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public KeysRouteHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder ) => builder.HostRoute( "Keys", party.FullName.Path );
 

@@ -114,10 +114,11 @@ public class RoutedCommandTests
             return r;
         }
     }
+[PartyFeature( IsOptional = false )]
 
     public sealed class RouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        public RouteHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public RouteHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder ) => builder.HostRoute( "Routed", "IWhereRoutedCommand" );
 

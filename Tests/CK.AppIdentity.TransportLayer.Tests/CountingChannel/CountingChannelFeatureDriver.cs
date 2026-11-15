@@ -10,7 +10,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 public sealed class CountingChannelFeatureDriver : ChannelFeatureDriver<CountingChannelFeature>
 {
     public CountingChannelFeatureDriver( TransportFeatureDriver transport )
-        : base( transport, isAllowedByDefault: false )
+        : base( transport )
     {
     }
 

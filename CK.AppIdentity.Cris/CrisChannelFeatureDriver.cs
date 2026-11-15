@@ -10,6 +10,7 @@ namespace CK.AppIdentity.Cris;
 /// </summary>
 // The channel exchanges commands, events and results as Json.
 [AlsoRegisterType<ICrisCallResult, CommonPocoJsonSupport, ICrisCallEnvelope>]
+[PartyFeature( IsOptional = false )]
 public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
 {
     readonly PocoDirectory _pocoDirectory;
@@ -34,7 +35,7 @@ public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelF
                                      IEnumerable<ICrisForwardedEnvelopeFilter> forwardedEnvelopeFilters,
                                      ICrisChannelReceptionHandler? receptionHandler = null,
                                      ICrisRoutedCommandSeal? routedCommandSeal = null )
-        : base( transport, isAllowedByDefault: true )
+        : base( transport )
     {
         _models = new CrisChannelModels( crisDirectory );
         _receptionHandler = receptionHandler;

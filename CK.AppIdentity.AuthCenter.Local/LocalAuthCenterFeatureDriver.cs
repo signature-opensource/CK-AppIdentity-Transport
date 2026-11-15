@@ -15,6 +15,8 @@ namespace CK.AppIdentity.AuthCenter;
 /// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't declare "AuthCenter" is
 /// ignored (CK.AppIdentity.AuthCenter.Remote handles it).
 /// </summary>
+[PartyFeature( AuthCenterFeature.Name, Side = FeatureSide.Local )]
+[Requires<RemoteAuthCenterFeatureDriver>]
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly string[] _schemeKeys;
@@ -33,7 +35,7 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
                                          KeyManagementFeatureDriver keys,
                                          IEnumerable<IAuthCenterSchemeConfiguration> schemeConfigurations,
                                          IServiceProvider services )
-        : base( s, AuthCenterFeature.Name )
+        : base( s )
     {
         _services = services;
         _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();

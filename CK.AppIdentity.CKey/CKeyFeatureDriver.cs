@@ -23,7 +23,7 @@ public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="keys">The key management (the keys of the local parties).</param>
     /// <param name="transport">The transport (the peering issues).</param>
     public CKeyFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys, TransportFeatureDriver transport )
-        : base( s, isAllowedByDefault: false )
+        : base( s )
     {
     }
 

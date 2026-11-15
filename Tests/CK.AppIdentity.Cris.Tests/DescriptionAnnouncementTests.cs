@@ -22,11 +22,12 @@ public class DescriptionAnnouncementTests
     /// <summary>
     /// The listener's contribution: a client application, and a public URL that the test changes.
     /// </summary>
+    [PartyFeature( IsOptional = false )]
     public sealed class TestDescriptionFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public static Uri? PublicUrl;
 
-        public TestDescriptionFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public TestDescriptionFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         public Task ChangeAsync( Uri publicUrl )
         {

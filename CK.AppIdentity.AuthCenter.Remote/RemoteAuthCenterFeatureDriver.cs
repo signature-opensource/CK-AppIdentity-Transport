@@ -21,6 +21,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// "Local:AuthCenterParty" must name it.
 /// </para>
 /// </summary>
+[PartyFeature( AuthCenterFeature.Name, Side = FeatureSide.Remote )]
 public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
     /// <summary>
@@ -43,7 +44,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
     /// <see cref="AnchoredAuthCenter"/> sends its queries from its own scope.
     /// </param>
     public RemoteAuthCenterFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys, IServiceProvider services )
-        : base( s, AuthCenterFeature.Name )
+        : base( s )
     {
         _services = services;
     }

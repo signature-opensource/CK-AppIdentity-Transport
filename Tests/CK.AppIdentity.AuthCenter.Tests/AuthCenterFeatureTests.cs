@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using CK.Testing;
 using CK.Monitoring;
 using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.AspNetCore.DataProtection;
@@ -46,6 +47,8 @@ public class AuthCenterFeatureTests
             services.AddSingleton<Oidc.AuthCenterOidcFeatureDriver>();
             services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<Oidc.AuthCenterOidcFeatureDriver>() );
         }
+        // The Local side requires the Remote side: it is in the directory.
+        services.AddPartyComponentDirectory( typeof( RemoteAuthCenterFeatureDriver ) );
         var s = services.BuildServiceProvider().GetRequiredService<ApplicationIdentityService>();
         _ = ((IHostedService)s).StartAsync( default );
         try

@@ -17,7 +17,7 @@ public sealed class BlobChannelFeatureDriver : ChannelFeatureDriver<BlobChannelF
 /// </summary>
 /// <param name="transport">The transport feature.</param>
 public BlobChannelFeatureDriver( TransportFeatureDriver transport )
-    : base( transport, isAllowedByDefault: false )
+    : base( transport )
 {
 }
 

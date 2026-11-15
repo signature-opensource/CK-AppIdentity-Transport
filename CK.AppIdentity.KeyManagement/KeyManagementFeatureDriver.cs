@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
+[PartyFeature( IsOptional = false )]
 
 public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
@@ -16,7 +17,7 @@ public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriv
     readonly PerfectEventSender<ILocalKeys> _keyEventAppended;
 
     public KeyManagementFeatureDriver( ApplicationIdentityService s, IDataProtectionProvider protectorProvider, ICoreKeyStore keyStore )
-        : base( s, true )
+        : base( s )
     {
         _protectorProvider = protectorProvider;
         _keyStore = keyStore;

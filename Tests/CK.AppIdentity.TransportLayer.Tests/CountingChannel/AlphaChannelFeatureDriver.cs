@@ -12,7 +12,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 public sealed class AlphaChannelFeatureDriver : ChannelFeatureDriver<AlphaChannelFeature>
 {
     public AlphaChannelFeatureDriver( TransportFeatureDriver transport )
-        : base( transport, isAllowedByDefault: false )
+        : base( transport )
     {
     }
 

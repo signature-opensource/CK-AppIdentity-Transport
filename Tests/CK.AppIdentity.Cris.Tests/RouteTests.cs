@@ -21,9 +21,10 @@ public class RouteTests
     /// <summary>
     /// The listener's facts: a client application that is an approval page, and a hosted route whose target is a command name.
     /// </summary>
+    [PartyFeature( IsOptional = false )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
         {
@@ -45,9 +46,10 @@ public class RouteTests
     /// <summary>
     /// Hosts the "MailSender" route (without target: the host is what is reached).
     /// </summary>
+    [PartyFeature( IsOptional = false )]
     public sealed class MailHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
-        public MailHostFeatureDriver( ApplicationIdentityService s ) : base( s, true ) { }
+        public MailHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
 
         protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder ) => builder.HostRoute( "MailSender" );
 

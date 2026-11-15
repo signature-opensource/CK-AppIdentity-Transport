@@ -11,6 +11,7 @@ namespace CK.AppIdentity.AuthCenter.Oidc;
 /// the local Authentication Centers exist when it runs. They share one HTTP client (one connection pool), disposed when the
 /// application stops: a removed tenant leaves no client behind.
 /// </summary>
+[PartyFeature( IsOptional = false )]
 public sealed class AuthCenterOidcFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly HttpClient _http;
@@ -21,7 +22,7 @@ public sealed class AuthCenterOidcFeatureDriver : ApplicationIdentityFeatureDriv
     /// <param name="s">The application identity service.</param>
     /// <param name="authCenter">The AuthCenter feature driver (it must be set up before this one).</param>
     public AuthCenterOidcFeatureDriver( ApplicationIdentityService s, LocalAuthCenterFeatureDriver authCenter )
-        : base( s, isAllowedByDefault: true )
+        : base( s )
     {
         _http = new HttpClient() { Timeout = TimeSpan.FromSeconds( 30 ) };
     }

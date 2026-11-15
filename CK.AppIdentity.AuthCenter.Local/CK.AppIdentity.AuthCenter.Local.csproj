@@ -12,5 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.AuthCenter\CK.AppIdentity.AuthCenter.csproj" />
+    <!-- The Local side requires the Remote side: the "AuthCenterRemote" key of a remote is read by both sides. -->
+    <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Remote\CK.AppIdentity.AuthCenter.Remote.csproj" />
   </ItemGroup>
 </Project>

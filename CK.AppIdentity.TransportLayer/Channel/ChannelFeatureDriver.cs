@@ -15,10 +15,8 @@ public abstract class ChannelFeatureDriver<T> : ApplicationIdentityFeatureDriver
     /// Initializes a new <see cref="ChannelFeatureDriver{T}"/>.
     /// </summary>
     /// <param name="transport">The transport feature.</param>
-    /// <param name="isAllowedByDefault">Whether the feature is opt-in or opt-out.</param>
-    protected ChannelFeatureDriver( TransportFeatureDriver transport,
-                                    bool isAllowedByDefault )
-        : base( transport.ApplicationIdentityService, isAllowedByDefault )
+    protected ChannelFeatureDriver( TransportFeatureDriver transport )
+        : base( transport.ApplicationIdentityService )
     {
         if( FeatureName.Length <= 7 || !FeatureName.EndsWith( "Channel" ) )
         {
