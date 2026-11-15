@@ -22,20 +22,9 @@ namespace CK.AppIdentity.KeyManagement;
 /// (<see cref="ILocalKeys.Recover"/>).
 /// </para>
 /// <para>
-/// <b>Configuration</b>, per local party, looked up from the party up through its parents (so a value at
-/// the root applies to every tenant domain, which may override it):
-/// <list type="bullet">
-///   <item><c>CoreKeyStore:CngProvider</c>: the provider name. Defaults to <see cref="DefaultProviderName"/>.</item>
-///   <item><c>CoreKeyStore:AllowFallback</c>: when true and the provider is not usable (another OS, no
-///   chip, a chip disabled in firmware, a missing driver), keys go to the <see cref="DefaultCoreKeyStore"/>
-///   with a warning. <b>Defaults to false</b>: referencing this package says that keys must be in
-///   hardware, and an unusable provider then refuses the party's startup rather than silently
-///   downgrading to file keys. Set it at the root for a mixed fleet.</item>
-///   <item><c>CoreKeyStore:MachineWide</c>: when true, keys belong to the machine instead of the
-///   service account (CNG machine keys: default access is administrators and LocalSystem), for services
-///   whose account may change. Creating them in the TPM provider usually needs administrative rights.
-///   Defaults to false: keys of the current user.</item>
-/// </list>
+/// <b>Configuration</b>, per local party: the <see cref="CngKeyStoreOption"/> of its KeyManagement feature (enabled by
+/// default, <c>"KeyManagement": { "CngKeyStore": false }</c> puts the keys of a party in files): the provider, whether a
+/// party may fall back to file keys when the provider is not usable, and whether the keys are machine keys.
 /// </para>
 /// <para>
 /// <b>Each key remembers where it is.</b> CNG cannot enumerate keys without native calls, so each key
@@ -53,13 +42,16 @@ namespace CK.AppIdentity.KeyManagement;
 public sealed class CngCoreKeyStore : ICoreKeyStore
 {
     /// <summary>
-    /// The CNG provider of the TPM: the default <c>CoreKeyStore:CngProvider</c>.
+    /// The CNG provider of the TPM: the default <see cref="CngKeyStoreOption.Provider"/>.
     /// </summary>
     public const string DefaultProviderName = "Microsoft Platform Crypto Provider";
 
     const string MarkerExtension = ".cng";
 
     readonly DefaultCoreKeyStore _fallback;
+    readonly IServiceProvider? _services;
+    // Resolved on first use: the KeyManagement feature driver takes this store (its options are this store's settings).
+    KeyManagementFeatureDriver? _keyManagement;
     // Probed once per provider name: creating an ephemeral key is what fails when the provider is absent
     // or not ready, and on a TPM it costs a round trip to the chip.
     readonly ConcurrentDictionary<string, (CngProvider? Provider, string? Reason)> _probes;
@@ -74,10 +66,15 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
     /// Initializes a CNG store, covering the default one.
     /// </summary>
     /// <param name="fallback">The default store.</param>
-    public CngCoreKeyStore( DefaultCoreKeyStore fallback )
+    /// <param name="services">
+    /// The services that contain the KeyManagement feature driver (the settings of a party are its option). Without them,
+    /// the store only opens, lists and deletes the existing keys.
+    /// </param>
+    public CngCoreKeyStore( DefaultCoreKeyStore fallback, IServiceProvider? services )
     {
         Throw.CheckNotNullArgument( fallback );
         _fallback = fallback;
+        _services = services;
         _probes = new ConcurrentDictionary<string, (CngProvider?, string?)>( StringComparer.OrdinalIgnoreCase );
         _settings = new ConditionalWeakTable<ILocalParty, Settings>();
     }
@@ -120,23 +117,14 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
         }
     }
 
-    Settings GetSettings( IActivityMonitor monitor, ILocalParty owner )
+    // The settings of a party: its CngKeyStore option. Null when it is disabled: its keys are in files.
+    Settings? GetSettings( ILocalParty owner )
     {
-        return _settings.GetValue( owner, o =>
-        {
-            var c = o.LocalConfiguration.Configuration;
-            var providerName = c.TryResolveValue( "CoreKeyStore:CngProvider" ) ?? DefaultProviderName;
-            return new Settings( providerName, ReadBool( c, "CoreKeyStore:AllowFallback" ), ReadBool( c, "CoreKeyStore:MachineWide" ) );
-
-            bool ReadBool( ImmutableConfigurationSection c, string key )
-            {
-                var v = c.TryResolveValue( key );
-                if( v == null ) return false;
-                if( bool.TryParse( v, out var b ) ) return b;
-                monitor.Warn( $"Invalid '{c.Path}:{key}' = '{v}': expected 'true' or 'false', using false." );
-                return false;
-            }
-        } );
+        if( _services == null ) return null;
+        _keyManagement ??= (KeyManagementFeatureDriver?)_services.GetService( typeof( KeyManagementFeatureDriver ) );
+        var option = _keyManagement?.GetOption<CngKeyStoreOption>( owner );
+        if( option == null ) return null;
+        return _settings.GetValue( owner, _ => new Settings( option.Provider, option.AllowFallback, option.MachineWide ) );
     }
 
     /// <summary>
@@ -150,14 +138,14 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
         if( !s.AllowFallback )
         {
             Throw.CKException( $"The CNG provider '{s.ProviderName}' is not usable for '{owner.FullName}': {reason}. " +
-                               $"Identity keys must be in it. Set 'CoreKeyStore:AllowFallback' to true to accept keys " +
+                               $"Identity keys must be in it. Set 'KeyManagement:CngKeyStore:AllowFallback' to true to accept keys " +
                                $"in files ({nameof( DefaultCoreKeyStore )}) where it is not usable." );
         }
         if( !s.FallbackSaid )
         {
             s.FallbackSaid = true;
             monitor.Warn( $"The CNG provider '{s.ProviderName}' is not usable for '{owner.FullName}' ({reason}): " +
-                          $"its identity keys go to the {nameof( DefaultCoreKeyStore )} ('CoreKeyStore:AllowFallback' is true)." );
+                          $"its identity keys go to the {nameof( DefaultCoreKeyStore )} ('KeyManagement:CngKeyStore:AllowFallback' is true)." );
         }
         return null;
     }
@@ -166,9 +154,9 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
     public ReadOnlyMemory<byte> CreateKey( IActivityMonitor monitor, ILocalParty owner, string name )
     {
         var marker = GetMarkerPath( owner, name );
-        var s = GetSettings( monitor, owner );
-        var provider = GetCreationProvider( monitor, owner, s );
-        if( provider == null || !OperatingSystem.IsWindows() ) return _fallback.CreateKey( monitor, owner, name );
+        var s = GetSettings( owner );
+        var provider = s != null ? GetCreationProvider( monitor, owner, s ) : null;
+        if( s == null || provider == null || !OperatingSystem.IsWindows() ) return _fallback.CreateKey( monitor, owner, name );
         Throw.CheckState( $"Key '{name}' already exists for '{owner.FullName}'.",
                           !File.Exists( marker ) && !_fallback.GetKeyNames( monitor, owner ).Contains( name ) );
         var cngName = GetCngName( owner, name );
@@ -198,12 +186,12 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
     public ECDsa? OpenKey( IActivityMonitor monitor, ILocalParty owner, string name )
     {
         var markerPath = GetMarkerPath( owner, name );
-        var s = GetSettings( monitor, owner );
+        var s = GetSettings( owner );
         if( !File.Exists( markerPath ) )
         {
             // A key of the default store. Readable, unless keys are required in a provider that is not
             // usable: then this party must not run on file keys at all.
-            GetCreationProvider( monitor, owner, s );
+            if( s != null ) GetCreationProvider( monitor, owner, s );
             return _fallback.OpenKey( monitor, owner, name );
         }
         var m = Marker.Read( owner, markerPath );

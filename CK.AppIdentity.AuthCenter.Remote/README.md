@@ -22,17 +22,19 @@ The Authentication Center must announce it (the roles of its description): a `"C
 
 ## Without a channel to the Authentication Center ([`AnchoredAuthCenter`](AnchoredAuthCenter.cs))
 
-A local party that has no remote allowing `"AuthCenterRemote"` can designate its Authentication Center by its full name,
-`"Local:AuthCenterParty"`. The Authentication Center must then have a trust anchor (`"Local:TrustAnchors"`, see
-[CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)), otherwise the setup fails. With a remote that
-declares `"AuthCenterRemote"`, `"AuthCenterParty"` must name it (the channel is used).
+When none of its remotes is the Authentication Center (none declares `"AuthCenterRemote"`), a local party can designate
+it by its full name: the `"Party"` setting of its own `"AuthCenterRemote"` section (`"Local:AuthCenterRemote:Party"`; a
+local party that declares `"AuthCenterRemote"` uses a remote Authentication Center). The Authentication Center must then
+have a trust anchor (`"Local:KeyManagement:TrustAnchors"`, see
+[CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)), otherwise the setup fails. When one of its
+remotes declares `"AuthCenterRemote"`, `"Local:AuthCenterRemote:Party"` must name it (the channel is used).
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Worker",
   "Local": {
-    "AuthCenterParty": "Acme/$Center/#Prod",
-    "TrustAnchors": { "Acme/$Center/#Prod": "12:8e2a980dea..." }
+    "AuthCenterRemote": { "Party": "Acme/$Center/#Prod" },
+    "KeyManagement": { "TrustAnchors": { "Acme/$Center/#Prod": "12:8e2a980dea..." } }
   },
   "Parties": [ { "PartyName": "Front" } ] // No channel to the Center: its route goes through the Front.
 }

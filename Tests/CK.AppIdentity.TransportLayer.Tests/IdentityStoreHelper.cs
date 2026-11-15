@@ -1,5 +1,6 @@
 using CK.AppIdentity.KeyManagement;
 using CK.Core;
+using CK.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.DataProtection;
 using NUnit.Framework;
@@ -83,7 +84,8 @@ static class IdentityStoreHelper
                                                                 CancellationToken token,
                                                                 ApplicationIdentityService.ISystemClock? clock = null,
                                                                 Action<MutableConfigurationSection>? configure = null,
-                                                                Func<IServiceProvider, CK.AppIdentity.KeyManagement.ICoreKeyStore>? keyStore = null )
+                                                                Func<IServiceProvider, CK.AppIdentity.KeyManagement.ICoreKeyStore>? keyStore = null,
+                                                                Type[]? options = null )
         => TestHelper.CreateApplicationServiceAsync(
                 c =>
                 {
@@ -96,6 +98,8 @@ static class IdentityStoreHelper
                     if( clock != null ) services.AddSingleton( clock );
                     // The last registration wins: the feature driver resolves this one.
                     if( keyStore != null ) services.AddSingleton( keyStore );
+                    // The options of the feature drivers (no engine: see AppIdentityTestHelper.AddPartyComponentOptions).
+                    if( options != null ) services.AddPartyComponentOptions( options );
                 },
                 token );
 

@@ -15,13 +15,13 @@ can add another one (see [Transport types](#transport-types)).
 When not specified, then the Remote is Client: we must act as a Server, meaning that we must listen to
 incoming connections until the Remote establishes the connection. When listening to incoming connections, a
 single local end point can handle connections from more than one RemoteParty: the `ListeningAddress` of a remote is
-its own key or the one of a `"Defaults"` section above it, so it can be defined once, in the `"Defaults"` of the root,
-for every remote. The `ListeningAddress` of the `"Defaults"` above the party and its own one are combined, the nearest
-winning for a given type of transport (see
+in the `"Transport"` section of its entry or of a `"Defaults"` section above it, so it can be defined once, in the
+`"Defaults"` of the root, for every remote. The `ListeningAddress` of the `"Defaults"` above the party and its own one
+are combined, the nearest winning for a given type of transport (see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
 This enables a dedicated listening address for a tenant domain (in its `"Defaults"`) or even for a specific Remote (on
-its entry). The listening addresses of a local party (see `AlwaysListening` below) are read from its `"Local"` section
-and the `"Defaults"` above it.
+its entry). The listening addresses of a local party (see `AlwaysListening` below) are read from the `"Transport"`
+section of its `"Local"` and of the `"Defaults"` above it.
 
 An `Address` or a `ListeningAddress` are mere strings: their exact syntax depends on the type of Transport that
 must be used. This type is the prefix of the address, with the standard URI protocol syntax: it is the `TypeName` of a
@@ -32,12 +32,12 @@ the same handshake inside a mutually authenticated TLS channel and lives in its 
 
 A `ListeningAddress` property in one section can be a string, a comma separated string or an array of strings,
 but when more than one address is specified, there must be only one address per type of Transport. With the `mtls:`
-transport registered, this is valid: `"ListeningAddress": [ "tcp:127.0.0.1:3712", "mtls:127.0.0.1:3713" ]`.
+transport registered, this is valid: `"Transport": { "ListeningAddress": [ "tcp:127.0.0.1:3712", "mtls:127.0.0.1:3713" ] }`.
 When no `ListeningAddress` is configured at all, the party listens on the default `tcp:` address, on all interfaces
 (`0.0.0.0:37120`), and a warning says so.
 
 When a `IRemoteParty.Address` is not specified, a third and last property can be used to choose which type of
-transport listener must be used: the `ListeningTypes`:
+transport listener must be used: the `ListeningTypes` (in the `"Transport"` section too):
   - It can be a simple string: 'all' to allow all the  `ListeningAddress` defined above, or one of the types (like 'tcp').
   - A comma separated string or an array of strings that are the transport type names to use.
 This `ListeningTypes` property defaults to 'all': the remote can freely choose the transport type to use.
@@ -49,12 +49,12 @@ multi-homed. And with the default 'all', a remote configured for a cleartext tra
 and authenticates correctly even though a secured listener was available: `ListeningTypes` set to that one
 type is how a deployment requires the secured one.
 
-Other keys (each one is the party's own key, in its `"Local"` for a local party, otherwise the one of the nearest
-`"Defaults"` above it):
+Other keys (each one is in the `"Transport"` section of the party, in its `"Local"` for a local party, otherwise in the
+one of the nearest `"Defaults"` above it):
 
 | Key | On | |
 |-----|----|---|
-| `AlwaysListening` | A local party (its `"Local"`) | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
+| `AlwaysListening` | A local party (the `"Transport"` of its `"Local"`) | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
 | `DisallowEviction` | A listened remote | `true` refuses a new incoming connection from this remote while one is alive. By default, a new connection replaces (evicts) the current one. |
 | `NegotiationTimeout` | A remote we connect to | How long an outgoing connection attempt may take, in seconds (1 to 600). Defaults to `TransportManagerFeature.DefaultOutgoingNegotiationTimeout` (15 seconds). |
 
@@ -229,12 +229,15 @@ CK.AppIdentity), in the second phase of its description
   announce that it hosts a route. The hosts authorized for the routes of a local party
   ([`RouteHosts`](RouteHosts.cs), `TransportFeatureDriver.GetRouteHosts`) come from its
   [`IRouteHostAuthority`](RouteHosts.cs) (its Authentication Center: CK.AppIdentity.AuthCenter implements it with its
-  signed System list), otherwise from its `"RouteHosts"` configuration (its `"Local"`, or a `"Defaults"` above it):
+  signed System list), otherwise from its `"Transport:RouteHosts"` configuration (its `"Local"`, or a `"Defaults"` above
+  it):
 
   ```jsonc
-  "RouteHosts": {
-    "MailSender": [ "Acme/$Mail1", "Acme/$Mail2" ],                          // Routes without target.
-    "Enlistment": { "Acme/$Admin": "https://admin.acme.com/app-identity/enlist" } // The authorized target.
+  "Transport": {
+    "RouteHosts": {
+      "MailSender": [ "Acme/$Mail1", "Acme/$Mail2" ],                          // Routes without target.
+      "Enlistment": { "Acme/$Admin": "https://admin.acme.com/app-identity/enlist" } // The authorized target.
+    }
   }
   ```
 

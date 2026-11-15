@@ -71,5 +71,5 @@ is its Authentication Center (`CrisAuthCenter`, pinned or anchored).
   instead of the bare enlistment URL: a waiting party that anchors the Authentication Center sees an authenticated URL
   (`PeeringIssue.IsEnlistUrlAuthenticated`), the answer to the phishing of the approval page.
 
-**What a waiting party needs:** `"Local:AuthCenterParty"` and a trust anchor of the Authentication Center
-(`"Local:TrustAnchors:{FullName}"`, or `"#Dev"`), and this package. Otherwise, the peering is unchanged.
+**What a waiting party needs:** `"Local:AuthCenterRemote:Party"` and a trust anchor of the Authentication Center
+(`"Local:KeyManagement:TrustAnchors:{FullName}"`, or `"#Dev"`), and this package. Otherwise, the peering is unchanged.

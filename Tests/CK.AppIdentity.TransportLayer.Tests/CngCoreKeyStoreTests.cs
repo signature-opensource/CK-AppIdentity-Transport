@@ -26,14 +26,17 @@ public class CngCoreKeyStoreTests
     const string SoftwareProvider = "Microsoft Software Key Storage Provider";
     const string NoProvider = "No Such Provider";
 
-    static Func<IServiceProvider, ICoreKeyStore> Cng() => sp => new CngCoreKeyStore( sp.GetRequiredService<DefaultCoreKeyStore>() );
+    // The store and its option (the option of the KeyManagement feature that the store reads for each party).
+    static Func<IServiceProvider, ICoreKeyStore> Cng() => sp => new CngCoreKeyStore( sp.GetRequiredService<DefaultCoreKeyStore>(), sp );
+
+    static readonly Type[] CngOption = [typeof( CngKeyStoreOption )];
 
     static Action<MutableConfigurationSection> Configure( string? provider, bool? allowFallback = null, bool? machineWide = null )
         => c =>
         {
-            if( provider != null ) c["Defaults:CoreKeyStore:CngProvider"] = provider;
-            if( allowFallback.HasValue ) c["Defaults:CoreKeyStore:AllowFallback"] = allowFallback.Value ? "true" : "false";
-            if( machineWide.HasValue ) c["Defaults:CoreKeyStore:MachineWide"] = machineWide.Value ? "true" : "false";
+            if( provider != null ) c["Defaults:KeyManagement:CngKeyStore:Provider"] = provider;
+            if( allowFallback.HasValue ) c["Defaults:KeyManagement:CngKeyStore:AllowFallback"] = allowFallback.Value ? "true" : "false";
+            if( machineWide.HasValue ) c["Defaults:KeyManagement:CngKeyStore:MachineWide"] = machineWide.Value ? "true" : "false";
         };
 
     static string[] Files( string partyName, string pattern )
@@ -50,7 +53,7 @@ public class CngCoreKeyStoreTests
     /// </summary>
     static void DestroyKeys( ApplicationIdentityService s )
     {
-        var store = new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ) );
+        var store = new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ), null );
         foreach( var n in store.GetKeyNames( TestHelper.Monitor, s ) ) store.DeleteKey( TestHelper.Monitor, s, n );
     }
 
@@ -67,7 +70,7 @@ public class CngCoreKeyStoreTests
         IdentityStoreHelper.ClearKeys( partyName );
         var protector = new HeaderProtector();
         byte[] spki;
-        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng() ) )
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng(), options: CngOption ) )
         {
             spki = s.GetRequiredFeature<ILocalKeys>().CurrentIdentity.PublicKeyRawData.ToArray();
             Files( partyName, "*.key" ).ShouldBeEmpty( "No key is in a file." );
@@ -75,7 +78,7 @@ public class CngCoreKeyStoreTests
             File.ReadAllText( IdentityStoreHelper.GetCoreKeysFolder( partyName ).AppendPart( "0.cng" ) ).ShouldStartWith( SoftwareProvider + "\nuser\n" );
 
             // The private key cannot be taken out of the provider, but it signs.
-            using var key = new CngCoreKeyStore( new DefaultCoreKeyStore( protector ) ).OpenKey( TestHelper.Monitor, s, "0" ).ShouldNotBeNull();
+            using var key = new CngCoreKeyStore( new DefaultCoreKeyStore( protector ), null ).OpenKey( TestHelper.Monitor, s, "0" ).ShouldNotBeNull();
             Should.Throw<CryptographicException>( () => key.ExportPkcs8PrivateKey() );
             var hash = SHA256.HashData( "data"u8 );
             using var verifier = ECDsa.Create();
@@ -83,7 +86,7 @@ public class CngCoreKeyStoreTests
             verifier.VerifyHash( hash, key.SignHash( hash ) ).ShouldBeTrue();
         }
 
-        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng() ) )
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng(), options: CngOption ) )
         {
             var keys = s.GetRequiredFeature<ILocalKeys>();
             keys.CurrentIdentity.PublicKeyRawData.ToArray().ShouldBe( spki, "A restart reopens the very same keys by name." );
@@ -103,16 +106,16 @@ public class CngCoreKeyStoreTests
     {
         const string partyName = "CngNone";
         IdentityStoreHelper.ClearKeys( partyName );
-        new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ) ).IsUsable( NoProvider, out var reason ).ShouldBeFalse();
+        new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ), null ).IsUsable( NoProvider, out var reason ).ShouldBeFalse();
         reason.ShouldNotBeNull();
 
         // Required by default: no silent downgrade to file keys.
         await Should.ThrowAsync<CKException>( () => IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                                    configure: Configure( NoProvider ), keyStore: Cng() ) );
+                                                                                    configure: Configure( NoProvider ), keyStore: Cng(), options: CngOption ) );
         Files( partyName, "*.key" ).ShouldBeEmpty( "Nothing was created." );
 
         await using( var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                    configure: Configure( NoProvider, allowFallback: true ), keyStore: Cng() ) )
+                                                                    configure: Configure( NoProvider, allowFallback: true ), keyStore: Cng(), options: CngOption ) )
         {
             s.GetRequiredFeature<ILocalKeys>().Seq.ShouldBe( 0 );
         }
@@ -121,7 +124,7 @@ public class CngCoreKeyStoreTests
 
         // Those file keys exist now: they still must not be used once fallback is no more allowed.
         await Should.ThrowAsync<CKException>( () => IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                                                    configure: Configure( NoProvider ), keyStore: Cng() ) );
+                                                                                    configure: Configure( NoProvider ), keyStore: Cng(), options: CngOption ) );
     }
 
     [Test, CancelAfter( 30000 )]
@@ -141,7 +144,7 @@ public class CngCoreKeyStoreTests
         Files( partyName, "*.key" ).Length.ShouldBe( 3, "Created by the default store." );
 
         // The provider appears: the identity is unchanged, new keys go to it.
-        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng() ) )
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( SoftwareProvider ), keyStore: Cng(), options: CngOption ) )
         {
             var keys = s.GetRequiredFeature<ILocalKeys>();
             keys.CurrentIdentity.PublicKeyRawData.ToArray().ShouldBe( spki, "The key of the default store is found." );
@@ -153,7 +156,7 @@ public class CngCoreKeyStoreTests
 
         // The configuration now names a provider that is not usable, with fallback: the keys of the
         // software provider are still opened there, and the next ones go to files.
-        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( NoProvider, allowFallback: true ), keyStore: Cng() ) )
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, protector, token, configure: Configure( NoProvider, allowFallback: true ), keyStore: Cng(), options: CngOption ) )
         {
             var keys = s.GetRequiredFeature<ILocalKeys>();
             keys.CurrentIdentity.PublicKeyRawData.ToArray().ShouldBe( spki );
@@ -175,7 +178,7 @@ public class CngCoreKeyStoreTests
         RequireWindows();
         const string partyName = "CngEnd";
         IdentityStoreHelper.ClearKeys( partyName );
-        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, configure: Configure( SoftwareProvider ), keyStore: Cng() );
+        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, configure: Configure( SoftwareProvider ), keyStore: Cng(), options: CngOption );
         var names = new[] { "0", "1", "recovery-0" }.Select( n => CngCoreKeyStore.GetCngName( s, n ) ).ToArray();
         names.ShouldAllBe( n => CngKey.Exists( n, new CngProvider( SoftwareProvider ) ) );
         s.GetRequiredFeature<ILocalKeys>().Decommission( TestHelper.Monitor ).ShouldBeTrue();
@@ -191,7 +194,7 @@ public class CngCoreKeyStoreTests
         const string partyName = "CngRoot";
         IdentityStoreHelper.ClearKeys( partyName );
         await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                    configure: c => c["Defaults:CoreKeyStore:CngProvider"] = SoftwareProvider, keyStore: Cng() );
+                                    configure: c => c["Defaults:KeyManagement:CngKeyStore:Provider"] = SoftwareProvider, keyStore: Cng(), options: CngOption );
         Files( partyName, "*.cng" ).Length.ShouldBe( 3 );
         DestroyKeys( s );
     }
@@ -206,7 +209,7 @@ public class CngCoreKeyStoreTests
         try
         {
             s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token,
-                                                        configure: Configure( SoftwareProvider, machineWide: true ), keyStore: Cng() );
+                                                        configure: Configure( SoftwareProvider, machineWide: true ), keyStore: Cng(), options: CngOption );
         }
         catch( CKException ex )
         {
@@ -226,13 +229,13 @@ public class CngCoreKeyStoreTests
     [Test, CancelAfter( 60000 )]
     public async Task On_a_real_TPM_the_identity_keys_are_in_the_chip_Async( CancellationToken token )
     {
-        var probe = new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ) );
+        var probe = new CngCoreKeyStore( new DefaultCoreKeyStore( new HeaderProtector() ), null );
         if( !probe.IsUsable( CngCoreKeyStore.DefaultProviderName, out var reason ) ) Assert.Ignore( $"No usable TPM on this machine: {reason}" );
 
         const string partyName = "CngTpm";
         IdentityStoreHelper.ClearKeys( partyName );
         // No configuration: the TPM is the default provider.
-        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, keyStore: Cng() );
+        await using var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, keyStore: Cng(), options: CngOption );
         Files( partyName, "*.key" ).ShouldBeEmpty();
         s.GetRequiredFeature<ILocalKeys>().Rotate( TestHelper.Monitor ).ShouldBeTrue( "The chip signs the event and the certificate." );
         DestroyKeys( s );

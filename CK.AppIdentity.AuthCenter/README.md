@@ -31,12 +31,12 @@ The feature is opt-in. It is declared by `"AuthCenter"` in the `"Local"` of a lo
 a remote (their key, `true` or a section, or in a `"Defaults"` that applies to them, see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
 The `"AuthCenter"` of the `"Local"` gives the role of the local party (the only designation key,
-`"Local:AuthCenterParty"`, is for an Authentication Center reached without a channel):
+`"Local:AuthCenterRemote:Party"`, is for an Authentication Center reached without a channel):
 
 | The local party | Its role | Its remotes that declare `"AuthCenterRemote"` |
 |---|---|---|
 | declares `"AuthCenter"` | It **is** its own Authentication Center (CK.AppIdentity.AuthCenter.Local). | They use it (they share its `CrisAuthCenter`): a `"Defaults"` that declares `"AuthCenterRemote"` lets all of them use it. |
-| doesn't declare it | It relays its authentication to a remote Authentication Center (CK.AppIdentity.AuthCenter.Remote). | **The** remote that is its Authentication Center: at most one. Without such a remote, `"Local:AuthCenterParty"` designates an anchored Authentication Center reached without a channel (see [CK.AppIdentity.AuthCenter.Remote](../CK.AppIdentity.AuthCenter.Remote/README.md)). |
+| doesn't declare it | It relays its authentication to a remote Authentication Center (CK.AppIdentity.AuthCenter.Remote). | **The** remote that is its Authentication Center: at most one. Without such a remote, `"Local:AuthCenterRemote:Party"` designates an anchored Authentication Center reached without a channel (see [CK.AppIdentity.AuthCenter.Remote](../CK.AppIdentity.AuthCenter.Remote/README.md)). |
 
 A remote that declares only `"AuthCenter"` is a configuration error. Declaring both names is not: a `"Defaults"` that
 applies to a `"Local"` and to its remotes may declare both. A `"Local"` may declare `"AuthCenterRemote"`: the party has the

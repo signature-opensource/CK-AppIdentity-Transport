@@ -27,7 +27,7 @@ So a compromised party of the System can lie in two ways:
 
 - **A route is accepted only toward an authorized host.** The hosts authorized for the routes of a local party
   (`RouteHosts`, CK.AppIdentity.TransportLayer) come from its Authentication Center (a signed list, see
-  CK.AppIdentity.AuthCenter), otherwise from its `"RouteHosts"` configuration. A route to another host, or with another
+  CK.AppIdentity.AuthCenter), otherwise from its `"Transport:RouteHosts"` configuration. A route to another host, or with another
   target, is refused and its announcer is named in a `SecurityCritical` warning: host substitution is impossible when
   the routes have an authority. Without one, the routes are believed as announced (a warning says so).
 - **A routed command names its destination.** `PartyRoutedCommandSender.SendAsync( ..., routeName, destination )` sets

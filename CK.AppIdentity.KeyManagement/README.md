@@ -234,17 +234,20 @@ store built on this interface that keeps the keys in hardware, see
 
 ## Configuration
 
-On a local party (read from its `"Local"` section only, never from a `"Defaults"`):
+The settings are in the `"KeyManagement"` section of a party (`"KeyManagement": { "KeyRotationDays": 30 }`).
+
+On a local party (read from the `"KeyManagement"` section of its `"Local"` only, never from a `"Defaults"`):
 
 | Key | Default | |
 |-----|---------|---|
 | `KeyRotationDays` | 60 | The rotation period of the identity key (7 to 3650). It also caps the validity of the credentials and signatures this party accepts, and of its own signatures (`MaxSignatureDays`). How long a remote can stay offline is 32 rotations (`KeyEventChain.MaxEventWindow`). |
 | `OperationalKeyDays` | 7 | Lifetime of the operational credential (1 to 31). |
 | `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `KeyRotationDays`). It must not exceed the `KeyRotationDays` of the parties that verify the signatures. |
-| `TrustAnchors` | none | The trust anchors of this party: `"TrustAnchors": { "{FullName}": "{seq}:{digest}" }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`), or `"#Dev"` in the dev store of a development solution (the checkpoint is read from the running status of the anchored party when it is verified). An invalid anchor, an anchor of the party itself, or `"#Dev"` outside the dev store fails the setup. |
+| `TrustAnchors` | none | The trust anchors of this party: `"KeyManagement": { "TrustAnchors": { "{FullName}": "{seq}:{digest}" } }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`), or `"#Dev"` in the dev store of a development solution (the checkpoint is read from the running status of the anchored party when it is verified). An invalid anchor, an anchor of the party itself, or `"#Dev"` outside the dev store fails the setup. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 
-On a remote (its own entry, otherwise the nearest `"Defaults"` above it, see
+On a remote (each value is read in the `"KeyManagement"` section of its own entry, otherwise in the one of the nearest
+`"Defaults"` above it, see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)):
 
 | Key | Default | |
