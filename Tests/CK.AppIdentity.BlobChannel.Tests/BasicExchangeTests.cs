@@ -43,7 +43,7 @@ public class BasicExchangeTests
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "Listener";
             c["Parties:0:Address"] = BlobChannelTester.Address;
-            c["Defaults:AllowFeatures"] = "BlobChannel";
+            c["Defaults:BlobChannel"] = "true";
         }, AddFastClockAndBlobChannel, token );
         var channel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
 
@@ -66,14 +66,14 @@ public class BasicExchangeTests
             c["FullName"] = "Test/$Listener";
             c["Defaults:ListeningAddress:0"] = BlobChannelTester.Address;
             c["Parties:0:PartyName"] = "Sender";
-            c["Defaults:AllowFeatures"] = "BlobChannel";
+            c["Defaults:BlobChannel"] = "true";
         }, AddFastClockAndBlobChannel, token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "Listener";
             c["Parties:0:Address"] = BlobChannelTester.Address;
-            c["Defaults:AllowFeatures"] = "BlobChannel";
+            c["Defaults:BlobChannel"] = "true";
         }, AddFastClockAndBlobChannel, token );
         var listenerChannel = listener.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();
         var senderChannel = sender.Remotes.Single().GetRequiredFeature<BlobChannelFeature>();

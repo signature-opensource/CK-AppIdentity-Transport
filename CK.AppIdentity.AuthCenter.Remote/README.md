@@ -2,22 +2,22 @@
 
 The Remote side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **a local party relays its
 authentication to a remote Authentication Center**. Its [`RemoteAuthCenterFeatureDriver`](RemoteAuthCenterFeatureDriver.cs)
-adds a [`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that doesn't allow `"AuthCenter"` (in its
-`"Local"`) and has a remote that allows `"AuthCenterRemote"`: this remote is its Authentication Center (more than one is
-a configuration error, a remote added later can be it). A local party that allows `"AuthCenter"` is ignored:
+adds a [`RemoteAuthCenter`](RemoteAuthCenter.cs) to every local party that doesn't declare `"AuthCenter"` (in its
+`"Local"`) and has a remote that declares `"AuthCenterRemote"`: this remote is its Authentication Center (more than one is
+a configuration error, a remote added later can be it). A local party that declares `"AuthCenter"` is ignored:
 CK.AppIdentity.AuthCenter.Local handles it, and the two packages can be referenced by the same application.
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Front",
   "Parties": [
-    { "PartyName": "Center", "AllowFeatures": "AuthCenterRemote" }, // The Authentication Center.
+    { "PartyName": "Center", "AuthCenterRemote": true }, // The Authentication Center.
     { "PartyName": "Box" }
   ]
 }
 ```
 
-The Authentication Center must announce it (the roles of its description): a `"Center"` whose `"Local"` doesn't allow
+The Authentication Center must announce it (the roles of its description): a `"Center"` whose `"Local"` doesn't declare
 `"AuthCenter"` is an error when it announces its description.
 
 ## Without a channel to the Authentication Center ([`AnchoredAuthCenter`](AnchoredAuthCenter.cs))
@@ -25,7 +25,7 @@ The Authentication Center must announce it (the roles of its description): a `"C
 A local party that has no remote allowing `"AuthCenterRemote"` can designate its Authentication Center by its full name,
 `"Local:AuthCenterParty"`. The Authentication Center must then have a trust anchor (`"Local:TrustAnchors"`, see
 [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)), otherwise the setup fails. With a remote that
-allows `"AuthCenterRemote"`, `"AuthCenterParty"` must name it (the channel is used).
+declares `"AuthCenterRemote"`, `"AuthCenterParty"` must name it (the channel is used).
 
 ```jsonc
 "CK-AppIdentity": {

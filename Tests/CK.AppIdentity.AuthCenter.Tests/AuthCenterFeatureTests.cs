@@ -87,12 +87,12 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Local:AllowFeatures"] = "AuthCenter";
-            c["Defaults:AllowFeatures"] = "AuthCenterRemote";
+            c["Local:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
             c["Parties:0:PartyName"] = "Front1";
             c["Parties:1:PartyName"] = "Front2";
             c["Parties:2:PartyName"] = "NoAuth";
-            c["Parties:2:DisallowFeatures"] = "AuthCenterRemote";
+            c["Parties:2:AuthCenterRemote"] = "false";
         }, local: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
         f.IsAvailable.ShouldBeTrue();
@@ -110,9 +110,9 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Local:AuthCenter"] = "true";
             c["Parties:0:PartyName"] = "Front";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         }, local: true );
         var keys = s.GetRequiredFeature<ILocalKeys>();
         var f = s.GetRequiredFeature<ICrisAuthCenter>();
@@ -136,7 +136,7 @@ public class AuthCenterFeatureTests
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
             c["Parties:1:PartyName"] = "Other";
         }, remote: true );
         var center = s.Remotes.Single( r => r.PartyName == "$Center" );
@@ -153,11 +153,13 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$SaaS";
-            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Defaults:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
             c["Parties:0:FullName"] = "Acme/$Acme";
             c["Parties:0:Parties:0:PartyName"] = "AcmeBox";
             c["Parties:1:FullName"] = "Opal/$Opal";
-            c["Parties:1:Defaults:DisallowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Parties:1:Defaults:AuthCenter"] = "false";
+            c["Parties:1:Defaults:AuthCenterRemote"] = "false";
             c["Parties:1:Parties:0:PartyName"] = "OpalBox";
         }, local: true );
         s.GetFeature<CrisAuthCenter>().ShouldNotBeNull().AuthCenter.ShouldBeSameAs( s );
@@ -192,19 +194,19 @@ public class AuthCenterFeatureTests
         await using( var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Local:AuthCenter"] = "true";
             c["Parties:0:PartyName"] = "Front";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         }, remote: true ) )
         {
             s.GetFeature<CrisAuthCenter>().ShouldBeNull();
         }
-        // Only the Local side: the local party that doesn't allow "AuthCenter" cannot use its remote one.
+        // Only the Local side: the local party that doesn't declare "AuthCenter" cannot use its remote one.
         await using( var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         }, local: true ) )
         {
             s.GetFeature<CrisAuthCenter>().ShouldBeNull();
@@ -218,54 +220,46 @@ public class AuthCenterFeatureTests
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Remote1";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
             c["Parties:1:PartyName"] = "Remote2";
-            c["Parties:1:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:1:AuthCenterRemote"] = "true";
         }, remote: true );
-        await StartMustFailAsync( "holds the settings of a local AuthCenter", c =>
+        await StartMustFailAsync( "declares the feature: true, false or the settings of a local AuthCenter", c =>
         {
             c["FullName"] = "D/$App";
-            c["Local:AllowFeatures"] = "AuthCenter";
-            c["Local:AuthCenter"] = "true";
+            c["Local:AuthCenter"] = "Center";
         }, local: true );
         await StartMustFailAsync( "an AuthCenter is not designated", c =>
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
             c["Parties:0:AuthCenter:Session:ExpireTimeSpan"] = "01:00:00";
         }, remote: true );
         await StartMustFailAsync( "it has no 'KeyManagement' feature", c =>
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
-            c["Parties:0:DisallowFeatures"] = "KeyManagement";
+            c["Parties:0:AuthCenterRemote"] = "true";
+            c["Parties:0:KeyManagement"] = "false";
         }, remote: true );
-        // The former configuration of a remote of an AuthCenter: "AuthCenterRemote" in its Local, "AuthCenter" on its AuthCenter.
-        await StartMustFailAsync( "'Application: D/$Front/#Dev' allows the 'AuthCenterRemote' feature in its \"Local\": 'AuthCenterRemote' is allowed on a remote.", c =>
-        {
-            c["FullName"] = "D/$Front";
-            c["Local:AllowFeatures"] = "AuthCenterRemote";
-            c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
-        }, remote: true );
-        await StartMustFailAsync( "'D/$Center/#Dev' allows the 'AuthCenter' feature: 'AuthCenter' is allowed in the \"Local\" of a local party.", c =>
+        // A remote that declares "AuthCenter" (the key of a local party that is the feature) is an error.
+        await StartMustFailAsync( "'D/$Center/#Dev' declares the 'AuthCenter' feature: 'AuthCenter' is declared in the \"Local\" of a local party that is the feature.", c =>
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenter";
+            c["Parties:0:AuthCenter"] = "true";
         }, local: true, remote: true );
         await StartMustFailAsync( "0 when the scheme never elevates to the Critical level", c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
             c["Local:AuthCenter:CriticalLifetimes:Basic"] = "-00:01:00";
         }, local: true );
         await StartMustFailAsync( "cannot exceed the SessionLifetime", c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
             c["Local:AuthCenter:SessionLifetime"] = "01:00:00";
             c["Local:AuthCenter:CriticalLifetimes:Basic"] = "02:00:00";
         }, local: true );
@@ -277,7 +271,8 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Defaults:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
         }, local: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
 
@@ -311,14 +306,14 @@ public class AuthCenterFeatureTests
         {
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         }, remote: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
 
         // A remote added later cannot be a second AuthCenter.
         using( var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 ) )
         {
-            (await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Usurper"; c["AllowFeatures"] = "AuthCenterRemote"; } )).ShouldBeNull();
+            (await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Usurper"; c["AuthCenterRemote"] = "true"; } )).ShouldBeNull();
             await ShouldLogAsync( logs, "already uses the AuthCenter 'D/$Center/#Dev': a local party can use only one remote AuthCenter." );
         }
 
@@ -327,7 +322,7 @@ public class AuthCenterFeatureTests
         {
             c["FullName"] = "Acme/$Acme";
             c["Parties:0:PartyName"] = "AcmeCenter";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         } );
         var acmeCenter = acme.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldNotBeNull();
         acmeCenter.AuthCenter.PartyName.ShouldBe( "$AcmeCenter" );
@@ -348,7 +343,7 @@ public class AuthCenterFeatureTests
     {
         await using var s = await StartAsync( c => c["FullName"] = "D/$Front", remote: true );
         s.GetFeature<CrisAuthCenter>().ShouldBeNull();
-        var r = await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Late"; c["AllowFeatures"] = "AuthCenterRemote"; } );
+        var r = await s.AddRemoteAsync( TestHelper.Monitor, c => { c["PartyName"] = "Late"; c["AuthCenterRemote"] = "true"; } );
         var f = r.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldNotBeNull();
         f.AuthCenter.ShouldBeSameAs( r );
         s.GetFeature<CrisAuthCenter>().ShouldBeSameAs( f );
@@ -362,13 +357,13 @@ public class AuthCenterFeatureTests
         {
             c["FullName"] = "D/$App";
             // The root is the AuthCenter: its Peer uses it.
-            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Local:AuthCenter"] = "true";
             c["Parties:0:PartyName"] = "Peer";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
             // The Acme tenant uses a remote AuthCenter.
             c["Parties:1:FullName"] = "Acme/$Acme";
             c["Parties:1:Parties:0:PartyName"] = "AcmeCenter";
-            c["Parties:1:Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:1:Parties:0:AuthCenterRemote"] = "true";
         }, local: true, remote: true );
         var f = s.GetRequiredFeature<CrisAuthCenter>();
         f.AuthCenter.ShouldBeSameAs( s );
@@ -396,7 +391,7 @@ public class AuthCenterFeatureTests
         await StartMustFailAsync( "AuthCenter:Oidc' section belongs to no installed scheme family (is a package missing?)", c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
             OidcScheme( c );
         }, local: true );
 
@@ -404,7 +399,7 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
             OidcScheme( c );
         }, withOidc: true );
         var center = s.GetRequiredFeature<LocalAuthCenter>();
@@ -418,7 +413,7 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
         }, withOidc: true );
         var family = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         family.ProviderName.ShouldBe( "Oidc" );
@@ -431,7 +426,7 @@ public class AuthCenterFeatureTests
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Defaults:AllowFeatures"] = "AuthCenter";
+            c["Defaults:AuthCenter"] = "true";
             OidcScheme( c );
         }, withOidc: true );
         var rootFamily = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();

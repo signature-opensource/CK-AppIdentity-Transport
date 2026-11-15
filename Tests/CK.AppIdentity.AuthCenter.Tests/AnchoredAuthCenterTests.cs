@@ -82,7 +82,8 @@ public class AnchoredAuthCenterTests
         {
             c["FullName"] = "Test/$Center";
             c["Parties:0:PartyName"] = "$Hop";
-            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Defaults:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( IReadmitPartyNameCommand ), typeof( RevokePartyHandler )] );
         try
@@ -94,7 +95,7 @@ public class AnchoredAuthCenterTests
                 c["FullName"] = "Test/$Hop";
                 c["Parties:0:PartyName"] = "$Center";
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{CenterPort}";
-                c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+                c["Parties:0:AuthCenterRemote"] = "true";
                 c["Parties:1:PartyName"] = "$A";
                 c["Parties:1:AutoTrustKey"] = "Once";
                 c["Parties:1:ListeningAddress:0"] = $"tcp:127.0.0.1:{HopPort}";

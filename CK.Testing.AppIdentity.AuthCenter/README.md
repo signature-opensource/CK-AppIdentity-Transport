@@ -30,7 +30,7 @@ creates and starts the application, a party: the `IStObjMap.CreateRunningAspNetS
 (a Generic Host whose web application is the endpoint of its "HttpEndpoint" feature, on a random port):
 
 - its identity: `DefaultIdentity` ("Test/$AuthCenter", whose root is its own Authentication Center:
-  `"Local": { "AllowFeatures": "AuthCenter" }`, with the default settings) unless the `identity` callback configures another one;
+  `"Local": { "AuthCenter": true }`, with the default settings) unless the `identity` callback configures another one;
 - the data protection is the `FakeProtector`
   (see [CK.Testing.AppIdentity.TransportLayer](../CK.Testing.AppIdentity.TransportLayer/README.md)): the identity keys
   are not really protected at rest;

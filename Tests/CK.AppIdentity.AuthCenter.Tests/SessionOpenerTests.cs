@@ -101,9 +101,9 @@ public class SessionOpenerTests
         await using var app = await AuthCenterApp.StartAsync( c =>
         {
             c["FullName"] = "D/$App";
-            c["Local:AllowFeatures"] = "AuthCenter";
+            c["Local:AuthCenter"] = "true";
             c["Parties:0:PartyName"] = "Front";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
         } );
         app.Center.AuthCenter.ShouldBeSameAs( app.Identity );
         app.Identity.Remotes.Single().GetFeature<CrisAuthCenter>().ShouldBeSameAs( app.Center );

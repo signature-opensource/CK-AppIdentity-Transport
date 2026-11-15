@@ -1,7 +1,7 @@
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
-/// Opt-in: "AllowFeatures" of the remote must contain "CountingChannel".
+/// Opt-in: the remote declares it (<c>"CountingChannel": true</c>).
 /// <para>
 /// The failure switches live here rather than on the feature because they must be set before the
 /// first connection, when no feature exists yet.

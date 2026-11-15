@@ -244,13 +244,18 @@ public class RemoteAuthCenterTests
         {
             // The remote announces its public URL: the AuthCenter derives the accepted passkey origins and OIDC callbacks.
             c["Local:PublicUrl"] = "https://front.example.com";
-            c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+            c["Parties:0:AuthCenterRemote"] = "true";
             c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
         }, remoteTypes, c =>
         {
-            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Defaults:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
-            if( !remoteIsAllowed ) c["Parties:0:DisallowFeatures"] = "AuthCenter,AuthCenterRemote";
+            if( !remoteIsAllowed )
+            {
+                c["Parties:0:AuthCenter"] = "false";
+                c["Parties:0:AuthCenterRemote"] = "false";
+            }
             if( centerPublicUrl != null ) c["Local:PublicUrl"] = centerPublicUrl;
             // A settings section designates the local party as its own AuthCenter, like "true".
             if( passkeys )

@@ -61,7 +61,7 @@ public class BothPeeringIssuesTests
         {
             c["PartyName"] = "$Listener";
             c["Address"] = BlobChannelTester.Address;
-            if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+            if( senderHasProtocol ) c["BlobChannel"] = "true";
         } );
         Throw.DebugAssert( senderParty != null );
         var senderTransport = senderParty.GetFeature<TransportFeature>();
@@ -78,7 +78,7 @@ public class BothPeeringIssuesTests
         var listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
         {
             c["PartyName"] = "$Sender";
-            if( !senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+            if( !senderHasProtocol ) c["BlobChannel"] = "true";
         } );
         Throw.DebugAssert( listenerParty != null );
         var listenerTransport = listenerParty.GetFeature<TransportFeature>();
@@ -133,7 +133,7 @@ public class BothPeeringIssuesTests
             listenerParty = await listener.AddRemoteAsync( TestHelper.Monitor, c =>
             {
                 c["PartyName"] = "$Sender";
-                if( !senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+                if( !senderHasProtocol ) c["BlobChannel"] = "true";
             } );
             Throw.DebugAssert( listenerParty != null );
             listenerTransport = listenerParty.GetFeature<TransportFeature>();
@@ -145,7 +145,7 @@ public class BothPeeringIssuesTests
         {
             c["PartyName"] = "$Listener";
             c["Address"] = BlobChannelTester.Address;
-            if( senderHasProtocol ) c["AllowFeatures"] = "BlobChannel";
+            if( senderHasProtocol ) c["BlobChannel"] = "true";
         } );
         Throw.DebugAssert( senderParty != null );
         senderTransport = senderParty.GetFeature<TransportFeature>();

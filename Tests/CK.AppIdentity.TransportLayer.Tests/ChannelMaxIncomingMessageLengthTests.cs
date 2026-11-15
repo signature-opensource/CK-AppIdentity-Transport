@@ -24,7 +24,7 @@ public class ChannelMaxIncomingMessageLengthTests
         return await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$MaxLength";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = "Other";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37199";
         }, services =>

@@ -54,7 +54,7 @@ public class TransportRuntimeTests
             c["FullName"] = $"Test/{listenerName}";
             c["Defaults:AutoTrustKey"] = "Once";
             c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = senderName;
         }, ConfigureServices, token: token );
 
@@ -62,7 +62,7 @@ public class TransportRuntimeTests
         {
             c["FullName"] = $"Test/{senderName}";
             c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = listenerName;
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureServices, token: token );
@@ -292,14 +292,16 @@ public class TransportRuntimeTests
             c["FullName"] = "Test/$TR5L";
             c["Defaults:AutoTrustKey"] = "Once";
             c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AllowFeatures"] = "CountingChannel,AlphaChannel";
+            c["Defaults:CountingChannel"] = "true";
+            c["Defaults:AlphaChannel"] = "true";
             c["Parties:0:PartyName"] = "$TR5S";
         }, TwoChannels, token: token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$TR5S";
             c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AllowFeatures"] = "CountingChannel,AlphaChannel";
+            c["Defaults:CountingChannel"] = "true";
+            c["Defaults:AlphaChannel"] = "true";
             c["Parties:0:PartyName"] = "$TR5L";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, TwoChannels, token: token );

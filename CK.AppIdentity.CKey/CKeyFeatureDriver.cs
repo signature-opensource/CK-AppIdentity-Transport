@@ -8,8 +8,8 @@ namespace CK.AppIdentity.CKey;
 
 /// <summary>
 /// The "CKey" feature: the local, low-level user interface of the AppIdentity store of the process, reached by the ckey
-/// tool through a named pipe (see <see cref="CKeyPipeServer"/>). Opt-in, and "Local" only: it is allowed in the
-/// "Local:AllowFeatures" of the application, never of a tenant domain (the setup fails). The application's pipe gives
+/// tool through a named pipe (see <see cref="CKeyPipeServer"/>). Opt-in, and "Local" only: it is declared in the
+/// "Local" of the application (<c>"CKey": true</c>), never of a tenant domain (the setup fails). The application's pipe gives
 /// access to its tenant domains.
 /// </summary>
 public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
@@ -47,7 +47,7 @@ public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
     bool CheckNotTenant( IActivityMonitor monitor, ILocalParty tenant )
     {
         if( !IsAllowedFeature( tenant ) ) return true;
-        monitor.Error( $"The tenant domain '{tenant}' allows the \"CKey\" feature: it is \"Local\" to the application only (its pipe gives access to the tenant domains)." );
+        monitor.Error( $"The tenant domain '{tenant}' declares the \"CKey\" feature: it is \"Local\" to the application only (its pipe gives access to the tenant domains)." );
         return false;
     }
 

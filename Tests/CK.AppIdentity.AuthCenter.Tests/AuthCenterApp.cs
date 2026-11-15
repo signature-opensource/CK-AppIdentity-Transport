@@ -177,7 +177,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
     public static void LocalAuthCenter( MutableConfigurationSection c )
     {
         c["FullName"] = "D/$App";
-        c["Defaults:AllowFeatures"] = "AuthCenter";
+        c["Defaults:AuthCenter"] = "true";
         c["Local:AuthCenter:TokenLifetime"] = "00:02:00";
         // The tenant is its own AuthCenter: the root's "Defaults" allow the feature.
         c["Parties:0:FullName"] = "Acme/$Acme";

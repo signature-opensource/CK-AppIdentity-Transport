@@ -98,7 +98,8 @@ public class PeeringAuthorityTests
             c["FullName"] = "Test/$Center";
             c["Local:PublicUrl"] = "https://admin.example.com";
             c["Parties:0:PartyName"] = "$Holder";
-            c["Defaults:AllowFeatures"] = "AuthCenter,AuthCenterRemote";
+            c["Defaults:AuthCenter"] = "true";
+            c["Defaults:AuthCenterRemote"] = "true";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _types, typeof( ApprovalPageFeatureDriver )] );
         RunningApplication? holder = null;
@@ -111,7 +112,7 @@ public class PeeringAuthorityTests
                 c["FullName"] = "Test/$Holder";
                 c["Parties:0:PartyName"] = "$Center";
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{CenterPort}";
-                c["Parties:0:AllowFeatures"] = "AuthCenterRemote";
+                c["Parties:0:AuthCenterRemote"] = "true";
                 c["Parties:1:PartyName"] = "$W";
                 c["Parties:1:AutoTrustKey"] = "Never";
                 if( holderInitiates ) c["Parties:1:Address"] = $"tcp:127.0.0.1:{WPort}";

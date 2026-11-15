@@ -1,18 +1,19 @@
 using CK.Core;
+using System;
 
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The "AuthCenter" asymmetric feature (see the asymmetric features of CK.AppIdentity): the "AllowFeatures" use
-/// "AuthCenter" in the "Local" section of a local party and "AuthCenterRemote" on a remote.
+/// The "AuthCenter" asymmetric feature (see the asymmetric features of CK.AppIdentity): it is declared by "AuthCenter" in
+/// the "Local" section of a local party and by "AuthCenterRemote" on a remote.
 /// <list type="bullet">
 ///   <item>
-///   A local party that allows "AuthCenter" <b>is</b> its Authentication Center (the <c>LocalAuthCenterFeatureDriver</c>
+///   A local party that declares "AuthCenter" <b>is</b> its Authentication Center (the <c>LocalAuthCenterFeatureDriver</c>
 ///   of CK.AppIdentity.AuthCenter.Local). Its remotes that allow "AuthCenterRemote" are its remotes: they share its
 ///   <see cref="CrisAuthCenter"/>.
 ///   </item>
 ///   <item>
-///   A local party that doesn't allow it uses <b>the</b> remote that allows "AuthCenterRemote", if any: this remote is
+///   A local party that doesn't declare it uses <b>the</b> remote that declares "AuthCenterRemote", if any: this remote is
 ///   its Authentication Center (the <c>RemoteAuthCenterFeatureDriver</c> of CK.AppIdentity.AuthCenter.Remote). More than
 ///   one remote that allows "AuthCenterRemote" is a configuration error. A remote added later can be it.
 ///   </item>
@@ -42,8 +43,9 @@ public static class AuthCenterFeature
     public const string RouteName = "AuthCenter";
 
     /// <summary>
-    /// Checks that there is no designation: an "AuthCenter" key on a remote is an error, and so is an "AuthCenter" value
-    /// of a "Local" that is not a section (the "AuthCenter" section of a "Local" is the settings of a local AuthCenter).
+    /// Checks that there is no designation: the "AuthCenter" key of a "Local" declares the feature (<c>true</c>,
+    /// <c>false</c> or the settings of a local AuthCenter), any other value is an error; an "AuthCenter" section or value
+    /// on a remote is an error (a boolean is a declaration: CK.AppIdentity checks the names of an asymmetric feature).
     /// Used by the two sides of the feature.
     /// </summary>
     /// <param name="monitor">The monitor.</param>
@@ -54,15 +56,18 @@ public static class AuthCenterFeature
         if( party is ILocalParty local )
         {
             var settings = local.LocalConfiguration.Configuration.TryGetSection( Name );
-            if( settings == null || settings.HasChildren ) return true;
-            monitor.Error( $"Invalid '{settings.Path}' = '{settings.Value}': the \"AuthCenter\" section of a \"Local\" holds the settings of a local AuthCenter. "
-                           + $"An AuthCenter is not designated: allow the \"AuthCenter\" feature." );
+            if( settings == null || settings.HasChildren || IsBoolean( settings.Value ) ) return true;
+            monitor.Error( $"Invalid '{settings.Path}' = '{settings.Value}': the \"AuthCenter\" key of a \"Local\" declares the feature: true, false or the settings of a local AuthCenter. "
+                           + $"An AuthCenter is not designated." );
             return false;
         }
         var key = party.Configuration.Configuration.TryGetSection( Name );
-        if( key == null ) return true;
-        monitor.Error( $"Invalid '{key.Path}': an AuthCenter is not designated: allow the \"AuthCenterRemote\" feature for the remote that is the AuthCenter "
+        if( key == null || (!key.HasChildren && IsBoolean( key.Value )) ) return true;
+        monitor.Error( $"Invalid '{key.Path}': an AuthCenter is not designated: the remote that is the AuthCenter declares \"AuthCenterRemote\" "
                        + $"(and its settings are its own, in its \"Local\")." );
         return false;
+
+        static bool IsBoolean( string? value ) => string.Equals( value, "true", StringComparison.OrdinalIgnoreCase )
+                                                  || string.Equals( value, "false", StringComparison.OrdinalIgnoreCase );
     }
 }

@@ -3,7 +3,7 @@ using CK.AppIdentity.TransportLayer;
 namespace CK.AppIdentity.BlobChannel;
 
 /// <summary>
-/// Blob channels is a opt-in feature: to activate it, "AllowFeatures" of the remote must contain "BlobChannel".
+/// Blob channels is a opt-in feature: to activate it, the remote declares it (<c>"BlobChannel": true</c>).
 /// <para>
 /// The protocol name is inferred from this type name that must be suffixed by "ChannelFeatureDriver": the
 /// <see cref="ChannelFeature.BaseProtocolName"/> is automatically "Blob" (and the <see cref="ApplicationIdentityFeatureDriver.FeatureName"/>

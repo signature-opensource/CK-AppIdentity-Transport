@@ -68,7 +68,7 @@ public class ChannelHookFailureTests
             c["FullName"] = $"Test/{listenerName}";
             c["Defaults:AutoTrustKey"] = "Once";
             c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = senderName;
         }, ConfigureServices( configureListener ), token: token );
 
@@ -76,7 +76,7 @@ public class ChannelHookFailureTests
         {
             c["FullName"] = $"Test/{senderName}";
             c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = listenerName;
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureServices( configureSender ), token: token );
@@ -166,7 +166,7 @@ public class ChannelHookFailureTests
         var service = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$ThrowTeardown";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = "$ThrowTeardownA";
             c["Parties:1:PartyName"] = "$ThrowTeardownB";
         }, ConfigureServices( d => { driver = d; d.ThrowOnTeardown = true; } ), token: token );

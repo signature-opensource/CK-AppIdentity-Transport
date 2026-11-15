@@ -75,7 +75,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         // party): the local party can use only one.
         if( owner.GetFeature<CrisAuthCenter>() is CrisAuthCenter existing )
         {
-            context.Monitor.Error( $"'{remote}' allows the 'AuthCenterRemote' feature but '{owner}' already uses the AuthCenter '{existing.AuthCenter}': "
+            context.Monitor.Error( $"'{remote}' declares the 'AuthCenterRemote' feature but '{owner}' already uses the AuthCenter '{existing.AuthCenter}': "
                                    + $"a local party can use only one remote AuthCenter." );
             return Task.FromResult( false );
         }
@@ -136,7 +136,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         {
             if( designated != null && designated != authCenter.FullName.Path )
             {
-                monitor.Error( $"'{local}' designates the AuthCenter '{designated}' (\"Local:{AuthCenterPartyKey}\") but its remote '{authCenter}' allows the 'AuthCenterRemote' feature." );
+                monitor.Error( $"'{local}' designates the AuthCenter '{designated}' (\"Local:{AuthCenterPartyKey}\") but its remote '{authCenter}' declares the 'AuthCenterRemote' feature." );
                 return false;
             }
             return await AttachAsync( context, local, authCenter ).ConfigureAwait( false );

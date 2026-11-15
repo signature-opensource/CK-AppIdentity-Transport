@@ -7,7 +7,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// A second channel ("Alpha" protocol) that only counts what it receives: with the <see cref="CountingChannelFeatureDriver"/>
 /// registered before it, the channels are not registered in the order of their protocol names.
-/// Opt-in: "AllowFeatures" of the remote must contain "AlphaChannel".
+/// Opt-in: the remote declares it (<c>"AlphaChannel": true</c>).
 /// </summary>
 public sealed class AlphaChannelFeatureDriver : ChannelFeatureDriver<AlphaChannelFeature>
 {

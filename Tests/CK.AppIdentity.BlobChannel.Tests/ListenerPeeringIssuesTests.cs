@@ -44,7 +44,7 @@ public class ListenerPeeringIssuesTests
                                     {
                                         c["FullName"] = "Test/$Listener";
                                         c["Defaults:ListeningAddress:0"] = BlobChannelTester.Address;
-                                        c["Defaults:AllowFeatures"] = "BlobChannel";
+                                        c["Defaults:BlobChannel"] = "true";
                                         c["Defaults:AlwaysListening"] = "true";
                                     }, AddFastClockAndBlobChannel, token );
 

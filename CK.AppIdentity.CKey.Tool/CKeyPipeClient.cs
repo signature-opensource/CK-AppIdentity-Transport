@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.CKey.Tool;
 
 /// <summary>
-/// The client side of the CKey pipes: a running party that allows the "CKey" feature listens on one pipe per process,
+/// The client side of the CKey pipes: a running party that declares the "CKey" feature listens on one pipe per process,
 /// named <see cref="Prefix"/> followed by a hash of the full name of its application. A request is one connection: a
 /// UTF-8 JSON message prefixed by its length (4 bytes, little-endian), answered the same way.
 /// </summary>

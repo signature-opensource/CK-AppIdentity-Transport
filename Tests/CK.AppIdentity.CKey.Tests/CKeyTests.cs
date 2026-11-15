@@ -16,7 +16,7 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.CKey.Tests;
 
 /// <summary>
-/// The ckey tool against running parties: "Test/$Sender" and "Test/$Listener" allow the "CKey" feature and don't trust
+/// The ckey tool against running parties: "Test/$Sender" and "Test/$Listener" declare the "CKey" feature and don't trust
 /// each other ("AutoTrustKey": "Never" on both sides: a "both approval").
 /// </summary>
 [TestFixture]
@@ -43,7 +43,7 @@ public class CKeyTests
         var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
         {
             c["FullName"] = "Test/$CKeyListener";
-            c["Local:AllowFeatures"] = "CKey";
+            c["Local:CKey"] = "true";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$CKeySender";
             c["Parties:0:AutoTrustKey"] = "Never";
@@ -53,7 +53,7 @@ public class CKeyTests
             var sender = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: true, c =>
             {
                 c["FullName"] = "Test/$CKeySender";
-                c["Local:AllowFeatures"] = "CKey";
+                c["Local:CKey"] = "true";
                 c["Parties:0:PartyName"] = "$CKeyListener";
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{Port}";
                 c["Parties:0:AutoTrustKey"] = "Never";
@@ -227,7 +227,7 @@ public class CKeyTests
             c["FullName"] = "Test/$CKeyTenants";
             c["Defaults:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port + 1}";
             c["Parties:1:FullName"] = "Tenant/$Tenant";
-            c["Parties:1:Local:AllowFeatures"] = "CKey";
+            c["Parties:1:Local:CKey"] = "true";
             c["Parties:1:Parties:0:PartyName"] = "$X";
         }, null, typeof( CKeyFeatureDriver ) ) );
     }

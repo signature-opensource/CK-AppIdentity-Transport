@@ -12,7 +12,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// The Local side of the "AuthCenter" asymmetric feature (see <see cref="AuthCenterFeature"/>): a local party that allows
 /// "AuthCenter" (in its "Local") is its own Authentication Center. It gets a <see cref="CrisAuthCenter"/>, shared with its
 /// remotes that allow "AuthCenterRemote" (the dynamic ones included), and a <see cref="LocalAuthCenter"/> with the settings
-/// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't allow "AuthCenter" is
+/// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't declare "AuthCenter" is
 /// ignored (CK.AppIdentity.AuthCenter.Remote handles it).
 /// </summary>
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver

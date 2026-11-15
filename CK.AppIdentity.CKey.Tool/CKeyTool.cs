@@ -118,7 +118,7 @@ public static class CKeyTool
         var processes = await CKeyPipeClient.DiscoverAsync();
         if( processes.Count == 0 )
         {
-            output.WriteLine( "No running party of this OS user allows the \"CKey\" feature." );
+            output.WriteLine( "No running party of this OS user declares the \"CKey\" feature." );
             return 0;
         }
         foreach( var p in processes )
@@ -140,7 +140,7 @@ public static class CKeyTool
             var hosts = processes.Where( p => p.Hosts( party ) ).ToList();
             if( hosts.Count == 1 ) return (hosts[0], party);
             error.WriteLine( hosts.Count == 0
-                                ? $"No running party '{party}' of this OS user allows the \"CKey\" feature (see 'ckey list')."
+                                ? $"No running party '{party}' of this OS user declares the \"CKey\" feature (see 'ckey list')."
                                 : $"'{party}' runs in {hosts.Count} processes: stop the extra ones." );
             return (null, party);
         }

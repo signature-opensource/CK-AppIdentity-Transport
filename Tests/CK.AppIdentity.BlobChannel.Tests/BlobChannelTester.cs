@@ -141,7 +141,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
     /// <summary>
     /// Creates a "Test/$Sender" <see cref="ApplicationIdentityService"/> with a remote party "Test/$Listener"
     /// that targets the <see cref="Address"/> (dedicated <see cref="Port"/>).
-    /// AllowFeatures = "BlobChannel" is obviously specified.
+    /// "BlobChannel": true is obviously specified.
     /// </summary>
     /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
     /// <param name="storeSubPath">Optional file store sub path.</param>
@@ -160,14 +160,14 @@ public sealed class BlobChannelTester : IAsyncDisposable
             c["FullName"] = "Test/$Sender";
             c["Parties:0:PartyName"] = "$Listener";
             c["Parties:0:Address"] = Address;
-            c["Defaults:AllowFeatures"] = "BlobChannel";
+            c["Defaults:BlobChannel"] = "true";
         }, Configure( configureServices ), token );
     }
 
     /// <summary>
     /// Creates a "Test/$Listener" <see cref="ApplicationIdentityService"/> with a remote party "Test/$Sender".
     /// The TCP listener listens to <see cref="Address"/> (dedicated <see cref="Port"/>).
-    /// AllowFeatures = "BlobChannel" is obviously specified.
+    /// "BlobChannel": true is obviously specified.
     /// </summary>
     /// <param name="autoTrustKey">The AutoTrustKey configuration to use.</param>
     /// <param name="storeSubPath">Optional file store sub path.</param>
@@ -186,7 +186,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
             c["FullName"] = "Test/$Listener";
             c["Defaults:ListeningAddress:0"] = Address;
             c["Parties:0:PartyName"] = "$Sender";
-            c["Defaults:AllowFeatures"] = "BlobChannel";
+            c["Defaults:BlobChannel"] = "true";
         }, Configure( configureServices ), token );
     }
 

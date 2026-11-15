@@ -45,14 +45,14 @@ public static class AuthCenterApplicationTestingExtensions
     }
 
     /// <summary>
-    /// The default identity of the application: "Test/$AuthCenter" that allows the "AuthCenter" feature in its "Local":
+    /// The default identity of the application: "Test/$AuthCenter" that declares the "AuthCenter" feature in its "Local":
     /// it is its own Authentication Center (with the default settings).
     /// </summary>
     /// <param name="c">The CK-AppIdentity configuration section.</param>
     public static void DefaultIdentity( MutableConfigurationSection c )
     {
         c["FullName"] = "Test/$AuthCenter";
-        c["Local:AllowFeatures"] = "AuthCenter";
+        c["Local:AuthCenter"] = "true";
     }
 
     /// <summary>

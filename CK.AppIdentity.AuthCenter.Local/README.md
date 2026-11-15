@@ -3,17 +3,17 @@
 The Local side of the [AuthCenter feature](../CK.AppIdentity.AuthCenter/README.md): **a local party is its own
 Authentication Center** (the root or a tenant domain). Its
 [`LocalAuthCenterFeatureDriver`](LocalAuthCenterFeatureDriver.cs) adds a [`LocalAuthCenter`](LocalAuthCenter.cs) to every
-local party that allows `"AuthCenter"` (in its `"Local"`, or in a `"Defaults"` above it): this local party is its own
-Authentication Center, and its remotes that allow `"AuthCenterRemote"` use it. A local party that doesn't allow it is
+local party that declares `"AuthCenter"` (in its `"Local"`, or in a `"Defaults"` above it): this local party is its own
+Authentication Center, and its remotes that declare `"AuthCenterRemote"` use it. A local party that doesn't declare it is
 ignored: CK.AppIdentity.AuthCenter.Remote handles it, and the two packages can be referenced by the same application.
 
 ```jsonc
 "CK-AppIdentity": {
   "FullName": "Acme/$Center",
-  "Defaults": { "AllowFeatures": "AuthCenterRemote" },      // All its remotes.
+  "Defaults": { "AuthCenterRemote": true },      // All its remotes.
   "Local": {
-    "AllowFeatures": "AuthCenter",                          // The application is the Authentication Center.
-    "AuthCenter": { "TokenLifetime": "00:05:00" }           // The settings (below).
+    // The application is the Authentication Center: its settings (below) declare the feature.
+    "AuthCenter": { "TokenLifetime": "00:05:00" }
   },
   "Parties": [ { "PartyName": "Front" } ]
 }
@@ -223,7 +223,7 @@ handles, over the Cris channel. The identity of their users is established by
 [CK.AppIdentity.Cris.Authentication](../CK.AppIdentity.Cris.Authentication/README.md), with what this package provides:
 
 - **The caller party policy** ([`AuthCenterCallerPartyService`](AuthCenterCallerParties.cs)): its remotes (that have its
-  "AuthCenter" feature: they allow `"AuthCenterRemote"`) may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
+  "AuthCenter" feature: they declare `"AuthCenterRemote"`) may act for any user up to `Normal` (a remote vouches for the users of its endpoints, a deferred
   command included); any other caller party is refused.
 - **The user's proof** (see [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md#the-users-proof)):
   `LocalAuthCenter.CheckProofAsync` checks it against the session store, for a proof received here and for the

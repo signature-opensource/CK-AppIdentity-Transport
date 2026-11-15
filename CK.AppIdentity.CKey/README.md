@@ -15,11 +15,11 @@ an approval page, the checkpoint of a party to write in the `TrustAnchors` of an
 
 ```json
 "CK-AppIdentity": {
-  "Local": { "AllowFeatures": "CKey" }
+  "Local": { "CKey": true }
 }
 ```
 
-- **"Local" only:** a tenant domain that allows it fails the setup. The application's pipe gives access to its tenant
+- **"Local" only:** a tenant domain that declares it fails the setup. The application's pipe gives access to its tenant
   domains.
 - **One named pipe per process** ([`CKeyPipeServer`](CKeyPipeServer.cs)): `CKey_` followed by the first 16 hexadecimal
   digits of the SHA-256 of the application's full name (`CKeyPipeServer.GetPipeName`). When the name is taken (the same

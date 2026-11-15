@@ -64,7 +64,7 @@ public class SendHookTests
             c["FullName"] = $"Test/{listenerName}";
             c["Defaults:AutoTrustKey"] = "Once";
             c["Defaults:AlwaysListening"] = "True";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = senderName;
         }, ConfigureServices, token: token );
 
@@ -72,7 +72,7 @@ public class SendHookTests
         {
             c["FullName"] = $"Test/{senderName}";
             c["Defaults:AutoTrustKey"] = "Once";
-            c["Defaults:AllowFeatures"] = "CountingChannel";
+            c["Defaults:CountingChannel"] = "true";
             c["Parties:0:PartyName"] = listenerName;
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureServices, token: token );
