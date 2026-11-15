@@ -391,7 +391,7 @@ public class AuthCenterFeatureTests
     public async Task a_scheme_family_section_requires_its_package_Async()
     {
         // Without the Oidc package, its section is an error: a configured family must not silently do nothing.
-        await StartMustFailAsync( "AuthCenter:Oidc' section belongs to no installed scheme family (is a package missing?)", c =>
+        await StartMustFailAsync( "AuthCenter:Oidc' section belongs to no installed scheme family and is not an option of the AuthCenter (is a package missing?)", c =>
         {
             c["FullName"] = "D/$App";
             c["Defaults:AuthCenter"] = "true";

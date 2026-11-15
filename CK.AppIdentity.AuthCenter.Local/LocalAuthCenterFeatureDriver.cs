@@ -120,7 +120,12 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         // The settings are the local party's own "AuthCenter" section, in its "Local".
         var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeature.Name );
         if( settings != null && !settings.GetChildren().Any() ) settings = null;
-        var options = AuthCenterOptions.Read( monitor, settings, _schemeKeys );
+        // The options of the AuthCenter (like the "PasswordLost" of CK.UserProfile.UserPassword.Lost) are in its section too.
+        var optionDirectory = (PartyComponentOptionDirectory?)_services.GetService( typeof( PartyComponentOptionDirectory ) );
+        var options = AuthCenterOptions.Read( monitor,
+                                              settings,
+                                              _schemeKeys,
+                                              key => optionDirectory?.IsOptionName( typeof( LocalAuthCenterFeatureDriver ), key ) is true );
         if( options == null ) return false;
         // The hosts of the routes known at deployment: "AuthCenter:RouteHosts".
         if( !RouteHosts.TryRead( monitor, settings?.TryGetSection( "RouteHosts" ), out var routeHosts ) ) return false;

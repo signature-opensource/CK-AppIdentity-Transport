@@ -137,6 +137,7 @@ public class RemoteAuthCenterTests
 
     // The AuthCenter: the operations, the policy for its remotes, the verifier of the user's proofs.
     internal static readonly Type[] _centerTypes = [typeof( LocalAuthCenterFeatureDriver ),
+                                           typeof( RemoteAuthCenterFeatureDriver ),
                                            typeof( AuthCenterOperationHandlers ),
                                            typeof( AuthCenterCommandHandlers ),
                                            typeof( AuthCenterCallerPartyService ),

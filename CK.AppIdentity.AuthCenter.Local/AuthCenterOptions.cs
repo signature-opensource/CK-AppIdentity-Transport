@@ -97,7 +97,10 @@ public sealed class AuthCenterOptions
     /// </summary>
     public TimeSpan RefreshGraceWindow { get; }
 
-    internal static AuthCenterOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section, IReadOnlyCollection<string> schemeKeys )
+    internal static AuthCenterOptions? Read( IActivityMonitor monitor,
+                                             ImmutableConfigurationSection? section,
+                                             IReadOnlyCollection<string> schemeKeys,
+                                             Func<string, bool> isOptionName )
     {
         if( section == null ) return Default;
         bool success = true;
@@ -134,9 +137,10 @@ public sealed class AuthCenterOptions
             if( s.GetChildren().Any()
                 && !s.Key.Equals( nameof( CriticalLifetimes ), StringComparison.OrdinalIgnoreCase )
                 && !s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase )
-                && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase ) )
+                && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase )
+                && !isOptionName( s.Key ) )
             {
-                monitor.Error( $"The '{s.Path}' section belongs to no installed scheme family (is a package missing?). Installed: '{schemeKeys.Concatenate( "', '" )}'." );
+                monitor.Error( $"The '{s.Path}' section belongs to no installed scheme family and is not an option of the AuthCenter (is a package missing?). Installed: '{schemeKeys.Concatenate( "', '" )}'." );
                 success = false;
             }
         }

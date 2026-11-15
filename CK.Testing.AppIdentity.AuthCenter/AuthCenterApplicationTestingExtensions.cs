@@ -26,6 +26,7 @@ public static class AuthCenterApplicationTestingExtensions
     /// (CK.DB.User.UserPassword...) and the client packages are added by the test.
     /// </summary>
     public static readonly string[] AuthCenterApplicationAssemblies = ["CK.AppIdentity.AuthCenter.Local",
+                                                                       "CK.AppIdentity.AuthCenter.Remote",
                                                                        "CK.Cris.AspNet.Authentication",
                                                                        AspNetServerTestHelperExtensions.HttpEndpointAssembly];
 

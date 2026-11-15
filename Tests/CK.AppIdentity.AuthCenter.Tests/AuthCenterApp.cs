@@ -192,11 +192,14 @@ public sealed class AuthCenterApp : IAsyncDisposable
     {
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Types.Add( typeof( ApplicationIdentityService ),
+                                       typeof( PartyComponentDirectory ),
+                                       typeof( PartyComponentOptionDirectory ),
                                        typeof( CurrentLocalParty ),
                                        typeof( CurrentLocalPartyDefaultProvider ),
                                        typeof( KeyManagementFeatureDriver ),
                                        typeof( DefaultCoreKeyStore ),
                                        typeof( LocalAuthCenterFeatureDriver ),
+                                       typeof( RemoteAuthCenterFeatureDriver ),
                                        typeof( IAuthenticationSessionOpener ),
                                        // The endpoint side (CK.Cris.Authentication): the session commands are executed
                                        // by their endpoint, which executes the operations, handled here (single host).
