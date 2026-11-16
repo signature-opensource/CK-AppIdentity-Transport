@@ -17,6 +17,10 @@ namespace CK.AppIdentity.KeyManagement;
 /// Keys are persisted in the <see cref="ILocalParty.LocalFileStore"/> ("KeyManagement/EncryptionKeys"), protected by the
 /// local party's data protector. The public key is published signed by the party for the <see cref="PartyEncryption.KeyPurpose"/>.
 /// </para>
+/// <para>
+/// The current key is the last one created at or before now: a key created in the future (the clock went backwards) is
+/// kept to decrypt what was encrypted for it, it becomes current only at its creation date.
+/// </para>
 /// </summary>
 sealed class LocalEncryptionKeys
 {
@@ -55,6 +59,14 @@ sealed class LocalEncryptionKeys
                 else if( invalid ) _store.TryTrash( logger, file, immediateDelete: true );
             }
             _keys.Sort( ( a, b ) => a.Created.CompareTo( b.Created ) );
+            var now = party.ApplicationIdentityService.SystemClock.UtcNow;
+            foreach( var k in _keys )
+            {
+                if( k.Created > now )
+                {
+                    logger.Warn( $"The encryption key '{k.Path}' of '{party}' was created in the future ({k.Created:O}, the clock went backwards): it is kept to decrypt what was encrypted for it, it is not published before its creation date." );
+                }
+            }
         }
     }
 
@@ -136,8 +148,20 @@ sealed class LocalEncryptionKeys
         }
     }
 
+    // Must be called under the lock: the current key is the last one created at or before utcNow. A key created in the
+    // future (the clock went backwards) is kept to decrypt what was encrypted for it (deleting a readable key loses
+    // the data it encrypts) but it is not the current one before its creation date.
+    Key? GetCurrent( DateTime utcNow )
+    {
+        for( int i = _keys.Count - 1; i >= 0; --i )
+        {
+            if( _keys[i].Created <= utcNow ) return _keys[i];
+        }
+        return null;
+    }
+
     // Must be called under the lock.
-    bool IsNewKeyDue( DateTime utcNow ) => _keys.Count == 0 || _keys[^1].Expires - PartyEncryption.KeyOverlap <= utcNow;
+    bool IsNewKeyDue( DateTime utcNow ) => GetCurrent( utcNow ) is not { } current || current.Expires - PartyEncryption.KeyOverlap <= utcNow;
 
     /// <summary>
     /// Gets whether the published key must change (see <see cref="GetPublished"/>): there is no key, or the current one
@@ -147,7 +171,7 @@ sealed class LocalEncryptionKeys
     {
         lock( _lock )
         {
-            return IsNewKeyDue( utcNow ) || published == null || !published.Equals( _keys[^1].Published );
+            return IsNewKeyDue( utcNow ) || published == null || !published.Equals( GetCurrent( utcNow )!.Published );
         }
     }
 
@@ -162,10 +186,13 @@ sealed class LocalEncryptionKeys
             Prune( logger, utcNow );
             if( IsNewKeyDue( utcNow ) )
             {
-                _keys.Add( Create( utcNow ) );
+                // Sorted by creation: a key created in the future stays after it.
+                var created = Create( utcNow );
+                int idx = _keys.FindLastIndex( k => k.Created <= utcNow ) + 1;
+                _keys.Insert( idx, created );
                 logger.Info( $"New encryption key for '{_party}'." );
             }
-            var k = _keys[^1];
+            var k = GetCurrent( utcNow )!;
             return k.Published ??= new PartyEncryptionKey( k.Spki, signer.Sign( PartyEncryption.KeyPurpose, k.Spki, k.Expires ).Encoded.Span );
         }
     }
