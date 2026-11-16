@@ -52,7 +52,7 @@ public class SingleApplicationTests
         var engine = TestHelper.CreateDefaultEngineConfiguration();
         engine.FirstBinPath.Path = TestHelper.BinFolder;
         engine.FirstBinPath.AddAuthCenterApplication();
-        // The Basic scheme, with the fake login providers and actors of CK.Testing.Cris.Authentication (a real application
+        // The Basic scheme, with the fake login providers and actors of CK.Testing.Engine.Cris.Authentication (a real application
         // uses its database packages, like CK.DB.User.UserPassword).
         engine.FirstBinPath.Assemblies.Add( "CK.Cris.Authentication.Basic" );
         engine.FirstBinPath.AddFakeLoginProviders();

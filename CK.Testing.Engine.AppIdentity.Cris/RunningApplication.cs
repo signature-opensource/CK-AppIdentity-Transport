@@ -17,7 +17,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 /// <summary>
 /// Encapsulates what is required to create a Cris application that talks to another one.

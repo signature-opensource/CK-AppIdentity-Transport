@@ -3,7 +3,7 @@ using CK.Core;
 using CK.Cris;
 using System.Threading.Tasks;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 public class ListenerHandler : IAutoService
 {

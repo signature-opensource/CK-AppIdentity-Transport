@@ -1,6 +1,6 @@
 using CK.Cris;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 /// <summary>
 /// This command is sent by the Sender and handled by the Listener (<see cref="ListenerHandler.Handle(IWhoAmICommand, CK.AppIdentity.IRemoteParty, CK.Core.AuthenticationInfo)"/>):

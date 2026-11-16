@@ -1,6 +1,6 @@
 using CK.Cris;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 /// <summary>
 /// This command is sent by the Listener and handled by

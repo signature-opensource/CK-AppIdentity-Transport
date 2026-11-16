@@ -7,7 +7,7 @@ using CK.Cris;
 using CK.IO.AuthCenter;
 using CK.IO.Authentication;
 using CK.IO.Authentication.Weak;
-using CK.Testing.AppIdentity.Cris;
+using CK.Testing.Engine.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

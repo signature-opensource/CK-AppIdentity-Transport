@@ -6,7 +6,7 @@ using CK.AppIdentity.TransportLayer;
 using CK.Auth;
 using CK.Core;
 using CK.IO.AppIdentity.Enlistment;
-using CK.Testing.AppIdentity.Cris;
+using CK.Testing.Engine.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

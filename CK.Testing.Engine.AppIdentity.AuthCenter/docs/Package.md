@@ -3,4 +3,4 @@ Test helpers for an application that is its own Authentication Center and its HT
 CK.Cris.AspNet.Authentication to a BinPath, and `CreateRunningAuthCenterApplicationAsync` starts the application (its
 identity, a fake data protection, the Cris authentication and Cris middlewares).
 
-See the [README](https://github.com/signature-opensource/CK-AppIdentity-Transport/blob/stable/CK.Testing.AppIdentity.AuthCenter/README.md).
+See the [README](https://github.com/signature-opensource/CK-AppIdentity-Transport/blob/stable/CK.Testing.Engine.AppIdentity.AuthCenter/README.md).

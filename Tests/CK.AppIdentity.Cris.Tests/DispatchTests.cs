@@ -1,7 +1,7 @@
 using CK.Core;
 using CK.Cris;
 using CK.Monitoring;
-using CK.Testing.AppIdentity.Cris;
+using CK.Testing.Engine.AppIdentity.Cris;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Shouldly;

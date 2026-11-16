@@ -1,5 +1,5 @@
 using CK.AppIdentity.TransportLayer;
-using CK.Testing.AppIdentity.Cris;
+using CK.Testing.Engine.AppIdentity.Cris;
 using NUnit.Framework;
 using Shouldly;
 using System;

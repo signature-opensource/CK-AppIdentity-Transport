@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 /// <summary>
 /// A running "Test/$Sender" and its running "Test/$Listener", created by

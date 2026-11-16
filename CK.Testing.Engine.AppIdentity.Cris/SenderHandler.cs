@@ -1,7 +1,7 @@
 using CK.Core;
 using CK.Cris;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 public class SenderHandler : IAutoService
 {

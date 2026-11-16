@@ -1,6 +1,6 @@
 using CK.Cris;
 
-namespace CK.Testing.AppIdentity.Cris;
+namespace CK.Testing.Engine.AppIdentity.Cris;
 
 /// <summary>
 /// Caller only immediate event emitted by <see cref="ListenerHandler.HandleAsync(ISenderCommand, ICrisCommandContext)"/>.

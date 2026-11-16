@@ -21,12 +21,12 @@ namespace CK.AppIdentity.AuthCenter.Tests;
 
 /// <summary>
 /// An AuthCenter application (CK.AppIdentity.AuthCenter.Local): its root (and the "Acme" tenant) is a local AuthCenter, with fakes for the providers
-/// and the actors (CK.Testing.Cris.Authentication) and for the endpoint. The <see cref="Browser"/> plays the caller: it keeps what the endpoint issued
+/// and the actors (CK.Testing.Engine.Cris.Authentication) and for the endpoint. The <see cref="Browser"/> plays the caller: it keeps what the endpoint issued
 /// (the cookies) and the current authentication (what a front reads from the bearer token).
 /// </summary>
 public sealed class AuthCenterApp : IAsyncDisposable
 {
-    // The actors of the FakeActorDatabase (CK.Testing.Cris.Authentication): the applications have their own instance.
+    // The actors of the FakeActorDatabase (CK.Testing.Engine.Cris.Authentication): the applications have their own instance.
     static readonly FakeActorDatabase _actors = new FakeActorDatabase();
 
     public static ActorInfo Operator => _actors.Find( 42 )!;

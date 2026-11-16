@@ -1,4 +1,4 @@
-# CK.Testing.AppIdentity.Cris
+# CK.Testing.Engine.AppIdentity.Cris
 
 Test helpers that run two real applications talking over the Cris channel of
 [CK.AppIdentity.Cris](../CK.AppIdentity.Cris/README.md): a "Test/$Sender" that connects to a "Test/$Listener".
