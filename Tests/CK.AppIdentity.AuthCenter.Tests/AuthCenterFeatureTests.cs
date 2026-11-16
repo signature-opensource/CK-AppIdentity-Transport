@@ -36,7 +36,9 @@ public class AuthCenterFeatureTests
             services.AddSingleton<LocalAuthCenterFeatureDriver>();
             services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<LocalAuthCenterFeatureDriver>() );
         }
-        if( remote )
+        // The Local side requires the Remote side: in an application, its package brings it (the scope of a party is
+        // checked at start).
+        if( remote || local || withOidc )
         {
             services.AddSingleton<RemoteAuthCenterFeatureDriver>();
             services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<RemoteAuthCenterFeatureDriver>() );
@@ -204,16 +206,8 @@ public class AuthCenterFeatureTests
         {
             s.GetFeature<CrisAuthCenter>().ShouldBeNull();
         }
-        // Only the Local side: the local party that doesn't declare "AuthCenter" cannot use its remote one.
-        await using( var s = await StartAsync( c =>
-        {
-            c["FullName"] = "D/$Front";
-            c["Parties:0:PartyName"] = "Center";
-            c["Parties:0:AuthCenterRemote"] = "true";
-        }, local: true ) )
-        {
-            s.GetFeature<CrisAuthCenter>().ShouldBeNull();
-        }
+        // "Only the Local side" doesn't exist: the Local side requires the Remote side (its package brings it, the scope
+        // of a party is checked at start).
     }
 
     [Test]
