@@ -42,6 +42,8 @@ static class IdentityStoreHelper
 
     public static NormalizedPath GetKelFolder( string partyName ) => GetKeysFolder( partyName ).AppendPart( "Kel" );
 
+    public static NormalizedPath GetEncryptionKeysFolder( string partyName ) => GetLocalFolder( partyName ).Combine( "KeyManagement/EncryptionKeys" );
+
     public static NormalizedPath GetCoreKeysFolder( string partyName ) => GetLocalFolder( partyName ).AppendPart( DefaultCoreKeyStore.FolderName );
 
     /// <summary>
@@ -67,11 +69,12 @@ static class IdentityStoreHelper
     }
 
     /// <summary>
-    /// Resets a party's identity: its <c>Keys</c> folder and its default key store.
+    /// Resets a party's identity: its <c>Keys</c> folder, its default key store and its encryption keys (a test that
+    /// moves the clock creates encryption keys in the future: kept, they break the next run).
     /// </summary>
     public static void ClearKeys( string partyName )
     {
-        foreach( var p in new[] { GetKeysFolder( partyName ), GetCoreKeysFolder( partyName ) } )
+        foreach( var p in new[] { GetKeysFolder( partyName ), GetCoreKeysFolder( partyName ), GetEncryptionKeysFolder( partyName ) } )
         {
             if( Directory.Exists( p ) ) Directory.Delete( p, recursive: true );
         }
