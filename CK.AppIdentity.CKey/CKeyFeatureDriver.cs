@@ -12,6 +12,7 @@ namespace CK.AppIdentity.CKey;
 /// "Local" of the application (<c>"CKey": true</c>), never of a tenant domain (the setup fails). The application's pipe gives
 /// access to its tenant domains.
 /// </summary>
+[PartyFeature( "CKey", TypeActivation.Optional )]
 public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
 {
     CKeyPipeServer? _server;

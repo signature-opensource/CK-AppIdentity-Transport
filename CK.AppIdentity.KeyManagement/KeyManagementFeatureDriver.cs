@@ -7,8 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
-[PartyFeature( IsOptional = false )]
-
+[PartyFeature( "KeyManagement", TypeActivation.ByDefault )]
 public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;

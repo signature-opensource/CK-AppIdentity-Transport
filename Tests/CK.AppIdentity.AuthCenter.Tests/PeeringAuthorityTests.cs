@@ -31,7 +31,7 @@ public class PeeringAuthorityTests
     const int WPort = 37172;
 
     // The approval page: a client application with the "Enlistment" fact (the "Enlistment" route).
-    [PartyFeature( IsOptional = false )]
+    [PartyFeature( "ApprovalPage", TypeActivation.ByDefault )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s ) { }

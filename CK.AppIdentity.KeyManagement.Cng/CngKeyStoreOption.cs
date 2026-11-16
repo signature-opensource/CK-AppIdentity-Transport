@@ -19,7 +19,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// </code>
 /// An invalid configuration throws.
 /// </summary>
-[FeatureOption( IsEnabledByDefault = true )]
+[PartyFeatureOption( "CngKeyStore", TypeActivation.ByDefault )]
 public sealed class CngKeyStoreOption : IPartyComponentOption<KeyManagementFeatureDriver>
 {
     static readonly string[] _keys = ["Provider", "AllowFallback", "MachineWide"];

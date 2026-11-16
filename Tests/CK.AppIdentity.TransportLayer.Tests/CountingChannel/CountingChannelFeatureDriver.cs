@@ -1,3 +1,4 @@
+using CK.Core;
 namespace CK.AppIdentity.TransportLayer.Tests;
 
 /// <summary>
@@ -7,6 +8,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// first connection, when no feature exists yet.
 /// </para>
 /// </summary>
+[PartyFeature( "CountingChannel", TypeActivation.Optional )]
 public sealed class CountingChannelFeatureDriver : ChannelFeatureDriver<CountingChannelFeature>
 {
     public CountingChannelFeatureDriver( TransportFeatureDriver transport )

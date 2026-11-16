@@ -1,4 +1,5 @@
 using CK.AppIdentity.TransportLayer;
+using CK.Core;
 
 namespace CK.AppIdentity.BlobChannel;
 
@@ -10,6 +11,7 @@ namespace CK.AppIdentity.BlobChannel;
 /// is by design "BlobChannel".
 /// </para>
 /// </summary>
+[PartyFeature( "BlobChannel", TypeActivation.Optional )]
 public sealed class BlobChannelFeatureDriver : ChannelFeatureDriver<BlobChannelFeature>
 {
 /// <summary>

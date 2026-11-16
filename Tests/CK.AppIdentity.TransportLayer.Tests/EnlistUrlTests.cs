@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using static CK.Testing.MonitorTestHelper;
+using CK.Core;
 
 namespace CK.AppIdentity.TransportLayer.Tests;
 
@@ -33,7 +34,7 @@ public class EnlistUrlTests
     /// Gives every local party an approval page: a client application "Admin" with the "Enlistment" fact. A local party
     /// hosts the "Enlistment" route when it also has a public URL.
     /// </summary>
-    [PartyFeature( IsOptional = false )]
+    [PartyFeature( "ApprovalPage", TypeActivation.ByDefault )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public ApprovalPageFeatureDriver( ApplicationIdentityService s ) : base( s ) { }

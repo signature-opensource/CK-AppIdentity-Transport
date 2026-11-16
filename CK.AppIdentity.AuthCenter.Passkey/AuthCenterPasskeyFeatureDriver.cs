@@ -10,7 +10,7 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// included, with its "AuthCenter:Passkey" section (possibly absent: the family then has no scheme). It depends on the
 /// <see cref="LocalAuthCenterFeatureDriver"/>: the local Authentication Centers exist when it runs.
 /// </summary>
-[PartyFeature( IsOptional = false )]
+[PartyFeature( "AuthCenterPasskey", TypeActivation.ByDefault )]
 public sealed class AuthCenterPasskeyFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly bool _hasStore;

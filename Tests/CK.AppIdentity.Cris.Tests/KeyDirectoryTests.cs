@@ -20,7 +20,7 @@ namespace CK.AppIdentity.Cris.Tests;
 [TestFixture]
 public class KeyDirectoryTests
 {
-    [PartyFeature( IsOptional = false )]
+    [PartyFeature( "KeysRouteHost", TypeActivation.ByDefault )]
     public sealed class KeysRouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public KeysRouteHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }

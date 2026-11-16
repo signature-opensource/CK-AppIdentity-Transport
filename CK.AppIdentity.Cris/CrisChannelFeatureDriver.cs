@@ -10,7 +10,7 @@ namespace CK.AppIdentity.Cris;
 /// </summary>
 // The channel exchanges commands, events and results as Json.
 [AlsoRegisterType<ICrisCallResult, CommonPocoJsonSupport, ICrisCallEnvelope>]
-[PartyFeature( IsOptional = false )]
+[PartyFeature( "CrisChannel", TypeActivation.ByDefault )]
 public sealed class CrisChannelFeatureDriver : ChannelFeatureDriver<CrisChannelFeature>
 {
     readonly PocoDirectory _pocoDirectory;

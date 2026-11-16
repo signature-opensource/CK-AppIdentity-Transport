@@ -114,8 +114,8 @@ public class RoutedCommandTests
             return r;
         }
     }
-[PartyFeature( IsOptional = false )]
 
+    [PartyFeature( "RouteHost", TypeActivation.ByDefault )]
     public sealed class RouteHostFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public RouteHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }

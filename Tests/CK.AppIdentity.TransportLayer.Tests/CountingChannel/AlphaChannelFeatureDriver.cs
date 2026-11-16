@@ -9,6 +9,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// registered before it, the channels are not registered in the order of their protocol names.
 /// Opt-in: the remote declares it (<c>"AlphaChannel": true</c>).
 /// </summary>
+[PartyFeature( "AlphaChannel", TypeActivation.Optional )]
 public sealed class AlphaChannelFeatureDriver : ChannelFeatureDriver<AlphaChannelFeature>
 {
     public AlphaChannelFeatureDriver( TransportFeatureDriver transport )

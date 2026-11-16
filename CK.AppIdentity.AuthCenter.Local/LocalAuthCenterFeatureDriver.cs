@@ -15,7 +15,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't declare "AuthCenter" is
 /// ignored (CK.AppIdentity.AuthCenter.Remote handles it).
 /// </summary>
-[PartyFeature( AuthCenterFeature.Name, Side = FeatureSide.Local )]
+[PartyFeature( AuthCenterFeature.Name, TypeActivation.Optional, Side = FeatureSide.Local )]
 [Requires<RemoteAuthCenterFeatureDriver>]
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {

@@ -22,7 +22,7 @@ public class DescriptionAnnouncementTests
     /// <summary>
     /// The listener's contribution: a client application, and a public URL that the test changes.
     /// </summary>
-    [PartyFeature( IsOptional = false )]
+    [PartyFeature( "TestDescription", TypeActivation.ByDefault )]
     public sealed class TestDescriptionFeatureDriver : ApplicationIdentityFeatureDriver
     {
         public static Uri? PublicUrl;

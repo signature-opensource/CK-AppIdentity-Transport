@@ -21,7 +21,7 @@ namespace CK.AppIdentity.AuthCenter;
 /// "Local:AuthCenterRemote:Party" must name it.
 /// </para>
 /// </summary>
-[PartyFeature( AuthCenterFeature.Name, Side = FeatureSide.Remote )]
+[PartyFeature( AuthCenterFeature.Name, TypeActivation.Optional, Side = FeatureSide.Remote )]
 public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
     /// <summary>
