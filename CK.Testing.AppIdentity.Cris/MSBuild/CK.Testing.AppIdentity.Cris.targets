@@ -1,0 +1,6 @@
+<Project>
+  <Target Name="CK_Testing_AppIdentity_Cris_IsDeprecated" BeforeTargets="ResolveAssemblyReferences">
+    <Error Code="CKDEPRECATED"
+           Text="Package 'CK.Testing.AppIdentity.Cris' is deprecated and must be replaced by 'CK.Testing.Engine.AppIdentity.Cris': see https://github.com/signature-opensource/CK-AppIdentity-Transport/blob/stable/CK.Testing.Engine.AppIdentity.Cris/README.md." />
+  </Target>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Tombstone: no assembly, no dependencies. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- NU5128: the package has no lib/ folder, on purpose. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <Description>Deprecated: replaced by CK.Testing.Engine.AppIdentity.Cris.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="MSBuild/CK.Testing.AppIdentity.Cris.targets">
+      <Pack>true</Pack>
+      <PackagePath>buildTransitive\CK.Testing.AppIdentity.Cris.targets</PackagePath>
+    </Content>
+  </ItemGroup>
+</Project>
