@@ -231,35 +231,35 @@ public class TransportRuntimeTests
     [TestCase( false )]
     [TestCase( true )]
     [CancelAfter( 60000 )]
-    public async Task a_revoked_remote_is_cut_Async( bool dynamicTenant, CancellationToken token )
+    public async Task a_revoked_remote_is_cut_Async( bool inTenant, CancellationToken token )
     {
         // TR-7: the tenant domains added at runtime didn't subscribe to their revocations: a revoked remote kept its
-        // connection.
-        var name = dynamicTenant ? "TR7D" : "TR7S";
+        // connection. (The tenants are configured since the run-time tenants have left the public API: a remote of a
+        // tenant domain is checked.)
+        var name = inTenant ? "TR7D" : "TR7S";
         // A tenant domain is named after its domain.
-        var domain = dynamicTenant ? "TR7Acme" : "Test";
+        var domain = inTenant ? "TR7Acme" : "Test";
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"Test/${name}L";
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            if( !dynamicTenant ) c["Parties:0:PartyName"] = $"${name}S";
-        }, ConfigureServices, token: token );
-        ILocalParty local = listener;
-        if( dynamicTenant )
-        {
-            local = (await listener.AddTenantDomainAsync( TestHelper.Monitor, c =>
+            if( inTenant )
             {
-                c["FullName"] = $"{domain}/${domain}";
-                c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
+                c["Parties:0:FullName"] = $"{domain}/${domain}";
+                c["Parties:0:Parties:0:PartyName"] = $"${name}S";
+            }
+            else
+            {
                 c["Parties:0:PartyName"] = $"${name}S";
-            } )).ShouldNotBeNull();
-        }
+            }
+        }, ConfigureServices, token: token );
+        ILocalParty local = inTenant ? listener.TenantDomains.Single() : listener;
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = $"{domain}/${name}S";
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
-            c["Parties:0:PartyName"] = dynamicTenant ? $"${domain}" : $"${name}L";
+            c["Parties:0:PartyName"] = inTenant ? $"${domain}" : $"${name}L";
             c["Parties:0:Address"] = "tcp:127.0.0.1:37120";
         }, ConfigureServices, token: token );
 

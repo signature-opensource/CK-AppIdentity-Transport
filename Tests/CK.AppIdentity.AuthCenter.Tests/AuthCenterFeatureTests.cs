@@ -270,6 +270,8 @@ public class AuthCenterFeatureTests
             c["FullName"] = "D/$App";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
+            c["Parties:0:FullName"] = "Acme/$Acme";
+            c["Parties:0:Parties:0:PartyName"] = "AcmeBox";
         }, local: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
 
@@ -284,16 +286,16 @@ public class AuthCenterFeatureTests
             await ShouldLogAsync( logs, "an AuthCenter is not designated" );
         }
 
-        // A tenant domain added later is its own AuthCenter (the root's "Defaults" declare "AuthCenter" and "AuthCenterRemote").
-        var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
-        {
-            c["FullName"] = "Acme/$Acme";
-            c["Parties:0:PartyName"] = "AcmeBox";
-        } );
-        var acmeCenter = acme.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldNotBeNull();
+        // A tenant domain is its own AuthCenter (the root's "Defaults" declare "AuthCenter" and "AuthCenterRemote").
+        var acme = s.TenantDomains.Single();
+        var acmeCenter = acme.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
         acmeCenter.ShouldNotBeSameAs( f );
         acmeCenter.AuthCenter.ShouldBeSameAs( acme );
         acme.Remotes.Single().GetFeature<CrisAuthCenter>().ShouldBeSameAs( acmeCenter );
+
+        // A remote added later to the tenant domain receives its AuthCenter.
+        var late = await acme.AddRemoteAsync( TestHelper.Monitor, c => c["PartyName"] = "AcmeLate" );
+        late.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldBeSameAs( acmeCenter );
     }
 
     [Test]
@@ -304,6 +306,7 @@ public class AuthCenterFeatureTests
             c["FullName"] = "D/$Front";
             c["Parties:0:PartyName"] = "Center";
             c["Parties:0:AuthCenterRemote"] = "true";
+            c["Parties:1:FullName"] = "Acme/$Acme";
         }, remote: true );
         var f = s.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
 
@@ -314,15 +317,17 @@ public class AuthCenterFeatureTests
             await ShouldLogAsync( logs, "already uses the AuthCenter 'D/$Center/#Dev': a local party can use only one remote AuthCenter." );
         }
 
-        // A tenant domain added later comes with its AuthCenter (one of its remotes).
-        var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
+        // A tenant domain gets its AuthCenter when a remote of its own is added later (the one of the root is not its).
+        var acme = s.TenantDomains.Single();
+        acme.GetFeature<CrisAuthCenter>().ShouldBeNull();
+        var center = await acme.AddRemoteAsync( TestHelper.Monitor, c =>
         {
-            c["FullName"] = "Acme/$Acme";
-            c["Parties:0:PartyName"] = "AcmeCenter";
-            c["Parties:0:AuthCenterRemote"] = "true";
+            c["PartyName"] = "AcmeCenter";
+            c["AuthCenterRemote"] = "true";
         } );
-        var acmeCenter = acme.ShouldNotBeNull().GetFeature<CrisAuthCenter>().ShouldNotBeNull();
-        acmeCenter.AuthCenter.PartyName.ShouldBe( "$AcmeCenter" );
+        center.ShouldNotBeNull();
+        var acmeCenter = acme.GetFeature<CrisAuthCenter>().ShouldNotBeNull();
+        acmeCenter.AuthCenter.ShouldBeSameAs( center );
 
         // When its AuthCenter is destroyed, the tenant domain has no more authentication: the feature fails closed.
         using( var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 ) )
@@ -418,26 +423,24 @@ public class AuthCenterFeatureTests
     }
 
     [Test]
-    public async Task a_dynamic_tenant_has_its_own_scheme_families_Async()
+    public async Task a_tenant_has_its_own_scheme_families_Async()
     {
         await using var s = await StartAsync( c =>
         {
             c["FullName"] = "D/$App";
             c["Defaults:AuthCenter"] = "true";
             OidcScheme( c );
+            c["Parties:0:FullName"] = "Acme/$Acme";
+            OidcScheme( c, "Parties:0:Local:" );
+            c["Parties:0:Local:AuthCenter:Oidc:Other:Authority"] = "https://other-idp.example.com";
+            c["Parties:0:Local:AuthCenter:Oidc:Other:ClientId"] = "client";
+            c["Parties:0:Local:AuthCenter:Oidc:Other:ClientSecret"] = "secret";
+            c["Parties:0:Local:AuthCenter:Oidc:Other:Scopes"] = "openid";
         }, withOidc: true );
         var rootFamily = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
 
-        var acme = await s.AddTenantDomainAsync( TestHelper.Monitor, c =>
-        {
-            c["FullName"] = "Acme/$Acme";
-            OidcScheme( c );
-            c["Local:AuthCenter:Oidc:Other:Authority"] = "https://other-idp.example.com";
-            c["Local:AuthCenter:Oidc:Other:ClientId"] = "client";
-            c["Local:AuthCenter:Oidc:Other:ClientSecret"] = "secret";
-            c["Local:AuthCenter:Oidc:Other:Scopes"] = "openid";
-        } );
-        var acmeFamily = acme.ShouldNotBeNull().GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
+        var acme = s.TenantDomains.Single();
+        var acmeFamily = acme.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         acmeFamily.ShouldNotBeSameAs( rootFamily );
         acmeFamily.Schemes.ShouldBe( ["Oidc.Test", "Oidc.Other"], ignoreOrder: true );
     }
