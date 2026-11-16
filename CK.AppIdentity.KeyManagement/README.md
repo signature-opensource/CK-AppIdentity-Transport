@@ -186,6 +186,9 @@ Each local party has encryption keys (ECDH P-256): the other parties encrypt for
   decrypts for `KeyOverlap` more. `ILocalKeys.GetEncryptionKey` gives the current one, `ILocalKeys.FindEncryptionKey` a
   private key by its identifier.
 - **Persisted** in the `LocalFileStore` of the party ("KeyManagement/EncryptionKeys"), protected by its data protector.
+  A readable key is never deleted before its end: a key created "in the future" (the clock went backwards) is kept, to
+  decrypt what was encrypted for it, but it is not the current one before its creation date (a warning is logged when it
+  is loaded): a new current key is created.
 - **HPKE-like:** an ephemeral key agreement, HKDF-SHA256 (the ephemeral public key is in its info: a ciphertext can't be
   re-encoded), AES-256-GCM. A malformed ciphertext (an ephemeral key of another curve...) is refused, never thrown. The
   associated data binds a ciphertext to its

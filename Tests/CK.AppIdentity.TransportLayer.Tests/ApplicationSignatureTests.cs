@@ -265,6 +265,38 @@ public class ApplicationSignatureTests
         state.Tail[^1].Seq.ShouldBe( 1, "The tail ends with the new event: what the remotes need to move their pin." );
     }
 
+    [Test, CancelAfter( 30000 )]
+    public async Task An_encryption_key_created_in_the_future_is_kept_but_not_published_Async( CancellationToken token )
+    {
+        // The clock went backwards (a corrected clock, a store copied from a skewed host): a stored encryption key was
+        // created "in the future". It is kept (what was encrypted for it can still be decrypted) but a new current key
+        // is published: the signature of a key that ends after MaxSignatureDays used to throw and the party couldn't start.
+        const string partyName = "EncryptionKeyInTheFuture";
+        IdentityStoreHelper.ClearKeys( partyName );
+        var clock = new SystemClockTester( 0 );
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, clock ) )
+        {
+            s.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( clock.UtcNow );
+        }
+        // Ten days later (more than MaxSignatureDays), the first key has ended: a new one is created.
+        clock.Offset = TimeSpan.FromDays( 10 );
+        byte[] futureId;
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, clock ) )
+        {
+            futureId = PartyEncryption.GetKeyId( s.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( clock.UtcNow ).PublicKey.Span );
+        }
+        // Back to now: this key is in the future.
+        clock.Offset = TimeSpan.Zero;
+        await using( var s = await IdentityStoreHelper.CreateAsync( partyName, new HeaderProtector(), token, clock ) )
+        {
+            var keys = s.GetRequiredFeature<ILocalKeys>();
+            var published = keys.GetEncryptionKey( clock.UtcNow );
+            PartyEncryption.GetKeyId( published.PublicKey.Span ).ShouldNotBe( futureId, "A new current key is published." );
+            keys.FindEncryptionKey( futureId, clock.UtcNow ).ShouldNotBeNull( "The key in the future is kept." );
+            keys.GetEncryptionKey( clock.UtcNow ).ShouldBe( published, "It is the current one." );
+        }
+    }
+
     #endregion
 
     #region Remote side
