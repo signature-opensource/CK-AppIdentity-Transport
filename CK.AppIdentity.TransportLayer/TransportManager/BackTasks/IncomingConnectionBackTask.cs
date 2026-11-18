@@ -826,11 +826,23 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
         bool isApproval = issue is PeeringIssueKind.RequiresLocalApproval
                                    or PeeringIssueKind.RequiresRemoteApproval
                                    or PeeringIssueKind.RequiresBothApproval;
-        byte[]? approvalNonce = isApproval && remote != null
-                                    ? remote.Approval.OnInitial( initialMessage.RemoteHead,
-                                                                 initialMessage.ApprovalCommitment,
-                                                                 transportManager.SystemClock.UtcNow )
-                                    : null;
+        byte[]? approvalNonce = null;
+        if( isApproval && remote != null )
+        {
+            approvalNonce = remote.Approval.OnInitial( initialMessage.RemoteHead,
+                                                       initialMessage.ApprovalCommitment,
+                                                       transportManager.SystemClock.UtcNow,
+                                                       out bool firstRefusal );
+            // Refused: the places hold revealed keys (the first refusal is logged, not each one: a flood of keys
+            // must not flood the logs). The caller gets no nonce, so no code.
+            if( firstRefusal )
+            {
+                transportManager.Logger.Warn( ActivityMonitor.Tags.SecurityCritical,
+                                              $"'{remote.Party}' has {ApprovalSession.MaxPendingKeys} pending keys whose approval codes are revealed: a new key " +
+                                              $"of '{initialMessage.FullName}' (at '{incoming.RemoteEndPointDescription}') is refused until one of them expires. " +
+                                              $"Several keys competing for one party name may be an attack: approve only the code shown by the party you deployed." );
+            }
+        }
         var messageSent = await ZeroProtocol.SendRejectRemoteReplyMessageAsync( incoming,
                                                                                 remote?.RemoteKeys,
                                                                                 pIssue,

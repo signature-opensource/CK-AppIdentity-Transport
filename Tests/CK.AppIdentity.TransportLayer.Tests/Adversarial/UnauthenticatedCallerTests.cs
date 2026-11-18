@@ -173,7 +173,7 @@ public class UnauthenticatedCallerTests
     }
 
     [Test, CancelAfter( 60000 )]
-    public async Task revealed_keys_there_first_do_not_push_the_remote_approval_item_out_at_the_next_key_Async( CancellationToken token )
+    public async Task a_revealed_key_is_never_pushed_out_and_a_listener_full_of_revealed_keys_refuses_new_ones_Async( CancellationToken token )
     {
         const string remote = "$TM7Revealed";
         PeerStore.ClearRemoteTrust( $"Test/{remote}" );
@@ -205,34 +205,45 @@ public class UnauthenticatedCallerTests
                 if( reply == null && retry < 3 ) continue;
                 reply.ShouldNotBeNull();
                 reply.Value.Discriminator.ShouldBe( PeerMessages.DNegoRejectRemote, "An approval is required." );
+                var listenerNonce = PeerMessages.ReadApprovalNonce( reply.Value.Payload );
+                // A refused key gets no nonce: there is nothing to reveal (the listener doesn't wait for it).
+                if( listenerNonce == null ) return null;
                 await c.SendZeroFrameAsync( PeerMessages.RequiredEnlistUrl( nonce, ownNonce, key ), token );
                 // The listener closes once it handled the reveal.
                 (await ReadOrNullAsync( c, token )).ShouldBeNull();
-                return PeerMessages.ReadApprovalNonce( reply.Value.Payload );
+                return listenerNonce;
             }
         }
 
         var keys = new System.Collections.Generic.List<PeerIdentity>();
         try
         {
-            async Task StrangerAsync()
+            async Task<byte[]?> StrangerAsync()
             {
                 var stranger = PeerIdentity.Create( fullName );
                 keys.Add( stranger );
-                await AttemptAndRevealAsync( stranger, RandomNumberGenerator.GetBytes( 32 ) );
+                return await AttemptAndRevealAsync( stranger, RandomNumberGenerator.GetBytes( 32 ) );
             }
-            // The strangers' revealed items are there first.
-            for( int i = 0; i < ApprovalSessionMaxPendingKeys; ++i ) await StrangerAsync();
-            // The remote arrives and reveals.
+            // The remote arrives first and reveals.
             var genuine = PeerIdentity.Create( fullName );
             keys.Add( genuine );
             var genuineNonce = RandomNumberGenerator.GetBytes( 32 );
             var first = await AttemptAndRevealAsync( genuine, genuineNonce );
             first.ShouldNotBeNull();
-            // New keys: the remote's item is not the oldest one, it stays.
-            for( int i = 0; i < ApprovalSessionMaxPendingKeys - 1; ++i ) await StrangerAsync();
+            // Strangers reveal many keys: they fill the other places, then they are refused (no nonce, so no code).
+            int refused = 0;
+            for( int i = 0; i < 2 * ApprovalSessionMaxPendingKeys; ++i )
+            {
+                if( await StrangerAsync() == null ) ++refused;
+            }
+            refused.ShouldBe( ApprovalSessionMaxPendingKeys + 1, "The places are full of revealed keys: the next ones are refused." );
             var second = await AttemptAndRevealAsync( genuine, genuineNonce );
-            second.ShouldBe( first, "The item of the remote's key is still there: its code doesn't change." );
+            second.ShouldBe( first, "A revealed item is never pushed out: its code doesn't change." );
+            // A key that comes once the places are full of revealed keys is refused: the remote's key, when strangers
+            // were there first (the attack must come before the remote, and the operator sees the competing keys).
+            var late = PeerIdentity.Create( fullName );
+            keys.Add( late );
+            (await AttemptAndRevealAsync( late, RandomNumberGenerator.GetBytes( 32 ) )).ShouldBeNull();
         }
         finally
         {

@@ -32,10 +32,10 @@ sealed class ApprovalSession
 
     /// <summary>
     /// The maximal number of keys a listener keeps per remote. Above, the newest item whose nonce has not been revealed is
-    /// forgotten (the items waiting for a reveal are kept, so that new keys that are never revealed only churn the last
-    /// place), else the oldest one: a remote's revealed item stays until <see cref="MaxPendingKeys"/> newer keys arrived.
-    /// Anyone presenting new keys under the remote's name and revealing their nonces can still push it out: this bounds
-    /// the cost of the churn, it doesn't prevent it.
+    /// forgotten (new keys that are never revealed only churn the last place). When all the items are revealed, the new
+    /// key is refused (no nonce, so no code) until one expires: a revealed item is never pushed out, so presenting new keys
+    /// under the remote's name can't evict the remote's own key once it has been revealed. To block an enlistment, keys
+    /// must be revealed before the remote's, in every place: <see cref="OnInitial"/> says when it starts refusing (to log it).
     /// </summary>
     public const int MaxPendingKeys = 4;
 
@@ -58,6 +58,8 @@ sealed class ApprovalSession
 
     // Listener side: an item per initiator key.
     readonly List<Pending> _pending;
+    // Listener side: a key has been refused since the places are full of revealed items (the first refusal is reported).
+    bool _refusing;
 
     sealed class Pending
     {
@@ -163,17 +165,21 @@ sealed class ApprovalSession
     #region Listener side.
 
     /// <summary>
-    /// Handles the commitment of an initial message and returns our nonce for the initiator's key.
+    /// Handles the commitment of an initial message and returns our nonce for the initiator's key, or null when the key is
+    /// refused: the <see cref="MaxPendingKeys"/> places hold revealed items (see <see cref="MaxPendingKeys"/>).
     /// </summary>
     /// <param name="initiatorHead">The head of the initiator's key event log.</param>
     /// <param name="commitment">The commitment of the initial message.</param>
     /// <param name="utcNow">The current time.</param>
-    /// <returns>Our nonce for this key.</returns>
-    public byte[] OnInitial( KeyEvent initiatorHead, byte[] commitment, DateTime utcNow )
+    /// <param name="firstRefusal">True when this refusal is the first one since the places are full: to be logged.</param>
+    /// <returns>Our nonce for this key, null when it is refused.</returns>
+    public byte[]? OnInitial( KeyEvent initiatorHead, byte[] commitment, DateTime utcNow, out bool firstRefusal )
     {
         lock( _lock )
         {
+            firstRefusal = false;
             _pending.RemoveAll( p => p.Expires <= utcNow );
+            if( _pending.Count < MaxPendingKeys ) _refusing = false;
             var fingerprint = Fingerprint( initiatorHead );
             var item = _pending.Find( p => p.Fingerprint == fingerprint );
             if( item == null )
@@ -181,7 +187,13 @@ sealed class ApprovalSession
                 if( _pending.Count >= MaxPendingKeys )
                 {
                     int evict = _pending.FindLastIndex( p => p.PeerNonce == null );
-                    _pending.RemoveAt( evict >= 0 ? evict : 0 );
+                    if( evict < 0 )
+                    {
+                        firstRefusal = !_refusing;
+                        _refusing = true;
+                        return null;
+                    }
+                    _pending.RemoveAt( evict );
                 }
                 item = new Pending
                 {
@@ -295,6 +307,7 @@ sealed class ApprovalSession
             _peerNonce = null;
             _lastLoggedInitiatorCode = null;
             _pending.Clear();
+            _refusing = false;
         }
     }
 
