@@ -256,7 +256,9 @@ public class AnchoredAuthCenterTests
         (await RevokeAsync( c, c.AName, aIdentity )).ShouldBe( 2 );
         var hopToA = c.Hop.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == c.AName ).GetRequiredFeature<TransportFeature>();
         (await WaitForAsync( () => SeqOf( c.Hop ) == 2 && hopToA.RemoteKeys.IsRevoked )).ShouldBeTrue();
-        hopToA.RemoteKeys.TrustedEvent.ShouldBeNull( "The pin of a revoked identity is cleared." );
+        // IsRevoked is true as soon as the revocations hold the pinned identity: the pin is cleared right after, when the
+        // local keys signal the change to the remote keys.
+        (await WaitForAsync( () => hopToA.RemoteKeys.TrustedEvent == null )).ShouldBeTrue( "The pin of a revoked identity is cleared." );
         var hopIssues = c.Hop.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>();
         (await WaitForAsync( () => hopIssues.Find( c.AName )?.Kind == PeeringIssueKind.Revoked )).ShouldBeTrue();
         var aToHop = a.Remotes.Single().GetRequiredFeature<TransportFeature>();
