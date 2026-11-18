@@ -255,7 +255,7 @@ On a remote (each value is read in the `"KeyManagement"` section of its own entr
 
 | Key | Default | |
 |-----|---------|---|
-| `AutoTrustKey` | `Never` | `Once` pins the identity the remote presents when nothing is pinned yet: a trust on first use, the weak option. Prefer a trust anchor (`TrustAnchors`) for a remote known at deployment, and the enlistment (`Never`, an operator approves) for one that is not. Ignored for an anchored remote. |
+| `AutoTrustKey` | `Never` | `Once` pins the identity the remote presents when nothing is pinned yet: a trust on first use, the weak option. Prefer a trust anchor (`TrustAnchors`) for a remote known at deployment, and the enlistment (`Never`, an operator approves) for one that is not. Ignored for an anchored remote. Refused (a `SecurityCritical` error, `Never` applies) for the remotes of an Opened template (`"MaxInstanceCount"`): anyone could otherwise take a free index first. |
 | `MaxClockOffset` | `00:05:00` | The clock offset tolerated with the remote, between 1 and 20 minutes. |
 
 Out-of-range values are clamped (or replaced by the default) with a warning.

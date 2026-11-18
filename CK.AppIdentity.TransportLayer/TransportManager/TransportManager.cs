@@ -107,6 +107,7 @@ sealed partial class TransportManager : MicroAgent
 
     protected override Task OnHeartbeatAsync( IActivityMonitor monitor, int callCount )
     {
+        DestroyIdleCandidates( monitor );
         int c = _backTasks.AliveCount;
         if( c > 0 )
         {
@@ -117,6 +118,20 @@ sealed partial class TransportManager : MicroAgent
             }
         }
         return Task.CompletedTask;
+    }
+
+    // A candidate is a dynamic instance of an Opened remote template whose identity is not pinned (it waits for an
+    // approval): it is destroyed when it didn't call for the lifetime of a pending approval.
+    void DestroyIdleCandidates( IActivityMonitor monitor )
+    {
+        var limit = SystemClock.UtcNow - ApprovalSession.PendingLifetime;
+        foreach( var r in _agent.ApplicationIdentityService.AllRemotes )
+        {
+            if( r.IsDestroyed || !r.Configuration.IsDynamicInstance ) continue;
+            if( r.GetFeature<TransportFeature>() is not { } t || t.RemoteKeys.TrustedEvent != null || t.LastIncomingAttempt > limit ) continue;
+            monitor.Info( $"The candidate '{r.FullName}' didn't call for {ApprovalSession.PendingLifetime}: it is destroyed." );
+            r.SetDestroyed();
+        }
     }
 
     internal Task RaiseFeatureAppearsEventAsync( IActivityMonitor monitor, TransportFeature t )

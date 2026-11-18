@@ -47,6 +47,21 @@ the origin of the route). It fails closed:
 
 An approval is logged by the holder with its statement and the host's signature: the audit of the enlistment.
 
+## The dynamic instances
+
+[`PartyInstanceHandlers`](PartyInstanceHandlers.cs) handles the dynamic instances of the Opened remote templates
+(`"MaxInstanceCount"`, see CK.AppIdentity) that have been approved. A candidate is approved like any pending party (its
+`IPendingApproval.TemplatePartyName` says that it is a new instance of a template); once approved, its holder collects it
+along the "Enlistment" route (see CK.AppIdentity.TransportLayer):
+
+- on the host of the approval page, `IGetPartyInstancesQCommand` lists them (read with
+  `TransportFeatureDriver.TryReadPartyInstanceValue`), and `IRemovePartyInstanceCommand` (refused while impersonating)
+  sends an `IRemoveHeldPartyInstanceCommand` to each holder along the reversed path of the item, or handles it here when
+  the host is the holder; its result is the number of holders that removed the instance;
+- on the holder, the `IRemoveHeldPartyInstanceCommand` is accepted only from a host of its "Enlistment" route (fail
+  closed): `ILocalParty.RemoveTemplateInstanceAsync` destroys the remote and forgets its pinned identity. The instance can
+  call again: it is a new candidate.
+
 ## The countersignature of the Authentication Center
 
 An optional `IPartyApprovalCountersignature` (implemented by

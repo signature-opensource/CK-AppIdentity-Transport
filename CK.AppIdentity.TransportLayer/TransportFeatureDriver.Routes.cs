@@ -84,12 +84,23 @@ public partial class TransportFeatureDriver
     /// <returns>The awaitable.</returns>
     public Task OnRouteHostsChangedAsync( IActivityMonitor monitor, ILocalParty local ) => OnDescriptionChangedAsync( monitor, local );
 
-    void SubscribeRoutes( ILocalParty local ) => local.RemoteDescriptionChanged.Async += OnRemoteDescriptionChangedAsync;
+    void SubscribeRoutes( ILocalParty local )
+    {
+        local.RemoteDescriptionChanged.Async += OnRemoteDescriptionChangedAsync;
+        // A remote that appears or disappears: the dynamic instances collected on the "Enlistment" route may have changed.
+        local.AnyRemoteChanged.Async += OnRemoteChangedAsync;
+    }
+
+    Task OnRemoteChangedAsync( IActivityMonitor monitor, IRemoteParty remote, CancellationToken cancel )
+    {
+        return remote.Configuration.IsDynamicInstance ? OnDescriptionChangedAsync( monitor, remote.Owner ) : Task.CompletedTask;
+    }
 
     // Called when a local party is destroyed (a removed tenant domain) or at shutdown: its route warnings are forgotten.
     void UnsubscribeRoutes( ILocalParty local )
     {
         local.RemoteDescriptionChanged.Async -= OnRemoteDescriptionChangedAsync;
+        local.AnyRemoteChanged.Async -= OnRemoteChangedAsync;
         string name = local.FullName;
         foreach( var key in _routeWarnings.Keys )
         {

@@ -334,6 +334,16 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             }
             // Let any exception while reading the initial message be a task error.
             initialMessage = TryParse( transportManager, incoming, incomingTime, message, out var otherVersion, out remote, out foundTrustKey, out var conflict );
+            // An unknown caller that is a dynamic instance of an Opened remote template: it becomes a candidate (a dynamic
+            // remote, trusted only by an approval) and its message is parsed again, now for a known remote.
+            if( initialMessage != null
+                && remote == null
+                && await TryCreateCandidateAsync( transportManager, incoming, initialMessage.FullName ).ConfigureAwait( false ) )
+            {
+                DisposeUnusedKey( initialMessage, incoming );
+                initialMessage = TryParse( transportManager, incoming, incomingTime, message, out otherVersion, out remote, out foundTrustKey, out conflict );
+            }
+            remote?.OnIncomingAttempt( incomingTime );
             // Handles null parse result:
             //   - protocol version is purely invalid (-1): the 'CK-AppId' prefix is not present. Give up.
             //   - The otherVersion is a valid ZeroProtocol.CurrentVersion (below our CurrentVersion) but the parse
@@ -606,6 +616,39 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
 
     // The operational key of an initial message that has not been handed to the transport is only used during the
     // exchange that follows it: it is disposed once it is over.
+    // Creates the candidate that an unknown caller names when it is a dynamic instance of an Opened remote template of a
+    // local party, and when the candidate listens on the listener of the incoming transport.
+    static async Task<bool> TryCreateCandidateAsync( TransportManager transportManager, Transport incoming, string fullName )
+    {
+        Throw.DebugAssert( incoming.Listener != null );
+        var app = transportManager.ApplicationIdentityAgent.ApplicationIdentityService;
+        var locals = app.TenantDomains.Cast<ILocalParty>().Prepend( app ).ToList();
+        // Cheap checks first: no monitor for the ordinary unknown callers.
+        if( !locals.Any( l => l.RemoteTemplates.Any( t => t.MatchDynamic( fullName ) != null ) )
+            || app.AllRemotes.Any( r => r.FullName.Path == fullName ) )
+        {
+            return false;
+        }
+        var monitor = new ActivityMonitor( $"Candidate '{fullName}' on '{incoming.Listener}'." );
+        try
+        {
+            foreach( var local in locals )
+            {
+                var r = await local.TryAddTemplateInstanceAsync( monitor, fullName ).ConfigureAwait( false );
+                if( r == null ) continue;
+                if( r.GetFeature<TransportFeature>() is { } t && incoming.Listener.Parties.Contains( t ) ) return true;
+                monitor.Warn( $"The candidate '{fullName}' doesn't listen on '{incoming.Listener}': it is destroyed." );
+                await r.DestroyAsync().ConfigureAwait( false );
+                return false;
+            }
+            return false;
+        }
+        finally
+        {
+            monitor.MonitorEnd();
+        }
+    }
+
     static void DisposeUnusedKey( InitialMessage initialMessage, Transport incoming )
     {
         if( initialMessage.RemoteOperationalKey is { } k && k != incoming.RemoteOperationalKey ) k.Dispose();

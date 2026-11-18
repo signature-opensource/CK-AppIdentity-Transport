@@ -267,8 +267,10 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         Throw.DebugAssert( _transportManager != null );
         // If AlwaysListening is false (the default), Listeners are created when the first non initiator
         // remote (no Address) appears.
-        // We initialize the Listeners only if "AlwaysListening" is true.
-        if( !local.LocalConfiguration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:AlwaysListening" ) )
+        // We initialize the Listeners only if "AlwaysListening" is true, or when the local party has an Opened remote template
+        // of listening remotes (no Address): its candidates call before any remote of the template exists.
+        if( !local.LocalConfiguration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:AlwaysListening" )
+            && !local.RemoteTemplates.Any( t => t.Configuration["Address"] == null ) )
         {
             return true;
         }

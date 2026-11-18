@@ -40,13 +40,77 @@ public partial class TransportFeatureDriver
             if( value.Length <= CollectedItem.MaxValueLength ) builder.Collect( EnlistmentRouteName, value );
             else ActivityMonitor.StaticLogger.Warn( $"The pending approval of '{issue.FullName}' by '{party.FullName}' is too long to be collected." );
         }
+        // The approved dynamic instances of the Opened remote templates (their identity is pinned): the page can remove them.
+        foreach( var r in party.Remotes )
+        {
+            if( r.IsDestroyed
+                || !r.Configuration.IsDynamicInstance
+                || r.GetFeature<TransportFeature>() is not { } t
+                || t.RemoteKeys.TrustedEvent == null )
+            {
+                continue;
+            }
+            var value = GetPartyInstanceValue( r );
+            if( value.Length <= CollectedItem.MaxValueLength ) builder.Collect( EnlistmentRouteName, value );
+            else ActivityMonitor.StaticLogger.Warn( $"The instance '{r.FullName}' of '{party.FullName}' is too long to be collected." );
+        }
+    }
+
+    /// <summary>
+    /// Gets the value of a dynamic instance of an Opened remote template, as collected along the <see cref="EnlistmentRouteName"/>
+    /// route: an opaque JSON object <c>{ "Instance": the full name of the instance, "Template": the party name of its
+    /// template }</c>. The holder of the instance is the first party of the item's path.
+    /// </summary>
+    /// <param name="remote">The dynamic instance.</param>
+    /// <returns>The value.</returns>
+    public static string GetPartyInstanceValue( IRemoteParty remote )
+    {
+        Throw.CheckNotNullArgument( remote );
+        Throw.CheckArgument( remote.Configuration.IsDynamicInstance );
+        var buffer = new ArrayBufferWriter<byte>();
+        using( var w = new Utf8JsonWriter( buffer ) )
+        {
+            w.WriteStartObject();
+            w.WriteString( "Instance", remote.FullName.Path );
+            w.WriteString( "Template", remote.Configuration.Template!.PartyNamePattern );
+            w.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString( buffer.WrittenSpan );
+    }
+
+    /// <summary>
+    /// Reads the value of a dynamic instance (see <see cref="GetPartyInstanceValue"/>).
+    /// </summary>
+    /// <param name="value">The value of the collected item.</param>
+    /// <param name="instance">The instance on success.</param>
+    /// <returns>True on success, false when the value is not an instance.</returns>
+    public static bool TryReadPartyInstanceValue( string value, [NotNullWhen( true )] out PartyInstanceValue? instance )
+    {
+        instance = null;
+        try
+        {
+            using var doc = JsonDocument.Parse( value );
+            var e = doc.RootElement;
+            if( e.ValueKind == JsonValueKind.Object
+                && e.TryGetProperty( "Instance", out var i ) && i.ValueKind == JsonValueKind.String && i.GetString() is { Length: > 0 } party
+                && e.TryGetProperty( "Template", out var t ) && t.ValueKind == JsonValueKind.String && t.GetString() is { Length: > 0 } template )
+            {
+                instance = new PartyInstanceValue( party, template );
+                return true;
+            }
+        }
+        catch( JsonException )
+        {
+        }
+        return false;
     }
 
     /// <summary>
     /// Gets the value of a pending approval, as collected along the <see cref="EnlistmentRouteName"/> route: an opaque JSON
     /// object <c>{ "Party": the full name of the party to approve, "Fingerprint": the fingerprint of the key to approve,
     /// "Kind": "Local" or "Both", "Since": when the key started to wait (ISO 8601, UTC), "Routes": the names of the routes it
-    /// states that it hosts (omitted when there is none) }</c>. Never the approval code: the operator reads it on the party
+    /// states that it hosts (omitted when there is none), "Template": the party name of the Opened template of a candidate
+    /// (omitted when the party is not a dynamic instance) }</c>. Never the approval code: the operator reads it on the party
     /// to approve. The holder of the approval is the first party of the item's path.
     /// </summary>
     /// <param name="issue">The peering issue.</param>
@@ -71,6 +135,10 @@ public partial class TransportFeatureDriver
                 w.WriteStartArray( "Routes" );
                 foreach( var r in routes ) w.WriteStringValue( r );
                 w.WriteEndArray();
+            }
+            if( issue.Remote?.Party.Configuration is { IsDynamicInstance: true } c )
+            {
+                w.WriteString( "Template", c.Template!.PartyNamePattern );
             }
             w.WriteEndObject();
         }
@@ -106,7 +174,13 @@ public partial class TransportFeatureDriver
                         routes.Add( r.GetString()! );
                     }
                 }
-                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes );
+                string? template = null;
+                if( e.TryGetProperty( "Template", out var tp ) )
+                {
+                    if( tp.ValueKind != JsonValueKind.String || tp.GetString() is not { Length: > 0 } tn ) return false;
+                    template = tn;
+                }
+                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes, template );
                 return true;
             }
         }
@@ -127,4 +201,19 @@ public partial class TransportFeatureDriver
 /// <param name="Kind">"Local", or "Both" when the party to approve must also approve the holder.</param>
 /// <param name="Since">Since when the key waits (UTC).</param>
 /// <param name="HostedRoutes">The names of the routes the party states that it hosts (see <see cref="PeeringIssue.RemoteHostedRoutes"/>).</param>
-public sealed record PendingApprovalValue( string PartyFullName, string Fingerprint, string Kind, DateTime Since, IReadOnlyList<string> HostedRoutes );
+/// <param name="TemplatePartyName">The party name of the Opened template of a candidate, null when the party is not a dynamic instance.</param>
+public sealed record PendingApprovalValue( string PartyFullName,
+                                           string Fingerprint,
+                                           string Kind,
+                                           DateTime Since,
+                                           IReadOnlyList<string> HostedRoutes,
+                                           string? TemplatePartyName = null );
+
+/// <summary>
+/// The value of a dynamic instance of an Opened remote template collected along the "Enlistment" route (see
+/// <see cref="TransportFeatureDriver.GetPartyInstanceValue"/>): the holder of the instance is the first party of the path
+/// of the item.
+/// </summary>
+/// <param name="PartyFullName">The full name of the instance.</param>
+/// <param name="TemplatePartyName">The party name of its template: "$Worker-{Name}".</param>
+public sealed record PartyInstanceValue( string PartyFullName, string TemplatePartyName );

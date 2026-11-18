@@ -59,6 +59,14 @@ public sealed class TransportFeature
     // Util.UtcMinValue when no transport is currently live.
     DateTime _connectedSince;
 
+    // The time of the last incoming attempt (the creation for a remote that never called): a candidate (a dynamic instance
+    // of an Opened template whose identity is not pinned) that doesn't call anymore is destroyed (see TransportManager).
+    long _lastIncomingAttempt;
+
+    internal DateTime LastIncomingAttempt => new DateTime( Volatile.Read( ref _lastIncomingAttempt ), DateTimeKind.Utc );
+
+    internal void OnIncomingAttempt( DateTime utcNow ) => Volatile.Write( ref _lastIncomingAttempt, utcNow.Ticks );
+
     internal TransportFeature( TransportManager transportManager,
                                IRemoteParty remote,
                                TransportListener[]? listeners,
@@ -72,6 +80,7 @@ public sealed class TransportFeature
         _party = remote;
         _listeners = listeners;
         _remoteKeys = remoteKeys;
+        _lastIncomingAttempt = transportManager.SystemClock.UtcNow.Ticks;
         _target = target;
         _channels = new List<ChannelFeature>( MessageProtocolMap.MaxCount );
 

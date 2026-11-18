@@ -230,6 +230,14 @@ sealed partial class RemoteKeys
                               $"expected '{AutoTrustKey.Never}' or '{AutoTrustKey.Once}' but got '{a}'. " +
                               $"Using default '{AutoTrustKey.Never}'." );
             }
+            // The dynamic instances of an Opened template are trusted by an approval only: anyone could otherwise take a free
+            // index first (fail closed).
+            if( autoTrust != AutoTrustKey.Never && _remote.Configuration.Template?.Instances.IsOpened == true )
+            {
+                monitor.Error( ActivityMonitor.Tags.SecurityCritical,
+                               $"Remote '{_remote}' is an instance of the Opened template {_remote.Configuration.Template}: its {nameof( AutoTrustKey )} \"{autoTrust}\" is refused (it is trusted by an approval only)." );
+                autoTrust = AutoTrustKey.Never;
+            }
             if( autoTrust != AutoTrustKey.Never )
             {
                 if( _localKeys.IsAnchored( _remote.FullName ) )

@@ -264,11 +264,34 @@ CK.AppIdentity), in the second phase of its description
   in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each
   `RequiresLocalApproval` or `RequiresBothApproval` issue of a local party is an item of the route, whose value is a
   JSON object (`GetPendingApprovalValue`, read by `TryReadPendingApprovalValue`): `{ "Party", "Fingerprint", "Kind"
-  ("Local" or "Both"), "Since", "Routes" }`, never the approval code. `"Routes"` are the names of the routes the party
-  states that it hosts, in its connection attempt (`PeeringIssue.RemoteHostedRoutes`, omitted when there is none): the
-  operator can authorize them with the approval. Each party collects its own items and those of the connected remotes
-  one of whose routes of the name goes through it, so the hosts of the approval pages know every pending approval of the
-  System that reaches them, and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
+  ("Local" or "Both"), "Since", "Routes", "Template" }`, never the approval code. `"Routes"` are the names of the routes
+  the party states that it hosts, in its connection attempt (`PeeringIssue.RemoteHostedRoutes`, omitted when there is
+  none): the operator can authorize them with the approval. `"Template"` is the party name of the Opened template of a
+  candidate (below). Each party collects its own items and those of the connected remotes one of whose routes of the
+  name goes through it, so the hosts of the approval pages know every pending approval of the System that reaches them,
+  and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
+- **The approved dynamic instances travel the same route:** each dynamic instance of an Opened remote template whose
+  identity is pinned is an item `{ "Instance", "Template" }` (`GetPartyInstanceValue`, read by
+  `TryReadPartyInstanceValue`), so that the approval page can remove it. The description is computed again when such a
+  remote appears or disappears.
+
+## The candidates of the Opened templates
+
+A local party whose configuration has an Opened remote template (`"MaxInstanceCount"`, see
+[CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md)) accepts its
+dynamic instances:
+
+- **An unknown caller that is a dynamic instance of a template** (`$Worker-3` for `$Worker-{Name}`, within its bound)
+  becomes a candidate: `ILocalParty.TryAddTemplateInstanceAsync` creates its remote, its initial message is then handled
+  as the one of a known remote (a `RequiresLocalApproval` or `RequiresBothApproval` issue, the enlistment). Any other
+  unknown caller is `IncomingUnknown`, as before. The candidate must listen on the listener that received the call.
+- **A local party with an Opened template of listening remotes** (no `Address`) opens its listeners at start, as with
+  `AlwaysListening`: its candidates call before any remote of the template exists.
+- **A candidate that doesn't call anymore** (nothing pinned, no incoming attempt for `ApprovalSession.PendingLifetime`) is
+  destroyed by the heartbeat of the transport manager. An approved instance stays: its pinned identity creates it again at
+  the next start.
+- **Its trust is an approval only:** the `AutoTrustKey` of an Opened template is refused (see
+  [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)).
 
 ## Peering issues
 

@@ -51,4 +51,10 @@ public interface IPendingApproval : IPoco
     /// (see <see cref="IApprovePartyCommand.Routes"/>).
     /// </summary>
     IList<string> Routes { get; }
+
+    /// <summary>
+    /// Gets or sets the party name of the Opened remote template (with its placeholders: "$Worker-{Name}") when the party
+    /// to approve is a new dynamic instance of it, null otherwise.
+    /// </summary>
+    string? TemplatePartyName { get; set; }
 }
