@@ -2,6 +2,7 @@ using CK.Core;
 using CK.PerfectEvent;
 using Microsoft.AspNetCore.DataProtection;
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,6 +23,35 @@ public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriv
         _keyStore = keyStore;
         _alertRaised = new PerfectEventSender<IdentityAlert>();
         _keyEventAppended = new PerfectEventSender<ILocalKeys>();
+    }
+
+    /// <summary>
+    /// A removed run-time tenant domain: its identity keys are destroyed (<see cref="ICoreKeyStore.DeleteAllKeys"/>), and
+    /// its encryption keys deleted (they are secrets too). Its key event log and its certificate are public: they are
+    /// trashed with the rest of its private store.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="fullName">The full name of the removed tenant domain.</param>
+    /// <param name="localStore">Its private store.</param>
+    /// <returns>The awaitable.</returns>
+    protected override Task ForgetLocalPartyAsync( IActivityMonitor monitor, NormalizedPath fullName, IFileStore localStore )
+    {
+        if( _keyStore.DeleteAllKeys( monitor, fullName, localStore ) < 0 )
+        {
+            Throw.CKException( $"Unable to destroy the identity keys of '{fullName}' (see the logs)." );
+        }
+        var encryptionKeys = localStore.FolderPath.Combine( LocalEncryptionKeys.FolderPath );
+        if( Directory.Exists( encryptionKeys ) )
+        {
+            foreach( var f in Directory.EnumerateFiles( encryptionKeys, "*", SearchOption.AllDirectories ).ToList() )
+            {
+                if( !localStore.TryTrash( monitor, f, immediateDelete: true ) )
+                {
+                    Throw.CKException( $"Unable to delete the encryption key '{f}' of '{fullName}'." );
+                }
+            }
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>

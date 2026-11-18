@@ -58,8 +58,10 @@ sealed class ApprovalSession
 
     // Listener side: an item per initiator key.
     readonly List<Pending> _pending;
-    // Listener side: a key has been refused since the places are full of revealed items (the first refusal is reported).
+    // Listener side: a key has been refused since the places are full of revealed items (the first refusal is reported),
+    // and the number of keys refused since then.
     bool _refusing;
+    int _refusedCount;
 
     sealed class Pending
     {
@@ -179,7 +181,11 @@ sealed class ApprovalSession
         {
             firstRefusal = false;
             _pending.RemoveAll( p => p.Expires <= utcNow );
-            if( _pending.Count < MaxPendingKeys ) _refusing = false;
+            if( _pending.Count < MaxPendingKeys )
+            {
+                _refusing = false;
+                _refusedCount = 0;
+            }
             var fingerprint = Fingerprint( initiatorHead );
             var item = _pending.Find( p => p.Fingerprint == fingerprint );
             if( item == null )
@@ -191,6 +197,7 @@ sealed class ApprovalSession
                     {
                         firstRefusal = !_refusing;
                         _refusing = true;
+                        ++_refusedCount;
                         return null;
                     }
                     _pending.RemoveAt( evict );
@@ -308,6 +315,20 @@ sealed class ApprovalSession
             _lastLoggedInitiatorCode = null;
             _pending.Clear();
             _refusing = false;
+            _refusedCount = 0;
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of keys that compete for the approval of this remote (listener side): its pending keys and the keys
+    /// refused since its places are full. More than one key is a sign of an attack (or of a party that restarted with a
+    /// new key): the approval page shows it.
+    /// </summary>
+    public int CompetingKeyCount
+    {
+        get
+        {
+            lock( _lock ) return _pending.Count + _refusedCount;
         }
     }
 

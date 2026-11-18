@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>The run-time tenant domains of a CK-AppIdentity System, managed by an operator: an application that holds Opened tenant templates hosts the "Tenants" route, its handlers create, move and remove the run-time tenants; the tenant commands travel along the route beyond one hop.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CK.AppIdentity.Cris.Authentication\CK.AppIdentity.Cris.Authentication.csproj" />
+    <ProjectReference Include="..\CK.IO.AppIdentity.Tenants\CK.IO.AppIdentity.Tenants.csproj" />
+  </ItemGroup>
+</Project>

@@ -84,7 +84,10 @@ the code that executes a command doesn't care whether it runs here or on a remot
 - **A party command** (`ICommandTargetParty`) is routed by its `TargetPartyFullName` before any local execution: the
   current local party executes it here; another local party of the application (the root or a tenant) executes it here,
   inline, as its `CurrentLocalParty` (an independent execution: its routed events are dispatched in that party's scope);
-  a remote of the current local party receives it if it accepts it; anything else is "no route".
+  a remote of the current local party receives it if it accepts it. Beyond one hop, when an
+  [`IPartyCommandRouteProvider`](IPartyCommandRouteProvider.cs) (implemented by the package of the command) names its
+  route, it is sent in an `IPartyRoutedCommand` along this route to its target, that must host it (see the routed commands
+  below). Anything else is "no route".
 
 While a remote has not advertised yet, a command without route waits for it, up to `ChannelCrisRemoteDispatcher.Timeout`
 (30 seconds), which also bounds the wait for an answer (the command is then abandoned). It fails closed: no route, an unavailable remote or no answer

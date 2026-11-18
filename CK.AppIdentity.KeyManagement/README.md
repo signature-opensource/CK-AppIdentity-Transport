@@ -235,6 +235,13 @@ Another store replaces it by taking the `DefaultCoreKeyStore` as a constructor p
 store built on this interface that keeps the keys in hardware, see
 [CK.AppIdentity.KeyManagement.Cng](../CK.AppIdentity.KeyManagement.Cng/README.md).
 
+**A removed local party.** When a run-time tenant domain is removed (`IApplicationIdentityService.RemoveTenantInstanceAsync`
+of CK.AppIdentity), the feature forgets it (`ForgetLocalPartyAsync`): its identity keys are destroyed
+(`ICoreKeyStore.DeleteAllKeys`, by its full name and its private store: a tenant that was never loaded has no party
+object) and its encryption keys deleted, never sent to a trash bin. A store that can't destroy a key (a CNG provider that
+is not usable) fails the removal: the private store of the tenant is then kept. Its key event log and its certificate
+are public: they are trashed with the rest of its private store.
+
 ## Configuration
 
 The settings are in the `"KeyManagement"` section of a party (`"KeyManagement": { "KeyRotationDays": 30 }`).

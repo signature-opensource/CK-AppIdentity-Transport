@@ -57,4 +57,11 @@ public interface IPendingApproval : IPoco
     /// to approve is a new dynamic instance of it, null otherwise.
     /// </summary>
     string? TemplatePartyName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of keys that compete for the approval of the party (its pending keys on the holder and the
+    /// keys refused since its places are full): 1 when there is no competition. More than one is a sign of an attack (or
+    /// of a party that restarted with a new key): approve only the code shown by the party you deployed.
+    /// </summary>
+    int CompetingKeyCount { get; set; }
 }

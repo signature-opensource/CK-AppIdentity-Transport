@@ -101,6 +101,7 @@ public sealed class PartyApprovalHandlers : ISingletonAutoService
                     a.Since = pending.Since;
                     a.Routes.AddRange( pending.HostedRoutes );
                     a.TemplatePartyName = pending.TemplatePartyName;
+                    a.CompetingKeyCount = pending.CompetingKeyCount;
                 } ) );
             }
         }

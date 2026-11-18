@@ -350,9 +350,12 @@ public sealed class PeeringIssue
             }
             if( key == null )
             {
+                var competing = IsListener ? remote.Approval.CompetingKeyCount : 1;
                 monitor.Warn( notReady
                                 ? $"The approval code with '{_fullName}' is not ready yet: retry once the next connection attempt has exchanged it."
-                                : $"The approval code '{normalized}' doesn't match any key presented by '{_fullName}'." );
+                                : competing > 1
+                                    ? $"The approval code '{normalized}' doesn't match any key presented by '{_fullName}', and {competing} keys compete for this party name: possible attack. Approve only the code shown by the party you deployed."
+                                    : $"The approval code '{normalized}' doesn't match any key presented by '{_fullName}'." );
                 return false;
             }
             if( expectedFingerprint != null && PublicKeyFingerprint.Compute( key.Spki.Span ) != expectedFingerprint )

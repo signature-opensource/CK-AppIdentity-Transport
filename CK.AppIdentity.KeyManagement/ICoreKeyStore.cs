@@ -60,4 +60,15 @@ public interface ICoreKeyStore : ISingletonAutoService
     /// <param name="owner">The party that owns the keys.</param>
     /// <returns>The key names.</returns>
     IReadOnlyList<string> GetKeyNames( IActivityMonitor monitor, ILocalParty owner );
+
+    /// <summary>
+    /// Destroys all the keys of a local party that is removed (a run-time tenant domain, see
+    /// <see cref="ApplicationIdentityFeatureDriver.ForgetLocalPartyAsync"/>): it is designated by its full name and its private
+    /// store, not by a party object (it may never have been loaded). A key is destroyed, never sent to a trash bin.
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
+    /// <param name="ownerFullName">The full name of the removed party.</param>
+    /// <param name="localStore">Its private store.</param>
+    /// <returns>The number of destroyed keys, or -1 when a key can't be destroyed (an error is logged).</returns>
+    int DeleteAllKeys( IActivityMonitor monitor, NormalizedPath ownerFullName, IFileStore localStore );
 }

@@ -20,7 +20,8 @@ namespace CK.AppIdentity.Cris;
 ///   <item>
 ///   A party command executes where its target is: the current local party (here), another local party of this application
 ///   (here, inline, with this party as the <see cref="CurrentLocalParty"/>), or a remote of the current local party (sent
-///   to it if it accepts the command). Anything else is "no route".
+///   to it if it accepts the command). Beyond, when an <see cref="IPartyCommandRouteProvider"/> names its route, it is sent
+///   in an <see cref="IPartyRoutedCommand"/> along this route to its target (that must host it). Anything else is "no route".
 ///   </item>
 /// </list>
 /// While a remote of the current local party has not advertised its accepted commands yet (it is not connected yet), a
@@ -98,7 +99,28 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
             var channel = remote.GetFeature<CrisChannelFeature>();
             if( channel != null ) return SendToTargetAsync( services, channel, command );
         }
+        // Beyond one hop: along the route of the command, when its package names one. The providers and the sender are
+        // optional services (an application without routed commands has none): they are resolved only here.
+        if( remote == null
+            && command.CrisPocoModel.Exposure != CrisExposure.Private
+            && services.GetService<PartyRoutedCommandSender>() is { } sender
+            && services.GetServices<IPartyCommandRouteProvider>().Select( p => p.GetRouteName( command ) ).FirstOrDefault( n => n != null ) is string routeName )
+        {
+            return SendAlongRouteAsync( services, sender, local, command, routeName, target );
+        }
         return Task.FromResult( Error( services, $"Party command '{command.CrisPocoModel.PocoName}' has no route from '{local.FullName}' to '{target}'.", "Cris.NoRoute" ) );
+    }
+
+    static async Task<RawCrisExecutor.RawResult> SendAlongRouteAsync( IServiceProvider services,
+                                                                    PartyRoutedCommandSender sender,
+                                                                    ILocalParty local,
+                                                                    IAbstractCommand command,
+                                                                    string routeName,
+                                                                    string target )
+    {
+        var monitor = services.GetRequiredService<IActivityMonitor>();
+        var result = await sender.SendAsync( monitor, services, local, command, routeName, target ).ConfigureAwait( false );
+        return new RawCrisExecutor.RawResult( result, null );
     }
 
     // Another local party of this application: executed here, inline, with that party as the CurrentLocalParty.

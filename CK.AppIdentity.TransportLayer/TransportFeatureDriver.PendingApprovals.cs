@@ -110,8 +110,9 @@ public partial class TransportFeatureDriver
     /// object <c>{ "Party": the full name of the party to approve, "Fingerprint": the fingerprint of the key to approve,
     /// "Kind": "Local" or "Both", "Since": when the key started to wait (ISO 8601, UTC), "Routes": the names of the routes it
     /// states that it hosts (omitted when there is none), "Template": the party name of the Opened template of a candidate
-    /// (omitted when the party is not a dynamic instance) }</c>. Never the approval code: the operator reads it on the party
-    /// to approve. The holder of the approval is the first party of the item's path.
+    /// (omitted when the party is not a dynamic instance), "Competing": the number of keys that compete for the approval of
+    /// the party (omitted when there is only one) }</c>. Never the approval code: the operator reads it on the party to
+    /// approve. The holder of the approval is the first party of the item's path.
     /// </summary>
     /// <param name="issue">The peering issue.</param>
     /// <returns>The value, or null when the issue is not a pending approval.</returns>
@@ -139,6 +140,10 @@ public partial class TransportFeatureDriver
             if( issue.Remote?.Party.Configuration is { IsDynamicInstance: true } c )
             {
                 w.WriteString( "Template", c.Template!.PartyNamePattern );
+            }
+            if( issue.Remote?.Approval.CompetingKeyCount is int competing && competing > 1 )
+            {
+                w.WriteNumber( "Competing", competing );
             }
             w.WriteEndObject();
         }
@@ -180,7 +185,12 @@ public partial class TransportFeatureDriver
                     if( tp.ValueKind != JsonValueKind.String || tp.GetString() is not { Length: > 0 } tn ) return false;
                     template = tn;
                 }
-                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes, template );
+                int competing = 1;
+                if( e.TryGetProperty( "Competing", out var cp ) )
+                {
+                    if( cp.ValueKind != JsonValueKind.Number || !cp.TryGetInt32( out competing ) || competing < 1 ) return false;
+                }
+                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes, template, competing );
                 return true;
             }
         }
@@ -202,12 +212,14 @@ public partial class TransportFeatureDriver
 /// <param name="Since">Since when the key waits (UTC).</param>
 /// <param name="HostedRoutes">The names of the routes the party states that it hosts (see <see cref="PeeringIssue.RemoteHostedRoutes"/>).</param>
 /// <param name="TemplatePartyName">The party name of the Opened template of a candidate, null when the party is not a dynamic instance.</param>
+/// <param name="CompetingKeyCount">The number of keys that compete for the approval of the party (1 when there is no competition).</param>
 public sealed record PendingApprovalValue( string PartyFullName,
                                            string Fingerprint,
                                            string Kind,
                                            DateTime Since,
                                            IReadOnlyList<string> HostedRoutes,
-                                           string? TemplatePartyName = null );
+                                           string? TemplatePartyName = null,
+                                           int CompetingKeyCount = 1 );
 
 /// <summary>
 /// The value of a dynamic instance of an Opened remote template collected along the "Enlistment" route (see

@@ -254,6 +254,38 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
         return names;
     }
 
+    /// <inheritdoc />
+    public int DeleteAllKeys( IActivityMonitor monitor, NormalizedPath ownerFullName, IFileStore localStore )
+    {
+        Throw.CheckNotNullArgument( localStore );
+        int count = 0;
+        var folder = localStore.FolderPath.AppendPart( DefaultCoreKeyStore.FolderName );
+        if( Directory.Exists( folder ) )
+        {
+            foreach( var markerPath in Directory.EnumerateFiles( folder, "*" + MarkerExtension ).Select( p => new NormalizedPath( p ) ).ToList() )
+            {
+                var m = Marker.Read( localStore, markerPath );
+                var (provider, reason) = Probe( m.ProviderName );
+                if( provider == null || !OperatingSystem.IsWindows() )
+                {
+                    // The marker is kept: it is the only record of a key the provider still holds.
+                    monitor.Error( $"Key '{markerPath.LastPart}' of '{ownerFullName}' is in '{m.ProviderName}', which is not usable: it cannot be destroyed now. {reason}" );
+                    return -1;
+                }
+                var options = m.MachineWide ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None;
+                if( CngKey.Exists( m.CngName, provider, options ) )
+                {
+                    using var key = CngKey.Open( m.CngName, provider, options );
+                    key.Delete();
+                }
+                localStore.TryTrash( monitor, markerPath, immediateDelete: true );
+                ++count;
+            }
+        }
+        var fallback = _fallback.DeleteAllKeys( monitor, ownerFullName, localStore );
+        return fallback < 0 ? -1 : count + fallback;
+    }
+
     /// <summary>
     /// Where a key is: its provider, its scope and its CNG name. One line each, readable by an operator.
     /// </summary>
@@ -261,11 +293,13 @@ public sealed class CngCoreKeyStore : ICoreKeyStore
     {
         public byte[] Encode() => Encoding.UTF8.GetBytes( $"{ProviderName}\n{(MachineWide ? "machine" : "user")}\n{CngName}\n" );
 
-        public static Marker Read( ILocalParty owner, NormalizedPath path )
+        public static Marker Read( ILocalParty owner, NormalizedPath path ) => Read( owner.LocalFileStore, path );
+
+        public static Marker Read( IFileStore store, NormalizedPath path )
         {
             string text;
             // Read through the store: it opens with FileShare.Delete, so a reader never blocks a replacement.
-            using( var s = owner.LocalFileStore.OpenReadStream( path ) )
+            using( var s = store.OpenReadStream( path ) )
             using( var r = new StreamReader( s, Encoding.UTF8 ) )
             {
                 text = r.ReadToEnd();

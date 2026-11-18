@@ -24,6 +24,11 @@ namespace CK.AppIdentity.KeyManagement;
 /// </summary>
 sealed class LocalEncryptionKeys
 {
+    /// <summary>
+    /// The folder of the keys in the private store of their party.
+    /// </summary>
+    internal const string FolderPath = "KeyManagement/EncryptionKeys";
+
     sealed class Key
     {
         public required byte[] Id { get; init; }
@@ -46,7 +51,7 @@ sealed class LocalEncryptionKeys
     {
         _party = party;
         _store = party.LocalFileStore;
-        _folder = _store.FolderPath.Combine( "KeyManagement/EncryptionKeys" );
+        _folder = _store.FolderPath.Combine( FolderPath );
         _protector = protector.CreateProtector( PartyEncryption.KeyPurpose );
         _lock = new object();
         _keys = new List<Key>();

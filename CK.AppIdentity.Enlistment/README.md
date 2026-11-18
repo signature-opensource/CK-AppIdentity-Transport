@@ -14,7 +14,10 @@ package sends the approval back down. The commands are in
 
 [`PartyApprovalHandlers`](PartyApprovalHandlers.cs) answers the `IGetPendingApprovalsQCommand`: the pending approvals
 collected along the "Enlistment" route by the current local party (read with
-`TransportFeatureDriver.TryReadPendingApprovalValue`), the oldest first.
+`TransportFeatureDriver.TryReadPendingApprovalValue`), the oldest first. `IPendingApproval.CompetingKeyCount` is the
+number of keys that compete for the approval of the party on its holder (its pending keys and the keys refused since its
+places are full): more than one is a sign of an attack (anyone can present keys under the name of a waiting party), or of
+a party that restarted with a new key. The operator approves only the code shown by the party it deployed.
 
 [`PartyApprovalHandlers`](PartyApprovalHandlers.cs) handles the `IApprovePartyCommand` (validated by `ICommandAuthCritical`,
 refused while impersonating: the operator approves as itself). For each pending approval of the party collected along

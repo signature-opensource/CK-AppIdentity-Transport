@@ -128,6 +128,25 @@ public sealed class DefaultCoreKeyStore : ICoreKeyStore
                         .ToArray();
     }
 
+    /// <inheritdoc />
+    public int DeleteAllKeys( IActivityMonitor monitor, NormalizedPath ownerFullName, IFileStore localStore )
+    {
+        Throw.CheckNotNullArgument( localStore );
+        var folder = localStore.FolderPath.AppendPart( FolderName );
+        if( !Directory.Exists( folder ) ) return 0;
+        int count = 0;
+        foreach( var f in Directory.EnumerateFiles( folder, "*" + Extension ).ToList() )
+        {
+            if( !localStore.TryTrash( monitor, f, immediateDelete: true ) )
+            {
+                monitor.Error( $"Unable to destroy the key '{f}' of '{ownerFullName}'." );
+                return -1;
+            }
+            ++count;
+        }
+        return count;
+    }
+
     static NormalizedPath GetFolder( ILocalParty owner ) => owner.LocalFileStore.FolderPath.AppendPart( FolderName );
 
     static NormalizedPath GetPath( ILocalParty owner, string name )
