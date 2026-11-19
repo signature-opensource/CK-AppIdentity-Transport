@@ -9,6 +9,9 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
 [PartyFeature( "KeyManagement", TypeActivation.ByDefault )]
+// The dynamic instances of an Opened template are trusted by an approval only: anyone could otherwise take a free index
+// first. Checked at build time (and refused at run time: fail-closed).
+[ConfigurationLock( "OpenedRemoteTemplate:AutoTrustKey", ConfigurationLevel.Compile, Value = nameof( AutoTrustKey.Never ) )]
 public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;
