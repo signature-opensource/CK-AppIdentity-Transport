@@ -14,6 +14,8 @@ namespace CK.AppIdentity.TransportLayer;
 /// The <see cref="TransportManagerFeature"/> is added to the <see cref="ApplicationIdentityService"/>'s features.
 /// </summary>
 [PartyFeature( "Transport", TypeActivation.ByDefault )]
+// A listening address is the one of a deployment: each one writes its own.
+[ConfigurationPerDeployment( "Party:ListeningAddress" )]
 public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly TransportTypeService[] _transportTypes;
