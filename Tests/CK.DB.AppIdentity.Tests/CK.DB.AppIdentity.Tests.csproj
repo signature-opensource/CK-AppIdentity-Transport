@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.uc.0.ci.128" />
-    <PackageReference Include="CK.DB.Tests.NUnit" Version="37.0.0-0.uc.0.ci.24" />
+    <PackageReference Include="CK.DB.Tests.NUnit" Version="37.0.0-0.uc.0.ci.25" />
     <PackageReference Include="CK.SqlServer.Dapper" Version="18.0.0-0.uc.0.ci.56" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
