@@ -20,8 +20,9 @@ namespace CK.AppIdentity.Cris;
 ///   <item>
 ///   A party command executes where its target is: the current local party (here), another local party of this application
 ///   (here, inline, with this party as the <see cref="CurrentLocalParty"/>), or a remote of the current local party (sent
-///   to it if it accepts the command). Beyond, when an <see cref="IPartyCommandRouteProvider"/> names its route, it is sent
-///   in an <see cref="IPartyRoutedCommand"/> along this route to its target (that must host it). Anything else is "no route".
+///   to it if it accepts the command). Beyond, it is sent to the hub of the current local party (its Authentication Center,
+///   see <see cref="IPartyRelay"/>) in an <see cref="IPartyRoutedCommand"/> along the path [the local party, its hub, the
+///   target]: the hub forwards it when the target is its remote. Anything else is "no route".
 ///   </item>
 /// </list>
 /// While a remote of the current local party has not advertised its accepted commands yet (it is not connected yet), a
@@ -99,27 +100,28 @@ public sealed class ChannelCrisRemoteDispatcher : ICrisRemoteDispatcher
             var channel = remote.GetFeature<CrisChannelFeature>();
             if( channel != null ) return SendToTargetAsync( services, channel, command );
         }
-        // Beyond one hop: along the route of the command, when its package names one. The providers and the sender are
-        // optional services (an application without routed commands has none): they are resolved only here.
+        // Beyond one hop: through the hub of the local party (its Authentication Center). The relay and the sender are optional
+        // services (an application without Authentication Center has none): they are resolved only here.
         if( remote == null
             && command.CrisPocoModel.Exposure != CrisExposure.Private
-            && services.GetService<PartyRoutedCommandSender>() is { } sender
-            && services.GetServices<IPartyCommandRouteProvider>().Select( p => p.GetRouteName( command ) ).FirstOrDefault( n => n != null ) is string routeName )
+            && services.GetService<IPartyRelay>()?.GetHub( local ) is { } hub
+            && hub.FullName != target
+            && services.GetService<PartyRoutedCommandSender>() is { } sender )
         {
-            return SendAlongRouteAsync( services, sender, local, command, routeName, target );
+            return SendThroughHubAsync( services, sender, local, hub, command, target );
         }
         return Task.FromResult( Error( services, $"Party command '{command.CrisPocoModel.PocoName}' has no route from '{local.FullName}' to '{target}'.", "Cris.NoRoute" ) );
     }
 
-    static async Task<RawCrisExecutor.RawResult> SendAlongRouteAsync( IServiceProvider services,
+    static async Task<RawCrisExecutor.RawResult> SendThroughHubAsync( IServiceProvider services,
                                                                     PartyRoutedCommandSender sender,
                                                                     ILocalParty local,
+                                                                    IRemoteParty hub,
                                                                     IAbstractCommand command,
-                                                                    string routeName,
                                                                     string target )
     {
         var monitor = services.GetRequiredService<IActivityMonitor>();
-        var result = await sender.SendAsync( monitor, services, local, command, routeName, target ).ConfigureAwait( false );
+        var result = await sender.SendAlongPathAsync( monitor, services, local, command, [local.FullName, hub.FullName, target] ).ConfigureAwait( false );
         return new RawCrisExecutor.RawResult( result, null );
     }
 

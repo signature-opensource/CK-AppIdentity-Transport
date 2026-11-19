@@ -16,7 +16,7 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.Enlistment](CK.AppIdentity.Enlistment/README.md) | The approval of a pending party: signed by the host of the approval page, checked and applied by the holder. |
 | [CK.AppIdentity.AuthCenter.Enlistment](CK.AppIdentity.AuthCenter.Enlistment/README.md) | The Authentication Center in the enlistment: the countersignature of the approvals, the pin grant of a "both approval", the authenticated approval page. |
 | [CK.IO.AppIdentity.Tenants](CK.IO.AppIdentity.Tenants/ITenantCommands.cs) | The commands of the run-time tenant domains: list the holders, list, create, move and remove the instances of their Opened tenant templates. |
-| [CK.AppIdentity.Tenants](CK.AppIdentity.Tenants/README.md) | The run-time tenant domains managed by an operator: the "Tenants" route, the handlers of the tenant commands. |
+| [CK.AppIdentity.Tenants](CK.AppIdentity.Tenants/README.md) | The run-time tenant domains managed by an operator: the handlers of the tenant commands, the discovery of the applications that hold tenant templates through the hub of the System. |
 | [CK.AppIdentity.CKey](CK.AppIdentity.CKey/README.md) | CKey: the local user interface of the AppIdentity store of a running party (a named pipe), and the `ckey` tool it ships (CK.AppIdentity.CKey.Tool). |
 | [CK.AppIdentity.AuthCenter](CK.AppIdentity.AuthCenter/README.md) | The "AuthCenter" feature core: the Authentication Center of each local party and the reading of its tokens. |
 | [CK.AppIdentity.Cris.AuthCenter](CK.AppIdentity.Cris.AuthCenter/README.md) | **Deprecated**: renamed CK.AppIdentity.AuthCenter. |

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>The run-time tenant domains of a CK-AppIdentity System, managed by an operator: an application that holds Opened tenant templates hosts the "Tenants" route, its handlers create, move and remove the run-time tenants; the tenant commands travel along the route beyond one hop.</Description>
+    <Description>The run-time tenant domains of a CK-AppIdentity System, managed by an operator: the handlers of the tenant commands (list, create, move and remove the run-time tenants of an application), and the discovery of the applications that hold tenant templates through the hub of the System (its Authentication Center).</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.Cris.Authentication\CK.AppIdentity.Cris.Authentication.csproj" />

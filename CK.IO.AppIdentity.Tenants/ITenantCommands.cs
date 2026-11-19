@@ -6,8 +6,10 @@ using System.Collections.Generic;
 namespace CK.IO.AppIdentity.Tenants;
 
 /// <summary>
-/// Lists the applications that hold tenant templates: the hosts of the "Tenants" route of the local party that executes it
-/// (the host of the operator's page). A singleton command, executed where it is sent.
+/// Lists the applications that may hold tenant templates (they accept the tenant commands): the local one when it holds
+/// some, its remotes, and the remotes of the hub of the System (its Authentication Center). A singleton command, executed
+/// where it is sent (the application of the operator's page). An application of the list may have no template: ask each
+/// one (<see cref="IGetTenantInstancesQCommand"/>).
 /// </summary>
 public interface IGetTenantHostsQCommand : ICommand<IList<string>>, ICommandAuthCritical
 {

@@ -15,35 +15,29 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.Tests;
 
 /// <summary>
-/// The party commands beyond one hop (<see cref="IPartyCommandRouteProvider"/>) and the tenant commands
-/// (CK.AppIdentity.Tenants): three parties in a chain, "Test/$Sender" &gt; "Test/$Listener" &lt; "Test/$C".
+/// The hub of the System's administration (<see cref="IPartyRelay"/>, its directory <see cref="IGetAcceptingRemotesQCommand"/>)
+/// and the tenant commands (CK.AppIdentity.Tenants): three parties, "Test/$Sender" &gt; "Test/$Listener" &lt; "Test/$C".
+/// The listener stands for the Authentication Center: it is the hub of the sender.
 /// </summary>
 [TestFixture]
 public class TenantCommandTests
 {
     static readonly TimeSpan _timeout = TimeSpan.FromSeconds( 30 );
 
-    public interface IRoutedEchoCommand : ICommand<string>, ICommandTargetParty
+    public interface IEchoPartyCommand : ICommand<string>, ICommandTargetParty
     {
     }
 
-    public interface IUnroutedEchoCommand : ICommand<string>, ICommandTargetParty
-    {
-    }
-
-    public sealed class EchoHandlers : ISingletonAutoService
+    public sealed class EchoHandler : ISingletonAutoService
     {
         [CommandHandler]
-        public string Handle( IRoutedEchoCommand c, CurrentLocalParty party ) => party.LocalParty.FullName;
-
-        [CommandHandler]
-        public string Handle( IUnroutedEchoCommand c, CurrentLocalParty party ) => party.LocalParty.FullName;
+        public string Handle( IEchoPartyCommand c, CurrentLocalParty party ) => party.LocalParty.FullName;
     }
 
-    // The package of IRoutedEchoCommand names its route.
-    public sealed class EchoRouteProvider : IPartyCommandRouteProvider
+    // The hub of a local party is its only remote (the listener): CK.AppIdentity.AuthCenter's relay gives its remote AuthCenter.
+    public sealed class SingleRemoteHub : IPartyRelay
     {
-        public string? GetRouteName( IAbstractCommand command ) => command is IRoutedEchoCommand ? "Routed" : null;
+        public IRemoteParty? GetHub( ILocalParty local ) => local.Remotes.Count == 1 ? local.Remotes.Single() : null;
     }
 
     static readonly Type[] _common = [typeof( IPartyRoutedCommand ),
@@ -54,8 +48,9 @@ public class TenantCommandTests
                                       typeof( ChannelCrisRemoteDispatcher ),
                                       typeof( CrisBackgroundExecutorService ),
                                       typeof( RawCrisReceiver ),
-                                      typeof( IRoutedEchoCommand ),
-                                      typeof( IUnroutedEchoCommand ),
+                                      typeof( IEchoPartyCommand ),
+                                      typeof( IGetAcceptingRemotesQCommand ),
+                                      typeof( AcceptingRemotesHandler ),
                                       typeof( ReceptionTests.ITestEnvelope ),
                                       typeof( IPartySealedResult )];
 
@@ -66,21 +61,17 @@ public class TenantCommandTests
         return await app.Services.GetRequiredService<CrisBackgroundExecutorService>().Submit( TestHelper.Monitor, command, hub ).ExecutedCommand.WaitAsync( _timeout );
     }
 
-    static async Task<bool> WaitForRouteAsync( ILocalParty local, string name )
+    static async Task<bool> WaitForAcceptedAsync( RunningApplication app, string remote )
     {
-        for( int i = 0; i < 100; ++i )
-        {
-            if( local.Description.Routes.ContainsKey( name ) ) return true;
-            await Task.Delay( 100 );
-        }
-        return false;
+        var channel = app.ApplicationIdentityService.Remotes.Single( r => r.FullName == remote ).GetRequiredFeature<CrisChannelFeature>();
+        return await channel.WaitForAcceptedCommandsAsync( _timeout );
     }
 
     [Test]
-    public async Task a_party_command_beyond_one_hop_travels_along_the_route_its_package_names_Async()
+    public async Task a_party_command_for_a_party_that_is_not_a_remote_goes_through_the_hub_Async()
     {
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                                         senderTypes: [.. _common, typeof( EchoRouteProvider )],
+                                                                         senderTypes: [.. _common, typeof( SingleRemoteHub )],
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
@@ -92,21 +83,28 @@ public class TenantCommandTests
                                                                   isSender: true,
                                                                   c => c["FullName"] = "Test/$C",
                                                                   null,
-                                                                  [.. _common, typeof( EchoHandlers ), typeof( RoutedCommandTests.RouteHostFeatureDriver )] );
+                                                                  [.. _common, typeof( EchoHandler )] );
+        string bName = b.ApplicationIdentityService.FullName;
         string cName = c.ApplicationIdentityService.FullName;
-        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
+        (await WaitForAcceptedAsync( a, bName )).ShouldBeTrue();
+        (await WaitForAcceptedAsync( b, cName )).ShouldBeTrue();
 
-        // C is not a remote of the sender: the command travels along "Routed" (through the listener).
-        (await ExecuteAsync( a, a.PocoDirectory.Create<IRoutedEchoCommand>( e => e.TargetPartyFullName = cName ) )).Result.ShouldBe( cName );
-        // No package names the route of this one: no route, as before.
-        (await ExecuteAsync( a, a.PocoDirectory.Create<IUnroutedEchoCommand>( e => e.TargetPartyFullName = cName ) ))
-            .Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.First().ResName.ShouldBe( "Cris.NoRoute" );
+        // C is not a remote of the sender: the command goes through its hub (the listener), that has C as a remote.
+        (await ExecuteAsync( a, a.PocoDirectory.Create<IEchoPartyCommand>( e => e.TargetPartyFullName = cName ) )).Result.ShouldBe( cName );
+        // A party that the hub doesn't know: the hub refuses it.
+        (await ExecuteAsync( a, a.PocoDirectory.Create<IEchoPartyCommand>( e => e.TargetPartyFullName = "Test/$Nobody/#Dev" ) ))
+            .Result.ShouldBeAssignableTo<ICrisResultError>()!.Errors.First().Text.ShouldContain( "is not a remote of" );
+        // The hub is the directory: it lists its remotes that accept a command.
+        var accepting = await ExecuteAsync( a, a.PocoDirectory.Create<IGetAcceptingRemotesQCommand>( q =>
+        {
+            q.TargetPartyFullName = bName;
+            q.CommandName = a.PocoDirectory.Create<IEchoPartyCommand>().CrisPocoModel.PocoName;
+        } ) );
+        accepting.Result.ShouldBeAssignableTo<System.Collections.Generic.IList<string>>()!.ShouldContain( cName );
     }
 
     static readonly Type[] _tenants = [typeof( AuthenticationInfo ),
-                                       typeof( TenantsFeatureDriver ),
                                        typeof( TenantHandlers ),
-                                       typeof( TenantCommandRouteProvider ),
                                        typeof( IGetTenantHostsQCommand ),
                                        typeof( IGetTenantInstancesQCommand ),
                                        typeof( ITenantTemplateInfo ),
@@ -116,12 +114,12 @@ public class TenantCommandTests
                                        typeof( IRemoveTenantInstanceCommand )];
 
     [Test]
-    public async Task the_tenant_commands_reach_the_holder_of_the_templates_and_manage_its_tenants_Async()
+    public async Task the_tenant_holders_are_found_through_the_hub_and_their_tenants_are_managed_Async()
     {
         var store = ApplicationIdentityServiceConfiguration.DefaultStoreRootPath.Combine( "#Dev/Test/CrisTenants" );
         if( System.IO.Directory.Exists( store ) ) System.IO.Directory.Delete( store, recursive: true );
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                                         senderTypes: [.. _common, .. _tenants],
+                                                                         senderTypes: [.. _common, .. _tenants, typeof( SingleRemoteHub )],
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$C";
@@ -141,18 +139,25 @@ public class TenantCommandTests
                                                                   },
                                                                   null,
                                                                   [.. _common, .. _tenants] );
+        string bName = b.ApplicationIdentityService.FullName;
         string cName = c.ApplicationIdentityService.FullName;
+        (await WaitForAcceptedAsync( a, bName )).ShouldBeTrue();
+        (await WaitForAcceptedAsync( b, cName )).ShouldBeTrue();
 
-        // The holder hosts "Tenants": the host of the page finds it (its route travels through the listener).
-        (await WaitForRouteAsync( a.ApplicationIdentityService, TenantsFeatureDriver.RouteName )).ShouldBeTrue();
+        // The application of the page finds C through its hub: C accepts the tenant commands, the hub doesn't, and the
+        // page's application has no template.
         var aHandlers = a.Services.GetRequiredService<TenantHandlers>();
-        aHandlers.Handle( a.PocoDirectory.Create<IGetTenantHostsQCommand>(), new CurrentLocalParty( a.ApplicationIdentityService ) )
-                 .ShouldBe( [cName] );
-        // A tenant command to the holder travels along "Tenants".
-        a.Services.GetServices<IPartyCommandRouteProvider>().Select( p => p.GetRouteName( a.PocoDirectory.Create<ICreateTenantInstanceCommand>() ) )
-                  .ShouldContain( TenantsFeatureDriver.RouteName );
+        await using( var aScope = a.CreateAsyncScopeServices() )
+        {
+            (await aHandlers.HandleAsync( TestHelper.Monitor,
+                                          a.PocoDirectory.Create<IGetTenantHostsQCommand>(),
+                                          new CurrentLocalParty( a.ApplicationIdentityService ),
+                                          a.PocoDirectory,
+                                          aScope.ServiceProvider )).ShouldBe( [cName] );
+        }
 
-        // On the holder: create, list, move, remove.
+        // On the holder: create, list, move, remove (the Critical level is the one of the dispatched commands: here the
+        // handlers are called directly).
         var handlers = c.Services.GetRequiredService<TenantHandlers>();
         var cLocal = new CurrentLocalParty( c.ApplicationIdentityService );
         await using var scope = c.CreateAsyncScopeServices();

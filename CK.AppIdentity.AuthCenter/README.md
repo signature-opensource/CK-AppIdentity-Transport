@@ -196,6 +196,14 @@ its level, `Critical` included, across any number of parties of the System:
 So any party of the System can relay a proof, and any local party that has an Authentication Center can verify it: a
 `Critical` command (an impersonation, a passkey registration) executes wherever its handler is.
 
+## The hub of the administration ([`AuthCenterRelay`](AuthCenterRelay.cs))
+
+Every party is linked to the Authentication Center, which knows them all: it is the hub of the System's administration
+(the `IPartyRelay` of CK.AppIdentity.Cris). A party command whose target is not a remote of the current local party goes
+through its remote Authentication Center, which forwards it to its remote; the Authentication Center answers the
+`IGetAcceptingRemotesQCommand` for its remotes (the directory of the System). A local party that is its own Authentication
+Center, or whose Authentication Center is only anchored, has no hub.
+
 ## The key directory ([`IPartyEncryptionKeyDirectory`](IPartyEncryptionKeyDirectory.cs))
 
 A party encrypts for another one with the encryption key it publishes in its description (CK.AppIdentity.KeyManagement's

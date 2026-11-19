@@ -1,3 +1,4 @@
+using CK.AppIdentity.Cris;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
@@ -12,7 +13,10 @@ namespace CK.AppIdentity.Tenants;
 /// <summary>
 /// Handles the tenant commands:
 /// <list type="bullet">
-///   <item>On the host of the operator's page, <see cref="IGetTenantHostsQCommand"/>: the hosts of its "Tenants" routes.</item>
+///   <item>
+///   On the application of the operator's page, <see cref="IGetTenantHostsQCommand"/>: the applications that accept the
+///   tenant commands among its remotes and the remotes of its hub (its Authentication Center: see <see cref="IPartyRelay"/>).
+///   </item>
 ///   <item>
 ///   On the application that holds the templates (the target of the party commands), <see cref="IGetTenantInstancesQCommand"/>,
 ///   <see cref="ICreateTenantInstanceCommand"/>, <see cref="ISetTenantIndexCommand"/> and <see cref="IRemoveTenantInstanceCommand"/>:
@@ -50,24 +54,50 @@ public sealed class TenantHandlers : ISingletonAutoService
     }
 
     /// <summary>
-    /// Lists the applications that hold tenant templates: the hosts of the "Tenants" routes of the local party.
+    /// Lists the applications that may hold tenant templates: the local one when it holds some, its remotes that accept
+    /// the tenant commands, and the remotes of its hub that accept them (the hub is the directory of the System: it is asked
+    /// with an <see cref="IGetAcceptingRemotesQCommand"/>). An application that accepts the tenant commands may have no
+    /// template: the caller asks each one (<see cref="IGetTenantInstancesQCommand"/>) and keeps the ones that have some.
     /// </summary>
+    /// <param name="monitor">The monitor.</param>
     /// <param name="command">The query.</param>
-    /// <param name="current">The local party (the host of the page).</param>
-    /// <returns>The full names of the hosts.</returns>
+    /// <param name="current">The local party (the application of the page).</param>
+    /// <param name="pocos">The poco directory.</param>
+    /// <param name="services">The services (the optional <see cref="IPartyRelay"/>).</param>
+    /// <returns>The full names of the applications.</returns>
     [CommandHandler]
-    public IList<string> Handle( IGetTenantHostsQCommand command, CurrentLocalParty current )
+    public async Task<IList<string>> HandleAsync( IActivityMonitor monitor,
+                                                  IGetTenantHostsQCommand command,
+                                                  CurrentLocalParty current,
+                                                  PocoDirectory pocos,
+                                                  IServiceProvider services )
     {
-        var result = new List<string>();
-        if( current.LocalParty is IApplicationIdentityService root && root.TenantTemplates.Count > 0 )
+        var local = current.LocalParty;
+        var result = new SortedSet<string>( StringComparer.Ordinal );
+        if( local is IApplicationIdentityService root && root.TenantTemplates.Count > 0 ) result.Add( root.FullName );
+        var name = pocos.Create<IGetTenantInstancesQCommand>().CrisPocoModel.PocoName;
+        foreach( var r in local.Remotes )
         {
-            result.Add( root.FullName );
+            if( r.GetFeature<CrisChannelFeature>()?.AcceptedCommands?.Contains( name ) is true ) result.Add( r.FullName );
         }
-        if( current.LocalParty.Description.Routes.TryGetValue( TenantsFeatureDriver.RouteName, out var routes ) )
+        if( services.GetService<IPartyRelay>( throwOnNull: false )?.GetHub( local ) is { } hub && hub.GetFeature<CrisChannelFeature>() is { } channel )
         {
-            result.AddRange( routes.Select( r => r.Host ) );
+            var q = pocos.Create<IGetAcceptingRemotesQCommand>( q =>
+            {
+                q.TargetPartyFullName = hub.FullName;
+                q.CommandName = name;
+            } );
+            var executed = await channel.SendCommand( monitor, q, timeout: ChannelCrisRemoteDispatcher.Timeout ).ExecutedCommand.ConfigureAwait( false );
+            if( executed.Result is IList<string> names )
+            {
+                result.UnionWith( names.Where( n => n != local.FullName.Path ) );
+            }
+            else
+            {
+                monitor.Warn( $"The hub '{hub.FullName}' didn't list its remotes that accept the tenant commands: {executed.Result}." );
+            }
         }
-        return result.Distinct( StringComparer.Ordinal ).Order( StringComparer.Ordinal ).ToList();
+        return result.ToList();
     }
 
     /// <summary>

@@ -7,20 +7,22 @@ package lets an operator create, move and remove them from a page of the System 
 any application that holds templates. The commands are in
 [CK.IO.AppIdentity.Tenants](../CK.IO.AppIdentity.Tenants/ITenantCommands.cs).
 
-## The "Tenants" route
+## Finding and reaching the applications
 
-An application that holds Opened tenant templates hosts the "Tenants" route on its root party
-([`TenantsFeatureDriver`](TenantsFeatureDriver.cs), a "Tenants" feature allowed by default). The route is:
+The Authentication Center is the hub of the System's administration (see `IPartyRelay` in CK.AppIdentity.Cris): every
+party is linked to it.
 
-- **the discovery:** the host of the operator's page lists the hosts of its "Tenants" routes (`IGetTenantHostsQCommand`:
-  no list is stored, the routes are announced by the parties);
-- **the reach:** the tenant commands are party commands (`ICommandTargetParty`: their `TargetPartyFullName` is the
-  application). Sent to an application that is not a remote, they travel along the "Tenants" route
-  ([`TenantCommandRouteProvider`](TenantCommandRouteProvider.cs), see the party commands beyond one hop of
-  CK.AppIdentity.Cris).
+- **The discovery** (`IGetTenantHostsQCommand`, on the application of the operator's page): the local application when
+  it holds templates, its remotes that accept the tenant commands, and the remotes of its hub that accept them (the hub
+  answers an `IGetAcceptingRemotesQCommand`: the commands advertised by the channels of its remotes). Nothing is announced
+  nor stored. An application of the list may have no template (it only has this package): the page asks each one and keeps
+  the ones that have some.
+- **The reach:** the tenant commands are party commands (`ICommandTargetParty`: their `TargetPartyFullName` is the
+  application). Sent to an application that is not a remote, they go through the hub.
 
-A route is accepted only toward an authorized host: the "RouteHosts" of the Authentication Center of the System (or of
-the local party) must authorize the hosts of "Tenants".
+So the application of the page (the Admin) needs no link with the applications that hold the tenants: both are linked to
+the Authentication Center. This package is referenced by both: by the holders for the handlers of the tenant commands,
+by the application of the page for the discovery.
 
 ## The commands
 
@@ -33,5 +35,5 @@ the local party) must authorize the hosts of "Tenants".
 | `ISetTenantIndexCommand` | `SetTenantIndexAsync`: a run-time tenant (loaded or not) moves to a free index; its identity doesn't change. |
 | `IRemoveTenantInstanceCommand` | `RemoveTenantInstanceAsync`: its keys are destroyed, its private store trashed. |
 
-They are Critical (`ICommandAuthCritical`): the user's proof travels with the command along the route. No right is
+They are Critical (`ICommandAuthCritical`): the user's proof travels with the command, through the hub. No right is
 checked but the Critical level, unless the application adds a validator; a change made while impersonating is refused.

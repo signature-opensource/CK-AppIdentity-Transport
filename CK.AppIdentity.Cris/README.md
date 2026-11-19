@@ -84,10 +84,13 @@ the code that executes a command doesn't care whether it runs here or on a remot
 - **A party command** (`ICommandTargetParty`) is routed by its `TargetPartyFullName` before any local execution: the
   current local party executes it here; another local party of the application (the root or a tenant) executes it here,
   inline, as its `CurrentLocalParty` (an independent execution: its routed events are dispatched in that party's scope);
-  a remote of the current local party receives it if it accepts it. Beyond one hop, when an
-  [`IPartyCommandRouteProvider`](IPartyCommandRouteProvider.cs) (implemented by the package of the command) names its
-  route, it is sent in an `IPartyRoutedCommand` along this route to its target, that must host it (see the routed commands
-  below). Anything else is "no route".
+  a remote of the current local party receives it if it accepts it. Beyond, it goes through the **hub** of the current
+  local party ([`IPartyRelay`](IPartyRelay.cs): its Authentication Center, implemented by CK.AppIdentity.AuthCenter), in
+  an `IPartyRoutedCommand` along the path [the local party, its hub, the target]: the hub forwards it when the target is
+  its remote, refuses it otherwise (see the routed commands below). Without hub, anything else is "no route".
+- **The hub is the directory of the System:** [`IGetAcceptingRemotesQCommand`](IGetAcceptingRemotesQCommand.cs) (a party
+  command, `[Internal]`) asks a party which of its remotes accept a command (their advertised `AcceptedCommands`); asked
+  to the hub, it finds the parties of the System that handle a feature.
 
 While a remote has not advertised yet, a command without route waits for it, up to `ChannelCrisRemoteDispatcher.Timeout`
 (30 seconds), which also bounds the wait for an answer (the command is then abandoned). It fails closed: no route, an unavailable remote or no answer
