@@ -58,7 +58,7 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     // The private data of a pending login.
     sealed record PendingData( OidcSchemeOptions Scheme, string Nonce, string CodeVerifier );
 
-    // The HTTP client is the one of the driver, shared by the Authentication Centers of the application.
+    // The HTTP client is shared by the Authentication Centers of the application (AuthCenterOidcHttpClient).
     internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes, HttpClient http )
     {
         _schemes = schemes;

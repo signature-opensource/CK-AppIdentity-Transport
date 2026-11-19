@@ -17,7 +17,7 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
         "Authority": "https://accounts.google.com", // https (http only on a loopback address).
         "Issuer": "...",                            // Optional: defaults to the Authority.
         "ClientId": "...",
-        "ClientSecret": "...",
+        "ClientSecret": { "$SECRET": "Google:ClientSecret" },  // A secret: a handle, its value outside the files.
         "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
         "Scopes": "openid email",                   // "openid" is always included.
         "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
@@ -29,14 +29,17 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
 }
 ```
 
-[`AuthCenterOidcConfiguration`](AuthCenterOidcConfiguration.cs) declares the "Oidc" section: without this package, the
-section is a configuration error of the Authentication Center.
+[`AuthCenterOidcOption`](AuthCenterOidcOption.cs) is the "Oidc" option of the Authentication Center (enabled by default,
+`"Oidc": false` disables it): it reads the section, and without this package the section is a configuration error of the
+Authentication Center. The client secrets are declared secrets (`[ConfigurationSecret( "Party:*:ClientSecret" )]`): the
+build reports a plain value, a handle `{ "$SECRET": "<Name>" }` keeps it out of the files (see CK.AppHost for its value).
 
 ## The family
 
-[`AuthCenterOidcFeatureDriver`](AuthCenterOidcFeatureDriver.cs) adds an [`AuthCenterOidc`](AuthCenterOidc.cs) to every
-local Authentication Center (the root and the tenants, dynamic ones included), with the schemes of its section (possibly
-none: the family still hides the "Oidc" provider name in the scheme listing). `AuthCenterOidc` is the
+The option creates an [`AuthCenterOidc`](AuthCenterOidc.cs) for every local Authentication Center (the root and the
+tenants, dynamic ones included), with the schemes of its section (possibly none: the family still hides the "Oidc"
+provider name in the scheme listing). They share one HTTP client ([`AuthCenterOidcHttpClient`](AuthCenterOidcHttpClient.cs),
+disposed with the services). `AuthCenterOidc` is the
 `IAuthCenterRemoteScheme` of these schemes: the core of the Authentication Center handles the remote login commands and the
 pending logins, this package runs the protocol.
 

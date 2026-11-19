@@ -21,20 +21,17 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     readonly AuthCenterSessionStore _sessions;
     readonly AuthCenterPendingStore<PendingRemoteLogin> _pendingRemoteLogins;
 
-    readonly ImmutableConfigurationSection? _settings;
     readonly RouteHosts? _configuredRouteHosts;
 
     internal LocalAuthCenter( IActivityMonitor monitor,
                               CrisAuthCenter center,
                               AuthCenterOptions options,
-                              ImmutableConfigurationSection? settings,
                               RouteHosts? configuredRouteHosts )
     {
         Throw.DebugAssert( center.AuthCenter == center.Owner );
         _center = center;
         var party = _party = center.Owner;
         _options = options;
-        _settings = settings;
         _configuredRouteHosts = configuredRouteHosts;
         _sessions = new AuthCenterSessionStore( party.LocalFileStore );
         _sealNonces = new AuthCenterSealNonces( monitor,
@@ -100,14 +97,6 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
             return (entries, result.Values.ToList());
         } ).ConfigureAwait( false );
     }
-
-    /// <summary>
-    /// Gets the configuration sub-section of a scheme family ("AuthCenter:Oidc" for "Oidc"): the families read their own
-    /// settings. The key must be declared by an <see cref="IAuthCenterSchemeConfiguration"/>.
-    /// </summary>
-    /// <param name="key">The family's key ("Oidc").</param>
-    /// <returns>The section or null when it is not configured.</returns>
-    public ImmutableConfigurationSection? GetSchemeSettings( string key ) => _settings?.TryGetSection( key );
 
     /// <summary>
     /// The lifetime of a pending remote login: 10 minutes.
@@ -204,7 +193,8 @@ public sealed class LocalAuthCenter : IAuthCenterProofChecker, IPartyEncryptionK
     public AuthCenterPendingStore<PendingRemoteLogin> PendingRemoteLogins => _pendingRemoteLogins;
 
     /// <summary>
-    /// Gets the scheme families of this Authentication Center (the <see cref="IAuthCenterScheme"/> features of its party).
+    /// Gets the scheme families of this Authentication Center (the <see cref="IAuthCenterScheme"/> features of its party:
+    /// the families of the options of the AuthCenter, see <see cref="IAuthCenterSchemeFamilyOption"/>).
     /// </summary>
     public IEnumerable<IAuthCenterScheme> SchemeFamilies => _party.Features.OfType<IAuthCenterScheme>();
 

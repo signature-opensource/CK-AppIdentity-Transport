@@ -9,8 +9,9 @@ namespace CK.AppIdentity.AuthCenter;
 /// The settings of a local Authentication Center, read from its "AuthCenter" configuration section (never inherited).
 /// They are static: the configuration of an application identity never changes at runtime.
 /// <para>
-/// The sub-sections belong to the scheme families ("AuthCenter:Oidc"...): each one is read by its package, and a
-/// sub-section that no installed package declares (see <see cref="IAuthCenterSchemeConfiguration"/>) is an error.
+/// The other sub-sections are the options of the <see cref="LocalAuthCenterFeatureDriver"/>: the scheme families
+/// ("AuthCenter:Oidc", see <see cref="IAuthCenterSchemeFamilyOption"/>) and the other options; a sub-section that is not an
+/// option of an installed package is an error.
 /// The "AuthCenter:CriticalLifetimes" sub-section is the core's (see <see cref="CriticalLifetimes"/>).
 /// </para>
 /// </summary>
@@ -99,7 +100,6 @@ public sealed class AuthCenterOptions
 
     internal static AuthCenterOptions? Read( IActivityMonitor monitor,
                                              ImmutableConfigurationSection? section,
-                                             IReadOnlyCollection<string> schemeKeys,
                                              Func<string, bool> isOptionName )
     {
         if( section == null ) return Default;
@@ -137,10 +137,9 @@ public sealed class AuthCenterOptions
             if( s.GetChildren().Any()
                 && !s.Key.Equals( nameof( CriticalLifetimes ), StringComparison.OrdinalIgnoreCase )
                 && !s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase )
-                && !schemeKeys.Contains( s.Key, StringComparer.OrdinalIgnoreCase )
                 && !isOptionName( s.Key ) )
             {
-                monitor.Error( $"The '{s.Path}' section belongs to no installed scheme family and is not an option of the AuthCenter (is a package missing?). Installed: '{schemeKeys.Concatenate( "', '" )}'." );
+                monitor.Error( $"The '{s.Path}' section is not an option of the AuthCenter (a scheme family, another option): is a package missing?" );
                 success = false;
             }
         }

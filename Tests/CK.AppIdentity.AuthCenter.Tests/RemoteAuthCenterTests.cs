@@ -229,15 +229,14 @@ public class RemoteAuthCenterTests
         Type[] centerTypes = [.. _common, .. _centerTypes, .. extraTypes ?? [],
                               .. (passkeys
                                     ? [.. _passkeyCommands,
-                                       typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
-                                       typeof( Passkey.AuthCenterPasskeyConfiguration ),
+                                       typeof( Passkey.AuthCenterPasskeyOption ),
                                        typeof( Passkey.AuthCenterPasskeyHandlers ),
                                        typeof( InMemoryPasskeyStore ),
                                        typeof( FakePasskeyLoginProvider )]
                                     : Type.EmptyTypes),
                               .. (oidcSettings != null
-                                    ? [typeof( Oidc.AuthCenterOidcFeatureDriver ),
-                                       typeof( Oidc.AuthCenterOidcConfiguration ),
+                                    ? [typeof( Oidc.AuthCenterOidcOption ),
+                                       typeof( Oidc.AuthCenterOidcHttpClient ),
                                        typeof( FakeOidcLoginProvider )]
                                     : Type.EmptyTypes)];
         // The AuthCenter (the listener) is started first: the remote connects at once.

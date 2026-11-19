@@ -1,5 +1,7 @@
 using CK.Core;
+using Microsoft.Extensions.Configuration;
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 
@@ -65,14 +67,11 @@ public sealed class AuthCenterPasskeyOptions
                && PartyOrigins.IsCallerPartyUrl( local, callerPartyFullName, o );
     }
 
-    internal static AuthCenterPasskeyOptions? Read( IActivityMonitor monitor, ImmutableConfigurationSection section )
+    // Reads the "AuthCenter:Passkey" section. Throws with all the errors.
+    internal static AuthCenterPasskeyOptions Read( IConfiguration section )
     {
-        bool success = true;
-        void Error( string text )
-        {
-            monitor.Error( $"Invalid '{section.Path}': {text}" );
-            success = false;
-        }
+        var errors = new List<string>();
+        void Error( string text ) => errors.Add( text );
         var rpId = section["RpId"]?.Trim().ToLowerInvariant();
         if( string.IsNullOrEmpty( rpId ) || Uri.CheckHostName( rpId ) != UriHostNameType.Dns )
         {
@@ -84,6 +83,7 @@ public sealed class AuthCenterPasskeyOptions
         {
             Error( $"'Timeout' = '{t}': a positive time span of at most 10 minutes is expected." );
         }
-        return success ? new AuthCenterPasskeyOptions( rpId!, rpName!, timeout ) : null;
+        if( errors.Count > 0 ) Throw.CKException( string.Join( Environment.NewLine, errors ) );
+        return new AuthCenterPasskeyOptions( rpId!, rpName!, timeout );
     }
 }

@@ -14,12 +14,15 @@ namespace CK.AppIdentity.AuthCenter;
 /// remotes that allow "AuthCenterRemote" (the dynamic ones included), and a <see cref="LocalAuthCenter"/> with the settings
 /// of its "AuthCenter" section (see <see cref="AuthCenterOptions"/>). A local party that doesn't declare "AuthCenter" is
 /// ignored (CK.AppIdentity.AuthCenter.Remote handles it).
+/// <para>
+/// The scheme families are options of this driver (<see cref="IAuthCenterSchemeFamilyOption"/>, "AuthCenter:Oidc"...):
+/// it adds the family of each one to every local Authentication Center.
+/// </para>
 /// </summary>
 [PartyFeature( AuthCenterFeature.Name, TypeActivation.Optional, Side = FeatureSide.Local )]
 [Requires<RemoteAuthCenterFeatureDriver>]
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
-    readonly string[] _schemeKeys;
     readonly IServiceProvider _services;
 
     /// <summary>
@@ -30,15 +33,12 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
     /// <param name="services">The root services: the transport computes the routes of a local party again when its route hosts change.</param>
-    /// <param name="schemeConfigurations">The configuration sub-sections declared by the installed scheme families.</param>
     public LocalAuthCenterFeatureDriver( ApplicationIdentityService s,
                                          KeyManagementFeatureDriver keys,
-                                         IEnumerable<IAuthCenterSchemeConfiguration> schemeConfigurations,
                                          IServiceProvider services )
         : base( s )
     {
         _services = services;
-        _schemeKeys = schemeConfigurations.Select( c => c.ConfigurationKey ).ToArray();
     }
 
     /// <summary>
@@ -120,11 +120,11 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         // The settings are the local party's own "AuthCenter" section, in its "Local".
         var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeature.Name );
         if( settings != null && !settings.GetChildren().Any() ) settings = null;
-        // The options of the AuthCenter (like the "PasswordLost" of CK.UserProfile.UserPassword.Lost) are in its section too.
+        // The options of the AuthCenter (the scheme families, the "PasswordLost" of CK.UserProfile.UserPassword.Lost) are in
+        // its section too.
         var optionDirectory = (PartyComponentOptionDirectory?)_services.GetService( typeof( PartyComponentOptionDirectory ) );
         var options = AuthCenterOptions.Read( monitor,
                                               settings,
-                                              _schemeKeys,
                                               key => optionDirectory?.IsOptionName( typeof( LocalAuthCenterFeatureDriver ), key ) is true );
         if( options == null ) return false;
         // The hosts of the routes known at deployment: "AuthCenter:RouteHosts".
@@ -135,7 +135,12 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
         {
             if( IsAllowedFeature( r ) ) r.AddFeature( center );
         }
-        local.AddFeature( new LocalAuthCenter( monitor, center, options, settings, routeHosts ) );
+        local.AddFeature( new LocalAuthCenter( monitor, center, options, routeHosts ) );
+        // The scheme families of its options.
+        foreach( var family in GetOptions( local ).OfType<IAuthCenterSchemeFamilyOption>() )
+        {
+            local.AddFeature( family.CreateFamily( monitor, local ) );
+        }
         await AuthCenterSystemList.PlugAsync( monitor, center, null, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
         return true;
 

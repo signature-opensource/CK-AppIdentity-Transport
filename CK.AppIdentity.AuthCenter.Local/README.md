@@ -137,13 +137,14 @@ for the "Passkey" one.
 handle their own commands, and so is `AuthCenterResults`, from the core
 [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md).
 
+- **A family is an option of the AuthCenter:** an [`IAuthCenterSchemeFamilyOption`](IAuthCenterSchemeFamilyOption.cs),
+  that is an `IPartyComponentOption<LocalAuthCenterFeatureDriver>` declared by a `[PartyFeatureOption( "Oidc", ... )]`.
+  Its section is the sub-section of its name (`"AuthCenter:Oidc"`), read by its constructor (an invalid one fails the
+  setup of the party); `"Oidc": false` disables a family enabled by default. **A sub-section that is not an option of an
+  installed package is a configuration error** (a configured family that silently does nothing is a misconfiguration).
 - **A family is a feature of the local party** of its Authentication Center (`LocalAuthCenter.SchemeFamilies`,
-  `FindSchemeFamily`): one instance per local Authentication Center (the root and every tenant), added by the family's
-  own feature driver, that depends on the `LocalAuthCenterFeatureDriver`.
-- **It has its own configuration sub-section** (`"AuthCenter:Oidc"`, read with `LocalAuthCenter.GetSchemeSettings`). Its
-  package declares the key with an [`IAuthCenterSchemeConfiguration`](IAuthCenterSchemeConfiguration.cs): **a sub-section
-  that no installed package declares is a configuration error** (a configured family that silently does nothing is a
-  misconfiguration).
+  `FindSchemeFamily`): the `LocalAuthCenterFeatureDriver` creates it from its option (`CreateFamily`) for every local
+  Authentication Center (the root and every tenant, dynamic ones included).
 - **It drives a login provider** (`ProviderName`): the scheme listing shows the family's `Schemes` instead of the
   provider name.
 - **The account creation is the family's decision** (`AllowsAccountCreation`): the opener calls the optional

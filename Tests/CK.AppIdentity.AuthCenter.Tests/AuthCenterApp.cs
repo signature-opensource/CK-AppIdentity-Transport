@@ -252,8 +252,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
         // The passkey scheme family (its package), the in-memory store and its "Passkey" provider.
         if( withPasskeys )
         {
-            engine.FirstBinPath.Types.Add( typeof( Passkey.AuthCenterPasskeyFeatureDriver ),
-                                           typeof( Passkey.AuthCenterPasskeyConfiguration ),
+            engine.FirstBinPath.Types.Add( typeof( Passkey.AuthCenterPasskeyOption ),
                                            typeof( Passkey.AuthCenterPasskeyHandlers ),
                                            typeof( PasskeyHandlers ),
                                            typeof( IStartPasskeyLoginOperationCommand ),
@@ -269,7 +268,7 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                            typeof( IPasskeyRegistrationResult ) );
         }
         // The OpenID Connect scheme family (its package): without it, the AuthCenter core has no remote scheme.
-        if( withOidc ) engine.FirstBinPath.Types.Add( typeof( Oidc.AuthCenterOidcFeatureDriver ), typeof( Oidc.AuthCenterOidcConfiguration ) );
+        if( withOidc ) engine.FirstBinPath.Types.Add( typeof( Oidc.AuthCenterOidcOption ), typeof( Oidc.AuthCenterOidcHttpClient ) );
         var r = await engine.RunSuccessfullyAsync();
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ?? LocalAuthCenter ).ShouldNotBeNull();
         var services = r.CreateAutomaticServices( configureServices: services =>

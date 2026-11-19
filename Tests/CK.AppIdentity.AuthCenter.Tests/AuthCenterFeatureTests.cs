@@ -45,9 +45,9 @@ public class AuthCenterFeatureTests
         }
         if( withOidc )
         {
-            services.AddSingleton<IAuthCenterSchemeConfiguration, Oidc.AuthCenterOidcConfiguration>();
-            services.AddSingleton<Oidc.AuthCenterOidcFeatureDriver>();
-            services.AddSingleton<IApplicationIdentityFeatureDriver>( sp => sp.GetRequiredService<Oidc.AuthCenterOidcFeatureDriver>() );
+            // The OpenID Connect scheme family is an option of the AuthCenter.
+            services.AddSingleton<Oidc.AuthCenterOidcHttpClient>();
+            services.AddPartyComponentOptions( typeof( Oidc.AuthCenterOidcOption ) );
         }
         // The Local side requires the Remote side: it is in the directory.
         services.AddPartyComponentDirectory( typeof( RemoteAuthCenterFeatureDriver ) );
@@ -390,7 +390,7 @@ public class AuthCenterFeatureTests
     public async Task a_scheme_family_section_requires_its_package_Async()
     {
         // Without the Oidc package, its section is an error: a configured family must not silently do nothing.
-        await StartMustFailAsync( "AuthCenter:Oidc' section belongs to no installed scheme family and is not an option of the AuthCenter (is a package missing?)", c =>
+        await StartMustFailAsync( "AuthCenter:Oidc' section is not an option of the AuthCenter (a scheme family, another option): is a package missing?", c =>
         {
             c["FullName"] = "D/$App";
             c["Defaults:AuthCenter"] = "true";
@@ -420,6 +420,17 @@ public class AuthCenterFeatureTests
         var family = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         family.ProviderName.ShouldBe( "Oidc" );
         family.Schemes.ShouldBeEmpty( "It still hides the 'Oidc' provider name in the scheme listing." );
+    }
+
+    [Test]
+    public async Task a_scheme_family_is_an_option_of_the_AuthCenter_that_false_disables_Async()
+    {
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["Local:AuthCenter:Oidc"] = "false";
+        }, withOidc: true );
+        s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldBeEmpty();
     }
 
     [Test]

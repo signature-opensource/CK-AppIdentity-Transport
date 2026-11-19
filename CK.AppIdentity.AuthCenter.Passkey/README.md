@@ -23,9 +23,9 @@ An application that doesn't use passkeys doesn't reference this package (nor Fid
 }
 ```
 
-[`AuthCenterPasskeyConfiguration`](AuthCenterPasskeyConfiguration.cs) declares the "Passkey" section.
-[`AuthCenterPasskeyFeatureDriver`](AuthCenterPasskeyFeatureDriver.cs) adds an [`AuthCenterPasskey`](AuthCenterPasskey.cs)
-family to every local Authentication Center (tenants included). The "Passkey" scheme is available (listed, accepted) when
+[`AuthCenterPasskeyOption`](AuthCenterPasskeyOption.cs) is the "Passkey" option of the Authentication Center (enabled by
+default, `"Passkey": false` disables it): it reads the section and creates an [`AuthCenterPasskey`](AuthCenterPasskey.cs)
+family for every local Authentication Center (tenants included). The "Passkey" scheme is available (listed, accepted) when
 the section exists **and** an `IPasskeyStore` is registered; otherwise the family has no scheme and hides the "Passkey"
 provider name.
 

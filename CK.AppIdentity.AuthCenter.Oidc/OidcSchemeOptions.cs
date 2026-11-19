@@ -1,4 +1,5 @@
 using CK.Core;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -133,26 +134,27 @@ public sealed partial class OidcSchemeOptions
 
     internal static bool IsAllowedUri( Uri u ) => u.Scheme == Uri.UriSchemeHttps || (u.Scheme == Uri.UriSchemeHttp && u.IsLoopback);
 
-    internal static ImmutableArray<OidcSchemeOptions>? Read( IActivityMonitor monitor, ImmutableConfigurationSection? section )
+    // Reads the schemes of the "AuthCenter:Oidc" section (null: no scheme). Throws with all the errors.
+    internal static ImmutableArray<OidcSchemeOptions> Read( IConfiguration? section )
     {
         if( section == null ) return ImmutableArray<OidcSchemeOptions>.Empty;
-        bool success = true;
+        var errors = new List<string>();
         var result = ImmutableArray.CreateBuilder<OidcSchemeOptions>();
         foreach( var s in section.GetChildren() )
         {
-            var o = ReadOne( monitor, s );
-            if( o == null ) success = false;
-            else result.Add( o );
+            var o = ReadOne( s, errors );
+            if( o != null ) result.Add( o );
         }
-        return success ? result.ToImmutable() : null;
+        if( errors.Count > 0 ) Throw.CKException( string.Join( Environment.NewLine, errors ) );
+        return result.ToImmutable();
     }
 
-    static OidcSchemeOptions? ReadOne( IActivityMonitor monitor, ImmutableConfigurationSection s )
+    static OidcSchemeOptions? ReadOne( IConfigurationSection s, List<string> errors )
     {
         bool success = true;
         void Error( string text )
         {
-            monitor.Error( $"Invalid '{s.Path}': {text}" );
+            errors.Add( $"'{s.Key}': {text}" );
             success = false;
         }
         var suffix = s.Key;
@@ -178,7 +180,7 @@ public sealed partial class OidcSchemeOptions
         var scopes = (s["Scopes"] ?? "openid").Split( ' ', StringSplitOptions.RemoveEmptyEntries ).ToList();
         if( !scopes.Contains( "openid" ) ) scopes.Insert( 0, "openid" );
         var userInfo = ReadBool( s, nameof( GetClaimsFromUserInfoEndpoint ), Error );
-        var excluded = ReadStrings( s.TryGetSection( nameof( ExcludedClaims ) ) );
+        var excluded = ReadStrings( s.GetSection( nameof( ExcludedClaims ) ) );
         var allowAccountCreation = ReadBool( s, nameof( AllowAccountCreation ), Error );
         if( !success ) return null;
         return new OidcSchemeOptions( suffix,
@@ -193,7 +195,7 @@ public sealed partial class OidcSchemeOptions
                                       allowAccountCreation );
     }
 
-    static bool ReadBool( ImmutableConfigurationSection s, string key, Action<string> error )
+    static bool ReadBool( IConfigurationSection s, string key, Action<string> error )
     {
         var v = s[key];
         if( v == null ) return false;
@@ -203,10 +205,9 @@ public sealed partial class OidcSchemeOptions
     }
 
     // A list ("ExcludedClaims:0", "ExcludedClaims:1"...) or a comma separated value.
-    static List<string> ReadStrings( ImmutableConfigurationSection? s )
+    static List<string> ReadStrings( IConfigurationSection s )
     {
-        if( s == null ) return [];
-        if( s.HasChildren ) return s.GetChildren().Select( c => c.Value ).Where( v => !string.IsNullOrWhiteSpace( v ) ).Select( v => v!.Trim() ).ToList();
+        if( s.GetChildren().Any() ) return s.GetChildren().Select( c => c.Value ).Where( v => !string.IsNullOrWhiteSpace( v ) ).Select( v => v!.Trim() ).ToList();
         return (s.Value ?? "").Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries ).ToList();
     }
 }
