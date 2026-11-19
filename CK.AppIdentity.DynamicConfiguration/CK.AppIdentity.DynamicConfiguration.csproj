@@ -4,7 +4,7 @@
     <Description>The dynamic configuration of a CK-AppIdentity application: the changes of its run properties (CK.Cris.DynamicConfiguration) are kept in the store of its root party.</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.0.ci.126" />
-    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.0.ci.160" />
+    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.0.ci.127" />
+    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.0.ci.163" />
   </ItemGroup>
 </Project>
