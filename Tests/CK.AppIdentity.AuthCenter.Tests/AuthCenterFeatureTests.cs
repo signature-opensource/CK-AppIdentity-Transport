@@ -20,7 +20,11 @@ namespace CK.AppIdentity.AuthCenter.Tests;
 public class AuthCenterFeatureTests
 {
     // The installed sides: local (a local party can be the AuthCenter), remote (a local party can use a remote AuthCenter).
-    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration, bool withOidc = false, bool local = false, bool remote = false )
+    static async Task<ApplicationIdentityService> StartAsync( Action<MutableConfigurationSection> configuration,
+                                                              bool withOidc = false,
+                                                              bool local = false,
+                                                              bool remote = false,
+                                                              ILoginProvider? loginProvider = null )
     {
         var c = ApplicationIdentityServiceConfiguration.Create( TestHelper.Monitor, configuration ).ShouldNotBeNull();
         var services = new ServiceCollection();
@@ -48,6 +52,7 @@ public class AuthCenterFeatureTests
             // The OpenID Connect scheme family is an option of the AuthCenter.
             services.AddSingleton<Oidc.AuthCenterOidcHttpClient>();
             services.AddPartyComponentOptions( typeof( Oidc.AuthCenterOidcOption ) );
+            if( loginProvider != null ) services.AddSingleton( loginProvider );
         }
         // The Local side requires the Remote side: it is in the directory.
         services.AddPartyComponentDirectory( typeof( RemoteAuthCenterFeatureDriver ) );
@@ -420,6 +425,33 @@ public class AuthCenterFeatureTests
         var family = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
         family.ProviderName.ShouldBe( "Oidc" );
         family.Schemes.ShouldBeEmpty( "It still hides the 'Oidc' provider name in the scheme listing." );
+    }
+
+    // A login provider whose payload is not an IOidcLoginPayload.
+    sealed class NotOidcLoginProvider : ILoginProvider
+    {
+        public IReadOnlyCollection<string> ProviderNames => ["Oidc"];
+
+        public object CreatePayload( string scheme ) => new object();
+
+        public ValueTask<ActorLoginResult> LoginAsync( IActivityMonitor monitor, string scheme, object payload, bool actualLogin = true ) => throw new NotSupportedException();
+    }
+
+    [TestCase( false, "There is no 'Oidc' login provider" )]
+    [TestCase( true, "is not an IOidcLoginPayload (CK.AuthenticationInfo.Oidc)" )]
+    public async Task an_Oidc_login_starts_only_when_it_can_be_completed_Async( bool withProvider, string message )
+    {
+        await using var s = await StartAsync( c =>
+        {
+            c["FullName"] = "D/$App";
+            c["Defaults:AuthCenter"] = "true";
+            OidcScheme( c );
+        }, withOidc: true, loginProvider: withProvider ? new NotOidcLoginProvider() : null );
+        var family = (IAuthCenterRemoteScheme)s.GetRequiredFeature<LocalAuthCenter>().FindSchemeFamily( "Oidc.Test" ).ShouldNotBeNull();
+        // The check is done before the provider is contacted (its discovery document is never read here).
+        var start = await family.StartAsync( TestHelper.Monitor, "Oidc.Test", "state", "https://app.example.com/.auth/oidc/callback", critical: false );
+        start.Url.ShouldBeNull();
+        start.Error.ShouldNotBeNull().ShouldContain( message );
     }
 
     [Test]
