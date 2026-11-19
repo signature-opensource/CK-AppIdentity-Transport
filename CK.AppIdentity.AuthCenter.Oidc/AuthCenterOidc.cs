@@ -12,7 +12,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -33,8 +32,9 @@ namespace CK.AppIdentity.AuthCenter.Oidc;
 ///   </item>
 ///   <item>
 ///   <see cref="CompleteAsync"/> exchanges the code and validates the identity token (signature, issuer, audience,
-///   lifetime, nonce), then fills the payload of the "Oidc" <see cref="ILoginProvider"/>: its writable string
-///   properties <c>SchemeSuffix</c> and <c>Sub</c> (the payload of CK.DB.User.UserOidc for instance).
+///   lifetime, nonce), then fills the payload of the "Oidc" <see cref="ILoginProvider"/>: an <see cref="IOidcLoginPayload"/>
+///   (CK.AuthenticationInfo.Oidc: the payload of CK.DB.User.UserOidc for instance). <see cref="StartAsync"/> checks it
+///   first: the user is never sent to a provider whose login can't be completed.
 ///   </item>
 /// </list>
 /// The protocol is the one of Microsoft.IdentityModel (the library of the ASP.NET OpenID Connect handler): the messages
@@ -52,6 +52,7 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
 
     readonly ImmutableArray<OidcSchemeOptions> _schemes;
     readonly HttpClient _http;
+    readonly IEnumerable<ILoginProvider> _providers;
     readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _configurations;
     readonly OpenIdConnectProtocolValidator _validator;
 
@@ -59,10 +60,11 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
     sealed record PendingData( OidcSchemeOptions Scheme, string Nonce, string CodeVerifier );
 
     // The HTTP client is shared by the Authentication Centers of the application (AuthCenterOidcHttpClient).
-    internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes, HttpClient http )
+    internal AuthCenterOidc( ImmutableArray<OidcSchemeOptions> schemes, HttpClient http, IEnumerable<ILoginProvider> providers )
     {
         _schemes = schemes;
         _http = http;
+        _providers = providers;
         _configurations = new ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>>( StringComparer.OrdinalIgnoreCase );
         // The state is checked by the core (the pending logins). The nonce lives as long as a pending login.
         _validator = new OpenIdConnectProtocolValidator { RequireStateValidation = false, NonceLifetime = LocalAuthCenter.PendingRemoteLoginLifetime };
@@ -108,6 +110,12 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         if( options == null || !OidcSchemeOptions.IsValidCallbackUrl( callbackUrl ) )
         {
             return new RemoteLoginStart( null, null, $"The callback '{callbackUrl}' is not allowed for the scheme '{scheme}'." );
+        }
+        // The login can be completed only with an "Oidc" login provider whose payload is an IOidcLoginPayload.
+        if( CheckLoginProvider( options ) is string providerError )
+        {
+            monitor.Error( providerError );
+            return new RemoteLoginStart( null, null, providerError );
         }
         var configuration = await GetConfigurationAsync( monitor, options ).ConfigureAwait( false );
         if( configuration == null ) return new RemoteLoginStart( null, null, $"The provider of the scheme '{options.Scheme}' is not available." );
@@ -180,16 +188,13 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         {
             return Failure( monitor, p.Scheme, "The claims of the provider cannot be read.", "Authentication.RemoteLoginFailed" );
         }
-        var payload = provider.CreatePayload( p.Scheme.Scheme );
-        if( !TrySet( payload, "SchemeSuffix", p.Scheme.Suffix ) || !TrySet( payload, "Sub", sub ) )
+        if( provider.CreatePayload( p.Scheme.Scheme ) is not IOidcLoginPayload payload )
         {
-            return Failure( monitor, p.Scheme, $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable SchemeSuffix and Sub.", "Authentication.InvalidPayload" );
+            return Failure( monitor, p.Scheme, $"The payload of the '{OidcProviderName}' login provider is not an {nameof( IOidcLoginPayload )}.", "Authentication.InvalidPayload" );
         }
-        // The claims are kept when the provider's payload can hold them.
-        if( !TrySet( payload, "Claims", claims ) )
-        {
-            monitor.Trace( $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') has no writable Claims: they are not kept." );
-        }
+        payload.SchemeSuffix = p.Scheme.Suffix;
+        payload.Sub = sub;
+        payload.Claims = claims;
         monitor.Info( $"'{p.Scheme.Scheme}' login completed." );
         return new RemoteLoginCompletion( payload, null, null ) { AuthenticationTime = authenticationTime };
     }
@@ -269,12 +274,23 @@ public sealed class AuthCenterOidc : IAuthCenterRemoteScheme
         return RemoteLoginCompletion.Failure( text, resName );
     }
 
-    static bool TrySet( object payload, string name, string value )
+    // The "Oidc" login provider of a scheme and its payload: null when the login can be completed, the error otherwise.
+    string? CheckLoginProvider( OidcSchemeOptions options )
     {
-        var p = payload.GetType().GetProperty( name, BindingFlags.Public | BindingFlags.Instance );
-        if( p == null || p.PropertyType != typeof( string ) || !p.CanWrite ) return false;
-        p.SetValue( payload, value );
-        return true;
+        var provider = _providers.FirstOrDefault( p => p.ProviderNames.Contains( OidcProviderName, StringComparer.OrdinalIgnoreCase ) );
+        if( provider == null ) return $"There is no '{OidcProviderName}' login provider: the scheme '{options.Scheme}' can't log in.";
+        object payload;
+        try
+        {
+            payload = provider.CreatePayload( options.Scheme );
+        }
+        catch( ArgumentException ex )
+        {
+            return $"The '{OidcProviderName}' login provider has no payload for the scheme '{options.Scheme}': {ex.Message}";
+        }
+        return payload is IOidcLoginPayload
+                ? null
+                : $"The payload of the '{OidcProviderName}' login provider ('{payload.GetType():N}') is not an {nameof( IOidcLoginPayload )} (CK.AuthenticationInfo.Oidc): the scheme '{options.Scheme}' can't log in.";
     }
 
     async Task<OpenIdConnectMessage?> RedeemCodeAsync( IActivityMonitor monitor, OpenIdConnectConfiguration configuration, PendingData p, string callbackUrl, string code )

@@ -55,9 +55,11 @@ pending logins, this package runs the protocol.
    claims). The messages are `OpenIdConnectMessage`: the protocol is the one of Microsoft.IdentityModel (the library of the
    ASP.NET handler, that cannot be used here: it is bound to an HTTP request, the Authentication Center receives Cris
    commands).
-3. The login uses the **"Oidc" login provider**: its payload must have the writable string properties `SchemeSuffix` and
-   `Sub` (the payload of CK.DB.User.UserOidc for instance), and gets the claims in its `Claims` string property when it
-   has one. The session is opened like any login, with the `auth_time` of the identity token as the time of the
+3. The login uses the **"Oidc" login provider**: its payload is an `IOidcLoginPayload`
+   ([CK.AuthenticationInfo.Oidc](https://github.com/signature-opensource/CK-Auth-Abstractions/blob/stable/CK.AuthenticationInfo.Oidc/README.md):
+   the payload of CK.DB.User.UserOidc for instance), filled with the `SchemeSuffix`, the `Sub` and the `Claims`. The start
+   of a login checks it: without an "Oidc" login provider whose payload is one, the user is never sent to the identity
+   provider. The session is opened like any login, with the `auth_time` of the identity token as the time of the
    authentication: the login is `Critical` only when this authentication is recent (see the Critical level in
    CK.AppIdentity.AuthCenter.Local's [README](../CK.AppIdentity.AuthCenter.Local/README.md)). A provider
    that ignores `prompt=login`, or doesn't send `auth_time`, gives `Normal` logins.

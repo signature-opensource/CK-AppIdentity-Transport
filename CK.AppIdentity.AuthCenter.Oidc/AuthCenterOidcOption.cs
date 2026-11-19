@@ -1,5 +1,6 @@
 using CK.Core;
 using Microsoft.Extensions.Configuration;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 
 namespace CK.AppIdentity.AuthCenter.Oidc;
@@ -22,15 +23,18 @@ namespace CK.AppIdentity.AuthCenter.Oidc;
 public sealed class AuthCenterOidcOption : IPartyComponentOption<LocalAuthCenterFeatureDriver>, IAuthCenterSchemeFamilyOption
 {
     readonly AuthCenterOidcHttpClient _http;
+    readonly IEnumerable<ILoginProvider> _providers;
 
     /// <summary>
     /// Initializes a new <see cref="AuthCenterOidcOption"/>.
     /// </summary>
     /// <param name="configuration">The "AuthCenter:Oidc" section: a section per scheme. Null when there is none.</param>
     /// <param name="http">The HTTP client of the application.</param>
-    public AuthCenterOidcOption( IConfiguration? configuration, AuthCenterOidcHttpClient http )
+    /// <param name="providers">The login providers: the "Oidc" one completes the logins (its payload is an <see cref="IOidcLoginPayload"/>).</param>
+    public AuthCenterOidcOption( IConfiguration? configuration, AuthCenterOidcHttpClient http, IEnumerable<ILoginProvider> providers )
     {
         _http = http;
+        _providers = providers;
         Schemes = OidcSchemeOptions.Read( configuration );
     }
 
@@ -40,5 +44,5 @@ public sealed class AuthCenterOidcOption : IPartyComponentOption<LocalAuthCenter
     public ImmutableArray<OidcSchemeOptions> Schemes { get; }
 
     /// <inheritdoc />
-    public IAuthCenterScheme CreateFamily( IActivityMonitor monitor, ILocalParty local ) => new AuthCenterOidc( Schemes, _http.Client );
+    public IAuthCenterScheme CreateFamily( IActivityMonitor monitor, ILocalParty local ) => new AuthCenterOidc( Schemes, _http.Client, _providers );
 }
