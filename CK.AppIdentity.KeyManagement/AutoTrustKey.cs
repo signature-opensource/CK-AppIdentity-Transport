@@ -10,7 +10,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// <para>
 /// There are three ways to create the pin of a remote, from the strongest to the weakest:
 /// <list type="number">
-///   <item>A trust anchor (<see cref="ILocalKeys.TrustAnchors"/>, "Local:TrustAnchors:{FullName}"): the configuration
+///   <item>A trust anchor (<see cref="ILocalKeys.TrustAnchors"/>, "Local:KeyManagement:TrustAnchors:{FullName}"): the configuration
 ///   names a checkpoint of the remote's key event log, the remote is verified from it. This option is then ignored.</item>
 ///   <item>An approval by an operator (the enlistment, with the approval code): for a remote that is not known in
 ///   advance, with <see cref="Never"/>.</item>

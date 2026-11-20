@@ -47,6 +47,7 @@ sealed class InitialMessage : IIncomingRequest
                                + 5 + MaxHostedRouteCount * (2 + MaxRouteNameLength) // The names of the routes the initiator hosts.
                                + (5 + RunPhaseProtection.MaxEphemeralPublicKeyLength) // The initiator's ephemeral ECDH public key.
                                + (5 + AnchoredStatement.MaxEncodedSize) // The pin grant the initiator holds for the listener.
+                               + (5 + EnlistTicket.ProofLength) // The proof of its enlistment ticket.
                                + 1 // Its MAC capabilities.
                                + ApprovalSession.NonceLength // The commitment to its nonce of the approval code.
                                + (5 + Transport.CertificateBindingLength) // What it states about the certificate it presents.

@@ -48,6 +48,7 @@ sealed partial class LocalKeys
             int operationalKeyDays = ReadOperationalKeyDays( monitor );
             int maxSignatureDays = ReadMaxSignatureDays( monitor, keyRotationDays );
             var (trustAnchors, devAnchors) = ReadTrustAnchors( monitor );
+            var enlistTicket = ReadEnlistTicket( monitor, trustAnchors, devAnchors );
             var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
             var keysPath = _store.FolderPath.AppendPart( "Keys" );
             var kelPath = keysPath.AppendPart( KelFolderName );
@@ -69,7 +70,7 @@ sealed partial class LocalKeys
                 if( log[^1].IsRecovery ) CompleteRecovery( monitor, kelPath, log, now );
                 current = LoadCurrent( monitor, keysPath, log, keyRotationDays, now, alerts );
             }
-            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), keyRotationDays, operationalKeyDays, maxSignatureDays, trustAnchors, devAnchors, alerts, _driverAlertRaised );
+            var keys = new LocalKeys( _local, protector, _keyStore, keysPath, current, log.ToArray(), keyRotationDays, operationalKeyDays, maxSignatureDays, trustAnchors, devAnchors, enlistTicket, alerts, _driverAlertRaised );
 
             keys.RotateIfDue( monitor, now );
             var c = keys.CurrentIdentity;
@@ -353,6 +354,42 @@ sealed partial class LocalKeys
                 days = clamped;
             }
             return days;
+        }
+
+        // "Local:KeyManagement:EnlistTicket": the pre-authorized enlistment ticket of the party (a secret). Its center is
+        // anchored at the checkpoint of the ticket; a different configured anchor of the center is an error.
+        EnlistTicket? ReadEnlistTicket( IActivityMonitor monitor, Dictionary<string, KeyCheckpoint> anchors, HashSet<string> devAnchors )
+        {
+            var section = _local.LocalConfiguration.Configuration.TryGetSection( "KeyManagement:EnlistTicket" );
+            if( section?.Value == null ) return null;
+            if( !EnlistTicket.TryParse( section.Value, out var ticket, out var error ) )
+            {
+                // The ticket is a secret: never logged.
+                Throw.CKException( $"Invalid '{section.Path}': {error}" );
+            }
+            var center = ticket.CenterFullName;
+            if( center == _local.FullName.Path )
+            {
+                ticket.Dispose();
+                Throw.CKException( $"Invalid '{section.Path}': the ticket is held by this party itself." );
+            }
+            if( devAnchors.Contains( center )
+                || (anchors.TryGetValue( center, out var configured ) && !configured.Equals( ticket.CenterCheckpoint )) )
+            {
+                ticket.Dispose();
+                Throw.CKException( $"Invalid '{section.Path}': its center '{center}' is anchored at {ticket.CenterCheckpoint}, \"KeyManagement:TrustAnchors\" anchors it otherwise." );
+            }
+            anchors[center] = ticket.CenterCheckpoint;
+            var now = _local.ApplicationIdentityService.SystemClock.UtcNow;
+            if( ticket.Expires <= now )
+            {
+                monitor.Warn( $"The enlistment ticket {ticket.IdText} of '{_local.FullName}' expired on {ticket.Expires:u}: it is not presented to '{center}' (anchored at {ticket.CenterCheckpoint})." );
+            }
+            else
+            {
+                monitor.Info( $"'{_local.FullName}' has the enlistment ticket {ticket.IdText} of '{center}' until {ticket.Expires:u}: it anchors '{center}' at {ticket.CenterCheckpoint}." );
+            }
+            return ticket;
         }
 
         // "Local:KeyManagement:TrustAnchors:{FullName}": a checkpoint of the key event log of the anchored party, or "#Dev" in the dev store

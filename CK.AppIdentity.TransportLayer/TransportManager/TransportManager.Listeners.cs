@@ -138,6 +138,39 @@ sealed partial class TransportManager
     }
 
     /// <summary>
+    /// Gets whether a local party holds an open enlistment ticket for a party (see <see cref="IEnlistmentTicketAuthority"/>).
+    /// </summary>
+    /// <param name="local">The local party.</param>
+    /// <param name="partyFullName">The full name of the party.</param>
+    /// <returns>True when a ticket is open.</returns>
+    internal bool IsTicketOpen( ILocalParty local, string partyFullName ) => _ticketAuthority?.HasOpenTicket( local, partyFullName ) ?? false;
+
+    /// <summary>
+    /// On the holder: trusts the key of a remote from the proof of an enlistment ticket that it presented. The ticket is
+    /// used (closed) by <see cref="IEnlistmentTicketAuthority.TryUse"/>.
+    /// </summary>
+    /// <param name="remote">The remote that presented the proof.</param>
+    /// <param name="proof">The proof.</param>
+    /// <param name="block">The identity block the remote sent with it.</param>
+    /// <param name="ephemeralPublicKey">The ephemeral public key of the connection.</param>
+    /// <returns>True when the remote is trusted.</returns>
+    internal bool TryTrustFromTicket( TransportFeature remote, byte[] proof, in IdentityBlock block, byte[] ephemeralPublicKey )
+    {
+        if( _ticketAuthority == null ) return false;
+        var local = remote.Party.Owner;
+        var fullName = remote.Party.FullName.Path;
+        var fingerprint = new RemoteIdentityKeyData( block.Head ).GetFingerprint();
+        if( !_ticketAuthority.TryUse( Logger, local, fullName, proof, KeyCheckpoint.Of( fullName, block.Head ), fingerprint, ephemeralPublicKey ) )
+        {
+            return false;
+        }
+        if( !remote.RemoteKeys.SetTrustedIdentity( Logger, block.Head ) ) return false;
+        Logger.Info( ActivityMonitor.Tags.SecurityCritical,
+                     $"'{local}' trusts '{remote.Party}' (key {fingerprint}) from its enlistment ticket {EnlistTicket.GetProofId( proof )}." );
+        return true;
+    }
+
+    /// <summary>
     /// On the waiting party: pins a remote from a <see cref="PinGrant"/> it handed over. The grant must name the local
     /// party, its current key (or the key of one of its last events), and the remote; it must verify with the keys of the
     /// authority; the events the remote presented must verify from the checkpoint of the grant.

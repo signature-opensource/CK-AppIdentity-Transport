@@ -85,6 +85,8 @@ public static class PeerMessages
             w.WriteBytes( approvalCommitment );
             // No pin grant (an optional statement: length then bytes, 0 meaning none).
             w.WriteSmallUInt32( 0 );
+            // No enlistment ticket proof (length then bytes, 0 meaning none).
+            w.WriteSmallUInt32( 0 );
             // What this side states about the certificate it is presenting, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
             // The timed nonce.

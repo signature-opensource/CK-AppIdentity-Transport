@@ -15,6 +15,8 @@ namespace CK.AppIdentity.CKey;
 [PartyFeature( "CKey", TypeActivation.Optional )]
 public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
 {
+    readonly IEnlistmentTicketAuthority? _tickets;
+
     CKeyPipeServer? _server;
 
     /// <summary>
@@ -23,9 +25,11 @@ public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="s">The application identity service.</param>
     /// <param name="keys">The key management (the keys of the local parties).</param>
     /// <param name="transport">The transport (the peering issues).</param>
-    public CKeyFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys, TransportFeatureDriver transport )
+    /// <param name="tickets">The optional holder of the enlistment tickets (the Authentication Center): "ckey ticket".</param>
+    public CKeyFeatureDriver( ApplicationIdentityService s, KeyManagementFeatureDriver keys, TransportFeatureDriver transport, IEnlistmentTicketAuthority? tickets = null )
         : base( s )
     {
+        _tickets = tickets;
     }
 
     /// <inheritdoc />
@@ -39,7 +43,7 @@ public sealed class CKeyFeatureDriver : ApplicationIdentityFeatureDriver
         }
         if( success && IsAllowedFeature( ApplicationIdentityService ) )
         {
-            _server = new CKeyPipeServer( ApplicationIdentityService );
+            _server = new CKeyPipeServer( ApplicationIdentityService, _tickets );
             _server.Start( monitor );
         }
         return Task.FromResult( success );

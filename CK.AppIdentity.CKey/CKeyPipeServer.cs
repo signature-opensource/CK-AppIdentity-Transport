@@ -1,3 +1,4 @@
+using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System;
 using System.Buffers.Binary;
@@ -43,10 +44,10 @@ public sealed class CKeyPipeServer
     CancellationTokenSource? _cts;
     Task? _loop;
 
-    internal CKeyPipeServer( ApplicationIdentityService app )
+    internal CKeyPipeServer( ApplicationIdentityService app, IEnlistmentTicketAuthority? tickets = null )
     {
         _app = app;
-        _operations = new CKeyOperations( app );
+        _operations = new CKeyOperations( app, tickets );
         _pipeName = GetPipeName( app.FullName.Path );
     }
 

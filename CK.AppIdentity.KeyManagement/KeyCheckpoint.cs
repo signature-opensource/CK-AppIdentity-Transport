@@ -11,7 +11,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// <para>
 /// A checkpoint names the identity of a party from this event on: every event commits to the previous one and the next
 /// key is committed in advance, so the events after the checkpoint are verified from it. A trust anchor
-/// (<c>Local:TrustAnchors:{FullName}</c>, see <see cref="ILocalKeys.TrustAnchors"/>) is a checkpoint given by the
+/// (<c>Local:KeyManagement:TrustAnchors:{FullName}</c>, see <see cref="ILocalKeys.TrustAnchors"/>) is a checkpoint given by the
 /// configuration: the inception (sequence 0) or a later event.
 /// </para>
 /// </summary>

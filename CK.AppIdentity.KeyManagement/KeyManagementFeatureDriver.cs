@@ -12,6 +12,8 @@ namespace CK.AppIdentity.KeyManagement;
 // The dynamic instances of an Opened template are trusted by an approval only: anyone could otherwise take a free index
 // first. Checked at build time (and refused at run time: fail-closed).
 [ConfigurationLock( "OpenedRemoteTemplate:AutoTrustKey", ConfigurationLevel.Compile, Value = nameof( AutoTrustKey.Never ) )]
+// The pre-authorized enlistment ticket of a party (see EnlistTicket) is a secret.
+[ConfigurationSecret( "Local:EnlistTicket" )]
 public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;

@@ -8,7 +8,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// <summary>
 /// Contributes the "KeyManagement" section of the running status of a development party (the "DevRunningStatus" feature
 /// of CK.AppIdentity): the key checkpoint of each local party (see <see cref="ILocalKeys.Checkpoint"/>), what another
-/// party configures as its trust anchor ("Local:TrustAnchors:{FullName}"). It is rewritten after each key event.
+/// party configures as its trust anchor ("Local:KeyManagement:TrustAnchors:{FullName}"). It is rewritten after each key event.
 /// </summary>
 public partial class KeyManagementFeatureDriver : IDevRunningStatusContributor
 {

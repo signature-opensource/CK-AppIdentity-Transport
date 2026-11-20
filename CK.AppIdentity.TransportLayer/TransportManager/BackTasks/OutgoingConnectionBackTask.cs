@@ -13,6 +13,17 @@ namespace CK.AppIdentity.TransportLayer;
 /// </summary>
 sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
 {
+    // The enlistment ticket of the local party (see EnlistTicket), presented to the center that holds it until it expires.
+    static EnlistTicket? GetTicketToPresent( TransportManager transportManager, TransportFeature remote )
+    {
+        var ticket = remote.RemoteKeys.LocalKeys.EnlistTicket;
+        return ticket != null
+               && ticket.CenterFullName == remote.Party.FullName.Path
+               && ticket.Expires > transportManager.SystemClock.UtcNow
+                ? ticket
+                : null;
+    }
+
     TransportFeature? _remote;
     // No timeout on this cts: no Dispose required.
     CancellationTokenSource? _cts;
@@ -284,7 +295,9 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
             // The CurrentVersion is necessarily supported. If this fails, it's because of a cancellation.
             // The commitment to our nonce of the approval code, kept across the attempts (see ApprovalSession).
             var sentCommitment = remote.Approval.GetCommitment();
-            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend );
+            // The enlistment ticket of the local party, presented to the center that holds it until it expires.
+            var ticket = GetTicketToPresent( transportManager, remote );
+            var sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, ZeroProtocol.CurrentVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend, ticket );
             if( !sentNonce.HasValue )
             {
                 // If we are canceled, let the finally kill the new transport.
@@ -559,7 +572,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                         if( !retriedDowngrade )
                         {
                             sentVersion = otherVersion;
-                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend );
+                            sentNonce = await ZeroProtocol.SendInitialMessageAsync( transportManager.SystemClock, transport, remote.OutgoingInitialMessage, otherVersion, sentMacCapabilities, sentCommitment, remote.PinGrantToSend, ticket );
                             if( !sentNonce.HasValue )
                             {
                                 if( !cancellation.IsCancellationRequested )

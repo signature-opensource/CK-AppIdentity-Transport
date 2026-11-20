@@ -105,10 +105,17 @@ public interface ILocalKeys : IPartyKeys
 
     /// <summary>
     /// Gets the trust anchors of this party, by the full name of the anchored party: a checkpoint of its key event log,
-    /// given by the configuration ("Local:TrustAnchors:{FullName}"). An anchored party is verified from its checkpoint,
+    /// given by the configuration ("Local:KeyManagement:TrustAnchors:{FullName}"). An anchored party is verified from its checkpoint,
     /// never trusted on first use nor approved by an operator.
     /// </summary>
     IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors { get; }
+
+    /// <summary>
+    /// Gets the pre-authorized enlistment ticket of this party ("Local:KeyManagement:EnlistTicket", a secret), null when
+    /// it has none. Its <see cref="EnlistTicket.CenterCheckpoint"/> is one of the <see cref="TrustAnchors"/>; the transport
+    /// proves the ticket to its center (<see cref="EnlistTicket.SignProof"/>) until it expires.
+    /// </summary>
+    EnlistTicket? EnlistTicket { get; }
 
     /// <summary>
     /// Finds the keys of an anchored party (by a checkpoint of <see cref="TrustAnchors"/> or by "#Dev"): its

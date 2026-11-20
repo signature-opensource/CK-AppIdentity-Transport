@@ -444,6 +444,8 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
             var approvalCommitment = r.ReadBytes( ApprovalSession.NonceLength );
             // The pin grant the initiator holds for us (it approved us, we may not have approved it yet).
             var pinGrant = ZeroProtocol.ReadOptionalStatement( ref r );
+            // The proof of the initiator's enlistment ticket, if it has one (see EnlistTicket).
+            var ticketProof = ZeroProtocol.ReadOptionalTicketProof( ref r );
 
             // What the initiator states about the certificate it presented. Read now because it sits
             // inside the signed region; checked below, once the signature says whose statement it is.
@@ -577,6 +579,15 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                     {
                         foundTrustKey = true;
                         // Trusted now: its nonce must be recorded (and must not be a replay).
+                        if( !recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) ) return Drop( block );
+                    }
+                    // The initiator holds an enlistment ticket of ours: its key is trusted at once (no approval code).
+                    if( !foundTrustKey
+                        && ticketProof != null
+                        && signatureCheck == SignatureCheck.SelfAsserted
+                        && transportManager.TryTrustFromTicket( remote, ticketProof, block, remoteEphemeral ) )
+                    {
+                        foundTrustKey = true;
                         if( !recordNonce && !remote.RemoteKeys.CheckAndAddNonceValue( transportManager.Logger, timedNonce ) ) return Drop( block );
                     }
                     // The initiator's operational key verifies its FinalSuccess and Goodbye on this connection,
@@ -827,7 +838,20 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                    or PeeringIssueKind.RequiresRemoteApproval
                                    or PeeringIssueKind.RequiresBothApproval;
         byte[]? approvalNonce = null;
-        if( isApproval && remote != null )
+        // While an enlistment ticket is open for the caller, a key without a valid proof is refused: no approval code,
+        // no pending approval (strangers can't block the enlistment of the expected party).
+        bool ticketOpen = remote != null
+                          && issue is PeeringIssueKind.RequiresLocalApproval or PeeringIssueKind.RequiresBothApproval
+                          && transportManager.IsTicketOpen( remote.Party.Owner, initialMessage.FullName );
+        if( ticketOpen )
+        {
+            transportManager.Logger.Warn( ActivityMonitor.Tags.SecurityCritical,
+                                          $"An enlistment ticket is open for '{initialMessage.FullName}': the key presented at '{incoming.RemoteEndPointDescription}' " +
+                                          $"without a valid proof of it is refused." );
+            enlistUrl = null;
+            enlistUrlStatement = null;
+        }
+        else if( isApproval && remote != null )
         {
             approvalNonce = remote.Approval.OnInitial( initialMessage.RemoteHead,
                                                        initialMessage.ApprovalCommitment,
@@ -914,7 +938,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                 }
             }
         }
-        transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl, remoteEnlistUrlIsAuthenticated );
+        if( !ticketOpen ) transportManager.OnIncomingConfigurationOrTrustIssue( initialMessage, remote, issue, remoteEnlistUrl, remoteEnlistUrlIsAuthenticated );
     }
 
     static async ValueTask<MessageProtocol[]?> HandleProtocolsAsync( TransportManager transportManager,

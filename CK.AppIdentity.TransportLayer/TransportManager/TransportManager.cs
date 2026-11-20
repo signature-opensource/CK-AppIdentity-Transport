@@ -35,6 +35,7 @@ sealed partial class TransportManager : MicroAgent
     readonly AppIdentityAgent _agent;
     readonly MessageProtocolDirectoryService _protocolDirectory;
     readonly IPeeringAuthority? _peeringAuthority;
+    readonly IEnlistmentTicketAuthority? _ticketAuthority;
     readonly List<TransportListener> _listeners;
     readonly TransportManagerFeature _exposedFeature;
     readonly NegotiationGate _negotiationGate;
@@ -46,12 +47,16 @@ sealed partial class TransportManager : MicroAgent
     readonly BackTask<TransportManager>.Head _headDelayedKillTransport;
     readonly BackTask<TransportManager>.Head _headKeepAlive;
 
-    internal TransportManager( AppIdentityAgent agent, MessageProtocolDirectoryService protocolDirectory, IPeeringAuthority? peeringAuthority )
+    internal TransportManager( AppIdentityAgent agent,
+                               MessageProtocolDirectoryService protocolDirectory,
+                               IPeeringAuthority? peeringAuthority,
+                               IEnlistmentTicketAuthority? ticketAuthority )
         : base( $"TransportManager for {agent.ApplicationIdentityService}", agent.SystemClock.HeartBeatPeriod )
     {
         _agent = agent;
         _protocolDirectory = protocolDirectory;
         _peeringAuthority = peeringAuthority;
+        _ticketAuthority = ticketAuthority;
         _listeners = new List<TransportListener>();
         // Before _exposedFeature: the feature exposes the gate's settings.
         _negotiationGate = new NegotiationGate( Logger );

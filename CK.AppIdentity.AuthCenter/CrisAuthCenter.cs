@@ -62,7 +62,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         Throw.CheckNotNullArgument( directory );
         if( owner.GetFeature<ILocalKeys>()?.FindAnchoredKeys( authCenterFullName ) == null )
         {
-            monitor.Error( $"The AuthCenter '{authCenterFullName}' of '{owner}' is not one of its remotes: it must have a trust anchor (\"Local:TrustAnchors:{authCenterFullName}\")." );
+            monitor.Error( $"The AuthCenter '{authCenterFullName}' of '{owner}' is not one of its remotes: it must have a trust anchor (\"Local:KeyManagement:TrustAnchors:{authCenterFullName}\")." );
             return null;
         }
         var f = new CrisAuthCenter( owner, authCenterFullName, directory );

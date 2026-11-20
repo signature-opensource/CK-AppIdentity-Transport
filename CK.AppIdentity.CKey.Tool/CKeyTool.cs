@@ -30,6 +30,14 @@ public static class CKeyTool
               printed, unless --pwd gives it). The duration: 30m, 2h, 1d... (1h by default, 7d at most).
           ckey import trust <file> [--party <full name>] [--pwd <password>]
               Pins the remote whose trust the file holds (the password is asked, unless --pwd gives it).
+          ckey ticket open <expected party full name> [--party <full name>] [--expires <duration>]
+              On the Authentication Center: opens a pre-authorized enlistment ticket for an expected party (1d by
+              default, 7d at most). The ticket is printed once: a secret, given to the party at start
+              ("Local:KeyManagement:EnlistTicket").
+          ckey ticket list [--party <full name>]
+              On the Authentication Center: its open and used enlistment tickets.
+          ckey ticket revoke <id> [--party <full name>]
+              On the Authentication Center: revokes an enlistment ticket.
 
         Without --party, the party is the one that runs from the folder of this ckey.
         """;
@@ -85,6 +93,19 @@ public static class CKeyTool
                         options.TryGetValue( "--pwd", out var pwd );
                         return await ExportAsync( output, error, party, toolFolder, positional.Count == 3 ? positional[2] : null, expires, pwd );
                     }
+                case "ticket" when positional.Count == 3 && positional[1] == "open":
+                    {
+                        var expires = TimeSpan.FromDays( 1 );
+                        if( options.TryGetValue( "--expires", out var e ) && !TrustFile.TryParseDuration( e, out expires ) )
+                        {
+                            return UsageError( error, $"Invalid duration '{e}': 30m, 2h, 1d... (7d at most)." );
+                        }
+                        return await TicketOpenAsync( output, error, party, toolFolder, positional[2], expires );
+                    }
+                case "ticket" when positional.Count == 2 && positional[1] == "list":
+                    return await TicketListAsync( output, error, party, toolFolder );
+                case "ticket" when positional.Count == 3 && positional[1] == "revoke":
+                    return await TicketRevokeAsync( output, error, party, toolFolder, positional[2] );
                 case "import" when positional.Count == 3 && positional[1] == "trust":
                     {
                         if( !options.TryGetValue( "--pwd", out var pwd ) )
@@ -196,6 +217,58 @@ public static class CKeyTool
                 output.WriteLine( $"    Enlistment URL:  {u.GetString()} ({(i.GetProperty( "enlistUrlAuthenticated" ).GetBoolean() ? "authenticated" : "NOT authenticated: check it out of band")})" );
             }
         }
+        return 0;
+    }
+
+    static async Task<int> TicketOpenAsync( TextWriter output, TextWriter error, string? party, string toolFolder, string expected, TimeSpan lifetime )
+    {
+        var (process, fullName) = await ResolveAsync( error, party, toolFolder );
+        if( process == null ) return 1;
+        using var answer = await RequestAsync( error, process, w =>
+        {
+            w.WriteString( "op", "ticket-open" );
+            w.WriteString( "party", fullName );
+            w.WriteString( "expected", expected );
+            w.WriteNumber( "lifetimeSeconds", (long)lifetime.TotalSeconds );
+        } );
+        if( answer == null ) return 1;
+        output.WriteLine( $"Enlistment ticket of '{fullName}' for '{expected}' (a secret: give it to the party at start, \"Local:KeyManagement:EnlistTicket\"):" );
+        output.WriteLine( answer.RootElement.GetProperty( "ticket" ).GetString() );
+        return 0;
+    }
+
+    static async Task<int> TicketListAsync( TextWriter output, TextWriter error, string? party, string toolFolder )
+    {
+        var (process, fullName) = await ResolveAsync( error, party, toolFolder );
+        if( process == null ) return 1;
+        using var answer = await RequestAsync( error, process, w =>
+        {
+            w.WriteString( "op", "ticket-list" );
+            w.WriteString( "party", fullName );
+        } );
+        if( answer == null ) return 1;
+        var tickets = answer.RootElement.GetProperty( "tickets" );
+        if( tickets.GetArrayLength() == 0 ) output.WriteLine( $"'{fullName}' has no enlistment ticket." );
+        foreach( var t in tickets.EnumerateArray() )
+        {
+            var used = t.TryGetProperty( "used", out var u ) ? $"used {u.GetDateTime():u} by key {t.GetProperty( "usedBy" ).GetString()}" : $"open until {t.GetProperty( "expires" ).GetDateTime():u}";
+            output.WriteLine( $"- {t.GetProperty( "id" ).GetString()}: {t.GetProperty( "party" ).GetString()}, {used}" );
+        }
+        return 0;
+    }
+
+    static async Task<int> TicketRevokeAsync( TextWriter output, TextWriter error, string? party, string toolFolder, string id )
+    {
+        var (process, fullName) = await ResolveAsync( error, party, toolFolder );
+        if( process == null ) return 1;
+        using var answer = await RequestAsync( error, process, w =>
+        {
+            w.WriteString( "op", "ticket-revoke" );
+            w.WriteString( "party", fullName );
+            w.WriteString( "id", id );
+        } );
+        if( answer == null ) return 1;
+        output.WriteLine( $"'{fullName}' revoked the enlistment ticket {id}." );
         return 0;
     }
 

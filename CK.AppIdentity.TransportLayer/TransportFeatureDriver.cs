@@ -23,6 +23,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     readonly MessageProtocolDirectoryService _protocolDirectory;
     readonly KeyManagementFeatureDriver _keyManagement;
     readonly IPeeringAuthority? _peeringAuthority;
+    readonly IEnlistmentTicketAuthority? _ticketAuthority;
     readonly IRouteHostAuthority? _routeHostAuthority;
     TransportManager? _transportManager;
 
@@ -35,14 +36,17 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="protocolDirectory">The transport protocol directory.</param>
     /// <param name="peeringAuthority">The optional authority of the System of the local parties (see <see cref="IPeeringAuthority"/>).</param>
     /// <param name="routeHostAuthority">The optional authority of the routes of the local parties (see <see cref="IRouteHostAuthority"/>).</param>
+    /// <param name="ticketAuthority">The optional holder of the enlistment tickets (see <see cref="IEnlistmentTicketAuthority"/>).</param>
     public TransportFeatureDriver( ApplicationIdentityService s,
                                    KeyManagementFeatureDriver keyManagement,
                                    IEnumerable<ITransportTypeService> transportTypes,
                                    MessageProtocolDirectoryService protocolDirectory,
                                    IPeeringAuthority? peeringAuthority = null,
-                                   IRouteHostAuthority? routeHostAuthority = null )
+                                   IRouteHostAuthority? routeHostAuthority = null,
+                                   IEnlistmentTicketAuthority? ticketAuthority = null )
         : base( s )
     {
+        _ticketAuthority = ticketAuthority;
         _routeHostAuthority = routeHostAuthority;
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
         _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
@@ -112,7 +116,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
 
     protected override Task<bool> SetupAsync( FeatureLifetimeContext context )
     {
-        _transportManager = new TransportManager( context.Agent, _protocolDirectory, _peeringAuthority );
+        _transportManager = new TransportManager( context.Agent, _protocolDirectory, _peeringAuthority, _ticketAuthority );
         bool success = _transportManager.Start();
         if( !success )
         {

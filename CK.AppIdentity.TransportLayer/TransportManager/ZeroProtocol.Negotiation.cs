@@ -376,7 +376,8 @@ static partial class ZeroProtocol // Negotiation
                                                                    int version,
                                                                    byte macCapabilities,
                                                                    byte[] approvalCommitment,
-                                                                   AnchoredStatement? pinGrant )
+                                                                   AnchoredStatement? pinGrant,
+                                                                   EnlistTicket? ticket = null )
     {
         // The ephemeral key belongs to THIS connection: it is created on the Transport, never on
         // the TransportFeature, whose OutgoingInitialMessage is cached and reused across attempts.
@@ -384,7 +385,7 @@ static partial class ZeroProtocol // Negotiation
         var ephemeralPublicKey = transport.CreateEphemeralPublicKey();
         Throw.DebugAssert( "We are the initiator: the transport knows its remote.", transport.RemoteKeys != null );
         using var m = CreateAndSignMessage( systemClock, initialMessage, version, ephemeralPublicKey,
-                                            macCapabilities, approvalCommitment, pinGrant, transport.LocalCertificateBinding, transport.RemoteKeys, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), out var nonce );
+                                            macCapabilities, approvalCommitment, pinGrant, ticket, transport.LocalCertificateBinding, transport.RemoteKeys, transport.GetSigningState( transport.RemoteKeys.LocalKeys ), out var nonce );
         if( !await transport.SendAsync( 0, m ).ConfigureAwait( false ) ) return null;
         return nonce;
 
@@ -395,6 +396,7 @@ static partial class ZeroProtocol // Negotiation
                                                       byte macCapabilities,
                                                       byte[] approvalCommitment,
                                                       AnchoredStatement? pinGrant,
+                                                      EnlistTicket? ticket,
                                                       ReadOnlyMemory<byte> certificateBinding,
                                                       IRemoteKeys remoteKeys,
                                                       LocalIdentityState state,
@@ -423,6 +425,13 @@ static partial class ZeroProtocol // Negotiation
             w.WriteBytes( approvalCommitment );
             // The pin grant we hold for the listener (we approved it, the listener may not have approved us yet).
             WriteOptionalStatement( ref w, pinGrant );
+            // The proof of our enlistment ticket for this holder (see EnlistTicket): bound to our identity, the holder and
+            // this connection (its ephemeral key).
+            byte[]? ticketProof = ticket?.SignProof( remoteKeys.LocalKeys.Party.FullName.Path,
+                                                     KeyCheckpoint.Of( remoteKeys.LocalKeys.Party.FullName.Path, state.Tail[^1] ),
+                                                     remoteKeys.Party.FullName.Path,
+                                                     ephemeralPublicKey );
+            WriteOptionalTicketProof( ref w, ticketProof );
 
             // What this side is presenting on the channel underneath, inside the signed region.
             WriteCertificateBinding( ref w, certificateBinding );
@@ -618,6 +627,21 @@ static partial class ZeroProtocol // Negotiation
     {
         var len = r.ReadSmallUInt32();
         Throw.CheckData( len == 0 || len == ApprovalSession.NonceLength );
+        return len == 0 ? null : r.ReadBytes( len );
+    }
+
+    // An optional proof of an enlistment ticket: its length (0 for none), then its bytes.
+    static void WriteOptionalTicketProof( ref FastByteWriter w, byte[]? proof )
+    {
+        Throw.DebugAssert( proof == null || proof.Length == EnlistTicket.ProofLength );
+        w.WriteSmallUInt32( (uint)(proof?.Length ?? 0) );
+        if( proof != null ) w.WriteBytes( proof );
+    }
+
+    internal static byte[]? ReadOptionalTicketProof( ref FastByteReader r )
+    {
+        var len = r.ReadSmallUInt32();
+        Throw.CheckData( len == 0 || len == EnlistTicket.ProofLength );
         return len == 0 ? null : r.ReadBytes( len );
     }
 

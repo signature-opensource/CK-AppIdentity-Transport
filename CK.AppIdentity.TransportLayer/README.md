@@ -370,6 +370,25 @@ signed with the message when it is signed).
   W accepts a grant of its authority that names itself, one of its last keys and the sender, and pins the sender from C
   (`IRemoteKeys.PinFromCheckpoint`, a `SecurityCritical` log). An anchored remote is never pinned this way.
 
+## The pre-authorized enlistment
+
+An optional [`IEnlistmentTicketAuthority`](TransportManagerFeature/IEnlistmentTicketAuthority.cs) (implemented by
+CK.AppIdentity.AuthCenter.Enlistment: the System assumes a star topology around its Authentication Center, the center
+holds the tickets) replaces the approval code for the parties an operator expects:
+
+- **The ticket** (`EnlistTicket`, CK.AppIdentity.KeyManagement) is a one-time P-256 key: the center keeps its public
+  key, the party starts with it ("Local:KeyManagement:EnlistTicket", a secret) and anchors the center at the checkpoint
+  it carries.
+- **The proof** travels in an optional field of the initial message (after the pin grant, `EnlistTicket.ProofLength`):
+  the ticket id and a signature by the ticket key over the full name of the party, the checkpoint of its identity, the
+  full name of the holder and the ephemeral key of the connection: it can't be replayed for another key, another holder
+  or another connection. The initiator sends it to the center of its ticket until the ticket expires.
+- **The holder** that recognizes the proof (`IEnlistmentTicketAuthority.TryUse`: the ticket is open for the party, the
+  signature verifies) trusts the key at once (`IRemoteKeys.SetTrustedIdentity`, a `SecurityCritical` log): no approval
+  code, no pending approval; the ticket is used. A candidate of an Opened template is enlisted the same way.
+- **While a ticket is open for a party**, a key presented without a valid proof is refused: no approval code, no
+  pending approval (strangers can't block the enlistment of the expected party).
+
 ## Key events
 
 Right after a rotation, a recovery or a decommission (`KeyManagementFeatureDriver.KeyEventAppended`), the new key events

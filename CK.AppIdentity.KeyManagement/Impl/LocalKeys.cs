@@ -38,6 +38,7 @@ sealed partial class LocalKeys : ILocalKeys
     readonly int _operationalKeyDays;
     readonly int _maxSignatureDays;
     readonly IReadOnlyDictionary<string, KeyCheckpoint> _trustAnchors;
+    readonly EnlistTicket? _enlistTicket;
     readonly IReadOnlySet<string> _devAnchors;
     // The key directory: the anchored parties that are not remotes.
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, AnchoredPartyKeys> _directory;
@@ -79,6 +80,7 @@ sealed partial class LocalKeys : ILocalKeys
                int maxSignatureDays,
                IReadOnlyDictionary<string, KeyCheckpoint> trustAnchors,
                IReadOnlySet<string> devAnchors,
+               EnlistTicket? enlistTicket,
                IdentityAlertBook alerts,
                PerfectEventSender<IdentityAlert>? driverAlertRaised )
     {
@@ -90,6 +92,7 @@ sealed partial class LocalKeys : ILocalKeys
         _operationalKeyDays = operationalKeyDays;
         _maxSignatureDays = maxSignatureDays;
         _trustAnchors = trustAnchors;
+        _enlistTicket = enlistTicket;
         _devAnchors = devAnchors;
         _directory = new System.Collections.Concurrent.ConcurrentDictionary<string, AnchoredPartyKeys>( StringComparer.Ordinal );
         _signLock = new object();
@@ -285,6 +288,8 @@ sealed partial class LocalKeys : ILocalKeys
     public KeyCheckpoint Checkpoint => KeyCheckpoint.Of( _local.FullName, _state.Head );
 
     public IReadOnlyDictionary<string, KeyCheckpoint> TrustAnchors => _trustAnchors;
+
+    public EnlistTicket? EnlistTicket => _enlistTicket;
 
     public IAnchoredKeys? FindAnchoredKeys( string fullName )
     {

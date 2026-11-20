@@ -110,6 +110,9 @@ public sealed class PeerInitialMessage
         // The pin grant it holds for the listener (an optional statement: length then bytes, 0 meaning none).
         uint lenGrant = r.ReadSmallUInt32();
         if( lenGrant != 0 ) r.ReadBytes( lenGrant );
+        // The proof of its enlistment ticket (optional: length then bytes, 0 meaning none).
+        uint lenTicketProof = r.ReadSmallUInt32();
+        if( lenTicketProof != 0 ) r.ReadBytes( lenTicketProof );
 
         // What the initiator states about the certificate it presented, still inside the signed
         // region: length then bytes, 0 meaning none.

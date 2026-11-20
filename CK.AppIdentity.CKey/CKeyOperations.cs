@@ -24,8 +24,13 @@ namespace CK.AppIdentity.CKey;
 sealed class CKeyOperations
 {
     readonly ApplicationIdentityService _app;
+    readonly IEnlistmentTicketAuthority? _tickets;
 
-    public CKeyOperations( ApplicationIdentityService app ) => _app = app;
+    public CKeyOperations( ApplicationIdentityService app, IEnlistmentTicketAuthority? tickets = null )
+    {
+        _app = app;
+        _tickets = tickets;
+    }
 
     public byte[] Handle( IActivityMonitor monitor, byte[] request, string osUser )
     {
@@ -45,6 +50,9 @@ sealed class CKeyOperations
                 "approve" => Approve( monitor, w, r, client ),
                 "export" => Export( monitor, w, r, client ),
                 "import" => Import( monitor, w, r, client ),
+                "ticket-open" => TicketOpen( monitor, w, r, client ),
+                "ticket-list" => TicketList( w, r ),
+                "ticket-revoke" => TicketRevoke( monitor, r, client ),
                 _ => $"Unknown operation '{op}'."
             };
             if( error != null )
@@ -118,6 +126,54 @@ sealed class CKeyOperations
         var transport = _app.GetFeature<TransportManagerFeature>();
         if( transport == null ) return [];
         return transport.GetPeeringIssues().Where( i => i.Remote != null ? i.Remote.Party.Owner == local : local == _app );
+    }
+
+    // The enlistment tickets of the local party when it holds them (the Authentication Center).
+    string? TicketOpen( IActivityMonitor monitor, Utf8JsonWriter w, JsonElement r, string client )
+    {
+        var local = FindLocal( r );
+        if( local == null ) return "No such local party in this process.";
+        if( _tickets == null ) return $"'{local.FullName}' holds no enlistment tickets.";
+        var expected = r.GetProperty( "expected" ).GetString() ?? "";
+        var lifetime = TimeSpan.FromSeconds( r.GetProperty( "lifetimeSeconds" ).GetInt64() );
+        var ticket = _tickets.Open( monitor, local, expected, lifetime, 0 );
+        if( ticket == null ) return $"'{local.FullName}' can't open an enlistment ticket for '{expected}' (see its logs).";
+        // The ticket is a secret: it is returned to the operator, never logged.
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"CKey: '{local.FullName}' opened an enlistment ticket for '{expected}', for {client}." );
+        w.WriteString( "ticket", ticket );
+        return null;
+    }
+
+    string? TicketList( Utf8JsonWriter w, JsonElement r )
+    {
+        var local = FindLocal( r );
+        if( local == null ) return "No such local party in this process.";
+        if( _tickets == null ) return $"'{local.FullName}' holds no enlistment tickets.";
+        w.WriteStartArray( "tickets" );
+        foreach( var t in _tickets.GetTickets( local ) )
+        {
+            w.WriteStartObject();
+            w.WriteString( "id", t.Id );
+            w.WriteString( "party", t.PartyFullName );
+            w.WriteString( "opened", t.Opened );
+            w.WriteString( "expires", t.Expires );
+            if( t.Used.HasValue ) w.WriteString( "used", t.Used.Value );
+            if( t.UsedByFingerprint != null ) w.WriteString( "usedBy", t.UsedByFingerprint );
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
+        return null;
+    }
+
+    string? TicketRevoke( IActivityMonitor monitor, JsonElement r, string client )
+    {
+        var local = FindLocal( r );
+        if( local == null ) return "No such local party in this process.";
+        if( _tickets == null ) return $"'{local.FullName}' holds no enlistment tickets.";
+        var id = r.GetProperty( "id" ).GetString() ?? "";
+        if( !_tickets.Revoke( monitor, local, id ) ) return $"'{local.FullName}' has no enlistment ticket '{id}'.";
+        monitor.Info( ActivityMonitor.Tags.SecurityCritical, $"CKey: '{local.FullName}' revoked the enlistment ticket {id}, for {client}." );
+        return null;
     }
 
     string? Approve( IActivityMonitor monitor, Utf8JsonWriter w, JsonElement r, string client )

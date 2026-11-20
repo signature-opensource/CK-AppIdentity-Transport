@@ -71,5 +71,26 @@ is its Authentication Center (`CrisAuthCenter`, pinned or anchored).
   instead of the bare enlistment URL: a waiting party that anchors the Authentication Center sees an authenticated URL
   (`PeeringIssue.IsEnlistUrlAuthenticated`), the answer to the phishing of the approval page.
 
+## The pre-authorized enlistment tickets
+
+[`AuthCenterEnlistmentTickets`](AuthCenterEnlistmentTickets.cs) is the `IEnlistmentTicketAuthority` (see
+CK.AppIdentity.TransportLayer): the Authentication Center holds the tickets of the parties an operator expects. A ticket
+is public data only (its id, the expected party, its public key, its expiration, its operator, when and by which key it
+was used): one json file per ticket in the "EnlistTickets" folder of the local store of the center. Its lifetime is 1 day
+by default, 7 days at most; the expired tickets are forgotten a week later.
+
+[`AuthCenterEnlistmentTicketHandlers`](AuthCenterEnlistmentTicketHandlers.cs) handles the commands of
+CK.IO.AppIdentity.Enlistment:
+
+- **`IOpenEnlistmentTicketCommand`** (Critical, on the host of the approval page): the key of the ticket is created on
+  the host, its public key registered on the center (here, or with the `[Internal]` `IRegisterEnlistmentTicketCommand`
+  along the path to the center or along its route, checked like a countersignature: the operator's live proof, not
+  impersonated, sent by a party); the center answers its checkpoint, the anchor the ticket carries. The result is the
+  only copy of the ticket (a secret, given to the party at start).
+- **`IGetEnlistmentTicketsQCommand`** and **`IRevokeEnlistmentTicketCommand`**: on the center, forwarded to it by any
+  other party.
+
+Without the approval page, `ckey ticket open|list|revoke` does the same on the process of the center (CK.AppIdentity.CKey).
+
 **What a waiting party needs:** `"Local:AuthCenterRemote:Party"` and a trust anchor of the Authentication Center
 (`"Local:KeyManagement:TrustAnchors:{FullName}"`, or `"#Dev"`), and this package. Otherwise, the peering is unchanged.

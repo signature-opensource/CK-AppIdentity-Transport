@@ -50,6 +50,9 @@ ckey status [--party <full name>]
 ckey approve <remote> <code> [--party <full name>]
 ckey export trust [<file>] [--party <full name>] [--expires <duration>] [--pwd <password>]
 ckey import trust <file> [--party <full name>] [--pwd <password>]
+ckey ticket open <expected party full name> [--party <full name>] [--expires <duration>]
+ckey ticket list [--party <full name>]
+ckey ticket revoke <id> [--party <full name>]
 ```
 
 - **The party:** by default, the application that runs from the folder of this `ckey` (the copy next to its host).
@@ -73,5 +76,9 @@ ckey import trust <file> [--party <full name>] [--pwd <password>]
   the remote: it must be a configured remote of the party, not anchored (its trust anchor is the authority), not
   revoked; its key event log must verify. An export one way and an import the other give a "both approval" without an
   approval page nor codes.
+- **`ticket open|list|revoke`**, on the Authentication Center (when it holds the enlistment tickets, see
+  CK.AppIdentity.AuthCenter.Enlistment): opens a pre-authorized enlistment ticket for an expected party (`--expires`:
+  1 day by default, 7 days at most) and prints it once (a secret, given to the party at start:
+  "Local:KeyManagement:EnlistTicket"), lists the open and used tickets, revokes one.
 
 The exit code is 0 on success, 1 on an error, 2 on a usage error.
