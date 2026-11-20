@@ -5,6 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.0.ci.150" />
-    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.0.ci.181" />
+    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.0.ci.182" />
   </ItemGroup>
 </Project>
