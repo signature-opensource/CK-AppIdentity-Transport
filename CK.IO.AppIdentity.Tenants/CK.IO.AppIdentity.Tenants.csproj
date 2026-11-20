@@ -4,7 +4,7 @@
     <Description>The commands of the run-time tenant domains of a CK-AppIdentity System: an operator lists, creates, moves and removes the instances of the Opened tenant templates of an application, reached directly or through the hub of the System (its Authentication Center).</Description>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris" Version="3.0.0-0.uc.0.ci.95" />
-    <PackageReference Include="CK.IO.Auth" Version="3.0.0-0.uc.0.ci.95" />
+    <PackageReference Include="CK.Cris" Version="3.0.0-0.uc.0.ci.96" />
+    <PackageReference Include="CK.IO.Auth" Version="3.0.0-0.uc.0.ci.96" />
   </ItemGroup>
 </Project>
