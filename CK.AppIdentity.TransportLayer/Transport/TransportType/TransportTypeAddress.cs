@@ -15,5 +15,9 @@ public sealed record class TransportTypeAddress( TransportTypeService Type,
                                                  ImmutableConfigurationSection Section,
                                                  object TypedAddress )
 {
-    public override string ToString() => $"{Type.GetType().Name} - {TypedAddress}";
+    /// <summary>
+    /// Describes this address: its transport type and its typed address ("host:port" for a host name).
+    /// </summary>
+    /// <returns>The description.</returns>
+    public override string ToString() => $"{Type.GetType().Name} - {(TypedAddress is System.Net.DnsEndPoint d ? $"{d.Host}:{d.Port}" : TypedAddress)}";
 }

@@ -126,6 +126,11 @@ public partial class TransportFeatureDriver
                 {
                     var parsed = ParseTypedAddress( monitor, raw, config );
                     if( parsed == null ) return false;
+                    if( !TransportTypeService.IsListeningEndPoint( parsed.TypedAddress ) )
+                    {
+                        monitor.Error( $"Invalid '{config.Path}' = '{raw}': a listening address is an IP address (the interface to bind: '0.0.0.0', '[::]'), not a host name." );
+                        return false;
+                    }
                     if( locally.Contains( parsed.Type ) )
                     {
                         monitor.Error( $"Invalid '{configuration.Path}': more than one address for '{parsed.Type.TypeName}' transport type." );

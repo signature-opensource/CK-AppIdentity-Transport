@@ -26,7 +26,12 @@ section of its `"Local"` and of the `"Defaults"` above it.
 An `Address` or a `ListeningAddress` are mere strings: their exact syntax depends on the type of Transport that
 must be used. This type is the prefix of the address, with the standard URI protocol syntax: it is the `TypeName` of a
 registered transport type (`tcp:` here). An address without a known prefix is a `tcp:` address: `127.0.0.1:37120` is
-the same as `tcp:127.0.0.1:37120`. A `tcp:` address is an IP address with an optional port that defaults to 37120.
+the same as `tcp:127.0.0.1:37120`. A `tcp:` address is an IP address (`127.0.0.1`, `[::1]`) or a host name
+(`auth3.example.com`), with an optional port that defaults to 37120. A host name is resolved when connecting, again
+at each connection (its addresses may change), and every address it returns is tried; it plays no part in the
+authentication (a party is identified by its keys). A `ListeningAddress` is an IP address (the interface to bind:
+`0.0.0.0`, `[::]`): a host name is an error. `TransportTypeService.TryParseEndPoint` implements this syntax for the
+transports built on this layer.
 For an encrypting transport built on this layer, see [`mtls:`](../CK.AppIdentity.Transport.MutualTls/README.md): it is
 the same handshake inside a mutually authenticated TLS channel and lives in its own package.
 

@@ -2,6 +2,7 @@ using CK.AppIdentity.KeyManagement;
 using CK.Core;
 using System;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -32,6 +33,59 @@ public abstract class TransportTypeService : ITransportTypeService
 
     /// <inheritdoc/>
     public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
+
+    /// <summary>
+    /// Parses a network end point: an IP address with an optional port (<c>127.0.0.1:3712</c>, <c>[::1]:3712</c>), that is
+    /// an <see cref="IPEndPoint"/>, or a host name with an optional port (<c>auth3.example.com:3712</c>), that is a
+    /// <see cref="DnsEndPoint"/>: the name is resolved when connecting, again at each connection, and every address it
+    /// returns is tried. A missing port is the <paramref name="defaultPort"/>. A listening address must be an IP address
+    /// (see <see cref="IsListeningEndPoint"/>).
+    /// </summary>
+    /// <param name="typed">The typed part of the address.</param>
+    /// <param name="defaultPort">The port when there is none.</param>
+    /// <param name="endPoint">The end point on success.</param>
+    /// <returns>True on success, false when this is neither an IP address nor a host name.</returns>
+    protected static bool TryParseEndPoint( ReadOnlySpan<char> typed, int defaultPort, [System.Diagnostics.CodeAnalysis.NotNullWhen( true )] out EndPoint? endPoint )
+    {
+        if( IPEndPoint.TryParse( typed, out var ip ) )
+        {
+            if( ip.Port == 0 ) ip.Port = defaultPort;
+            endPoint = ip;
+            return true;
+        }
+        endPoint = null;
+        var host = typed;
+        int port = defaultPort;
+        int idx = typed.LastIndexOf( ':' );
+        if( idx >= 0 )
+        {
+            if( !int.TryParse( typed.Slice( idx + 1 ), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out port )
+                || port <= 0 || port > IPEndPoint.MaxPort )
+            {
+                return false;
+            }
+            host = typed.Slice( 0, idx );
+        }
+        if( host.Length == 0 || Uri.CheckHostName( host.ToString() ) != UriHostNameType.Dns ) return false;
+        endPoint = new DnsEndPoint( host.ToString(), port );
+        return true;
+    }
+
+    /// <summary>
+    /// Gets whether an end point parsed by <see cref="TryParseEndPoint"/> can be a listening address: an IP address (the
+    /// interface to bind: <c>0.0.0.0</c>, <c>[::]</c>), not a host name.
+    /// </summary>
+    /// <param name="typedAddress">The typed address.</param>
+    /// <returns>True for an IP end point.</returns>
+    public static bool IsListeningEndPoint( object typedAddress ) => typedAddress is not DnsEndPoint;
+
+    /// <summary>
+    /// Describes an end point for the logs: "host:port" for a host name (not the "Unspecified/host:port" of
+    /// <see cref="DnsEndPoint.ToString()"/>).
+    /// </summary>
+    /// <param name="endPoint">The end point.</param>
+    /// <returns>Its description.</returns>
+    protected static string Describe( EndPoint endPoint ) => endPoint is DnsEndPoint d ? $"{d.Host}:{d.Port}" : endPoint.ToString() ?? "";
 
     /// <summary>
     /// Gets a default typed address if this type of transport supports it.

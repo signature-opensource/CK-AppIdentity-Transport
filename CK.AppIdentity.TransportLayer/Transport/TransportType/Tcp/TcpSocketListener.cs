@@ -42,8 +42,7 @@ sealed class TcpSocketListener : TransportListener
 
     internal protected override bool IsListeningTypedAddress( object address )
     {
-        var ipEndPoint = (IPEndPoint)address;
-        return ipEndPoint.Equals( Address ) || ipEndPoint.Equals( ActualListeningAddress );
+        return address is IPEndPoint ipEndPoint && (ipEndPoint.Equals( Address ) || ipEndPoint.Equals( ActualListeningAddress ));
     }
 
     internal protected override ValueTask DisposeAsync( IActivityMonitor monitor )

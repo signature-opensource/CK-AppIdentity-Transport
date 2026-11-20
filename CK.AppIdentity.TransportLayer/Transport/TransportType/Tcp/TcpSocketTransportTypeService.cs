@@ -32,12 +32,11 @@ public sealed class TcpSocketTransportTypeService : TransportTypeService
     /// <inheritdoc />
     public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )
     {
-        if( IPEndPoint.TryParse( typed, out var endPoint ) )
+        if( TryParseEndPoint( typed, DefaultPort, out var endPoint ) )
         {
-            if( endPoint.Port == 0 ) endPoint.Port = DefaultPort;
             return new TransportTypeAddress( this, section, endPoint );
         }
-        monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
+        monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IP address or a host name, with an optional port (defaults to {DefaultPort})." );
         return null;
     }
 
@@ -47,16 +46,17 @@ public sealed class TcpSocketTransportTypeService : TransportTypeService
                                                                         IRemoteKeys remoteKeys,
                                                                         CancellationToken cancellation )
     {
-        var ipEndPoint = (IPEndPoint)typedAddress.TypedAddress;
+        // A host name (DnsEndPoint) is resolved here, at each connection: every address it returns is tried.
+        var endPoint = (EndPoint)typedAddress.TypedAddress;
         var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
         try
         {
-            await socket.ConnectAsync( ipEndPoint, cancellation ).ConfigureAwait( false );
+            await socket.ConnectAsync( endPoint, cancellation ).ConfigureAwait( false );
             return new TcpSocketTransport( typedAddress, socket, remoteKeys );
         }
         catch( Exception ex )
         {
-            logger.Error( $"Unable to connect a TCP socket to '{ipEndPoint}'.", ex );
+            logger.Error( $"Unable to connect a TCP socket to '{Describe( endPoint )}'.", ex );
             socket.Dispose();
             return null;
         }

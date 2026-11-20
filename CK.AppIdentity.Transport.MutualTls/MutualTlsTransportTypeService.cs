@@ -73,12 +73,11 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
     /// <inheritdoc />
     public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )
     {
-        if( IPEndPoint.TryParse( typed, out var endPoint ) )
+        if( TryParseEndPoint( typed, DefaultPort, out var endPoint ) )
         {
-            if( endPoint.Port == 0 ) endPoint.Port = DefaultPort;
             return new TransportTypeAddress( this, section, endPoint );
         }
-        monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IPAddress with an optional port (defaults to {DefaultPort})." );
+        monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IP address or a host name, with an optional port (defaults to {DefaultPort})." );
         return null;
     }
 
@@ -88,12 +87,14 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
                                                                         IRemoteKeys remoteKeys,
                                                                         CancellationToken cancellation )
     {
-        var ipEndPoint = (IPEndPoint)typedAddress.TypedAddress;
+        // A host name (DnsEndPoint) is resolved here, at each connection: every address it returns is tried. The name
+        // plays no role in TLS (the SNI is a constant, the peer is identified by its keys).
+        var endPoint = (EndPoint)typedAddress.TypedAddress;
         var socket = new Socket( SocketType.Stream, ProtocolType.Tcp );
         SslStream? ssl = null;
         try
         {
-            await socket.ConnectAsync( ipEndPoint, cancellation ).ConfigureAwait( false );
+            await socket.ConnectAsync( endPoint, cancellation ).ConfigureAwait( false );
             socket.NoDelay = true;
 
             var (certificate, localBinding) = _credential.Get( remoteKeys.LocalKeys );
@@ -130,7 +131,7 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
 
             if( peerCertificate == null )
             {
-                logger.Error( $"The mTLS peer at '{ipEndPoint}' presented no usable certificate." );
+                logger.Error( $"The mTLS peer at '{Describe( endPoint )}' presented no usable certificate." );
                 await ssl.DisposeAsync().ConfigureAwait( false );
                 socket.Dispose();
                 return null;
@@ -146,7 +147,7 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
         {
             // Including AuthenticationException: a peer that cannot complete the handshake is a
             // connection failure like any other and is retried with the usual back-off.
-            logger.Error( $"Unable to establish a mTLS connection to '{ipEndPoint}'.", ex );
+            logger.Error( $"Unable to establish a mTLS connection to '{Describe( endPoint )}'.", ex );
             if( ssl != null ) await ssl.DisposeAsync().ConfigureAwait( false );
             socket.Dispose();
             return null;
