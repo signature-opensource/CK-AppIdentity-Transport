@@ -7,7 +7,8 @@ namespace CK.IO.AppIdentity.Enlistment;
 
 /// <summary>
 /// Lists the dynamic instances of the Opened remote templates that reach the approval page: the instances that have been
-/// approved (their identity is pinned by their holder), collected along the "Enlistment" route by the host of the page.
+/// approved (their identity is pinned by their holder), the ones of the host of the page and the ones its hub (the
+/// Authentication Center) gathers from its remotes.
 /// Critical, like the approval: the list exposes the names of the parties.
 /// </summary>
 public interface IGetPartyInstancesQCommand : ICommand<IList<IPartyInstance>>, ICommandAuthCritical
@@ -49,11 +50,12 @@ public interface IRemovePartyInstanceCommand : ICommand<int>, ICommandAuthCritic
 }
 
 /// <summary>
-/// Removes a dynamic instance on the party that holds it: sent by the host of the approval page down the way the instance
-/// came up. The holder accepts it only from the host of its "Enlistment" route. Internal to the System.
+/// Removes a dynamic instance on the party that holds it: sent by the host of the approval page (directly, or through the
+/// hub of the System), with the operator's proof: Critical, verified by the holder through its Authentication Center.
+/// Without Authentication Center, only a page on the holder itself removes its instances. Internal to the System.
 /// </summary>
 [Internal]
-public interface IRemoveHeldPartyInstanceCommand : ICommand<bool>
+public interface IRemoveHeldPartyInstanceCommand : ICommand<bool>, ICommandAuthCritical
 {
     /// <summary>
     /// Gets or sets the full name of the instance to remove.

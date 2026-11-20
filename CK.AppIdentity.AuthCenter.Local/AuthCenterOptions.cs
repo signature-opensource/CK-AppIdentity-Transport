@@ -134,9 +134,14 @@ public sealed class AuthCenterOptions
         }
         foreach( var s in section.GetChildren() )
         {
+            if( s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase ) )
+            {
+                monitor.Error( $"'{s.Path}' is no more supported: there are no routes (a System is a star around its Authentication Center, the approval page is a fact of its client application). Remove it." );
+                success = false;
+                continue;
+            }
             if( s.GetChildren().Any()
                 && !s.Key.Equals( nameof( CriticalLifetimes ), StringComparison.OrdinalIgnoreCase )
-                && !s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase )
                 && !isOptionName( s.Key ) )
             {
                 monitor.Error( $"The '{s.Path}' section is not an option of the AuthCenter (a scheme family, another option): is a package missing?" );

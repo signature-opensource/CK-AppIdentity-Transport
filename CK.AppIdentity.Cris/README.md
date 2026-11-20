@@ -61,9 +61,8 @@ so that such a remote can neither receive nor block their dispatch.
 
 The advertisement also carries the description of the party (`IParty.Description` of
 [CK.AppIdentity](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity/README.md#the-description-of-a-party):
-its public URL, its client applications, its roles, its data announcements, its routes, the items collected along them
-and its encryption key): the receiver sets it on its remote (`IRemoteParty.SetDescription`, persisted but for the
-routes, the collected items and the key). It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know
+its public URL, its client applications, its roles, its data announcements and its encryption key): the receiver sets
+it on its remote (`IRemoteParty.SetDescription`, persisted but for the key). It is sent again when the local description changes (`ILocalParty.DescriptionChanged`: the HTTP endpoints know
 their URL once the host has started). An invalid description is logged and ignored: the remote keeps its last known one.
 
 Its binary form is [`PartyDescriptionCodec`](PartyDescriptionCodec.cs): the description and each client application are
@@ -126,15 +125,13 @@ A command for a party of the System that is not a remote travels in an `IPartyRo
   `IPartySealedResult` (the result, sealed), the origin unseals it; the events of such a
   command are not relayed back. An error made on the way (by a hop, before the execution) is not sealed; any other
   result that the origin expects sealed and receives in clear is refused.
-- **The destination** is a named party reached along a route (`SendAsync( ..., routeName, destination )`: each hop takes
-  its next hop from its own `PartyDescription.Routes`, see `PartyRoute`), or the last party of an explicit path
-  (`SendAlongPathAsync`: for an answer, the way back to the party a request came from). A name can have several hosts:
-  the origin and each hop take the route of the name that leads to `IPartyRoutedCommand.Destination`, and refuse the
-  command (fail closed) when there is none; the seal is made for the destination, never for the host of a route. See
-  [Route hijacking](docs/RouteHijacking.md): a route is announced, not proven.
+- **The destination** is the last party of the path (`SendAlongPathAsync`; `SendToAsync( ..., destination )` derives
+  it: [origin, destination] for a remote, [origin, hub, destination] otherwise, see `GetPath` and `IPartyRelay`): a
+  System is a star around its Authentication Center, there are no announced routes. The seal is made for the
+  destination. See [Why there are no routes](docs/RouteHijacking.md).
 - **Each hop** is a party command (`ICommandTargetParty`): its target is the next hop, so the usual reception checks
   apply (it is `[Internal]`: inside the System only). The channel handles it, never a command handler: it checks the
-  chain (the last of `Via` is the remote that sent it, no loop, at most `PartyRoute.MaxLength` parties), adds the local
+  chain (the last of `Via` is the remote that sent it, no loop, at most `CrisChannelFeature.MaxPathLength` parties), adds the local
   party to `Via` and forwards it with its envelope, on its own task (no runner is held). The envelope is relayed as
   received, once the `ICrisForwardedEnvelopeFilter` cleared what this party can't vouch for (the authentication packages
   remove a user's proof that the hop can't verify). The answers come back by the chain of calls.
@@ -161,19 +158,19 @@ destination.
 
 ## The keys of an anchored party ([`AnchoredKeyDirectory`](AnchoredKeyDirectory.cs))
 
-A party that anchors another one (see the trust anchors of CK.AppIdentity.KeyManagement) without a channel to it gets
-its keys along a route that the anchored party hosts: `CheckAsync` checks a signature of the anchored party and, when its
-issuer is unknown (nothing is held yet, or the party rotated since), sends an
-[`IGetKeyEventsQCommand`](IGetKeyEventsQCommand.cs) along the route, from the point it holds (`FromSeq`: its anchor,
+A party that anchors another one (see the trust anchors of CK.AppIdentity.KeyManagement) gets its keys from it: `CheckAsync`
+checks a signature of the anchored party and, when its issuer is unknown (nothing is held yet, or the party rotated
+since), sends it an [`IGetKeyEventsQCommand`](IGetKeyEventsQCommand.cs) (`PartyRoutedCommandSender.SendToAsync`: directly,
+or through the hub of the System), from the point it holds (`FromSeq`: its anchor,
 then the head it holds), applies the events (`IAnchoredKeys.ApplyEvents`) and checks the signature again, once.
 `RefreshAsync` fetches without a signature to check.
 
 - **Checked, never believed:** the events are verified from the anchor (the full name is in the digest of each event): a
-  hop can withhold them, not forge them. The route must lead to the anchored party (its host is its full name).
+  hop can withhold them, not forge them.
 - **On demand:** a fetch waits at most `FetchTimeout` (2 seconds) for the answer (when a seal applies to the query,
   depending on the envelope of the caller's services, it is sealed first: the seal's lookups have their own timeouts);
   concurrent fetches of the same party share one request, and a party is fetched at most once every `MinFetchInterval`
-  (5 seconds), so signatures with an unknown issuer can't make a party flood the route.
+  (5 seconds), so signatures with an unknown issuer can't make a party flood the anchored party.
 - **The answer** ([`KeyEventsHandler`](AnchoredKeyDirectory.cs)): the destination sends its own events from `FromSeq`, up to
   the window of 32 events (its last events when `FromSeq` is out of the window). Key events are public: any party of the
   System can ask: it needs no identity (with or without a reception handler).

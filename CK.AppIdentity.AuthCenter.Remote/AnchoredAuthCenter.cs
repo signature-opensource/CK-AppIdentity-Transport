@@ -14,9 +14,10 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The Authentication Center of a local party that has no channel to it: it is designated by its full name
-/// ("Local:AuthCenterRemote:Party") and has a trust anchor. Its keys come from the key directory (verified from the anchor), and
-/// what this party asks it travels along its <see cref="AuthCenterFeature.RouteName"/> route, answered by statements it
+/// The Authentication Center of a local party whose link to it doesn't declare "AuthCenterRemote": it is designated by its
+/// full name ("Local:AuthCenterRemote:Party"), it is one of its remotes (a System is a star around its Authentication
+/// Center) and has a trust anchor. Its keys come from the key directory (verified from the anchor), and
+/// what this party asks it travels to it (a routed command on its channel), answered by statements it
 /// signs: a hop can withhold them, not forge them.
 /// <list type="bullet">
 ///   <item>A user's proof received directly is read here (the token with the keys of the Authentication Center, and its
@@ -69,9 +70,9 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
     }
 
     /// <summary>
-    /// For a proof received directly, its reading is enough: without a channel to the Authentication Center, the liveness
+    /// For a proof received directly, its reading is enough: with an anchored Authentication Center, the liveness
     /// of its session is not asked (a logout or a revocation takes effect at the end of the critical window). For the proof
-    /// of a routed command, the Authentication Center is asked along its route: it checks the seal of the session party
+    /// of a routed command, the Authentication Center is asked: it checks the seal of the session party
     /// and the liveness, and answers with a statement it signs, verified here with its keys. The proof is encrypted for the
     /// Authentication Center (its key is its own statement, see <see cref="GetPartyEncryptionKeyAsync"/>): without its
     /// key, nothing is sent and the proof is not verified (fail closed).
@@ -112,7 +113,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
         return read.Info;
     }
 
-    // Encrypts the user's proof for the Authentication Center: the hops on its route never hold it.
+    // Encrypts the user's proof for the Authentication Center: a hop never holds it.
     internal async ValueTask<byte[]?> EncryptProofAsync( IActivityMonitor monitor, string destination, byte[] nonce, string token, byte[] bindingSecretHash )
     {
         var key = await GetPartyEncryptionKeyAsync( monitor, _center.AuthCenterFullName ).ConfigureAwait( false );
@@ -139,7 +140,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
 
     /// <summary>
     /// Gets the verified encryption key of the Authentication Center or of one of its remotes (see
-    /// <see cref="IPartyEncryptionKeyDirectory"/>): the statement of the Authentication Center, asked along its route
+    /// <see cref="IPartyEncryptionKeyDirectory"/>): the statement of the Authentication Center, asked to it
     /// (<see cref="IGetRemoteEncryptionKeyQCommand"/>). A statement is cached until the key ends.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
@@ -164,7 +165,7 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
 
     }
 
-    // Sends a query along the route of the AuthCenter. Null when it answered null, or when it can't be sent or answered
+    // Sends a query to the AuthCenter. Null when it answered null, or when it can't be sent or answered
     // (an error is logged): the result is an ICrisResultError then.
     internal async Task<object?> SendAsync( IActivityMonitor monitor, Func<PocoDirectory, IAbstractCommand> create, string what )
     {
@@ -175,16 +176,16 @@ public sealed class AnchoredAuthCenter : IAuthCenterProofChecker, IPartyEncrypti
         {
             var command = create( services.GetRequiredService<PocoDirectory>() );
             // Bounded by the sender's timeout: the scope outlives the send.
-            result = await _sender.SendAsync( monitor, services, _center.Owner, command, AuthCenterFeature.RouteName, _center.AuthCenterFullName ).ConfigureAwait( false );
+            result = await _sender.SendToAsync( monitor, services, _center.Owner, command, _center.AuthCenterFullName ).ConfigureAwait( false );
         }
         catch( Exception ex )
         {
-            monitor.Warn( $"Unable to {what} along the route of the AuthCenter '{_center.AuthCenterFullName}'.", ex );
+            monitor.Warn( $"Unable to {what} to the AuthCenter '{_center.AuthCenterFullName}'.", ex );
             return services.GetRequiredService<PocoDirectory>().Create<ICrisResultError>();
         }
         if( result is ICrisResultError e )
         {
-            monitor.Warn( $"Unable to {what} along the route of the AuthCenter '{_center.AuthCenterFullName}': {e.Errors.Select( m => m.Text ).Concatenate()}" );
+            monitor.Warn( $"Unable to {what} to the AuthCenter '{_center.AuthCenterFullName}': {e.Errors.Select( m => m.Text ).Concatenate()}" );
         }
         return result;
     }

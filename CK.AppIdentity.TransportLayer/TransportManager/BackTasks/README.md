@@ -23,7 +23,6 @@ counted before the connection is opened.
 | Protocols | Count and full names ("Name.Version") of every registered protocol version. |
 | Expected common protocol count | How many protocols the initiator needs. |
 | CanAutoTrust | Whether the initiator will pin the listener's identity on first contact (`AutoTrustKey` is `Once` and nothing is pinned). |
-| Hosted routes | Count and names of the routes the initiator hosts (at most 16): a party that waits for its approval states them, the operator can authorize them with it (`PeeringIssue.RemoteHostedRoutes`). |
 | Ephemeral public key | The initiator's half of the ECDH key agreement of this connection. |
 | MAC capabilities | The MAC algorithms this machine can run. |
 | Certificate binding | The SHA-256 of the certificate the initiator presents on the transport (empty on `tcp:`). |
@@ -68,7 +67,7 @@ capabilities, its certificate binding and its identity block. The listener has d
 it.
 
 When an approval is required, the listener waits for the initiator's **RequiredEnlistUrl** (discriminator 8): the
-initiator's own enlistment URL (the target of its "Enlistment" route) when the listener must approve it, and the reveal
+initiator's own enlistment URL (the approval page it knows, or its authority's statement) when the listener must approve it, and the reveal
 of its nonce of the approval code, signed with the initiator's operational key. The issue then appears
 on both sides as a `PeeringIssue`.
 

@@ -26,7 +26,7 @@ CK.AppIdentity.Enlistment:
 - **On the host of the approval page,** once the statement is signed by the host: when the host is the Authentication
   Center, it countersigns at once (the operator's request is executed here, at the Critical level). Otherwise, it sends
   an `ICountersignApprovalCommand` (internal, Critical, its `ActorId` is the operator) to the Authentication Center as a
-  routed command: along the path to it when it is a remote, along its `"AuthCenter"` route otherwise. The operator's
+  routed command (it is a remote of the host: a System is a star around its Authentication Center). The operator's
   proof travels with it, sealed. When the countersignature can't be obtained, the approval is not sent (`Refused`).
 - **On the Authentication Center,** the command is handled: the operator must be at the Critical level, not
   impersonated, the operator of the statement, and the caller party must be the host of the statement. The
@@ -36,10 +36,6 @@ CK.AppIdentity.Enlistment:
   `ApprovalCountersignature.ClockSkew`, 1 minute) or already expired is not countersigned, so a host can't extend the
   window of the operator's gesture. Who may enlist can be checked here by the application: a validator of
   `ICountersignApprovalCommand`.
-- **Once a holder approved the key,** the host asks the Authentication Center again (`ICountersignApprovalCommand.Approved`,
-  the countersigned statement, the operator's proof): the routes of the statement are authorized for the approved party,
-  added to the System list of the Authentication Center (`AuthCenterSystemList.AuthorizeAsync`, see
-  CK.AppIdentity.AuthCenter). A wrong code or a holder that refuses authorizes nothing.
 - **On the holder,** when it has an Authentication Center, the countersignature is required and verified with its keys
   (`CrisAuthCenter.CheckWithKeyEventsAsync`): an approval without it, or with an invalid one, is `Refused`. A holder
   without Authentication Center ignores it.
@@ -63,10 +59,12 @@ gesture on the approval page connects them, nothing is done on W.
 [`AuthCenterPeeringAuthority`](AuthCenterPeeringAuthority.cs) is the `IPeeringAuthority`: the authority of a local party
 is its Authentication Center (`CrisAuthCenter`, pinned or anchored).
 
-- **On the Authentication Center,** the `EnlistmentUrlStatement` states the target of its "Enlistment" route: signed on
-  demand, again at half its lifetime (the lifetime is 3 days, bounded by `MaxSignatureDays`) or when the target changes.
+- **On the Authentication Center,** the `EnlistmentUrlStatement` states the approval page it finds
+  (`TransportFeatureDriver.FindEnlistmentPageUrl`: its own, or the one of its only remote that has one; two pages is an
+  error, none is stated): signed on demand, again at half its lifetime (the lifetime is 3 days, bounded by
+  `MaxSignatureDays`) or when the page changes.
 
-- **The other parties** ask it (`IGetEnlistmentUrlQCommand`, on the channel or along the "AuthCenter" route) at start,
+- **The other parties** ask it (`IGetEnlistmentUrlQCommand`, on their link to it) at start,
   then every hour (every 30 seconds while it can't be obtained), and keep the newest one that verifies. They send it
   instead of the bare enlistment URL: a waiting party that anchors the Authentication Center sees an authenticated URL
   (`PeeringIssue.IsEnlistUrlAuthenticated`), the answer to the phishing of the approval page.
@@ -84,7 +82,7 @@ CK.IO.AppIdentity.Enlistment:
 
 - **`IOpenEnlistmentTicketCommand`** (Critical, on the host of the approval page): the key of the ticket is created on
   the host, its public key registered on the center (here, or with the `[Internal]` `IRegisterEnlistmentTicketCommand`
-  along the path to the center or along its route, checked like a countersignature: the operator's live proof, not
+  sent to the center, checked like a countersignature: the operator's live proof, not
   impersonated, sent by a party); the center answers its checkpoint, the anchor the ticket carries. The result is the
   only copy of the ticket (a secret, given to the party at start).
 - **`IGetEnlistmentTicketsQCommand`** and **`IRevokeEnlistmentTicketCommand`**: on the center, forwarded to it by any

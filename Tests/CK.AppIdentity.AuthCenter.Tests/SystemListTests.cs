@@ -70,17 +70,16 @@ public class SystemListTests
         held.Current.ShouldNotBeNull().Seq.ShouldBe( centerList.Seq );
 
         // The list of the AuthCenter, read from the store: verified and applied.
-        var loaded = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, null, centerList.Encode() );
+        var loaded = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, centerList.Encode() );
         loaded.Current.ShouldNotBeNull().Seq.ShouldBe( centerList.Seq );
 
         // A stored list that its AuthCenter didn't sign, with a greater sequence number (the AuthCenter has been replaced
         // or re-incepted; here the remote signs it): not applied, it doesn't block the lists of the AuthCenter.
-        var forged = SystemList.Create( remote.GetRequiredFeature<ILocalKeys>(), centerList.Seq + 40, [], [new RouteHost( "MailSender", "Test/$Evil/#Dev", null )], DateTime.UtcNow );
+        var forged = SystemList.Create( remote.GetRequiredFeature<ILocalKeys>(), centerList.Seq + 40, [new RevocationEntry( center.AuthCenterFullName, Identity( 99 ), DateTime.UtcNow, nameBanned: true )], DateTime.UtcNow );
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
-            var ignored = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, null, forged.Encode() );
+            var ignored = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center, null, forged.Encode() );
             ignored.Current.ShouldBeNull();
-            ignored.RouteHosts.Find( "MailSender", "Test/$Evil/#Dev" ).ShouldBeNull();
             logs.ShouldContain( l => l.Contains( $"stored by '{remote}' is signed by a key of the AuthCenter '{center.AuthCenterFullName}' that is not known yet" ) );
             // Verified with the key events of the AuthCenter (by the first heartbeat): still refused.
             (await ignored.TryAdoptAsync( TestHelper.Monitor, forged.Encode(), null )).ShouldBeFalse();
@@ -101,7 +100,7 @@ public class SystemListTests
         bool fail = true;
         var list = await AuthCenterSystemList.CreateAsync( TestHelper.Monitor, center,
                                                            _ => fail ? throw new Exception( "No answer." ) : Task.FromResult<object?>( centerList.Encode() ),
-                                                           null, null );
+                                                           null );
         await list.PullOrRenewAsync( TestHelper.Monitor );
         list.NextPull.ShouldBeLessThanOrEqualTo( center.UtcNow + AuthCenterSystemList.RetryPeriod, "A failed pull is retried soon, not in an hour." );
 
@@ -118,7 +117,7 @@ public class SystemListTests
     public async Task decoding_allocates_nothing_from_an_announced_count_or_length_Async()
     {
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types );
-        var list = SystemList.Create( p.Center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>(), 1, [], [], DateTime.UtcNow );
+        var list = SystemList.Create( p.Center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>(), 1, [], DateTime.UtcNow );
         var encoded = list.Encode();
         // The count of revocations (after the length, the version, the sequence number and the time) announces the maximum.
         System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian( encoded.AsSpan( 4 + 1 + 4 + 8 ), SystemList.MaxEntryCount );
@@ -142,21 +141,9 @@ public class SystemListTests
     }
 
     [Test]
-    public async Task a_revoked_party_is_no_more_a_route_host_even_when_configured_Async()
+    public async Task a_configured_RouteHosts_is_a_startup_error_Async()
     {
-        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: _types,
-                                                                    centerSettings: c => c["Local:AuthCenter:RouteHosts:MailSender"] = "Test/$Mail1/#Dev" );
-        var list = p.Center.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>();
-        for( int i = 0; i < 100 && list.RouteHosts.Find( "MailSender", "Test/$Mail1/#Dev" ) == null; ++i ) await Task.Delay( 100 );
-        list.RouteHosts.Find( "MailSender", "Test/$Mail1/#Dev" ).ShouldNotBeNull( "The configured host is authorized." );
-
-        (await RevokeAsync( p, "Test/$Mail1/#Dev", Identity( 1 ) )).ShouldNotBeNull();
-        list.Current.ShouldNotBeNull().RouteHosts.ShouldNotContain( h => h.Host == "Test/$Mail1/#Dev" );
-
-        // Any update (the synchronization of the configured hosts, an authorization) can't add it back.
-        await list.UpdateAsync( TestHelper.Monitor, ( entries, hosts ) => (entries, [.. hosts, new RouteHost( "MailSender", "Test/$Mail1/#Dev", null )]) );
-        (await list.AuthorizeAsync( TestHelper.Monitor, "Test/$Mail1/#Dev", ["Other"] )).ShouldNotBeNull();
-        list.Current.ShouldNotBeNull().RouteHosts.ShouldNotContain( h => h.Host == "Test/$Mail1/#Dev" );
-        list.RouteHosts.Find( "MailSender", "Test/$Mail1/#Dev" ).ShouldBeNull();
+        await Should.ThrowAsync<Exception>( () => RemoteAuthCenterTests.StartAsync( extraTypes: _types,
+                                                                                    centerSettings: c => c["Local:AuthCenter:RouteHosts:MailSender"] = "Test/$Mail1/#Dev" ) );
     }
 }

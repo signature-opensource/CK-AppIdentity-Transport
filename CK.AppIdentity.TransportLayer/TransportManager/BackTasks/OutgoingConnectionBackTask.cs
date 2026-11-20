@@ -480,7 +480,7 @@ sealed class OutgoingConnectionBackTask : BackTask<TransportManager>
                                       or ZeroProtocol.ConfigurationOrTrustIssue.RequiresBothApproval )
                         {
                             Throw.DebugAssert( block != null );
-                            // Our enlistment URL (the target of our "Enlistment" route), for a listener that we must approve.
+                            // Our enlistment URL (the approval page we know, or our authority's statement), for a listener that we must approve.
                             var (hisEnlistUrl, hisEnlistUrlStatement) = pIssue is ZeroProtocol.ConfigurationOrTrustIssue.ListenerRequiresLocalApproval
                                                                             ? (null, null)
                                                                             : transportManager.GetEnlistUrlToSend( remote.Party.Owner, remote.Party.FullName );

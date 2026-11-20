@@ -3,6 +3,7 @@ using CK.AppIdentity.KeyManagement;
 using CK.AppIdentity.TransportLayer;
 using CK.Core;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.AuthCenter;
@@ -17,10 +18,11 @@ namespace CK.AppIdentity.AuthCenter;
 /// creates it for a local party that uses a remote one and adds a <c>RemoteAuthCenter</c>.
 /// </para>
 /// <para>
-/// Without a channel to it, the Authentication Center is designated by its full name ("Local:AuthCenterRemote:Party") and has a
-/// trust anchor: its keys are the ones of the key directory (see <see cref="ILocalKeys.FindAnchoredKeys"/>), its key events
-/// are fetched along its <see cref="AuthCenterFeature.RouteName"/> route (CK.AppIdentity.AuthCenter.Remote then adds an
-/// <c>AnchoredAuthCenter</c>). <see cref="AuthCenter"/> is then null.
+/// When the remote doesn't declare the "AuthCenterRemote" feature, the Authentication Center is designated by its full name
+/// ("Local:AuthCenterRemote:Party") and has a trust anchor: its keys are the ones of the key directory (see
+/// <see cref="ILocalKeys.FindAnchoredKeys"/>), its key events are asked to it (CK.AppIdentity.AuthCenter.Remote then adds an
+/// <c>AnchoredAuthCenter</c>). <see cref="AuthCenter"/> is then null. A System is a star around its Authentication Center:
+/// it is always one of the remotes of the local party (a direct link).
 /// </para>
 /// </summary>
 public sealed class CrisAuthCenter : ICrisAuthCenter
@@ -47,9 +49,9 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     }
 
     /// <summary>
-    /// Creates the feature of a local party whose Authentication Center is not one of its remotes: it is designated by its
-    /// full name and must have a trust anchor (see <see cref="ILocalKeys.FindAnchoredKeys"/>). Its key events are fetched
-    /// along its <see cref="AuthCenterFeature.RouteName"/> route by the <paramref name="directory"/>.
+    /// Creates the feature of a local party whose Authentication Center is designated by its full name: it must be one of
+    /// its remotes (a System is a star around its Authentication Center) and have a trust anchor (see
+    /// <see cref="ILocalKeys.FindAnchoredKeys"/>). Its key events are asked to it by the <paramref name="directory"/>.
     /// </summary>
     /// <param name="monitor">The monitor.</param>
     /// <param name="owner">The local party.</param>
@@ -60,9 +62,14 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     {
         Throw.CheckNotNullOrEmptyArgument( authCenterFullName );
         Throw.CheckNotNullArgument( directory );
+        if( !owner.Remotes.Any( r => r.FullName.Path == authCenterFullName ) )
+        {
+            monitor.Error( $"The AuthCenter '{authCenterFullName}' of '{owner}' is not one of its remotes: a System is a star around its Authentication Center, every party that uses it has a link to it." );
+            return null;
+        }
         if( owner.GetFeature<ILocalKeys>()?.FindAnchoredKeys( authCenterFullName ) == null )
         {
-            monitor.Error( $"The AuthCenter '{authCenterFullName}' of '{owner}' is not one of its remotes: it must have a trust anchor (\"Local:KeyManagement:TrustAnchors:{authCenterFullName}\")." );
+            monitor.Error( $"The AuthCenter '{authCenterFullName}' of '{owner}' is designated by its full name: it must have a trust anchor (\"Local:KeyManagement:TrustAnchors:{authCenterFullName}\")." );
             return null;
         }
         var f = new CrisAuthCenter( owner, authCenterFullName, directory );
@@ -148,7 +155,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         return keys.Check( logger, purpose, data, signature );
     }
 
-    // The key events of the AuthCenter, when a signature has an unknown issuer: on the channel, or along its route. Anyone
+    // The key events of the AuthCenter, when a signature has an unknown issuer: on the channel, or asked to it. Anyone
     // can send such a signature: concurrent callers share one request, and one request at most is started per second.
     ValueTask<bool> RefreshKeysAsync( IActivityLineEmitter logger ) => _refreshGate.RunAsync( () => DoRefreshKeysAsync( logger ), () => UtcNow );
 
@@ -163,7 +170,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
         var own = monitor == null ? new ActivityMonitor( $"Fetching the key events of the AuthCenter '{_fullName}'." ) : null;
         try
         {
-            return await _directory.RefreshAsync( monitor ?? own!, null, _owner, _fullName, AuthCenterFeature.RouteName ).ConfigureAwait( false );
+            return await _directory.RefreshAsync( monitor ?? own!, null, _owner, _fullName ).ConfigureAwait( false );
         }
         finally
         {
@@ -235,7 +242,7 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
     /// <summary>
     /// Checks a signature of the Authentication Center for a purpose (a statement it signed: a key, a revocation list, a
     /// countersignature...), with the safety net of a remote or anchored one: when its signer is unknown here, its key
-    /// events are obtained (on the channel, or along its route) and the signature is checked again, once. Concurrent callers
+    /// events are obtained (on the channel, or asked to it) and the signature is checked again, once. Concurrent callers
     /// share one request, and no request starts within a second of the end of the previous one: anyone can send a
     /// signature of an unknown issuer.
     /// </summary>
@@ -263,5 +270,5 @@ public sealed class CrisAuthCenter : ICrisAuthCenter
                                             ? $"AuthCenter '{_owner}' (local)"
                                             : _authCenter != null
                                                 ? $"AuthCenter '{_authCenter}' (remote of '{_owner}')"
-                                                : $"AuthCenter '{_fullName}' (anchored, without channel, of '{_owner}')";
+                                                : $"AuthCenter '{_fullName}' (anchored, of '{_owner}')";
 }

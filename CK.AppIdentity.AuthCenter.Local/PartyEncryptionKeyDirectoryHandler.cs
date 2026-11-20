@@ -9,7 +9,7 @@ namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
 /// Handles the <see cref="IGetRemoteEncryptionKeyQCommand"/> of a party of the System (the key directory), received
-/// directly or along the "AuthCenter" route: the encryption key of one of the remotes of the Authentication Center (or its
+/// directly or as a routed command: the encryption key of one of the remotes of the Authentication Center (or its
 /// own), verified, in a statement it signs (see <see cref="PartyEncryptionKeyStatement"/>).
 /// </summary>
 public sealed class PartyEncryptionKeyDirectoryHandler : ISingletonAutoService

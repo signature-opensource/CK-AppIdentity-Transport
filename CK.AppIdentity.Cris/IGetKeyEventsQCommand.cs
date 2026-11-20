@@ -5,7 +5,7 @@ namespace CK.AppIdentity.Cris;
 
 /// <summary>
 /// Asks a party its key events, from the point of its log that the sender holds (its trust anchor of it, or the head it
-/// holds): sent along a route hosted by the party (see <see cref="AnchoredKeyDirectory"/>). The destination answers with
+/// holds): sent to the party, directly or through the hub of the System (see <see cref="AnchoredKeyDirectory"/>). The destination answers with
 /// its own events, from <see cref="FromSeq"/> up to <see cref="KeyManagement.KeyEventChain.MaxEventWindow"/> events (its
 /// last events when <see cref="FromSeq"/> is null or out of the window). Key events are public: any party of the System
 /// can ask. What comes back is verified by the sender, never believed: a hop can withhold it, not forge it.

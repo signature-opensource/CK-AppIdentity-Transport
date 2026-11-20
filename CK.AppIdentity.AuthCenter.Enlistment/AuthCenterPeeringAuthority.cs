@@ -14,7 +14,7 @@ namespace CK.AppIdentity.AuthCenter.Enlistment;
 
 /// <summary>
 /// Asks the Authentication Center its current <see cref="EnlistmentUrlStatement"/> (encoded), null when it knows no
-/// approval page. Sent by every party that has an Authentication Center, on the channel or along the "AuthCenter" route,
+/// approval page. Sent by every party that has an Authentication Center (a remote: a System is a star around it),
 /// at start and then every <see cref="AuthCenterPeeringAuthority.PullPeriod"/>. Internal to the System.
 /// </summary>
 [Internal]
@@ -26,8 +26,9 @@ public interface IGetEnlistmentUrlQCommand : ICommand<byte[]?>
 /// The <see cref="IPeeringAuthority"/> of a System that has an Authentication Center: the authority of a local party is its
 /// Authentication Center (<see cref="CrisAuthCenter"/>, pinned or anchored).
 /// <list type="bullet">
-///   <item>On the Authentication Center, the <see cref="EnlistmentUrlStatement"/> states the target of its "Enlistment"
-///   route; it is signed on demand, again at half-life or when the target changes.</item>
+///   <item>On the Authentication Center, the <see cref="EnlistmentUrlStatement"/> states the approval page it finds
+///   (<see cref="TransportFeatureDriver.FindEnlistmentPageUrl"/>); it is signed on demand, again at half-life or when the
+///   page changes.</item>
 ///   <item>The other parties ask it (<see cref="IGetEnlistmentUrlQCommand"/>) at start then every <see cref="PullPeriod"/>
 ///   (every <see cref="RetryPeriod"/> while it can't be obtained), and keep the newest one that verifies.</item>
 /// </list>
@@ -41,8 +42,8 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
     public static readonly TimeSpan PullPeriod = TimeSpan.FromHours( 1 );
 
     /// <summary>
-    /// The period of the pull while the statement can't be obtained (the route to the Authentication Center may not be
-    /// known yet): 30 seconds.
+    /// The period of the pull while the statement can't be obtained (the link to the Authentication Center may not be
+    /// connected yet): 30 seconds.
     /// </summary>
     public static readonly TimeSpan RetryPeriod = TimeSpan.FromSeconds( 30 );
 
@@ -80,12 +81,12 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
         return _urls.TryGetValue( local, out var s ) && s.Expiration > local.ApplicationIdentityService.SystemClock.UtcNow ? s : null;
     }
 
-    // On the Authentication Center: the statement of the target of its "Enlistment" route, signed again at half-life or
-    // when the target changes. Null when it knows no approval page. The routes of the center are the authorized ones (its
-    // System list rules them, see AuthCenterRouteHostAuthority): the stated URL is the one of an authorized host.
+    // On the Authentication Center: the statement of the approval page it finds (its own, or the one of its only remote that
+    // has one: TransportFeatureDriver.FindEnlistmentPageUrl), signed again at half-life or when it changes. Null when it
+    // knows no approval page (or several).
     AnchoredStatement? GetOrSign( IActivityLineEmitter logger, ILocalParty center )
     {
-        var target = TransportFeatureDriver.GetEnlistmentRoute( center )?.Target;
+        var target = TransportFeatureDriver.FindEnlistmentPageUrl( center );
         if( target == null )
         {
             _urls.TryRemove( center, out _ );
@@ -167,9 +168,7 @@ public sealed class AuthCenterPeeringAuthority : IPeeringAuthority
             try
             {
                 var command = scope.ServiceProvider.GetRequiredService<PocoDirectory>().Create<IGetEnlistmentUrlQCommand>();
-                var sending = center.AuthCenter != null
-                                ? sender.SendAlongPathAsync( monitor, scope.ServiceProvider, local, command, [local.FullName.Path, center.AuthCenterFullName] )
-                                : sender.SendAsync( monitor, scope.ServiceProvider, local, command, AuthCenterFeature.RouteName, center.AuthCenterFullName );
+                var sending = sender.SendToAsync( monitor, scope.ServiceProvider, local, command, center.AuthCenterFullName );
                 // Bounded by the sender's timeout: the scope outlives the send.
                 result = await sending.ConfigureAwait( false );
             }

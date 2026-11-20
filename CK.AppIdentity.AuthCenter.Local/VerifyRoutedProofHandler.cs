@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// Handles the <see cref="IVerifyRoutedProofQCommand"/>: a party without a channel to this Authentication Center asks it,
-/// along its "AuthCenter" route, to verify the user's proof of a command routed to it (the session is alive and still the
+/// Handles the <see cref="IVerifyRoutedProofQCommand"/>: a party that anchors this Authentication Center asks it (a routed
+/// command on its link) to verify the user's proof of a command routed to it (the session is alive and still the
 /// token's, the session party sealed the command for it). The answer is a statement signed by this Authentication Center
 /// (see <see cref="AuthCenterProofStatement"/>): it crosses hops.
 /// </summary>

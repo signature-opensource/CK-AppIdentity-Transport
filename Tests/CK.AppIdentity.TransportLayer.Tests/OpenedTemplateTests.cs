@@ -87,8 +87,9 @@ public class OpenedTemplateTests
             var candidate = holder.Remotes.Single();
             candidate.IsDynamic.ShouldBeTrue();
             candidate.Configuration.IsDynamicInstance.ShouldBeTrue();
-            TransportFeatureDriver.GetPendingApprovalValue( holderIssue ).ShouldNotBeNull().ShouldContain( "\"Template\":\"$OpenWorker-{Name}\"" );
-            TransportFeatureDriver.TryReadPendingApprovalValue( TransportFeatureDriver.GetPendingApprovalValue( holderIssue )!, out var pending ).ShouldBeTrue();
+            var pending = TransportFeatureDriver.GetHeldPendingApprovals( holder ).ShouldHaveSingleItem();
+            pending.PartyFullName.ShouldBe( worker1 );
+            pending.HolderFullName.ShouldBe( holder.FullName.Path );
             pending.TemplatePartyName.ShouldBe( "$OpenWorker-{Name}" );
 
             // Both operators enter the code (the worker must approve the holder too).
@@ -99,9 +100,7 @@ public class OpenedTemplateTests
             var connected = await WaitForAsync( () => candidate.GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "Connected" : null, 40, token );
             connected.ShouldNotBeNull( "The instance is approved: it connects." );
 
-            var value = TransportFeatureDriver.GetPartyInstanceValue( candidate );
-            TransportFeatureDriver.TryReadPartyInstanceValue( value, out var instance ).ShouldBeTrue();
-            instance.ShouldBe( new PartyInstanceValue( worker1, "$OpenWorker-{Name}" ) );
+            TransportFeatureDriver.GetHeldPartyInstances( holder ).ShouldBe( [new PartyInstanceValue( worker1, holder.FullName.Path, "$OpenWorker-{Name}" )] );
         }
         // The approved instance is created again at start: its identity is pinned in the store.
         await using( var holder = await CreateHolderAsync( "Never", token ) )

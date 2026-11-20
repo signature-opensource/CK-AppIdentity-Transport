@@ -55,12 +55,11 @@ public sealed class RevokePartyHandler : ISingletonAutoService
             return null;
         }
         var utcNow = local.ApplicationIdentityService.SystemClock.UtcNow;
-        // The revoked party is no more an authorized host of any route: UpdateAsync drops the hosts of a banned name.
-        var list = await revocations.UpdateAsync( monitor, ( entries, hosts ) =>
+        var list = await revocations.UpdateAsync( monitor, entries =>
         {
             var e = entries.ToList();
             if( !e.Any( x => x.Matches( identity ) ) ) e.Add( new RevocationEntry( command.PartyFullName, identity, utcNow, nameBanned: true ) );
-            return (e, hosts);
+            return e;
         } ).ConfigureAwait( false );
 
         monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.PartyFullName}' is revoked by the AuthCenter '{local}': {list}." );
@@ -98,81 +97,11 @@ public sealed class RevokePartyHandler : ISingletonAutoService
             monitor.Warn( $"'{command.PartyFullName}' is not a banned name of the AuthCenter '{local}'." );
             return null;
         }
-        var list = await revocations!.UpdateAsync( monitor, ( entries, hosts ) =>
-        {
-            var e = entries.Select( x => x.NameBanned && x.FullName == command.PartyFullName
-                                            ? new RevocationEntry( x.FullName, x.Identity.Span, x.RevokedAt, nameBanned: false )
-                                            : x )
-                           .ToList();
-            return (e, hosts);
-        } ).ConfigureAwait( false );
+        var list = await revocations!.UpdateAsync( monitor, entries => entries.Select( x => x.NameBanned && x.FullName == command.PartyFullName
+                                                                                         ? new RevocationEntry( x.FullName, x.Identity.Span, x.RevokedAt, nameBanned: false )
+                                                                                         : x )
+                                                                        .ToList() ).ConfigureAwait( false );
         monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The name '{command.PartyFullName}' is readmitted by the AuthCenter '{local}' (its revoked identities stay refused): {list}." );
         return list?.Seq;
-    }
-
-    /// <summary>
-    /// Authorizes a host for a route (see <see cref="SystemList.RouteHosts"/>): a new list is signed. The target of the
-    /// route is the one the host announces when the Authentication Center sees its description (it is itself, or one of
-    /// its remotes), otherwise the one of the command. The command requires the Critical level; who may send it is decided
-    /// by the application (a validator).
-    /// </summary>
-    /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
-    /// <param name="party">The local party.</param>
-    /// <returns>The sequence number of the list, or null when it is refused (the reason is logged).</returns>
-    [CommandHandler]
-    public async Task<int?> HandleAsync( IActivityMonitor monitor, IAuthorizeRouteHostCommand command, CurrentLocalParty party )
-    {
-        var local = party.LocalParty;
-        var list = local.GetFeature<LocalAuthCenter>() != null ? local.GetFeature<AuthCenterSystemList>() : null;
-        if( list == null )
-        {
-            monitor.Warn( $"'{local}' is asked to authorize a host of the route '{command.RouteName}': it is not an Authentication Center." );
-            return null;
-        }
-        if( !PartyDescription.IsValidName( command.RouteName ) || string.IsNullOrWhiteSpace( command.HostFullName ) || command.RouteName == AuthCenterFeature.RouteName )
-        {
-            monitor.Warn( $"Invalid route host authorization: '{command.RouteName}' hosted by '{command.HostFullName}'." );
-            return null;
-        }
-        var target = AuthCenterSystemList.FindAnnouncedTarget( local, command.RouteName, command.HostFullName, out var seen );
-        if( !seen ) target = command.Target;
-        var updated = await list.UpdateAsync( monitor, ( entries, hosts ) =>
-        {
-            var h = hosts.Where( x => x.RouteName != command.RouteName || x.Host != command.HostFullName ).ToList();
-            h.Add( new RouteHost( command.RouteName, command.HostFullName, target ) );
-            return (entries, h);
-        } ).ConfigureAwait( false );
-        // A banned name is dropped from every new list: not authorized.
-        if( updated == null || !updated.RouteHosts.Any( h => h.RouteName == command.RouteName && h.Host == command.HostFullName ) )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.HostFullName}' can't host the route '{command.RouteName}' of the AuthCenter '{local}': its name is banned." );
-            return null;
-        }
-        monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.HostFullName}' is authorized to host the route '{command.RouteName}' by the AuthCenter '{local}': {updated}." );
-        return updated?.Seq;
-    }
-
-    /// <summary>
-    /// Removes the authorization of a host for a route: a new list is signed. The command requires the Critical level.
-    /// </summary>
-    /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
-    /// <param name="party">The local party.</param>
-    /// <returns>The sequence number of the list, or null when it is refused (the reason is logged).</returns>
-    [CommandHandler]
-    public async Task<int?> HandleAsync( IActivityMonitor monitor, IRemoveRouteHostCommand command, CurrentLocalParty party )
-    {
-        var local = party.LocalParty;
-        var list = local.GetFeature<LocalAuthCenter>() != null ? local.GetFeature<AuthCenterSystemList>() : null;
-        if( list?.Current == null || !list.Current.RouteHosts.Any( h => h.RouteName == command.RouteName && h.Host == command.HostFullName ) )
-        {
-            monitor.Warn( $"'{command.HostFullName}' is not an authorized host of the route '{command.RouteName}' of the AuthCenter '{local}'." );
-            return null;
-        }
-        var updated = await list.UpdateAsync( monitor, ( entries, hosts ) => (entries, hosts.Where( h => h.RouteName != command.RouteName || h.Host != command.HostFullName ).ToList()) )
-                                .ConfigureAwait( false );
-        monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"'{command.HostFullName}' is no more authorized to host the route '{command.RouteName}' by the AuthCenter '{local}': {updated}." );
-        return updated?.Seq;
     }
 }

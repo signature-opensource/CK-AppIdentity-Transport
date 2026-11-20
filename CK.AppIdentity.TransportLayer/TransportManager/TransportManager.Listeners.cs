@@ -12,8 +12,8 @@ sealed partial class TransportManager
 {
     /// <summary>
     /// Gets the enlistment URL that a local party hands to a party that doesn't trust it yet (or that it doesn't know):
-    /// the <see cref="PartyRoute.Target"/> of its "Enlistment" route (see <see cref="TransportFeatureDriver.EnlistmentRouteName"/>),
-    /// derived from the System, never configured. Null when the local party knows no approval page.
+    /// the approval page it knows (see <see cref="TransportFeatureDriver.FindEnlistmentPageUrl"/>), derived from the
+    /// System, never configured. Null when the local party knows no approval page.
     /// </summary>
     /// <para>
     /// The URL selects the pending approval of the party to approve on the approval page: <c>?party={its full name}</c>
@@ -31,7 +31,7 @@ sealed partial class TransportManager
     /// </remarks>
     internal string? GetEnlistRemoteUrl( ILocalParty local, string partyFullName )
     {
-        var u = TransportFeatureDriver.GetEnlistmentRoute( local )?.Target;
+        var u = TransportFeatureDriver.FindEnlistmentPageUrl( local );
         if( u != null )
         {
             u = AppendParty( u, partyFullName, local.FullName );
@@ -58,9 +58,9 @@ sealed partial class TransportManager
     }
 
     /// <summary>
-    /// Gets the enlistment URL that a local party hands over: the <see cref="EnlistmentUrlStatement"/> of the authority of
-    /// its System (<see cref="IPeeringAuthority"/>) when it states the target of its "Enlistment" route (the receiver
-    /// appends <c>?party=</c>), otherwise the bare URL (see <see cref="GetEnlistRemoteUrl"/>).
+    /// Gets the enlistment URL that a local party hands over: the valid <see cref="EnlistmentUrlStatement"/> of the
+    /// authority of its System (<see cref="IPeeringAuthority"/>: the receiver appends <c>?party=</c>), otherwise the bare
+    /// URL (see <see cref="GetEnlistRemoteUrl"/>).
     /// </summary>
     /// <param name="local">The local party concerned.</param>
     /// <param name="partyFullName">The full name of the party to approve (the one that receives the URL).</param>
@@ -68,13 +68,9 @@ sealed partial class TransportManager
     internal (string? Url, AnchoredStatement? Statement) GetEnlistUrlToSend( ILocalParty local, string partyFullName )
     {
         var s = _peeringAuthority?.GetEnlistmentUrl( local );
-        if( s != null && s.Expiration > SystemClock.UtcNow )
+        if( s != null && s.Expiration > SystemClock.UtcNow && EnlistmentUrlStatement.TryRead( s ) != null )
         {
-            var u = EnlistmentUrlStatement.TryRead( s );
-            if( u != null && u == TransportFeatureDriver.GetEnlistmentRoute( local )?.Target )
-            {
-                return (null, s);
-            }
+            return (null, s);
         }
         return (GetEnlistRemoteUrl( local, partyFullName ), null);
     }

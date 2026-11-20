@@ -22,7 +22,7 @@ public interface ICrisCallEnvelope : IPoco
 
 /// <summary>
 /// Fills the <see cref="ICrisCallEnvelope"/> of a command dispatched to a remote (see <see cref="ChannelCrisRemoteDispatcher"/>),
-/// or sent along a route by its originating party (see <see cref="PartyRoutedCommandSender"/>).
+/// or sent along a path by its originating party (see <see cref="PartyRoutedCommandSender"/>).
 /// </summary>
 [IsMultiple]
 public interface ICrisCallEnvelopeContributor : ISingletonAutoService

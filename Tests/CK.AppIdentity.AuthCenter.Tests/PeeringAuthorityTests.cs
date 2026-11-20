@@ -20,8 +20,9 @@ namespace CK.AppIdentity.AuthCenter.Tests;
 /// <summary>
 /// The statements of the Authentication Center that make the enlistment of a party connected to nothing safer (see
 /// <see cref="IPeeringAuthority"/>): "Test/$W" &gt; "Test/$Holder" &gt; "Test/$Center". The center hosts the approval page,
-/// the holder is a remote of the center, W is a remote of the holder only: it anchors the center. W and the holder don't
-/// trust each other ("both approval"). W initiates, or the holder does.
+/// the holder is a remote of the center, W is connected to the holder only (its link to the center is configured, as in
+/// a star, but not reachable): it anchors the center. W and the holder don't trust each other ("both approval"). W
+/// initiates, or the holder does.
 /// </summary>
 [TestFixture]
 public class PeeringAuthorityTests
@@ -30,7 +31,7 @@ public class PeeringAuthorityTests
     const int HolderPort = 37171;
     const int WPort = 37172;
 
-    // The approval page: a client application with the "Enlistment" fact (the "Enlistment" route).
+    // The approval page: a client application with the "Enlistment" fact.
     [PartyFeature( "ApprovalPage", TypeActivation.ByDefault )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver
     {
@@ -64,6 +65,10 @@ public class PeeringAuthorityTests
                                      typeof( IPartyApprovalStatement ),
                                      typeof( IGetPendingApprovalsQCommand ),
                                      typeof( IPendingApproval ),
+                                     typeof( IPartyInstance ),
+                                     typeof( IGetHeldEnlistmentQCommand ),
+                                     typeof( IHeldEnlistment ),
+                                     typeof( EnlistmentItems ),
                                      typeof( PartyApprovalHandlers ),
                                      typeof( AuthCenterApprovalCountersignature ),
                                      typeof( ICountersignApprovalCommand ),
@@ -128,6 +133,8 @@ public class PeeringAuthorityTests
                 c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
                 if( anchored )
                 {
+                    // A star: W has a link to its center (here never connected: no address on either side).
+                    c["Parties:1:PartyName"] = "$Center";
                     c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = checkpoint.ToString();
                     c["Local:AuthCenterRemote:Party"] = centerName;
                 }
@@ -156,6 +163,19 @@ public class PeeringAuthorityTests
     static PeeringIssue? IssueOf( RunningApplication app, string fullName )
         => app.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().FirstOrDefault( i => i.FullName == fullName );
 
+    // The approval page's query, handled on the center (it asks its connected remotes).
+    static async Task<IPendingApproval[]> PendingAsync( RunningApplication host )
+    {
+        await using var scope = host.CreateAsyncScopeServices();
+        var pending = await host.Services.GetRequiredService<PartyApprovalHandlers>()
+                                         .HandleAsync( TestHelper.Monitor,
+                                                       host.PocoDirectory.Create<IGetPendingApprovalsQCommand>(),
+                                                       new CurrentLocalParty( host.ApplicationIdentityService ),
+                                                       scope.ServiceProvider,
+                                                       host.PocoDirectory );
+        return pending.ToArray();
+    }
+
     // The approval page's command, handled on the center by the operator (the request is executed there).
     static async Task<IPartyApprovalOutcome[]> ApproveAsync( RunningApplication host, string party, string code )
     {
@@ -182,13 +202,11 @@ public class PeeringAuthorityTests
         string wName = c.W.ApplicationIdentityService.FullName;
         string holderName = c.Holder.ApplicationIdentityService.FullName;
 
-        // The pending approval of W reaches the approval page on the center: W and the holder must approve each other.
-        var route = TransportFeatureDriver.EnlistmentRouteName;
-        (await WaitForAsync( () => c.Center.ApplicationIdentityService.Description.Collected.TryGetValue( route, out var items ) && items.Length == 1 ? "reached" : null ))
-            .ShouldNotBeNull( "The pending approval reached the host." );
-        var handlers = c.Center.Services.GetRequiredService<PartyApprovalHandlers>();
-        var pending = handlers.Handle( c.Center.PocoDirectory.Create<IGetPendingApprovalsQCommand>(), new CurrentLocalParty( c.Center.ApplicationIdentityService ), c.Center.PocoDirectory )
-                              .ShouldHaveSingleItem();
+        // The pending approval of W is held by the holder: the approval page on the center asks it. W and the holder must
+        // approve each other.
+        (await WaitForAsync( () => TransportFeatureDriver.GetHeldPendingApprovals( c.Holder.ApplicationIdentityService ).Count == 1 ? "held" : null ))
+            .ShouldNotBeNull( "The holder holds the pending approval." );
+        var pending = (await PendingAsync( c.Center )).ShouldHaveSingleItem();
         pending.PartyFullName.ShouldBe( wName );
         pending.HolderFullName.ShouldBe( holderName );
         pending.Kind.ShouldBe( "Both" );
@@ -204,9 +222,9 @@ public class PeeringAuthorityTests
         var code = await WaitForAsync( () => IssueOf( c.W, holderName )?.ApprovalCode );
         code.ShouldNotBeNull();
         (await ApproveAsync( c.Center, wName, code )).ShouldHaveSingleItem().Status.ShouldBe( PartyApprovalStatus.Approved );
-        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
+        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
             .ShouldNotBeNull( "W pinned the holder from the grant: they connect, nothing was done on W." );
-        c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<IRemoteKeys>().TrustedEvent.ShouldNotBeNull();
+        c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<IRemoteKeys>().TrustedEvent.ShouldNotBeNull();
     }
 
     [Test]
@@ -223,13 +241,12 @@ public class PeeringAuthorityTests
 
         // The holder holds the pending approval of W: the grant travels in its next initial message, W pins it in the
         // same attempt.
-        var route = TransportFeatureDriver.EnlistmentRouteName;
-        (await WaitForAsync( () => c.Center.ApplicationIdentityService.Description.Collected.TryGetValue( route, out var items ) && items.Length == 1 ? "reached" : null ))
-            .ShouldNotBeNull( "The pending approval reached the host." );
+        (await WaitForAsync( () => TransportFeatureDriver.GetHeldPendingApprovals( c.Holder.ApplicationIdentityService ).Count == 1 ? "held" : null ))
+            .ShouldNotBeNull( "The holder holds the pending approval." );
         var code = await WaitForAsync( () => IssueOf( c.Holder, wName )?.ApprovalCode );
         code.ShouldNotBeNull();
         (await ApproveAsync( c.Center, wName, code )).ShouldHaveSingleItem().Status.ShouldBe( PartyApprovalStatus.Approved );
-        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
+        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
             .ShouldNotBeNull( "W pinned the holder from the grant of its initial message." );
     }
 
@@ -252,7 +269,7 @@ public class PeeringAuthorityTests
         onHolder.TryApprove( TestHelper.Monitor, code, onHolder.RemoteKeyFingerprintForApproval!, out _ ).ShouldBeTrue();
         (await WaitForAsync( () => IssueOf( c.W, holderName ) is { Kind: PeeringIssueKind.RequiresLocalApproval } i ? i : null )).ShouldNotBeNull();
         var wOnHolder = c.Holder.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == wName ).GetRequiredFeature<TransportFeature>();
-        var holderOnW = c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<IRemoteKeys>();
+        var holderOnW = c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<IRemoteKeys>();
 
         async Task RefusedAsync( AnchoredStatement grant, string reason )
         {
@@ -270,7 +287,7 @@ public class PeeringAuthorityTests
 
         // The center's grant: W pins the holder, they connect.
         wOnHolder.OfferPinGrant( TestHelper.Monitor, PinGrant.Create( centerKeys, wName, wFingerprint, holderName, holderCheckpoint, DateTime.UtcNow ) ).ShouldBeTrue();
-        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
+        (await WaitForAsync( () => c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
             .ShouldNotBeNull();
     }
 
@@ -292,6 +309,6 @@ public class PeeringAuthorityTests
         (await ApproveAsync( c.Center, wName, code )).ShouldHaveSingleItem().Status.ShouldBe( PartyApprovalStatus.Approved );
         (await WaitForAsync( () => IssueOf( c.W, holderName ) is { Kind: PeeringIssueKind.RequiresLocalApproval } i ? i : null ))
             .ShouldNotBeNull( "The holder trusts W, W doesn't trust the holder." );
-        c.W.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<IRemoteKeys>().TrustedEvent.ShouldBeNull();
+        c.W.ApplicationIdentityService.Remotes.Single( r => r.PartyName == "$Holder" ).GetRequiredFeature<IRemoteKeys>().TrustedEvent.ShouldBeNull();
     }
 }

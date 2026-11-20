@@ -32,24 +32,13 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     /// <param name="keys">
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
-    /// <param name="services">The root services: the transport computes the routes of a local party again when its route hosts change.</param>
+    /// <param name="services">The root services (the options of the Authentication Center).</param>
     public LocalAuthCenterFeatureDriver( ApplicationIdentityService s,
                                          KeyManagementFeatureDriver keys,
                                          IServiceProvider services )
         : base( s )
     {
         _services = services;
-    }
-
-    /// <summary>
-    /// A local Authentication Center hosts the <see cref="AuthCenterFeature.RouteName"/> route (without target: the host is
-    /// what is reached).
-    /// </summary>
-    /// <param name="party">The local party.</param>
-    /// <param name="builder">The first phase of its description.</param>
-    protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
-    {
-        if( IsAllowedFeature( party ) ) builder.HostRoute( AuthCenterFeature.RouteName );
     }
 
     /// <inheritdoc />
@@ -127,21 +116,19 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
                                               settings,
                                               key => optionDirectory?.IsOptionName( typeof( LocalAuthCenterFeatureDriver ), key ) is true );
         if( options == null ) return false;
-        // The hosts of the routes known at deployment: "AuthCenter:RouteHosts".
-        if( !RouteHosts.TryRead( monitor, settings?.TryGetSection( "RouteHosts" ), out var routeHosts ) ) return false;
         var center = CrisAuthCenter.TryCreate( monitor, local, local );
         if( center == null ) return false;
         foreach( var r in local.Remotes )
         {
             if( IsAllowedFeature( r ) ) r.AddFeature( center );
         }
-        local.AddFeature( new LocalAuthCenter( monitor, center, options, routeHosts ) );
+        local.AddFeature( new LocalAuthCenter( monitor, center, options ) );
         // The scheme families of its options.
         foreach( var family in GetOptions( local ).OfType<IAuthCenterSchemeFamilyOption>() )
         {
             local.AddFeature( family.CreateFamily( monitor, local ) );
         }
-        await AuthCenterSystemList.PlugAsync( monitor, center, null, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
+        await AuthCenterSystemList.PlugAsync( monitor, center, null ).ConfigureAwait( false );
         return true;
 
     }

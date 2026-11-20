@@ -21,12 +21,6 @@ public interface IApprovePartyCommand : ICommand<IList<IPartyApprovalOutcome>>, 
     /// Gets the codes read on the party to approve.
     /// </summary>
     IList<string> Codes { get; }
-
-    /// <summary>
-    /// Gets the names of the routes that the operator authorizes the party to host, among the ones it states (see the
-    /// pending approvals): the Authentication Center authorizes them once a holder approved the key.
-    /// </summary>
-    IList<string> Routes { get; }
 }
 
 /// <summary>

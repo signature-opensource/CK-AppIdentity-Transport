@@ -36,13 +36,13 @@ remotes declares `"AuthCenterRemote"`, `"Local:AuthCenterRemote:Party"` must nam
     "AuthCenterRemote": { "Party": "Acme/$Center/#Prod" },
     "KeyManagement": { "TrustAnchors": { "Acme/$Center/#Prod": "12:8e2a980dea..." } }
   },
-  "Parties": [ { "PartyName": "Front" } ] // No channel to the Center: its route goes through the Front.
+  "Parties": [ { "PartyName": "$Center" } ] // A star: a link to the Center, that doesn't declare "AuthCenterRemote".
 }
 ```
 
 The local party gets a `CrisAuthCenter` whose `AuthCenter` is null and an `AnchoredAuthCenter` (the
 `IAuthCenterProofChecker` and the `IPartyEncryptionKeyDirectory`). Everything it needs from the Authentication Center
-travels along its `"AuthCenter"` route, verified with its keys, whatever the hops (the driver then needs the
+is sent to it (a routed command on its link: `PartyRoutedCommandSender.SendToAsync`), verified with its keys (the driver then needs the
 `AnchoredKeyDirectory` and the `PartyRoutedCommandSender` of CK.AppIdentity.Cris, resolved from the root services):
 
 - **The keys:** its key events, fetched by the key directory of CK.AppIdentity.Cris (`AnchoredKeyDirectory`) and

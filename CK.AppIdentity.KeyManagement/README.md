@@ -125,7 +125,7 @@ What a local party trusts of a remote ([`IRemoteKeys`](IRemoteKeys.cs)) lives in
   local party: a party with no channel to it can still verify what it signs. The entry is kept in memory only (after a
   restart, it is verified from the anchor again), and forgotten when its identity is revoked (a revoked log, its events
   and its signatures are refused). Its
-  events come from any path (CK.AppIdentity.Cris fetches them along a route hosted by the party) and are verified, never
+  events come from any path (CK.AppIdentity.Cris asks them to the party, directly or through the hub of the System) and are verified, never
   believed: from the anchor the first time (`GetStatedCheckpoint` is the anchor), then from the head held (it becomes
   the stated checkpoint). A mismatch with the anchor, or two validly signed events at the same position, is a
   `SecurityCritical` error and changes nothing. A signature it can't check yet is an `UnknownIssuer`: its events must be

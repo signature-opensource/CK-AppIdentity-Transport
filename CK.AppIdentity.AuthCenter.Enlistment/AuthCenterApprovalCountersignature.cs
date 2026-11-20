@@ -33,13 +33,6 @@ public interface ICountersignApprovalCommand : ICommand<ICountersignApprovalResu
     /// holder (its pin of a remote, or its anchor).
     /// </summary>
     bool WithPinGrant { get; set; }
-
-    /// <summary>
-    /// Gets or sets whether a holder approved the key of the <see cref="Statement"/>, that the Authentication Center
-    /// countersigned before (its countersignature is in the statement): the Authentication Center then authorizes the
-    /// routes of the statement for the approved party, it doesn't sign again.
-    /// </summary>
-    bool Approved { get; set; }
 }
 
 /// <summary>
@@ -82,13 +75,11 @@ public static class ApprovalCountersignature
 /// The <see cref="IPartyApprovalCountersignature"/> of a System that has an Authentication Center:
 /// <list type="bullet">
 ///   <item>On the host, the countersignature is asked to the Authentication Center (<see cref="ICountersignApprovalCommand"/>):
-///   signed here when the host is the Authentication Center, sent to it otherwise as a routed command (along the path to the
-///   remote, or along its route), with the operator's proof, sealed.</item>
+///   signed here when the host is the Authentication Center, sent to it otherwise as a routed command (it is a remote of the
+///   host: a System is a star around its Authentication Center), with the operator's proof, sealed.</item>
 ///   <item>On the holder, it is required when the holder has an Authentication Center, and verified with its keys (pinned
 ///   or anchored): an approval without it, or with an invalid one, is refused.</item>
 ///   <item>On the Authentication Center, the command is handled: the operator's live proof, its identity and the host.</item>
-///   <item>On the host, once a holder approved the key, the routes of the statement are authorized by the Authentication
-///   Center (<see cref="ApprovedAsync"/>): the same command, <see cref="ICountersignApprovalCommand.Approved"/>.</item>
 /// </list>
 /// A party without Authentication Center neither asks nor requires a countersignature.
 /// </summary>
@@ -121,25 +112,9 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             if( signature == null ) return (false, null, null);
             return (true, signature, withPinGrant ? CreatePinGrant( monitor, host, statement ) : null);
         }
-        var result = await SendAsync( monitor, services, host, center, statement, withPinGrant, approved: false ).ConfigureAwait( false );
+        var result = await SendAsync( monitor, services, host, center, statement, withPinGrant ).ConfigureAwait( false );
         if( result is ICountersignApprovalResult r ) return (true, r.Countersignature, r.PinGrant);
         return (false, null, null);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask ApprovedAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty host, IPartyApprovalStatement statement )
-    {
-        var center = host.GetFeature<CrisAuthCenter>();
-        if( center == null || statement.Routes.Count == 0 ) return;
-        if( center.AuthCenter == host )
-        {
-            await AuthorizeRoutesAsync( monitor, host, statement ).ConfigureAwait( false );
-            return;
-        }
-        if( await SendAsync( monitor, services, host, center, statement, withPinGrant: false, approved: true ).ConfigureAwait( false ) == null )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The routes of '{statement.PartyFullName}' are not authorized by the AuthCenter '{center.AuthCenterFullName}'." );
-        }
     }
 
     // Sends the command to the Authentication Center. Null when it can't be sent or is refused (the reason is logged).
@@ -148,8 +123,7 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
                                                        ILocalParty host,
                                                        CrisAuthCenter center,
                                                        IPartyApprovalStatement statement,
-                                                       bool withPinGrant,
-                                                       bool approved )
+                                                       bool withPinGrant )
     {
         var command = services.GetRequiredService<PocoDirectory>().Create<ICountersignApprovalCommand>( c =>
         {
@@ -157,17 +131,14 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
             c.ActorId = statement.OperatorActorId;
             c.Statement = statement;
             c.WithPinGrant = withPinGrant;
-            c.Approved = approved;
         } );
-        var what = approved ? "authorize the routes of" : "countersign the approval of";
+        const string what = "countersign the approval of";
         object? result;
         try
         {
-            // Always addressed to the Authentication Center (the handler is everywhere this package is): along the path to
-            // the remote, or along its route. The operator's proof travels with it, sealed.
-            result = center.AuthCenter != null
-                        ? await _sender.SendAlongPathAsync( monitor, services, host, command, [host.FullName.Path, center.AuthCenterFullName] ).ConfigureAwait( false )
-                        : await _sender.SendAsync( monitor, services, host, command, AuthCenterFeature.RouteName, center.AuthCenterFullName ).ConfigureAwait( false );
+            // Always addressed to the Authentication Center (the handler is everywhere this package is): a remote of the
+            // host. The operator's proof travels with it, sealed.
+            result = await _sender.SendToAsync( monitor, services, host, command, center.AuthCenterFullName ).ConfigureAwait( false );
         }
         catch( Exception ex )
         {
@@ -200,30 +171,6 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         return true;
     }
 
-    // The Authentication Center authorizes the approved party to host the routes the operator approved with it.
-    static async Task AuthorizeRoutesAsync( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
-    {
-        if( statement.Routes.Count == 0 ) return;
-        if( center.GetFeature<AuthCenterSystemList>() is not { } list )
-        {
-            monitor.Warn( $"The AuthCenter '{center}' has no System list: the routes of '{statement.PartyFullName}' are not authorized." );
-            return;
-        }
-        var updated = await list.AuthorizeAsync( monitor, statement.PartyFullName, statement.Routes ).ConfigureAwait( false );
-        // A banned name is dropped from every new list: not authorized.
-        var authorized = statement.Routes.Where( r => updated != null && updated.RouteHosts.Any( h => h.RouteName == r && h.Host == statement.PartyFullName ) ).ToList();
-        if( authorized.Count < statement.Routes.Count )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
-                          $"'{statement.PartyFullName}' is not authorized to host the route(s) '{string.Join( "', '", statement.Routes.Except( authorized ) )}' (a banned name, or an invalid route name)." );
-        }
-        if( authorized.Count > 0 )
-        {
-            monitor.Info( ActivityMonitor.Tags.SecurityCritical,
-                          $"'{statement.PartyFullName}' is authorized to host the route(s) '{string.Join( "', '", authorized )}' with its approval, by actor #{statement.OperatorActorId}: {updated}." );
-        }
-    }
-
     // The Authentication Center signs the same data as the host, for the same lifetime, from the time of the statement or
     // from its own clock when it is earlier: the host can't extend the window of the operator's gesture. Null when the time
     // of the statement is ahead of the clock (more than ClockSkew) or when the statement already expired.
@@ -242,14 +189,6 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
                             PartyApprovalStatement.GetSignedData( statement ),
                             from + PartyApprovalStatement.Lifetime )
                      .Encoded.ToArray();
-    }
-
-    // The statement of an approved key: countersigned here before (the routes are authorized once the holder approved it).
-    static bool IsCountersigned( IActivityMonitor monitor, ILocalParty center, IPartyApprovalStatement statement )
-    {
-        return statement.CenterCountersignature != null
-               && ApplicationSignature.TryRead( statement.CenterCountersignature, out var signature )
-               && center.GetRequiredFeature<IPartyKeys>().Check( monitor, ApprovalCountersignature.Purpose, PartyApprovalStatement.GetSignedData( statement ), signature ) == SignatureVerdict.Valid;
     }
 
     // The Authentication Center signs a pin grant of the holder for the approved party: the checkpoint of the holder is what
@@ -315,17 +254,10 @@ public sealed class AuthCenterApprovalCountersignature : IPartyApprovalCountersi
         else if( authentication.ActualActor.Level < AuthLevel.Critical ) refusal = "the operator is not at the Critical level";
         else if( authentication.Actor.ActorId != statement.OperatorActorId ) refusal = $"the operator #{authentication.Actor.ActorId} is not the one of the statement (#{statement.OperatorActorId})";
         else if( authentication.CallerPartyFullName != statement.HostFullName ) refusal = $"the caller party '{authentication.CallerPartyFullName}' is not the host of the statement ('{statement.HostFullName}')";
-        else if( command.Approved && !IsCountersigned( monitor, local, statement ) ) refusal = "the approved statement is not countersigned by it";
         if( refusal != null )
         {
             monitor.Warn( ActivityMonitor.Tags.SecurityCritical, $"The AuthCenter '{local}' refuses to countersign the approval of '{statement.PartyFullName}': {refusal}." );
             return null;
-        }
-        if( command.Approved )
-        {
-            // A holder approved the key: the routes of the statement are authorized.
-            await AuthorizeRoutesAsync( monitor, local, statement ).ConfigureAwait( false );
-            return pocos.Create<ICountersignApprovalResult>( r => r.Countersignature = statement.CenterCountersignature! );
         }
         var signature = Sign( monitor, local, statement );
         if( signature == null ) return null;

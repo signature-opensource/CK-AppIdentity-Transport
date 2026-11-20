@@ -427,8 +427,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                           out var fullName,
                                           out var protocols,
                                           out var expectedCommonProtocolCount,
-                                          out var canAutoTrust,
-                                          out var hostedRoutes ) )
+                                          out var canAutoTrust ) )
             {
                 remote = null;
                 foundTrustKey = false;
@@ -612,8 +611,7 @@ sealed class IncomingConnectionBackTask : BackTask<TransportManager>
                                        block,
                                        remoteEphemeral,
                                        remoteMacCapabilities,
-                                       approvalCommitment,
-                                       hostedRoutes );
+                                       approvalCommitment );
         }
     }
 

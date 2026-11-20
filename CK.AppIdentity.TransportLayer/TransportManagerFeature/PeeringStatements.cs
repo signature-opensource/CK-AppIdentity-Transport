@@ -39,8 +39,8 @@ public interface IPeeringAuthority : ISingletonAutoService
 
 /// <summary>
 /// The statement "the approval page of this System is U", signed by the authority of the System
-/// (<see cref="IPeeringAuthority"/>). U is the target of the "Enlistment" route as the authority sees it
-/// (<see cref="TransportFeatureDriver.EnlistmentRouteName"/>): the party that receives it appends <c>?party={its full name}</c>.
+/// (<see cref="IPeeringAuthority"/>). U is the approval page the authority finds (see
+/// <see cref="TransportFeatureDriver.FindEnlistmentPageUrl"/>): the party that receives it appends <c>?party={its full name}</c>.
 /// </summary>
 public static class EnlistmentUrlStatement
 {

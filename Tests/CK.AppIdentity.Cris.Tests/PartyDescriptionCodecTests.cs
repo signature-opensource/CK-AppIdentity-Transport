@@ -15,11 +15,7 @@ public class PartyDescriptionCodecTests
                                                                new ClientApplicationDescription( "Admin", "/admin" )],
                                                               ["Manager", "Operator"],
                                                               [new( "Region", "eu-west" )],
-                                                              [new( "Enlistment", [new PartyRoute( "https://admin.example.com/admin/app-identity/enlist", ["Test/$Front/#Dev", "Test/$Admin/#Dev"] )] ),
-                                                               new( "Mail", [PartyRoute.Hosted( null, "Test/$Front/#Dev" ), new PartyRoute( null, ["Test/$Front/#Dev", "Test/$Mail2/#Dev"] )] )],
-                                                              new PartyEncryptionKey( [1, 2, 3, 4], [5, 6, 7] ),
-                                                              [new( "Enlistment", [CollectedItem.Own( "{\"Party\":\"X\"}", "Test/$Front/#Dev" ),
-                                                                                   new CollectedItem( "{\"Party\":\"Y\"}", ["Test/$Worker/#Dev", "Test/$Front/#Dev"] )] )] );
+                                                              new PartyEncryptionKey( [1, 2, 3, 4], [5, 6, 7] ) );
 
     [Test]
     public void a_description_round_trips()
@@ -61,9 +57,7 @@ public class PartyDescriptionCodecTests
         w.WriteInt32( 1 );
         w.WriteString( "Manager" );
         w.WriteInt32( 0 ); // No data announcement.
-        w.WriteInt32( 0 ); // No route.
         w.WriteBool( false ); // No encryption key.
-        w.WriteInt32( 0 ); // No collected item.
         w.WriteString( "a newer section of the description" );
         w.EndBlock( d );
         w.WriteByte( 42 );
@@ -121,36 +115,6 @@ public class PartyDescriptionCodecTests
         var r = new FastByteReader( sequence.GetReadOnlySequence() );
         PartyDescriptionCodec.Read( ref r, out var error ).ShouldBeNull();
         error.ShouldBe( "Invalid client application 'App' ('no-leading-slash')." );
-        r.ReadByte().ShouldBe( (byte)42 );
-    }
-
-    [Test]
-    public void an_invalid_collected_item_makes_the_description_invalid()
-    {
-        using var sequence = new MutableSequence<byte>();
-        var w = new FastByteWriter( sequence );
-        var d = w.BeginBlock();
-        w.WriteBool( false );
-        w.WriteInt32( 0 ); // No client application.
-        w.WriteInt32( 0 ); // No role.
-        w.WriteInt32( 0 ); // No data announcement.
-        w.WriteInt32( 0 ); // No route.
-        w.WriteBool( false ); // No encryption key.
-        w.WriteInt32( 1 );
-        w.WriteString( "Enlistment" );
-        w.WriteInt32( 1 );
-        w.WriteString( "V" );
-        w.WriteInt32( 3 );
-        w.WriteString( "A" );
-        w.WriteString( "B" );
-        w.WriteString( "A" ); // A loop.
-        w.EndBlock( d );
-        w.WriteByte( 42 );
-        w.Commit();
-
-        var r = new FastByteReader( sequence.GetReadOnlySequence() );
-        PartyDescriptionCodec.Read( ref r, out var error ).ShouldBeNull();
-        error.ShouldStartWith( "Invalid item collected for 'Enlistment': " );
         r.ReadByte().ShouldBe( (byte)42 );
     }
 

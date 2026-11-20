@@ -44,8 +44,8 @@ public interface IRegisterEnlistmentTicketCommand : ICommand<string?>, ICommandA
 
 /// <summary>
 /// The handlers of the enlistment tickets (see <see cref="AuthCenterEnlistmentTickets"/>): the key of a ticket is created
-/// on the host of the approval page and its public key registered on the Authentication Center (here, or along the path
-/// to the center, or along its route); the tickets are listed and revoked on the center.
+/// on the host of the approval page and its public key registered on the Authentication Center (here, or sent to it: it is
+/// a remote of the host); the tickets are listed and revoked on the center.
 /// </summary>
 public sealed class AuthCenterEnlistmentTicketHandlers : ISingletonAutoService
 {
@@ -222,16 +222,14 @@ public sealed class AuthCenterEnlistmentTicketHandlers : ISingletonAutoService
         return await SendToCenterAsync( monitor, services, local, center, command, "revoke an enlistment ticket" ).ConfigureAwait( false ) is true;
     }
 
-    // Sends a command to the Authentication Center: along the path to the remote, or along its route. The operator's proof
-    // travels with it, sealed. Null when it can't be sent or is refused (the reason is logged).
+    // Sends a command to the Authentication Center (a remote of the local party). The operator's proof travels with it,
+    // sealed. Null when it can't be sent or is refused (the reason is logged).
     async Task<object?> SendToCenterAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty local, CrisAuthCenter center, IAbstractCommand command, string what )
     {
         object? result;
         try
         {
-            result = center.AuthCenter != null
-                        ? await _sender.SendAlongPathAsync( monitor, services, local, command, [local.FullName.Path, center.AuthCenterFullName] ).ConfigureAwait( false )
-                        : await _sender.SendAsync( monitor, services, local, command, AuthCenterFeature.RouteName, center.AuthCenterFullName ).ConfigureAwait( false );
+            result = await _sender.SendToAsync( monitor, services, local, command, center.AuthCenterFullName ).ConfigureAwait( false );
         }
         catch( Exception ex )
         {

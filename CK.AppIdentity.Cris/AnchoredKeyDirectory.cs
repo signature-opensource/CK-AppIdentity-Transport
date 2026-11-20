@@ -12,12 +12,13 @@ namespace CK.AppIdentity.Cris;
 
 /// <summary>
 /// The key directory of the local parties: the keys of an anchored party (see <see cref="ILocalKeys.FindAnchoredKeys"/>)
-/// obtained without a channel to it, by a <see cref="IGetKeyEventsQCommand"/> sent along a route that it hosts. What comes
-/// back is verified from its anchor: a hop can withhold it, not forge it.
+/// obtained by a <see cref="IGetKeyEventsQCommand"/> sent to it (directly, or through the hub of the System: see
+/// <see cref="PartyRoutedCommandSender.SendToAsync"/>). What comes back is verified from its anchor: a hop can withhold
+/// it, not forge it.
 /// <para>
 /// The events are fetched on demand: when nothing is held yet and when a signature has an unknown issuer (the party
 /// rotated since). Concurrent fetches of the same party share one request, and a party is fetched at most once every
-/// <see cref="MinFetchInterval"/>: signatures with an unknown issuer can't make a party flood the route.
+/// <see cref="MinFetchInterval"/>: signatures with an unknown issuer can't make a party flood the anchored party.
 /// </para>
 /// </summary>
 public sealed class AnchoredKeyDirectory : ISingletonAutoService
@@ -61,7 +62,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
 
     /// <summary>
     /// Checks a signature of an anchored party: when its issuer is unknown (nothing is held yet, or the party rotated
-    /// since), its events are fetched along the route (the answer is awaited at most <see cref="FetchTimeout"/>, after the
+    /// since), its events are asked to it (the answer is awaited at most <see cref="FetchTimeout"/>, after the
     /// seal when there is one) and the signature is checked again, once.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
@@ -71,7 +72,6 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     /// </param>
     /// <param name="local">The local party.</param>
     /// <param name="fullName">The full name of the anchored party.</param>
-    /// <param name="routeName">The name of a route hosted by the anchored party.</param>
     /// <param name="purpose">The purpose of the signature.</param>
     /// <param name="data">The signed data.</param>
     /// <param name="signature">The signature.</param>
@@ -80,7 +80,6 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
                                                          IServiceProvider? services,
                                                          ILocalParty local,
                                                          string fullName,
-                                                         string routeName,
                                                          string purpose,
                                                          ReadOnlyMemory<byte> data,
                                                          ApplicationSignature signature )
@@ -88,7 +87,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         var keys = FindKeys( monitor, local, fullName );
         if( keys == null ) return SignatureVerdict.Refused;
         var verdict = keys.Check( monitor, purpose, data.Span, signature );
-        if( verdict == SignatureVerdict.UnknownIssuer && await FetchAsync( monitor, services, local, keys, routeName ).ConfigureAwait( false ) )
+        if( verdict == SignatureVerdict.UnknownIssuer && await FetchAsync( monitor, services, local, keys ).ConfigureAwait( false ) )
         {
             verdict = keys.Check( monitor, purpose, data.Span, signature );
         }
@@ -96,19 +95,18 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
     }
 
     /// <summary>
-    /// Fetches the events of an anchored party along a route that it hosts and applies them (see
+    /// Fetches the events of an anchored party and applies them (see
     /// <see cref="IAnchoredKeys.ApplyEvents"/>), unless it has been fetched less than <see cref="MinFetchInterval"/> ago.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the calling scope (to send the routed command), null to create a scope.</param>
     /// <param name="local">The local party.</param>
     /// <param name="fullName">The full name of the anchored party.</param>
-    /// <param name="routeName">The name of a route hosted by the anchored party.</param>
     /// <returns>True when events were fetched and verified.</returns>
-    public ValueTask<bool> RefreshAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, string fullName, string routeName )
+    public ValueTask<bool> RefreshAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, string fullName )
     {
         var keys = FindKeys( monitor, local, fullName );
-        return keys == null ? ValueTask.FromResult( false ) : FetchAsync( monitor, services, local, keys, routeName );
+        return keys == null ? ValueTask.FromResult( false ) : FetchAsync( monitor, services, local, keys );
     }
 
     static IAnchoredKeys? FindKeys( IActivityMonitor monitor, ILocalParty local, string fullName )
@@ -120,9 +118,8 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         return keys;
     }
 
-    async ValueTask<bool> FetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys, string routeName )
+    async ValueTask<bool> FetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys )
     {
-        Throw.CheckNotNullOrWhiteSpaceArgument( routeName );
         var state = _fetches.GetOrAdd( (local.FullName.Path, keys.FullName), _ => new FetchState() );
         Task<bool> fetch;
         lock( state )
@@ -136,7 +133,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
                     return false;
                 }
                 state.LastFetch = now;
-                state.InFlight = DoFetchAsync( monitor, services, local, keys, routeName );
+                state.InFlight = DoFetchAsync( monitor, services, local, keys );
             }
             fetch = state.InFlight;
         }
@@ -153,17 +150,12 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         }
     }
 
-    async Task<bool> DoFetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys, string routeName )
+    async Task<bool> DoFetchAsync( IActivityMonitor monitor, IServiceProvider? services, ILocalParty local, IAnchoredKeys keys )
     {
         if( services == null )
         {
             await using var scope = _services.CreateAsyncScope();
-            return await DoFetchAsync( monitor, scope.ServiceProvider, local, keys, routeName ).ConfigureAwait( false );
-        }
-        if( local.Description.FindRoute( routeName, keys.FullName ) == null )
-        {
-            monitor.Warn( $"'{local.FullName}' has no route '{routeName}' to '{keys.FullName}': its key events can't be fetched." );
-            return false;
+            return await DoFetchAsync( monitor, scope.ServiceProvider, local, keys ).ConfigureAwait( false );
         }
         var stated = keys.GetStatedCheckpoint( monitor );
         if( stated == null )
@@ -173,16 +165,16 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         }
         var query = _pocoDirectory.Create<IGetKeyEventsQCommand>( c => c.FromSeq = stated.Seq );
         // The sender is bounded by the timeout: the scope of the caller (or the one created above) outlives the send.
-        var result = await _sender.SendAsync( monitor, services, local, query, routeName, keys.FullName, FetchTimeout ).ConfigureAwait( false );
+        var result = await _sender.SendToAsync( monitor, services, local, query, keys.FullName, FetchTimeout ).ConfigureAwait( false );
         if( result is not IPartyKeyEvents answer )
         {
             var error = result is ICrisResultError e ? e.Errors.Select( m => m.Text ).Concatenate() : result?.GetType().Name ?? "null";
-            monitor.Warn( $"The key events of '{keys.FullName}' can't be fetched along the route '{routeName}': {error}" );
+            monitor.Warn( $"The key events of '{keys.FullName}' can't be fetched: {error}" );
             return false;
         }
         if( answer.Events.Length == 0 || answer.Events.Length > KeyEventChain.MaxEventWindow )
         {
-            monitor.Warn( $"Invalid key events of '{keys.FullName}' received along the route '{routeName}': {answer.Events.Length} events." );
+            monitor.Warn( $"Invalid key events of '{keys.FullName}': {answer.Events.Length} events." );
             return false;
         }
         var events = new List<KeyEvent>( answer.Events.Length );
@@ -192,7 +184,7 @@ public sealed class AnchoredKeyDirectory : ISingletonAutoService
         }
         catch( Exception ex )
         {
-            monitor.Warn( $"Invalid key events of '{keys.FullName}' received along the route '{routeName}'.", ex );
+            monitor.Warn( $"Invalid key events of '{keys.FullName}'.", ex );
             return false;
         }
         var check = keys.ApplyEvents( monitor, events );

@@ -86,9 +86,9 @@ The purpose is fixed (`ICrisAuthCenter.TokenPurpose`, "CK.AuthCenter.Token"): no
 Center can be taken for a token. It fails closed when the feature is not `IsAvailable`. Signing is not here: only a
 local Authentication Center signs, with its `ILocalKeys`.
 
-A local Authentication Center hosts the `"AuthCenter"` route (`AuthCenterFeature.RouteName`, its target is its full
-name): every party of the System has a path to it, whatever its channels. A party that anchors the Authentication
-Center without a channel to it gets its key events along this route (the `AnchoredKeyDirectory` of CK.AppIdentity.Cris).
+A System is a star around its Authentication Center: every party that uses it has a link to it (a party that
+designates an Authentication Center that is not one of its remotes fails its setup). A party that anchors the
+Authentication Center gets its key events from it (the `AnchoredKeyDirectory` of CK.AppIdentity.Cris).
 
 ## Rules (the two side drivers, [`AuthCenterFeature`](AuthCenterFeature.cs))
 
@@ -159,7 +159,7 @@ its level, `Critical` included, across any number of parties of the System:
   party alone vouches, at most at `Normal`.
 - **Through hops, the session party seals the command** ([`RoutedCommandSeal`](RoutedCommandSeal.cs), by the
   [`AuthCenterRoutedCommandSeal`](AuthCenterRoutedCommandSeal.cs), the `ICrisRoutedCommandSeal` of the routed commands): the proof of a
-  routed command is sent with a seal, the signature by the session party (the origin of the route) of a header (the
+  routed command is sent with a seal, the signature by the session party (the origin of the routed command) of a header (the
   destination, the digest of the token, the time, a nonce) and of the digest of the exact bytes of the command. The
   Authentication Center verifies it without the command: for its own routed commands, or asked by its remote that is
   the destination (`IVerifyCallerProofCommand`: the asking party must be the destination). A seal is used once (its
@@ -220,8 +220,7 @@ Authentication Center vouches for it. It has pinned the keys of its remotes, and
 
 ## The System list ([`SystemList`](SystemList.cs), [`AuthCenterSystemList`](AuthCenterSystemList.cs))
 
-The Authentication Center states, for every party of its System, in one signed list: the revoked identities, and the
-hosts authorized for the routes.
+The Authentication Center states, for every party of its System, in one signed list: the revoked identities.
 
 ### The revocation
 
@@ -229,38 +228,18 @@ The Authentication Center revokes the identity of a party System-wide: `IRevokeP
 live proof; who may revoke is decided by the application, a validator of the command), handled by the
 `RevokePartyHandler` of CK.AppIdentity.AuthCenter.Local. What is revoked is the identity of a key event log (the digest
 of its inception, given or read from the pin of the remote), refused forever once revoked; the entry also bans the
-full name in the routed commands and the routes until it is readmitted (`IReadmitPartyNameCommand`, Critical too: the
-party incepted again and comes back by a new enlistment or a new anchor, its revoked identities stay refused). A revoked
-party is no more an authorized host of any route.
-
-### The route hosts
-
-A route is announced, not proven (see the routes of CK.AppIdentity.TransportLayer): the Authentication Center states who
-may host a route, and every party that has it accepts a route only toward an authorized host of its name, with the
-authorized target ([`AuthCenterRouteHostAuthority`](AuthCenterRouteHostAuthority.cs), the `IRouteHostAuthority` of the
-transport: `AuthCenterSystemList.RouteHosts`). A name can have several hosts.
-
-- **The "AuthCenter" route is implicit:** it is authorized toward the party's Authentication Center (its full name is
-  known), without entry in the list: the list itself is pulled along it. Before any list, it is the only authorized route.
-- **Who authorizes** (CK.AppIdentity.AuthCenter.Local): the `"RouteHosts"` of the center's `"AuthCenter"` section (the
-  hosts known at deployment), the Critical `IAuthorizeRouteHostCommand` and `IRemoveRouteHostCommand` of an operator, and
-  the approval of a party (CK.AppIdentity.AuthCenter.Enlistment: the routes the operator approves with it). The roles a
-  party announces are not trusted for this: a party announces them itself.
-- **The target follows the authorized host:** the center reads it in the host's description when it sees it (the
-  center itself, or one of its remotes: `AuthCenterSystemList.FindAnnouncedTarget`) and signs a new list when it
-  changes; a configured target is fixed.
+full name in the routed commands until it is readmitted (`IReadmitPartyNameCommand`, Critical too: the party incepted
+again and comes back by a new enlistment or a new anchor, its revoked identities stay refused).
 
 ### The list
 
-- **The list:** the revoked identities, the route hosts, a sequence number and a time, signed by the Authentication
+- **The list:** the revoked identities, a sequence number and a time, signed by the Authentication
   Center (`SystemList.Purpose`). It is signed again (the next sequence number) when its signature reaches the middle of
   its life (checked every hour): a signature lasts at most `MaxSignatureDays`. The center changes it with
-  `AuthCenterSystemList.UpdateAsync`: the updates are serialized (each one sees the list of the previous one), and the
-  route hosts of a banned name are dropped from every new list.
-- **Every party that has an Authentication Center** (local, remote, or anchored without channel) holds the newest list
+  `AuthCenterSystemList.UpdateAsync`: the updates are serialized (each one sees the list of the previous one).
+- **Every party that has an Authentication Center** (local, remote, or anchored) holds the newest list
   it verified (`AuthCenterSystemList`, a feature of the local party), in its local store. It applies it to its keys
-  (the revoked remotes are cut, see CK.AppIdentity.TransportLayer) and to its routes (computed again when the route
-  hosts change). At start, the stored list is verified again with the keys of the Authentication Center (it may have
+  (the revoked remotes are cut, see CK.AppIdentity.TransportLayer). At start, the stored list is verified again with the keys of the Authentication Center (it may have
   been replaced or re-incepted): a list it didn't sign is ignored, a list signed by a key not known yet is verified with
   its key events by the first heartbeat.
 
@@ -270,8 +249,7 @@ transport: `AuthCenterSystemList.RouteHosts`). A name can have several hosts.
   anchored keys): a hop can withhold a list, not forge one. A party without Authentication Center ignores it (its
   operator cuts its remotes).
 - **The freshness:** a hop can withhold a newer list. Besides the relay by every channel, a party that is not the
-  Authentication Center asks it its current list every hour (`IGetSystemListQCommand`, on the channel or along the
-  `"AuthCenter"` route), every 30 seconds while it can't be obtained (`RetryPeriod`): to withhold, a hop must also block that, and an unreachable center is visible. A list whose
+  Authentication Center asks it its current list every hour (`IGetSystemListQCommand`, on its channel to it), every 30 seconds while it can't be obtained (`RetryPeriod`): to withhold, a hop must also block that, and an unreachable center is visible. A list whose
   signature expired (the center signs it again before) raises a `SecurityCritical` alarm: nothing newer reached the
   party (`AuthCenterSystemList.CheckStaleness`). A token that would state the sequence of the list is not done.
 

@@ -90,7 +90,7 @@ public class ApprovalCountersignatureTests
     {
         await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: [.. _types, typeof( IApprovePendingPartyCommand )] );
         var holder = p.Remote.ApplicationIdentityService;
-        var handlers = new PartyApprovalHandlers( p.Remote.Services.GetRequiredService<PartyRoutedCommandSender>(), countersignature: null, proofVerifier: new AuthCenterProofVerifier() );
+        var handlers = new PartyApprovalHandlers( new EnlistmentItems( p.Remote.Services.GetRequiredService<PartyRoutedCommandSender>() ), countersignature: null, proofVerifier: new AuthCenterProofVerifier() );
         var command = p.Remote.PocoDirectory.Create<IApprovePendingPartyCommand>( a =>
         {
             a.Statement = p.Remote.PocoDirectory.Create<IPartyApprovalStatement>( s =>
@@ -108,87 +108,5 @@ public class ApprovalCountersignatureTests
                 .ShouldBe( PartyApprovalStatus.Refused );
             logs.ShouldContain( l => l.Contains( "not the countersignature of the approvals (CK.AppIdentity.AuthCenter.Enlistment)" ) );
         }
-    }
-
-    static async Task<bool> WaitForAsync( Func<bool> condition )
-    {
-        for( int i = 0; i < 100; ++i )
-        {
-            if( condition() ) return true;
-            await Task.Delay( 100 );
-        }
-        return false;
-    }
-
-    [Test]
-    public async Task the_AuthCenter_authorizes_route_hosts_and_its_remotes_follow_Async()
-    {
-        await using var p = await RemoteAuthCenterTests.StartAsync( extraTypes: [.. _types,
-                                                                                 typeof( IAuthorizeRouteHostCommand ),
-                                                                                 typeof( IRemoveRouteHostCommand ),
-                                                                                 typeof( IRevokePartyCommand ),
-                                                                                 typeof( ISystemListCommand ),
-                                                                                 typeof( IGetSystemListQCommand ),
-                                                                                 typeof( SystemListHandler )] );
-        (await p.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( c => c.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
-        var center = p.Center.ApplicationIdentityService;
-        var host = p.Remote.ApplicationIdentityService;
-        var remoteHosts = host.GetRequiredFeature<AuthCenterSystemList>();
-        // Before any list, only the "AuthCenter" route of the center is authorized.
-        remoteHosts.RouteHosts.Find( AuthCenterFeature.RouteName, center.FullName ).ShouldNotBeNull();
-        remoteHosts.RouteHosts.Find( "MailSender", "Test/$Mail1/#Dev" ).ShouldBeNull();
-
-        // Two hosts for one name, authorized by the operator (Critical commands, handled by the center): the remote follows.
-        var handler = new RevokePartyHandler();
-        foreach( var mail in new[] { "Test/$Mail1/#Dev", "Test/$Mail2/#Dev" } )
-        {
-            var authorize = p.Center.PocoDirectory.Create<IAuthorizeRouteHostCommand>( c => { c.RouteName = "MailSender"; c.HostFullName = mail; } );
-            (await handler.HandleAsync( TestHelper.Monitor, authorize, new CurrentLocalParty( center ) )).ShouldNotBeNull();
-        }
-        (await WaitForAsync( () => remoteHosts.RouteHosts.Entries.Count( e => e.RouteName == "MailSender" ) == 2 )).ShouldBeTrue( "Relayed to the remote." );
-        remoteHosts.RouteHosts.Find( "MailSender", "Test/$Mail2/#Dev" ).ShouldNotBeNull().Target.ShouldBeNull();
-
-        // Removed: the remote follows.
-        var remove = p.Center.PocoDirectory.Create<IRemoveRouteHostCommand>( c => { c.RouteName = "MailSender"; c.HostFullName = "Test/$Mail1/#Dev"; } );
-        (await handler.HandleAsync( TestHelper.Monitor, remove, new CurrentLocalParty( center ) )).ShouldNotBeNull();
-        (await WaitForAsync( () => remoteHosts.RouteHosts.Find( "MailSender", "Test/$Mail1/#Dev" ) == null )).ShouldBeTrue();
-        // The "AuthCenter" route can't be authorized: it is implicit.
-        var implicitOne = p.Center.PocoDirectory.Create<IAuthorizeRouteHostCommand>( c => { c.RouteName = AuthCenterFeature.RouteName; c.HostFullName = "Test/$Mail1/#Dev"; } );
-        (await handler.HandleAsync( TestHelper.Monitor, implicitOne, new CurrentLocalParty( center ) )).ShouldBeNull();
-        // A banned name can't be authorized: the handler says so (null), it doesn't report the unchanged list.
-        var revoke = p.Center.PocoDirectory.Create<IRevokePartyCommand>( c => { c.PartyFullName = "Test/$Banned/#Dev"; c.Identity = new byte[KeyEvent.HashSize]; c.Identity[0] = 7; } );
-        (await handler.HandleAsync( TestHelper.Monitor, revoke, new CurrentLocalParty( center ) )).ShouldNotBeNull();
-        var banned = p.Center.PocoDirectory.Create<IAuthorizeRouteHostCommand>( c => { c.RouteName = "MailSender"; c.HostFullName = "Test/$Banned/#Dev"; } );
-        (await handler.HandleAsync( TestHelper.Monitor, banned, new CurrentLocalParty( center ) )).ShouldBeNull();
-        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Banned/#Dev" ).ShouldBeNull();
-
-        // An approval authorizes the routes the operator approved with it, when the center countersigns it.
-        int operatorId = p.Browser.Current.Actor.ActorId;
-        var statement = p.Remote.PocoDirectory.Create<IPartyApprovalStatement>( s =>
-        {
-            s.PartyFullName = "Test/$Waiting/#Dev";
-            s.KeyFingerprint = "ABCD-EFGH";
-            s.HolderFullName = host.FullName;
-            s.HostFullName = host.FullName;
-            s.OperatorActorId = operatorId;
-            s.Time = DateTime.UtcNow;
-            s.Routes.Add( "MailSender" );
-            s.HostSignature = host.GetRequiredFeature<ILocalKeys>().Sign( PartyApprovalStatement.Purpose,
-                                                                         PartyApprovalStatement.GetSignedData( s ),
-                                                                         s.Time + PartyApprovalStatement.Lifetime ).Encoded.ToArray();
-        } );
-        await using var scope = p.Remote.CreateAsyncScopeServices();
-        var countersignature = scope.ServiceProvider.GetRequiredService<IPartyApprovalCountersignature>();
-        var (success, signature, _) = await countersignature.CountersignAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement, withPinGrant: false );
-        success.ShouldBeTrue();
-        // Nothing is authorized before a holder approved the key.
-        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldBeNull();
-        // Not countersigned by the center: refused.
-        await countersignature.ApprovedAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement );
-        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldBeNull();
-        statement.CenterCountersignature = signature;
-        await countersignature.ApprovedAsync( TestHelper.Monitor, scope.ServiceProvider, host, statement );
-        center.GetRequiredFeature<AuthCenterSystemList>().RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ).ShouldNotBeNull();
-        (await WaitForAsync( () => remoteHosts.RouteHosts.Find( "MailSender", "Test/$Waiting/#Dev" ) != null )).ShouldBeTrue();
     }
 }

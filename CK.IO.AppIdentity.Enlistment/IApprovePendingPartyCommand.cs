@@ -6,9 +6,10 @@ using System.Collections.Generic;
 namespace CK.IO.AppIdentity.Enlistment;
 
 /// <summary>
-/// Approves a pending party on the party that holds its pending approval: sent by the host of the approval page down the
-/// way the pending approval came up, with the statement of the approval and the codes entered by the operator. The holder
-/// accepts it only from the host of its "Enlistment" route. Internal to the System.
+/// Approves a pending party on the party that holds its pending approval: sent by the host of the approval page (directly,
+/// or through the hub of the System), with the statement of the approval and the codes entered by the operator. The holder
+/// accepts it when its Authentication Center countersigned the statement (without Authentication Center: only from a
+/// direct remote that hosts the approval page). Internal to the System.
 /// </summary>
 [Internal]
 public interface IApprovePendingPartyCommand : ICommand<PartyApprovalStatus>
@@ -67,12 +68,6 @@ public interface IPartyApprovalStatement : IPoco
     /// Gets or sets the time of the approval (UTC).
     /// </summary>
     DateTime Time { get; set; }
-
-    /// <summary>
-    /// Gets the names of the routes that the operator authorizes the approved party to host (among the ones it states):
-    /// the Authentication Center adds them to its System list when it countersigns.
-    /// </summary>
-    IList<string> Routes { get; }
 
     /// <summary>
     /// Gets or sets the encoded signature of the statement by the host.

@@ -36,13 +36,6 @@ public static class AuthCenterFeature
     public const string Name = "AuthCenter";
 
     /// <summary>
-    /// The name of the route hosted by an Authentication Center (its target is its full name): every party of the System
-    /// has a path to it, whatever its channels (see <see cref="PartyDescription.Routes"/>). Its key events are fetched
-    /// along it by the parties that anchor it without a channel to it (the key directory).
-    /// </summary>
-    public const string RouteName = "AuthCenter";
-
-    /// <summary>
     /// Checks that there is no designation: the "AuthCenter" key of a "Local" declares the feature (<c>true</c>,
     /// <c>false</c> or the settings of a local AuthCenter), any other value is an error; the own "AuthCenter" key of a remote
     /// is an error (the former designation), unless it is <c>false</c>. A "Defaults" that declares "AuthCenter" for the

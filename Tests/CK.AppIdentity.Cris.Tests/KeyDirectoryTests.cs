@@ -14,28 +14,13 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.Cris.Tests;
 
 /// <summary>
-/// The <see cref="AnchoredKeyDirectory"/>: three parties in a chain, "Test/$Sender" &gt; "Test/$Listener" &lt; "Test/$C".
-/// C hosts the route "Keys", the sender anchors C and has no channel to it: it gets the keys of C along the route.
+/// The <see cref="AnchoredKeyDirectory"/>: three parties in a star, "Test/$Sender" &gt; "Test/$Listener" &lt; "Test/$C".
+/// The sender anchors C and has no channel to it: it gets the keys of C through its hub, the listener (see
+/// <see cref="TenantCommandTests.SingleRemoteHub"/>).
 /// </summary>
 [TestFixture]
 public class KeyDirectoryTests
 {
-    [PartyFeature( "KeysRouteHost", TypeActivation.ByDefault )]
-    public sealed class KeysRouteHostFeatureDriver : ApplicationIdentityFeatureDriver
-    {
-        public KeysRouteHostFeatureDriver( ApplicationIdentityService s ) : base( s ) { }
-
-        protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder ) => builder.HostRoute( "Keys", party.FullName.Path );
-
-        protected override Task<bool> SetupAsync( FeatureLifetimeContext context ) => Task.FromResult( true );
-
-        protected override Task<bool> SetupDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.FromResult( true );
-
-        protected override Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party ) => Task.CompletedTask;
-
-        protected override Task TeardownAsync( FeatureLifetimeContext context ) => Task.CompletedTask;
-    }
-
     static readonly Type[] _common = [typeof( IPartyRoutedCommand ),
                                       typeof( PartyRoutedCommandSender ),
                                       typeof( CurrentLocalParty ),
@@ -56,33 +41,24 @@ public class KeyDirectoryTests
     static ApplicationSignature Sign( RunningApplication app )
         => app.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().Sign( Purpose, _data, DateTime.UtcNow.AddMinutes( 5 ) );
 
-    static async Task<SignatureVerdict> CheckAsync( RunningApplication app, string fullName, string routeName, ApplicationSignature signature )
+    static async Task<SignatureVerdict> CheckAsync( RunningApplication app, string fullName, ApplicationSignature signature )
     {
         using var scope = app.CreateScopeServices();
         return await app.Services.GetRequiredService<AnchoredKeyDirectory>()
-                                 .CheckAsync( TestHelper.Monitor, scope.ServiceProvider, app.ApplicationIdentityService, fullName, routeName, Purpose, _data, signature );
-    }
-
-    static async Task<bool> WaitForRouteAsync( ILocalParty local, string name )
-    {
-        for( int i = 0; i < 100; ++i )
-        {
-            if( local.Description.Routes.ContainsKey( name ) ) return true;
-            await Task.Delay( 100 );
-        }
-        return false;
+                                 .CheckAsync( TestHelper.Monitor, scope.ServiceProvider, app.ApplicationIdentityService, fullName, Purpose, _data, signature );
     }
 
     // Starts C first (it connects to the listener once it is up), then the pair: the sender anchors C with the
     // checkpoint given (C's own checkpoint when null).
     static async Task<(RunningApplication A, RunningApplication B, RunningApplication C, RunningApplicationPair Pair)> StartAsync( Func<KeyCheckpoint, string>? anchor = null,
-                                                                                                                                       int rotations = 0 )
+                                                                                                                                       int rotations = 0,
+                                                                                                                                       bool withHub = true )
     {
         var c = await RunningApplication.CreateAsync( TestHelper.Monitor,
                                                       isSender: true,
                                                       c => c["FullName"] = "Test/$C",
                                                       RunningApplication.WithHeartBeat(),
-                                                      [.. _common, typeof( KeysRouteHostFeatureDriver )] );
+                                                      _common );
         var cKeys = c.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>();
         var checkpoint = cKeys.Checkpoint;
         // C rotates after the checkpoint is taken: more than a usual tail of events.
@@ -90,19 +66,23 @@ public class KeyDirectoryTests
         string cName = c.ApplicationIdentityService.FullName.Path;
         var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                              senderConfiguration: s => s[$"Local:KeyManagement:TrustAnchors:{cName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString(),
-                                                             senderTypes: _common,
+                                                             senderTypes: withHub ? [.. _common, typeof( TenantCommandTests.SingleRemoteHub )] : _common,
                                                              listenerConfiguration: l =>
                                                              {
                                                                  l["Parties:1:PartyName"] = "$C";
                                                                  l["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
                                                              },
-                                                             listenerTypes: [.. _common, typeof( RoutedCommandTests.RouteHostFeatureDriver )] );
-        (await WaitForRouteAsync( pair.Sender.ApplicationIdentityService, "Keys" )).ShouldBeTrue( "The route of C reaches the sender through the listener." );
+                                                             listenerTypes: _common );
+        // The star: the sender and C are connected to the listener.
+        (await pair.Sender.CrisChannel.WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 30 ) )).ShouldBeTrue();
+        var b = pair.Listener.ApplicationIdentityService;
+        for( int i = 0; i < 100 && !b.Remotes.Any( r => r.FullName.Path == cName ); ++i ) await Task.Delay( 100 );
+        (await b.Remotes.Single( r => r.FullName.Path == cName ).GetRequiredFeature<CrisChannelFeature>().WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 30 ) )).ShouldBeTrue();
         return (pair.Sender, pair.Listener, c, pair);
     }
 
     [Test]
-    public async Task the_keys_of_an_anchored_party_are_fetched_along_its_route_and_verified_from_its_anchor_Async()
+    public async Task the_keys_of_an_anchored_party_are_fetched_through_the_hub_and_verified_from_its_anchor_Async()
     {
         var (a, b, c, pair) = await StartAsync( rotations: 10 );
         await using var _ = c;
@@ -111,7 +91,7 @@ public class KeyDirectoryTests
         a.ApplicationIdentityService.Remotes.ShouldNotContain( r => r.FullName.Path == cName, "No channel from the sender to C." );
 
         // C rotated 10 times since its anchor: its events from the anchor come in one fetch (the window).
-        (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
+        (await CheckAsync( a, cName, Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
         var keys = a.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().FindAnchoredKeys( cName ).ShouldNotBeNull();
         keys.Head.ShouldNotBeNull().Seq.ShouldBe( 10 );
 
@@ -119,63 +99,46 @@ public class KeyDirectoryTests
         // the head held.
         c.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().Rotate( TestHelper.Monitor ).ShouldBeTrue();
         var signature = Sign( c );
-        (await CheckAsync( a, cName, "Keys", signature )).ShouldBe( SignatureVerdict.UnknownIssuer );
+        (await CheckAsync( a, cName, signature )).ShouldBe( SignatureVerdict.UnknownIssuer );
         await Task.Delay( AnchoredKeyDirectory.MinFetchInterval );
-        (await CheckAsync( a, cName, "Keys", signature )).ShouldBe( SignatureVerdict.Valid );
+        (await CheckAsync( a, cName, signature )).ShouldBe( SignatureVerdict.Valid );
         keys.Head!.Seq.ShouldBe( 11 );
     }
 
     [Test]
     public async Task events_that_dont_match_the_anchor_are_refused_Async()
     {
-        // The digest of the anchor is not the one of C: whatever comes back along the route, it is checked, never believed.
+        // The digest of the anchor is not the one of C: whatever comes back through the hub, it is checked, never believed.
         var (a, b, c, pair) = await StartAsync( anchor: cp => $"{cp.Seq}:{new string( '0', 64 )}" );
         await using var _ = c;
         await using var __ = pair;
         string cName = c.ApplicationIdentityService.FullName.Path;
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
-            (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
+            (await CheckAsync( a, cName, Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
             logs.ShouldContain( l => l.StartsWith( $"The key events received for '{cName}' don't match its trust anchor" ) );
         }
         a.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().FindAnchoredKeys( cName ).ShouldNotBeNull().Head.ShouldBeNull();
     }
 
     [Test]
-    public async Task the_route_must_lead_to_the_anchored_party_Async()
+    public async Task without_a_hub_the_signature_of_a_party_that_is_not_a_remote_is_refused_Async()
     {
-        var (a, b, c, pair) = await StartAsync();
-        await using var _ = c;
-        await using var __ = pair;
-        string cName = c.ApplicationIdentityService.FullName.Path;
-        string bName = b.ApplicationIdentityService.FullName.Path;
-        (await WaitForRouteAsync( a.ApplicationIdentityService, "Routed" )).ShouldBeTrue();
-        using( TestHelper.Monitor.CollectTexts( out var logs ) )
-        {
-            // The "Routed" route is hosted by the listener, not by C.
-            (await CheckAsync( a, cName, "Routed", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
-            logs.ShouldContain( $"'{a.ApplicationIdentityService.FullName}' has no route 'Routed' to '{cName}': its key events can't be fetched." );
-        }
-    }
-
-    [Test]
-    public async Task without_a_route_the_signature_is_refused_Async()
-    {
-        var (a, b, c, pair) = await StartAsync();
+        var (a, b, c, pair) = await StartAsync( withHub: false );
         await using var _ = c;
         await using var __ = pair;
         string cName = c.ApplicationIdentityService.FullName.Path;
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
-            (await CheckAsync( a, cName, "NoSuchRoute", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
-            logs.ShouldContain( $"'{a.ApplicationIdentityService.FullName}' has no route 'NoSuchRoute' to '{cName}': its key events can't be fetched." );
+            (await CheckAsync( a, cName, Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
+            logs.ShouldContain( l => l.Contains( "neither a remote nor reachable through a hub" ) );
         }
         // A party that is not anchored is never looked up.
-        (await CheckAsync( a, b.ApplicationIdentityService.FullName.Path, "Keys", Sign( b ) )).ShouldBe( SignatureVerdict.Refused );
+        (await CheckAsync( a, b.ApplicationIdentityService.FullName.Path, Sign( b ) )).ShouldBe( SignatureVerdict.Refused );
     }
 
     [Test]
-    public async Task a_revoked_name_is_refused_in_the_routed_commands_and_the_routes_Async()
+    public async Task a_revoked_name_is_refused_in_the_routed_commands_Async()
     {
         var (a, b, c, pair) = await StartAsync();
         await using var _ = c;
@@ -191,25 +154,12 @@ public class KeyDirectoryTests
         await bKeys.SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( aName, other, DateTime.UtcNow, nameBanned: true )] );
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
-            (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
+            (await CheckAsync( a, cName, Sign( c ) )).ShouldBe( SignatureVerdict.UnknownIssuer );
             logs.ShouldContain( l => l.Contains( $"its Via contains '{aName}', a revoked party." ) );
         }
         // Readmitted: the name is accepted again.
         await bKeys.SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( aName, other, DateTime.UtcNow, nameBanned: false )] );
         await Task.Delay( AnchoredKeyDirectory.MinFetchInterval );
-        (await CheckAsync( a, cName, "Keys", Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
-
-        // A route that goes through a banned name is ignored...
-        using var collected = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 5000 );
-        await a.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>()
-               .SetRevocationsAsync( TestHelper.Monitor, [new RevocationEntry( cName, other, DateTime.UtcNow, nameBanned: true )] );
-        for( int i = 0; i < 100 && a.ApplicationIdentityService.Description.Routes.ContainsKey( "Keys" ); ++i ) await Task.Delay( 100 );
-        a.ApplicationIdentityService.Description.Routes.ShouldNotContainKey( "Keys" );
-        // ...and reported once, not at each computation of the routes.
-        var transport = a.Services.GetRequiredService<TransportFeatureDriver>();
-        await transport.OnRouteHostsChangedAsync( TestHelper.Monitor, a.ApplicationIdentityService );
-        await transport.OnRouteHostsChangedAsync( TestHelper.Monitor, a.ApplicationIdentityService );
-        await Task.Delay( 500 );
-        collected.ExtractCurrentTexts().Count( t => t.Contains( $"goes through '{cName}', a revoked party" ) ).ShouldBe( 1 );
+        (await CheckAsync( a, cName, Sign( c ) )).ShouldBe( SignatureVerdict.Valid );
     }
 }

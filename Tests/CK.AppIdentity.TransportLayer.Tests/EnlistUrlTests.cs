@@ -15,7 +15,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 /// <summary>
 /// Finding M8: the enlistment URL offered to a party the listener does not know (or doesn't trust).
 /// <para>
-/// The enlistment URL is the target of the "Enlistment" route of the local party concerned: the URL of an approval page
+/// The enlistment URL is the approval page the local party concerned knows: the URL of an approval page
 /// (a client application with the "Enlistment" fact), derived from the System, never configured.
 /// </para>
 /// <para>
@@ -32,7 +32,7 @@ public class EnlistUrlTests
 
     /// <summary>
     /// Gives every local party an approval page: a client application "Admin" with the "Enlistment" fact. A local party
-    /// hosts the "Enlistment" route when it also has a public URL.
+    /// has the page when it also has a public URL.
     /// </summary>
     [PartyFeature( "ApprovalPage", TypeActivation.ByDefault )]
     public sealed class ApprovalPageFeatureDriver : ApplicationIdentityFeatureDriver

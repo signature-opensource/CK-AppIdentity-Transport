@@ -12,11 +12,8 @@ namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
 /// The System list of an Authentication Center: what it states for every party of its System, a sequence number (a newer
-/// list replaces an older one) and its time, signed by the Authentication Center (<see cref="Purpose"/>):
-/// <list type="bullet">
-///   <item>the revoked identities (see <see cref="RevocationEntry"/>);</item>
-///   <item>the authorized hosts of the routes (see <see cref="RouteHost"/>): a route is accepted only toward one of them.</item>
-/// </list>
+/// list replaces an older one) and its time, signed by the Authentication Center (<see cref="Purpose"/>): the revoked
+/// identities (see <see cref="RevocationEntry"/>).
 /// It travels by any path: it is verified with the keys of the Authentication Center (pinned or anchored). A hop can
 /// withhold it, not forge it.
 /// </summary>
@@ -28,7 +25,7 @@ public sealed class SystemList
     public const string Purpose = "CK.AuthCenter.SystemList";
 
     /// <summary>
-    /// The maximal number of revocations and of route hosts.
+    /// The maximal number of revocations.
     /// </summary>
     public const int MaxEntryCount = 100_000;
 
@@ -39,14 +36,12 @@ public sealed class SystemList
     SystemList( int seq,
                 DateTime time,
                 IReadOnlyList<RevocationEntry> entries,
-                IReadOnlyList<RouteHost> routeHosts,
                 byte[] data,
                 ApplicationSignature signature )
     {
         Seq = seq;
         Time = time;
         Entries = entries;
-        RouteHosts = routeHosts;
         _data = data;
         Signature = signature;
     }
@@ -67,11 +62,6 @@ public sealed class SystemList
     public IReadOnlyList<RevocationEntry> Entries { get; }
 
     /// <summary>
-    /// Gets the authorized hosts of the routes (the implicit "AuthCenter" route of the Authentication Center is not in it).
-    /// </summary>
-    public IReadOnlyList<RouteHost> RouteHosts { get; }
-
-    /// <summary>
     /// Gets the signature of the Authentication Center.
     /// </summary>
     public ApplicationSignature Signature { get; }
@@ -87,25 +77,19 @@ public sealed class SystemList
     /// <param name="keys">The keys of the Authentication Center.</param>
     /// <param name="seq">The sequence number.</param>
     /// <param name="entries">The revoked identities.</param>
-    /// <param name="routeHosts">The authorized hosts of the routes.</param>
     /// <param name="utcNow">The current time.</param>
     /// <returns>The signed list.</returns>
-    public static SystemList Create( ILocalKeys keys, int seq, IReadOnlyList<RevocationEntry> entries, IReadOnlyList<RouteHost> routeHosts, DateTime utcNow )
+    public static SystemList Create( ILocalKeys keys, int seq, IReadOnlyList<RevocationEntry> entries, DateTime utcNow )
     {
         Throw.CheckNotNullArgument( keys );
         Throw.CheckArgument( seq > 0 );
         Throw.CheckNotNullArgument( entries );
-        Throw.CheckNotNullArgument( routeHosts );
-        // Sorted: the same content is the same list.
-        var hosts = routeHosts.OrderBy( h => h.RouteName, StringComparer.Ordinal ).ThenBy( h => h.Host, StringComparer.Ordinal ).ToArray();
-        // Checks the entries (a host appears once per route name).
-        _ = TransportLayer.RouteHosts.Create( hosts );
-        var data = GetSignedData( seq, utcNow, entries, hosts );
+        var data = GetSignedData( seq, utcNow, entries );
         var signature = keys.Sign( Purpose, data, utcNow.AddDays( keys.MaxSignatureDays ) );
-        return new SystemList( seq, utcNow, entries, hosts, data, signature );
+        return new SystemList( seq, utcNow, entries, data, signature );
     }
 
-    static byte[] GetSignedData( int seq, DateTime time, IReadOnlyList<RevocationEntry> entries, IReadOnlyList<RouteHost> routeHosts )
+    static byte[] GetSignedData( int seq, DateTime time, IReadOnlyList<RevocationEntry> entries )
     {
         var m = new MemoryStream();
         using( var w = new BinaryWriter( m, Encoding.UTF8, leaveOpen: true ) )
@@ -120,14 +104,6 @@ public sealed class SystemList
                 w.Write( e.Identity.Span );
                 w.Write( e.RevokedAt.Ticks );
                 w.Write( e.NameBanned );
-            }
-            w.Write( routeHosts.Count );
-            foreach( var h in routeHosts )
-            {
-                w.Write( h.RouteName );
-                w.Write( h.Host );
-                w.Write( h.Target != null );
-                if( h.Target != null ) w.Write( h.Target );
             }
         }
         return m.ToArray();
@@ -179,21 +155,8 @@ public sealed class SystemList
                 if( identity.Length != KeyEvent.HashSize || name.Length == 0 ) return false;
                 entries[i] = new RevocationEntry( name, identity, new DateTime( r.ReadInt64(), DateTimeKind.Utc ), r.ReadBoolean() );
             }
-            int hostCount = r.ReadInt32();
-            if( hostCount < 0 || hostCount > MaxEntryCount || hostCount > Remaining( r ) / (2 + 2 + 1) ) return false;
-            var hosts = new RouteHost[hostCount];
-            for( int i = 0; i < hostCount; ++i )
-            {
-                var routeName = r.ReadString();
-                var host = r.ReadString();
-                var target = r.ReadBoolean() ? r.ReadString() : null;
-                if( !PartyDescription.IsValidName( routeName ) || host.Length == 0 ) return false;
-                hosts[i] = new RouteHost( routeName, host, target );
-            }
             if( r.BaseStream.Position != data.Length ) return false;
-            // A host appears once per route name.
-            _ = TransportLayer.RouteHosts.Create( hosts );
-            list = new SystemList( seq, time, entries, hosts, data, signature );
+            list = new SystemList( seq, time, entries, data, signature );
             return true;
         }
         catch( Exception ex ) when( ex is EndOfStreamException or ArgumentException or IOException )
@@ -205,5 +168,5 @@ public sealed class SystemList
     static long Remaining( BinaryReader r ) => r.BaseStream.Length - r.BaseStream.Position;
 
     /// <inheritdoc />
-    public override string ToString() => $"System list #{Seq} ({Entries.Count} revocations, {RouteHosts.Count} route hosts, {Time:O})";
+    public override string ToString() => $"System list #{Seq} ({Entries.Count} revocations, {Time:O})";
 }

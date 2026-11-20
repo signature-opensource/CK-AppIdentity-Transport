@@ -19,9 +19,10 @@ using static CK.Testing.MonitorTestHelper;
 namespace CK.AppIdentity.AuthCenter.Tests;
 
 /// <summary>
-/// An Authentication Center reached without a channel: "Test/$A" &gt; "Test/$Hop" &gt; "Test/$Center". The hop is a remote
-/// of the center (it opens the sessions), A is a remote of the hop only: it anchors the center and designates it by its
-/// full name ("Local:AuthCenterRemote:Party").
+/// An Authentication Center designated by its full name: "Test/$A" &gt; "Test/$Hop" &gt; "Test/$Center", and A &gt; the
+/// center (a star: every party has a link to its center). The hop is a remote of the center (it opens the sessions) and
+/// relays the user's commands to A; the link of A to the center doesn't declare "AuthCenterRemote": A anchors the center
+/// and designates it by its full name ("Local:AuthCenterRemote:Party"), what it asks the center is sent on this link.
 /// </summary>
 [TestFixture]
 public class AnchoredAuthCenterTests
@@ -82,6 +83,8 @@ public class AnchoredAuthCenterTests
         {
             c["FullName"] = "Test/$Center";
             c["Parties:0:PartyName"] = "$Hop";
+            c["Parties:1:PartyName"] = "$A";
+            c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
             c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
@@ -105,12 +108,17 @@ public class AnchoredAuthCenterTests
                 c["FullName"] = "Test/$A";
                 c["Parties:0:PartyName"] = "$Hop";
                 c["Parties:0:Address"] = $"tcp:127.0.0.1:{HopPort}";
+                c["Parties:1:PartyName"] = "$Center";
+                c["Parties:1:Address"] = $"tcp:127.0.0.1:{CenterPort}";
                 c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = anchor?.Invoke( checkpoint ) ?? checkpoint.ToString();
                 c["Local:AuthCenterRemote:Party"] = centerName;
             }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. _routing, typeof( RemoteAuthCenterFeatureDriver ), typeof( AuthCenterProofVerifier )] );
             var chain = new Chain { Center = center, Hop = hop, A = a };
-            for( int i = 0; i < 100 && !a.ApplicationIdentityService.Description.Routes.ContainsKey( AuthCenterFeature.RouteName ); ++i ) await Task.Delay( 100 );
-            a.ApplicationIdentityService.Description.Routes.ShouldContainKey( AuthCenterFeature.RouteName, "The route of the center reaches A through the hop." );
+            // The star: A is connected to the hop and to the center (with a wrong anchor, A doesn't trust the center).
+            foreach( var r in a.ApplicationIdentityService.Remotes.Where( r => anchor == null || r.FullName.Path != centerName ) )
+            {
+                (await r.GetRequiredFeature<CrisChannelFeature>().WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 30 ) )).ShouldBeTrue();
+            }
             return chain;
         }
         catch
@@ -121,11 +129,11 @@ public class AnchoredAuthCenterTests
     }
 
     [Test]
-    public async Task a_party_without_channel_reads_the_tokens_and_checks_the_proofs_with_the_anchored_center_Async()
+    public async Task a_party_reads_the_tokens_and_checks_the_proofs_with_the_anchored_center_Async()
     {
         await using var c = await StartAsync();
         var a = c.A.ApplicationIdentityService;
-        a.Remotes.ShouldNotContain( r => r.FullName.Path == c.CenterName, "No channel from A to the center." );
+        a.Remotes.ShouldContain( r => r.FullName.Path == c.CenterName, "A has a link to its center (a star)." );
         var aCenter = a.GetRequiredFeature<CrisAuthCenter>();
         aCenter.AuthCenter.ShouldBeNull();
         aCenter.AuthCenterFullName.ShouldBe( c.CenterName );
@@ -135,11 +143,11 @@ public class AnchoredAuthCenterTests
         var token = c.Browser.Token.ShouldNotBeNull();
         var binding = c.Browser.Cookies.ShouldNotBeNull().BindingSecretHash;
 
-        // The token is read with the keys of the center, fetched along its route and verified from the anchor.
+        // The token is read with the keys of the center, asked to it and verified from the anchor.
         (await aCenter.ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldNotBeNull().Info.UnsafeActor.ActorName.ShouldBe( "Albert" );
 
         var verifier = new AuthCenterProofVerifier();
-        var lastHop = a.Remotes.Single();
+        var lastHop = a.Remotes.Single( r => r.FullName.Path == c.HopName );
         using var scope = c.A.CreateScopeServices();
         var hopKeys = c.Hop.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>();
         byte[] command = [1, 2, 3];
@@ -157,8 +165,8 @@ public class AnchoredAuthCenterTests
         (await verifier.VerifyAsync( TestHelper.Monitor, scope.ServiceProvider, lastHop, RemoteAuthCenterTests.Routed( c.A, c.HopName, command ), Sealed() ))
             .ShouldNotBeNull().ActualActor.Level.ShouldBe( AuthLevel.Critical );
 
-        // The query that crosses the hops carries the proof encrypted for the center: a hop reads neither the token nor
-        // the binding secret hash.
+        // The query carries the proof encrypted for the center: a hop would read neither the token nor the binding secret
+        // hash.
         var anchored = a.GetRequiredFeature<AnchoredAuthCenter>();
         var nonce = new byte[AuthCenterProofStatement.NonceSize];
         var encrypted = (await anchored.EncryptProofAsync( TestHelper.Monitor, c.AName, nonce, token, binding )).ShouldNotBeNull();
@@ -178,7 +186,7 @@ public class AnchoredAuthCenterTests
         AuthCenterProofStatement.TryDecryptProof( TestHelper.Monitor, centerKeys, encrypted, c.HopName, nonce, DateTime.UtcNow, out _, out _ ).ShouldBeFalse();
 
         // After a logout, the routed proof is refused at once (the center is asked); the direct one is still read here
-        // (the liveness lag accepted without a channel).
+        // (the liveness lag of an anchored center).
         await c.RequestAsync( pocos => pocos.Create<ILogoutSessionCommand>() );
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
@@ -189,7 +197,7 @@ public class AnchoredAuthCenterTests
     }
 
     [Test]
-    public async Task a_party_without_channel_gets_the_encryption_keys_from_the_center_Async()
+    public async Task an_anchoring_party_gets_the_encryption_keys_from_the_center_Async()
     {
         await using var c = await StartAsync();
         var directory = c.A.ApplicationIdentityService.GetRequiredFeature<IPartyEncryptionKeyDirectory>();
@@ -197,7 +205,7 @@ public class AnchoredAuthCenterTests
         var centerKey = (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, c.CenterName )).ShouldNotBeNull();
         centerKey.PublicKey.ShouldBe( c.Center.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( utcNow ).PublicKey.ToArray() );
         // The hop publishes its key in its description: the center vouches for it.
-        for( int i = 0; i < 100 && c.Center.ApplicationIdentityService.Remotes.Single().Description.EncryptionKey == null; ++i ) await Task.Delay( 100 );
+        for( int i = 0; i < 100 && c.Center.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == c.HopName ).Description.EncryptionKey == null; ++i ) await Task.Delay( 100 );
         var hopKey = (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, c.HopName )).ShouldNotBeNull();
         hopKey.PublicKey.ShouldBe( c.Hop.ApplicationIdentityService.GetRequiredFeature<ILocalKeys>().GetEncryptionKey( utcNow ).PublicKey.ToArray() );
         (await directory.GetPartyEncryptionKeyAsync( TestHelper.Monitor, "Test/$Unknown/#Dev" )).ShouldBeNull();
@@ -209,11 +217,10 @@ public class AnchoredAuthCenterTests
         await using var c = await StartAsync( cp => $"{cp.Seq}:{new string( '0', 64 )}" );
         (await c.RequestAsync( pocos => pocos.Create<IWeakLoginCommand>( l => l.WeakActorName = "Albert" ) )).ShouldBeAssignableTo<ISessionResult>()!.Success.ShouldBeTrue();
         var token = c.Browser.Token.ShouldNotBeNull();
-        using( TestHelper.Monitor.CollectTexts( out var logs ) )
-        {
-            (await c.A.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>().ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldBeNull();
-            logs.ShouldContain( l => l.StartsWith( $"The key events received for '{c.CenterName}' don't match its trust anchor" ) );
-        }
+        // The key of the center doesn't match the anchor: A doesn't trust it (no channel), its tokens are refused.
+        (await c.A.ApplicationIdentityService.GetRequiredFeature<CrisAuthCenter>().ReadTokenAsync( TestHelper.Monitor, token, DateTime.UtcNow )).ShouldBeNull();
+        c.A.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == c.CenterName )
+                                      .GetRequiredFeature<TransportFeature>().ConnectionAvailability.ShouldNotBe( ConnectionAvailability.Connected );
     }
 
     static async Task<bool> WaitForAsync( Func<bool> condition, int seconds = 40 )
@@ -244,7 +251,7 @@ public class AnchoredAuthCenterTests
     {
         await using var c = await StartAsync();
         var a = c.A.ApplicationIdentityService;
-        // A party unknown here: the list reaches A (without channel to the center) through the hop.
+        // A party unknown here: the list reaches A (relayed by the center and by the hop).
         var ghost = new byte[KeyEvent.HashSize];
         ghost[0] = 42;
         (await RevokeAsync( c, "Test/$Ghost/#Dev", ghost )).ShouldBe( 1 );
@@ -261,7 +268,7 @@ public class AnchoredAuthCenterTests
         (await WaitForAsync( () => hopToA.RemoteKeys.TrustedEvent == null )).ShouldBeTrue( "The pin of a revoked identity is cleared." );
         var hopIssues = c.Hop.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>();
         (await WaitForAsync( () => hopIssues.Find( c.AName )?.Kind == PeeringIssueKind.Revoked )).ShouldBeTrue();
-        var aToHop = a.Remotes.Single().GetRequiredFeature<TransportFeature>();
+        var aToHop = a.Remotes.Single( r => r.FullName.Path == c.HopName ).GetRequiredFeature<TransportFeature>();
         (await WaitForAsync( () => a.GetRequiredFeature<TransportManagerFeature>().Find( c.HopName )?.Kind == PeeringIssueKind.RevokedByRemote ))
             .ShouldBeTrue( "A reconnects and is refused by the hop." );
         aToHop.ConnectionAvailability.ShouldNotBe( ConnectionAvailability.Connected );
@@ -280,11 +287,11 @@ public class AnchoredAuthCenterTests
     {
         await using var c = await StartAsync();
         var hop = c.Hop.ApplicationIdentityService;
-        var forged = SystemList.Create( hop.GetRequiredFeature<ILocalKeys>(), 7, [], [], DateTime.UtcNow );
+        var forged = SystemList.Create( hop.GetRequiredFeature<ILocalKeys>(), 7, [], DateTime.UtcNow );
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
             (await c.A.ApplicationIdentityService.GetRequiredFeature<AuthCenterSystemList>()
-                                                 .TryAdoptAsync( TestHelper.Monitor, forged.Encode(), c.A.ApplicationIdentityService.Remotes.Single() )).ShouldBeFalse();
+                                                 .TryAdoptAsync( TestHelper.Monitor, forged.Encode(), c.A.ApplicationIdentityService.Remotes.Single( r => r.FullName.Path == c.HopName ) )).ShouldBeFalse();
             logs.ShouldContain( l => l.Contains( $"is not signed by its AuthCenter '{c.CenterName}'" ) );
         }
         SeqOf( c.A ).ShouldBeNull();
@@ -300,7 +307,7 @@ public class AnchoredAuthCenterTests
         ghost[0] = 42;
         (await RevokeAsync( c, "Test/$Ghost/#Dev", ghost )).ShouldBe( 1 );
         (await WaitForAsync( () => SeqOf( c.Hop ) == 1 && SeqOf( c.A ) == 1 )).ShouldBeTrue();
-        // The pull reaches the center: on the channel (the hop), along the route (A). Up to date: nothing is adopted.
+        // The pull reaches the center: on the channel (the hop), as a routed command on its link (A). Up to date: nothing is adopted.
         using( TestHelper.Monitor.CollectTexts( out var logs ) )
         {
             (await hopRevocations.PullAsync( TestHelper.Monitor )).ShouldBeFalse();

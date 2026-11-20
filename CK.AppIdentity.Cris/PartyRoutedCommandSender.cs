@@ -3,13 +3,15 @@ using CK.Cris;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace CK.AppIdentity.Cris;
 
 /// <summary>
-/// Sends a command to a party of the System that is not a remote, in a <see cref="IPartyRoutedCommand"/>: toward the
-/// host of a route, or along an explicit path. The local party is the originating party: the caller party of the command
+/// Sends a command to a party of the System that is not a remote, in a <see cref="IPartyRoutedCommand"/>: along an
+/// explicit path (a System is a star around its Authentication Center: [the origin, the hub, the destination], see
+/// <see cref="IPartyRelay"/>). The local party is the originating party: the caller party of the command
 /// on the destination. The command is serialized here (<see cref="IPartyRoutedCommand.SealedCommand"/>), the
 /// <see cref="ICrisCallEnvelopeContributor"/> fill its envelope (the user's proof), the optional
 /// <see cref="ICrisRoutedCommandSeal"/> seals it, the
@@ -33,6 +35,7 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
     readonly PocoDirectory _pocoDirectory;
     readonly IEnumerable<ICrisCallEnvelopeContributor> _contributors;
     readonly ICrisRoutedCommandSeal? _seal;
+    readonly IPartyRelay? _relay;
 
     /// <summary>
     /// Initializes a new sender.
@@ -40,41 +43,65 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
     /// <param name="pocoDirectory">The poco directory.</param>
     /// <param name="contributors">The contributors to the envelope.</param>
     /// <param name="seal">The optional seal of the routed commands.</param>
-    public PartyRoutedCommandSender( PocoDirectory pocoDirectory, IEnumerable<ICrisCallEnvelopeContributor> contributors, ICrisRoutedCommandSeal? seal = null )
+    /// <param name="relay">The optional hub of the System (see <see cref="IPartyRelay"/>).</param>
+    public PartyRoutedCommandSender( PocoDirectory pocoDirectory,
+                                     IEnumerable<ICrisCallEnvelopeContributor> contributors,
+                                     ICrisRoutedCommandSeal? seal = null,
+                                     IPartyRelay? relay = null )
     {
         _pocoDirectory = pocoDirectory;
         _contributors = contributors;
         _seal = seal;
+        _relay = relay;
     }
 
     /// <summary>
-    /// Sends a command to a party along a route of the <paramref name="origin"/> (see <see cref="PartyDescription.Routes"/>)
-    /// that this party hosts. Any party of the System can announce a route: when the route of the origin or of a hop leads
-    /// to another party, the command is refused, never delivered to that party.
+    /// Gets the path from a local party to a party of its System: [origin, destination] when the destination is a remote
+    /// of the origin, [origin, hub, destination] when it is not but the origin has a hub (see <see cref="IPartyRelay"/>),
+    /// null otherwise (and when the destination is the origin itself).
+    /// </summary>
+    /// <param name="origin">The originating local party.</param>
+    /// <param name="destination">The full name of the destination.</param>
+    /// <returns>The path or null.</returns>
+    public IReadOnlyList<string>? GetPath( ILocalParty origin, string destination )
+    {
+        Throw.CheckNotNullArgument( origin );
+        Throw.CheckNotNullOrWhiteSpaceArgument( destination );
+        if( destination == origin.FullName ) return null;
+        if( origin.Remotes.Any( r => r.FullName == destination && !r.IsDestroyed ) ) return [origin.FullName, destination];
+        var hub = _relay?.GetHub( origin );
+        return hub != null ? [origin.FullName, hub.FullName, destination] : null;
+    }
+
+    /// <summary>
+    /// Sends a command to a party of the System: directly when it is a remote of the origin, through the hub of the System
+    /// otherwise (see <see cref="GetPath"/>). Fails (an <see cref="ICrisResultError"/>) when there is no path.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the sending scope (for the envelope contributors).</param>
     /// <param name="origin">The originating local party.</param>
     /// <param name="command">The command to execute on the destination.</param>
-    /// <param name="routeName">The route name.</param>
-    /// <param name="destination">The full name of the party that must host the route: the destination.</param>
+    /// <param name="destination">The full name of the destination.</param>
     /// <param name="timeout">The maximal time to wait. Defaults to the <see cref="ChannelCrisRemoteDispatcher.Timeout"/>.</param>
     /// <returns>The result of the command, or a <see cref="ICrisResultError"/>.</returns>
-    public Task<object?> SendAsync( IActivityMonitor monitor,
-                                    IServiceProvider services,
-                                    ILocalParty origin,
-                                    IAbstractCommand command,
-                                    string routeName,
-                                    string destination,
-                                    TimeSpan? timeout = null )
+    public Task<object?> SendToAsync( IActivityMonitor monitor,
+                                      IServiceProvider services,
+                                      ILocalParty origin,
+                                      IAbstractCommand command,
+                                      string destination,
+                                      TimeSpan? timeout = null )
     {
-        Throw.CheckNotNullOrWhiteSpaceArgument( routeName );
-        Throw.CheckNotNullOrWhiteSpaceArgument( destination );
-        return DoSendAsync( monitor, services, origin, command, r => { r.RouteName = routeName; r.Destination = destination; }, timeout );
+        var path = GetPath( origin, destination );
+        if( path == null )
+        {
+            return Task.FromResult<object?>( Error( monitor, $"Unable to send '{command.CrisPocoModel.PocoName}' from '{origin.FullName}' to '{destination}': it is neither a remote nor reachable through a hub." ) );
+        }
+        return SendAlongPathAsync( monitor, services, origin, command, path, timeout );
     }
 
     /// <summary>
-    /// Sends a command along an explicit path: for an answer, the way back to the party a request came from.
+    /// Sends a command along an explicit path: [the origin, the hub, the destination], or the way back to the party a
+    /// request came from.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
     /// <param name="services">The services of the sending scope (for the envelope contributors).</param>
@@ -132,8 +159,8 @@ public sealed class PartyRoutedCommandSender : ISingletonAutoService
         object? resultState = null;
         if( _seal != null )
         {
-            // The destination: the last party of the path, or the expected host of the route (checked by TryGetNextHop).
-            var destination = routed.Path.Count > 0 ? routed.Path[^1] : routed.Destination!;
+            // The destination: the last party of the path.
+            var destination = routed.Path[^1];
             (bool success, resultState) = await _seal.SealAsync( monitor, services, origin, destination, command, routed, envelope ).ConfigureAwait( false );
             if( !success )
             {

@@ -6,16 +6,14 @@ using System.Collections.Generic;
 namespace CK.AppIdentity.Cris;
 
 /// <summary>
-/// Carries a command (its <see cref="SealedCommand"/>) to a party of the System that is not a remote of the sender, along a route: each hop
+/// Carries a command (its <see cref="SealedCommand"/>) to a party of the System that is not a remote of the sender, along a path: each hop
 /// forwards it to the next one (its <see cref="ICommandTargetParty.TargetPartyFullName"/> is the next hop, so the
 /// channel's reception checks apply at each hop), only the destination executes the inner command, and its result comes
 /// back by the chain of calls. Use the <see cref="PartyRoutedCommandSender"/> to send one.
 /// <para>
-/// The destination is either a named party reached along a route (<see cref="RouteName"/> and <see cref="Destination"/>:
-/// each hop takes its next hop from its own <see cref="PartyDescription.Routes"/> and refuses the command when this route
-/// is not hosted by the destination), or the last party of an explicit <see cref="Path"/> (for an answer, the way back to
-/// the party a request came from). A route is never followed to whoever hosts it: any party of the System can announce a
-/// route, so the sender names the party it expects at its end.
+/// The destination is the last party of the <see cref="Path"/>. A System is a star around its Authentication Center: a
+/// path is [the origin, the hub, the destination] (see <see cref="IPartyRelay"/>), or the way back to the party a request
+/// came from. There are no announced routes: nothing to hijack, only the hub relays and it knows every identity.
 /// </para>
 /// <para>
 /// The originating party (the first of <see cref="Via"/>) is the caller party of the inner command: the
@@ -44,20 +42,7 @@ public interface IPartyRoutedCommand : ICommand<object?>, ICommandTargetParty
     byte[]? SealedCommand { get; set; }
 
     /// <summary>
-    /// Gets or sets the name of the route whose host is the <see cref="Destination"/>. Null when the <see cref="Path"/> is
-    /// used.
-    /// </summary>
-    string? RouteName { get; set; }
-
-    /// <summary>
-    /// Gets or sets the full name of the destination when the <see cref="RouteName"/> is used: each hop checks that its
-    /// route of this name is hosted by this party. Null when the <see cref="Path"/> is used.
-    /// </summary>
-    string? Destination { get; set; }
-
-    /// <summary>
-    /// Gets the full names of the parties from the originating one to the destination, both included. Empty when the
-    /// <see cref="RouteName"/> is used.
+    /// Gets the full names of the parties from the originating one to the destination, both included.
     /// </summary>
     IList<string> Path { get; }
 

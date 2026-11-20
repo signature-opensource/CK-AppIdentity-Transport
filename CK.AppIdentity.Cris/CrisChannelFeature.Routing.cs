@@ -164,6 +164,11 @@ public sealed partial class CrisChannelFeature
         }
     }
 
+    /// <summary>
+    /// The maximal number of parties a routed command goes through (a star needs 3: the origin, the hub, the destination).
+    /// </summary>
+    public const int MaxPathLength = 16;
+
     // Each hop vouches for its predecessor only: the last of Via is the sender. No loop, no nesting.
     static string? CheckChain( IRemoteParty sender, IPartyRoutedCommand routed )
     {
@@ -175,7 +180,7 @@ public sealed partial class CrisChannelFeature
         {
             return $"its last hop is '{last}', not the remote that sent it ('{sender.FullName}').";
         }
-        if( routed.Via.Count >= PartyRoute.MaxLength ) return $"it went through {routed.Via.Count} parties.";
+        if( routed.Via.Count >= MaxPathLength ) return $"it went through {routed.Via.Count} parties.";
         if( routed.Via.Distinct( StringComparer.Ordinal ).Count() != routed.Via.Count
             || routed.Via.Any( h => h == local.FullName.Path ) )
         {
@@ -193,8 +198,7 @@ public sealed partial class CrisChannelFeature
 
     /// <summary>
     /// Gets the next hop of a routed command on a local party (the routed command's <see cref="IPartyRoutedCommand.Via"/>
-    /// doesn't contain it yet): its route of the <see cref="IPartyRoutedCommand.RouteName"/>, that must be hosted by the
-    /// <see cref="IPartyRoutedCommand.Destination"/>, or the party after it in the <see cref="IPartyRoutedCommand.Path"/>.
+    /// doesn't contain it yet): the party after it in the <see cref="IPartyRoutedCommand.Path"/>.
     /// </summary>
     /// <param name="local">The local party.</param>
     /// <param name="routed">The routed command.</param>
@@ -205,28 +209,10 @@ public sealed partial class CrisChannelFeature
     {
         next = null;
         error = null;
-        if( (routed.RouteName == null) == (routed.Path.Count == 0)
-            || (routed.RouteName == null) != (routed.Destination == null) )
+        if( routed.Path.Count == 0 )
         {
-            error = "it needs a RouteName and a Destination, or a Path.";
+            error = "it needs a Path.";
             return false;
-        }
-        if( routed.RouteName != null )
-        {
-            if( !local.Description.Routes.TryGetValue( routed.RouteName, out var routes ) )
-            {
-                error = $"'{local.FullName}' has no route '{routed.RouteName}'.";
-                return false;
-            }
-            // A route is followed only to the expected party: the one of the name that leads to it.
-            var route = routes.FirstOrDefault( r => r.Host == routed.Destination );
-            if( route == null )
-            {
-                error = $"the route '{routed.RouteName}' of '{local.FullName}' doesn't lead to '{routed.Destination}' (its hosts: {string.Join( ", ", routes.Select( r => $"'{r.Host}'" ) )}).";
-                return false;
-            }
-            next = route.NextHop;
-            return true;
         }
         int i = routed.Via.Count;
         if( i >= routed.Path.Count

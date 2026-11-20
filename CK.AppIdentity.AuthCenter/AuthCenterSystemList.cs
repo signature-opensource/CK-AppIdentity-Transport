@@ -18,17 +18,12 @@ namespace CK.AppIdentity.AuthCenter;
 /// <see cref="ILocalKeys.SetRevocationsAsync"/>: the revoked remotes are cut) and relayed to its remotes of the System:
 /// when a channel becomes available, and when a newer list is adopted (from any remote: <see cref="ISystemListCommand"/>).
 /// <para>
-/// Its <see cref="RouteHosts"/> are the hosts authorized for the routes of the local party (see
-/// <see cref="AuthCenterRouteHostAuthority"/>): the ones of the list, and the Authentication Center for its own
-/// "AuthCenter" route (implicit: the list itself is pulled along it). Before any list, only this route is authorized.
-/// </para>
-/// <para>
 /// A list is adopted only when its sequence number is greater than the one held and when its signature is the
 /// Authentication Center's (verified with its keys, pinned or anchored): a hop can withhold a list, not forge one.
 /// </para>
 /// <para>
 /// The freshness: a party that is not the Authentication Center also asks it its current list every
-/// <see cref="PullPeriod"/> (on the channel or along its route: <see cref="IGetSystemListQCommand"/>), every
+/// <see cref="PullPeriod"/> (on its channel to it: <see cref="IGetSystemListQCommand"/>), every
 /// <see cref="RetryPeriod"/> while it can't be obtained, and raises a
 /// <see cref="ActivityMonitor.Tags.SecurityCritical"/> alarm when the signature of the list it holds expired (the
 /// Authentication Center signs it again before: an expired one means that nothing newer reached this party).
@@ -57,9 +52,7 @@ public sealed class AuthCenterSystemList
     // On the Authentication Center: serializes the signing of the lists (read the current one, compute, sign, adopt).
     readonly SemaphoreSlim _updateLock;
     readonly Func<IActivityMonitor, Task<object?>>? _pull;
-    readonly Func<IActivityMonitor, Task>? _onRouteHostsChanged;
     SystemList? _current;
-    RouteHosts _routeHosts;
     // The stored list whose signer is not known yet at setup: verified (with the key events) by the first heartbeat.
     byte[]? _stored;
     TransportManagerFeature? _transport;
@@ -68,95 +61,18 @@ public sealed class AuthCenterSystemList
     bool _detached;
     readonly object _detachLock = new object();
 
-    AuthCenterSystemList( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull, Func<IActivityMonitor, Task>? onRouteHostsChanged )
+    AuthCenterSystemList( CrisAuthCenter center, Func<IActivityMonitor, Task<object?>>? pull )
     {
         _center = center;
         _pull = pull;
-        _onRouteHostsChanged = onRouteHostsChanged;
         _adoptLock = new SemaphoreSlim( 1, 1 );
         _updateLock = new SemaphoreSlim( 1, 1 );
-        _routeHosts = GetRouteHosts( center, null );
     }
 
     /// <summary>
     /// Gets the newest list verified here, null when none.
     /// </summary>
     public SystemList? Current => _current;
-
-    /// <summary>
-    /// Gets the hosts authorized for the routes of the local party: the ones of the <see cref="Current"/> list, and the
-    /// Authentication Center for its "AuthCenter" route.
-    /// </summary>
-    public RouteHosts RouteHosts => _routeHosts;
-
-    /// <summary>
-    /// Gets the callback of <see cref="Plug"/> that has the transport compute the routes of a local party again (nothing
-    /// when there is no transport).
-    /// </summary>
-    /// <param name="services">The root services.</param>
-    /// <param name="local">The local party.</param>
-    /// <returns>The callback.</returns>
-    public static Func<IActivityMonitor, Task> OnRouteHostsChanged( IServiceProvider services, ILocalParty local )
-    {
-        Throw.CheckNotNullArgument( services );
-        Throw.CheckNotNullArgument( local );
-        return m => services.GetService( typeof( TransportFeatureDriver ) ) is TransportFeatureDriver t
-                        ? t.OnRouteHostsChangedAsync( m, local )
-                        : Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Finds the target of a route that a host announces, when the local party sees the host's description: the host is
-    /// the local party itself, or one of its remotes.
-    /// </summary>
-    /// <param name="local">The local party (the Authentication Center).</param>
-    /// <param name="routeName">The route name.</param>
-    /// <param name="host">The full name of the host.</param>
-    /// <param name="seen">True when the host's description is seen and announces the route.</param>
-    /// <returns>The target (null when the route has none, or is not seen).</returns>
-    public static string? FindAnnouncedTarget( ILocalParty local, string routeName, string host, out bool seen )
-    {
-        Throw.CheckNotNullArgument( local );
-        var description = host == local.FullName.Path
-                            ? local.Description
-                            : local.Remotes.FirstOrDefault( r => r.FullName.Path == host )?.Description;
-        var route = description?.FindRoute( routeName, host );
-        seen = route != null;
-        return route?.Target;
-    }
-
-    /// <summary>
-    /// On the Authentication Center: authorizes a host for routes (the ones it doesn't host yet), with the target it
-    /// announces when it is seen (see <see cref="FindAnnouncedTarget"/>; the Authentication Center keeps it up to date).
-    /// </summary>
-    /// <param name="monitor">The monitor to use.</param>
-    /// <param name="host">The full name of the host.</param>
-    /// <param name="routeNames">The route names.</param>
-    /// <returns>The list.</returns>
-    public Task<SystemList?> AuthorizeAsync( IActivityMonitor monitor, string host, IEnumerable<string> routeNames )
-    {
-        Throw.CheckNotNullArgument( host );
-        Throw.CheckNotNullArgument( routeNames );
-        var names = routeNames.Where( n => PartyDescription.IsValidName( n ) && n != AuthCenterFeature.RouteName ).Distinct( StringComparer.Ordinal ).ToList();
-        return UpdateAsync( monitor, ( entries, hosts ) =>
-        {
-            var h = hosts.ToList();
-            foreach( var name in names )
-            {
-                if( !h.Any( x => x.RouteName == name && x.Host == host ) )
-                {
-                    h.Add( new RouteHost( name, host, FindAnnouncedTarget( Local, name, host, out _ ) ) );
-                }
-            }
-            return (entries, h);
-        } );
-    }
-
-    static RouteHosts GetRouteHosts( CrisAuthCenter center, SystemList? list )
-    {
-        var implicitHost = new RouteHost( AuthCenterFeature.RouteName, center.AuthCenterFullName, null );
-        return RouteHosts.Create( (list?.RouteHosts ?? []).Where( h => h.RouteName != AuthCenterFeature.RouteName ).Append( implicitHost ) );
-    }
 
     /// <summary>
     /// Gets the Authentication Center.
@@ -184,17 +100,13 @@ public sealed class AuthCenterSystemList
     /// Sends an <see cref="IGetSystemListQCommand"/> to the Authentication Center and returns its result (null for the
     /// Authentication Center itself): the periodic pull.
     /// </param>
-    /// <param name="onRouteHostsChanged">
-    /// Called when the <see cref="RouteHosts"/> changed (the transport computes the routes of the local party again).
-    /// </param>
     /// <returns>The feature.</returns>
     public static async Task<AuthCenterSystemList> PlugAsync( IActivityMonitor monitor,
                                                               CrisAuthCenter center,
-                                                              Func<IActivityMonitor, Task<object?>>? pull,
-                                                              Func<IActivityMonitor, Task>? onRouteHostsChanged )
+                                                              Func<IActivityMonitor, Task<object?>>? pull )
     {
         var local = center.Owner;
-        var f = await CreateAsync( monitor, center, pull, onRouteHostsChanged, local.LocalFileStore.TryReadAllBytes( StoreFilePath( local ) ) ).ConfigureAwait( false );
+        var f = await CreateAsync( monitor, center, pull, local.LocalFileStore.TryReadAllBytes( StoreFilePath( local ) ) ).ConfigureAwait( false );
         local.AddFeature( f );
         local.ApplicationIdentityService.Heartbeat.Async += f.OnHeartbeatAsync;
         // The transport exists once the initialization is done: the list is then sent when a channel becomes available.
@@ -219,10 +131,9 @@ public sealed class AuthCenterSystemList
     internal static async Task<AuthCenterSystemList> CreateAsync( IActivityMonitor monitor,
                                                                   CrisAuthCenter center,
                                                                   Func<IActivityMonitor, Task<object?>>? pull,
-                                                                  Func<IActivityMonitor, Task>? onRouteHostsChanged,
                                                                   byte[]? bytes )
     {
-        var f = new AuthCenterSystemList( center, pull, onRouteHostsChanged );
+        var f = new AuthCenterSystemList( center, pull );
         var local = center.Owner;
         if( bytes != null )
         {
@@ -232,7 +143,6 @@ public sealed class AuthCenterSystemList
                 if( verdict == SignatureVerdict.Valid )
                 {
                     f._current = list;
-                    f._routeHosts = GetRouteHosts( center, list );
                     await keys.SetRevocationsAsync( monitor, list.Entries ).ConfigureAwait( false );
                     monitor.Info( $"{list} of '{local}' is loaded." );
                 }
@@ -405,19 +315,15 @@ public sealed class AuthCenterSystemList
     }
 
     /// <summary>
-    /// On the Authentication Center: signs a new list (the next sequence number) with its revocations and its route hosts
-    /// computed from the current ones, and adopts it (it is relayed to every party of the System). Nothing is signed when
-    /// they don't change. The updates are serialized: <paramref name="update"/> always sees the list of the previous one.
-    /// <para>
-    /// A revoked party is no more an authorized host of any route: the route hosts whose name is banned by an entry of the
-    /// new list are dropped, whatever <paramref name="update"/> returns.
-    /// </para>
+    /// On the Authentication Center: signs a new list (the next sequence number) with its revocations computed from the
+    /// current ones, and adopts it (it is relayed to every party of the System). Nothing is signed when they don't change.
+    /// The updates are serialized: <paramref name="update"/> always sees the list of the previous one.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="update">Computes the new revocations and route hosts from the current ones.</param>
+    /// <param name="update">Computes the new revocations from the current ones.</param>
     /// <returns>The new list, the current one when nothing changed (null when there is none).</returns>
     public async Task<SystemList?> UpdateAsync( IActivityMonitor monitor,
-                                                Func<IReadOnlyList<RevocationEntry>, IReadOnlyList<RouteHost>, (IReadOnlyList<RevocationEntry> Entries, IReadOnlyList<RouteHost> RouteHosts)> update )
+                                                Func<IReadOnlyList<RevocationEntry>, IReadOnlyList<RevocationEntry>> update )
     {
         Throw.CheckState( "Only the Authentication Center signs its list.", _center.AuthCenter == Local );
         Throw.CheckNotNullArgument( update );
@@ -426,15 +332,9 @@ public sealed class AuthCenterSystemList
         {
             var current = _current;
             IReadOnlyList<RevocationEntry> entries = current?.Entries ?? [];
-            IReadOnlyList<RouteHost> hosts = current?.RouteHosts ?? [];
-            var (newEntries, newHosts) = update( entries, hosts );
-            var banned = newEntries.Where( e => e.NameBanned ).Select( e => e.FullName ).ToHashSet( StringComparer.Ordinal );
-            var sortedHosts = newHosts.Where( h => !banned.Contains( h.Host ) )
-                                      .OrderBy( h => h.RouteName, StringComparer.Ordinal )
-                                      .ThenBy( h => h.Host, StringComparer.Ordinal )
-                                      .ToList();
-            if( newEntries.SequenceEqual( entries ) && sortedHosts.SequenceEqual( hosts ) ) return current;
-            var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, sortedHosts, _center.UtcNow );
+            var newEntries = update( entries );
+            if( newEntries.SequenceEqual( entries ) ) return current;
+            var list = SystemList.Create( Local.GetRequiredFeature<ILocalKeys>(), (current?.Seq ?? 0) + 1, newEntries, _center.UtcNow );
             return await AdoptOwnAsync( monitor, list ).ConfigureAwait( false );
         }
         finally
@@ -470,7 +370,7 @@ public sealed class AuthCenterSystemList
             var current = _current;
             var keys = Local.GetRequiredFeature<ILocalKeys>();
             if( current == null || current.Signature.Expiration - utcNow > TimeSpan.FromDays( keys.MaxSignatureDays ) / 2 ) return false;
-            var list = SystemList.Create( keys, current.Seq + 1, current.Entries, current.RouteHosts, utcNow );
+            var list = SystemList.Create( keys, current.Seq + 1, current.Entries, utcNow );
             await AdoptOwnAsync( monitor, list ).ConfigureAwait( false );
             return true;
         }
@@ -512,15 +412,9 @@ public sealed class AuthCenterSystemList
         {
             if( _current != null && list.Seq <= _current.Seq ) return false;
             Local.LocalFileStore.WriteAtomically( FilePath, s => s.Write( encoded ) );
-            var previousHosts = _current?.RouteHosts ?? [];
             _current = list;
-            _routeHosts = GetRouteHosts( _center, list );
             monitor.Info( $"{list} of the AuthCenter '{_center.AuthCenterFullName}' is adopted by '{Local}'{(from != null ? $" (from '{from}')" : "")}." );
             await Local.GetRequiredFeature<ILocalKeys>().SetRevocationsAsync( monitor, list.Entries ).ConfigureAwait( false );
-            if( _onRouteHostsChanged != null && !previousHosts.SequenceEqual( list.RouteHosts ) )
-            {
-                await _onRouteHostsChanged( monitor ).ConfigureAwait( false );
-            }
             foreach( var r in Local.Remotes )
             {
                 if( r != from

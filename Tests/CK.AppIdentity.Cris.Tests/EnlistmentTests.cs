@@ -17,7 +17,8 @@ namespace CK.AppIdentity.Cris.Tests;
 
 /// <summary>
 /// The approval of a pending party (CK.AppIdentity.Enlistment): "Test/$Sender" (A) hosts the approval page,
-/// "Test/$Listener" (B) is connected to it and holds the pending approval of "Test/$D", an unknown key.
+/// "Test/$Listener" (B) is connected to it and holds the pending approval of "Test/$D", an unknown key. There is no
+/// Authentication Center (no hub): A asks its connected remotes what they hold.
 /// </summary>
 [TestFixture]
 public class EnlistmentTests
@@ -53,6 +54,10 @@ public class EnlistmentTests
                                       typeof( IPartyApprovalStatement ),
                                       typeof( IGetPendingApprovalsQCommand ),
                                       typeof( IPendingApproval ),
+                                      typeof( IPartyInstance ),
+                                      typeof( IGetHeldEnlistmentQCommand ),
+                                      typeof( IHeldEnlistment ),
+                                      typeof( EnlistmentItems ),
                                       typeof( PartyApprovalHandlers )];
 
     static readonly AuthenticationInfo _operator = AuthenticationInfo.CreateRestored( new ActorInfo( 3712, "Operator", AuthLevel.Critical ),
@@ -70,6 +75,19 @@ public class EnlistmentTests
             await Task.Delay( 100 );
         }
         return null;
+    }
+
+    // The approval page's query, handled on A.
+    static async Task<IPendingApproval[]> PendingAsync( RunningApplication host )
+    {
+        await using var scope = host.CreateAsyncScopeServices();
+        var pending = await host.Services.GetRequiredService<PartyApprovalHandlers>()
+                                         .HandleAsync( TestHelper.Monitor,
+                                                       host.PocoDirectory.Create<IGetPendingApprovalsQCommand>(),
+                                                       new CurrentLocalParty( host.ApplicationIdentityService ),
+                                                       scope.ServiceProvider,
+                                                       host.PocoDirectory );
+        return pending.ToArray();
     }
 
     // The approval page's command, handled on A by the operator.
@@ -96,7 +114,7 @@ public class EnlistmentTests
     {
         await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                                          c => c["Local:PublicUrl"] = "https://admin.example.com",
-                                                                         [.. _common, typeof( RouteTests.ApprovalPageFeatureDriver )],
+                                                                         [.. _common, typeof( EnlistmentPageTests.ApprovalPageFeatureDriver )],
                                                                          listenerConfiguration: c =>
                                                                          {
                                                                              c["Parties:1:PartyName"] = "$D";
@@ -107,7 +125,6 @@ public class EnlistmentTests
         (await a.CrisChannel.WaitForAcceptedCommandsAsync( TimeSpan.FromSeconds( 10 ) )).ShouldBeTrue();
         string aName = a.ApplicationIdentityService.FullName;
         string bName = b.ApplicationIdentityService.FullName;
-        var route = TransportFeatureDriver.EnlistmentRouteName;
 
         // D trusts B on first contact, B doesn't trust D: B must approve D's key.
         await using var d = await RunningApplication.CreateAsync( TestHelper.Monitor,
@@ -115,13 +132,11 @@ public class EnlistmentTests
                                                                   c => c["FullName"] = "Test/$D",
                                                                   RunningApplication.WithHeartBeat() );
         string dName = d.ApplicationIdentityService.FullName;
-        (await WaitForAsync( () => a.ApplicationIdentityService.Description.Collected.TryGetValue( route, out var items ) && items.Length == 1 ? "reached" : null ))
-            .ShouldNotBeNull( "The pending approval reached the host." );
+        (await WaitForAsync( () => TransportFeatureDriver.GetHeldPendingApprovals( b.ApplicationIdentityService ).Count == 1 ? "held" : null ))
+            .ShouldNotBeNull( "B holds the pending approval." );
 
-        // The approval page lists the pending approval: D waits on B (the host doesn't need to follow a link).
-        var handlers = a.Services.GetRequiredService<PartyApprovalHandlers>();
-        var aLocal = new CurrentLocalParty( a.ApplicationIdentityService );
-        var pending = handlers.Handle( a.PocoDirectory.Create<IGetPendingApprovalsQCommand>(), aLocal, a.PocoDirectory ).ShouldHaveSingleItem();
+        // The approval page lists the pending approval (asked to B): D waits on B (the host doesn't need to follow a link).
+        var pending = (await PendingAsync( a )).ShouldHaveSingleItem();
         pending.PartyFullName.ShouldBe( dName );
         pending.HolderFullName.ShouldBe( bName );
         pending.Kind.ShouldBe( "Local" );
@@ -156,7 +171,8 @@ public class EnlistmentTests
         a.Services.GetRequiredService<PartyApprovalHandlers>().Validate( collector, a.PocoDirectory.Create<IApprovePartyCommand>(), _operator );
         collector.ErrorCount.ShouldBe( 0 );
 
-        // On the holder: only from the host of its route, only with the host's valid signature (A is a direct remote).
+        // On the holder (no Authentication Center): only from a direct remote that hosts the approval page, only with its
+        // valid signature.
         var fingerprint = b.ApplicationIdentityService.GetRequiredFeature<TransportManagerFeature>().GetPeeringIssues().Single( i => i.FullName == dName ).RemoteKeyFingerprintForApproval!;
         IApprovePendingPartyCommand Forged() => b.PocoDirectory.Create<IApprovePendingPartyCommand>( c =>
         {
@@ -175,7 +191,7 @@ public class EnlistmentTests
         var holder = b.Services.GetRequiredService<PartyApprovalHandlers>();
         var bLocal = new CurrentLocalParty( b.ApplicationIdentityService );
         (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( "Test/$Other" ) ))
-              .ShouldBe( PartyApprovalStatus.Refused, "Not the host of the route." );
+              .ShouldBe( PartyApprovalStatus.Refused, "Not an approval page it knows." );
         (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None ))
               .ShouldBe( PartyApprovalStatus.Refused, "No caller party." );
         (await holder.HandleAsync( TestHelper.Monitor, Forged(), bLocal, AuthenticationInfo.None.WithCallerParty( aName ) ))
@@ -186,8 +202,8 @@ public class EnlistmentTests
         outcome.Status.ShouldBe( PartyApprovalStatus.Approved );
         (await WaitForAsync( () => d.ApplicationIdentityService.Remotes.Single().GetRequiredFeature<TransportFeature>().ConnectionAvailability == ConnectionAvailability.Connected ? "connected" : null ))
             .ShouldNotBeNull( "D's key is trusted by B: they connect." );
-        (await WaitForAsync( () => a.ApplicationIdentityService.Description.Collected.Count == 0 ? "gone" : null )).ShouldNotBeNull();
+        (await WaitForAsync( () => TransportFeatureDriver.GetHeldPendingApprovals( b.ApplicationIdentityService ).Count == 0 ? "gone" : null )).ShouldNotBeNull();
         (await ApproveAsync( a, dName, code )).ShouldBeEmpty( "Nothing to approve anymore." );
-        handlers.Handle( a.PocoDirectory.Create<IGetPendingApprovalsQCommand>(), aLocal, a.PocoDirectory ).ShouldBeEmpty();
+        (await PendingAsync( a )).ShouldBeEmpty();
     }
 }

@@ -57,24 +57,12 @@ public static class PartyDescriptionCodec
         }
         w.WriteInt32( description.Roles.Length );
         foreach( var role in description.Roles ) w.WriteString( role );
-        // The data announcements and the routes: added at the end of the block, an older reader skips them.
+        // The data announcements: added at the end of the block, an older reader skips them.
         w.WriteInt32( description.Data.Count );
         foreach( var (name, value) in description.Data )
         {
             w.WriteString( name );
             w.WriteString( value );
-        }
-        w.WriteInt32( description.Routes.Sum( r => r.Value.Length ) );
-        foreach( var (name, routes) in description.Routes )
-        {
-            foreach( var route in routes )
-            {
-                w.WriteString( name );
-                w.WriteBool( route.Target != null );
-                if( route.Target != null ) w.WriteString( route.Target );
-                w.WriteInt32( route.Path.Length );
-                foreach( var p in route.Path ) w.WriteString( p );
-            }
         }
         // The encryption key: added at the end of the block, an older reader skips it.
         var key = description.EncryptionKey;
@@ -85,19 +73,6 @@ public static class PartyDescriptionCodec
             w.WriteBytes( key.PublicKey.Span );
             w.WriteSmallUInt32( (uint)key.Signature.Length );
             w.WriteBytes( key.Signature.Span );
-        }
-        // The collected items: added at the end of the block, an older reader skips them.
-        w.WriteInt32( description.Collected.Count );
-        foreach( var (name, items) in description.Collected )
-        {
-            w.WriteString( name );
-            w.WriteInt32( items.Length );
-            foreach( var item in items )
-            {
-                w.WriteString( item.Value );
-                w.WriteInt32( item.Path.Length );
-                foreach( var p in item.Path ) w.WriteString( p );
-            }
         }
         w.EndBlock( d );
     }
@@ -184,38 +159,6 @@ public static class PartyDescriptionCodec
                 else data.Add( new KeyValuePair<string, string>( name, value ) );
             }
         }
-        var routes = new Dictionary<string, List<PartyRoute>>( StringComparer.Ordinal );
-        if( !d.IsEnd )
-        {
-            int routeCount = d.ReadInt32();
-            Throw.CheckData( "Invalid route count.", routeCount >= 0 );
-            for( int i = 0; i < routeCount; ++i )
-            {
-                var name = d.ReadString();
-                var target = d.ReadBool() ? d.ReadString() : null;
-                int pathLength = d.ReadInt32();
-                Throw.CheckData( "Invalid route length.", pathLength >= 0 && pathLength <= PartyRoute.MaxLength );
-                var path = new string[pathLength];
-                for( int j = 0; j < pathLength; ++j ) path[j] = d.ReadString();
-                if( !PartyDescription.IsValidName( name ) )
-                {
-                    error ??= $"Invalid route name '{name}'.";
-                }
-                else if( pathLength == 0 || path.Any( string.IsNullOrWhiteSpace ) || path.Distinct( StringComparer.Ordinal ).Count() != pathLength )
-                {
-                    error ??= $"Invalid path of the route '{name}': 1 to {PartyRoute.MaxLength} distinct full names are expected.";
-                }
-                else
-                {
-                    if( !routes.TryGetValue( name, out var named ) ) routes.Add( name, named = new List<PartyRoute>() );
-                    named.Add( new PartyRoute( target, path ) );
-                }
-            }
-            foreach( var (name, named) in routes )
-            {
-                if( !PartyDescription.TryNormalizeRoutes( name, named, out _, out var routeError ) ) error ??= routeError;
-            }
-        }
         // An older writer doesn't write the encryption key.
         PartyEncryptionKey? encryptionKey = null;
         if( !d.IsEnd && d.ReadBool() )
@@ -225,43 +168,12 @@ public static class PartyDescriptionCodec
             if( publicKey.Length == 0 || signature.Length == 0 ) error ??= "Invalid empty encryption key.";
             else encryptionKey = new PartyEncryptionKey( publicKey, signature );
         }
-        // An older writer doesn't write the collected items.
-        var collected = new List<KeyValuePair<string, IEnumerable<CollectedItem>>>();
-        if( !d.IsEnd )
-        {
-            int nameCount = d.ReadInt32();
-            Throw.CheckData( "Invalid collected route count.", nameCount >= 0 );
-            for( int i = 0; i < nameCount; ++i )
-            {
-                var name = d.ReadString();
-                int itemCount = d.ReadInt32();
-                Throw.CheckData( "Invalid collected item count.", itemCount >= 0 && itemCount <= CollectedItem.MaxCount );
-                var items = new List<CollectedItem>( itemCount );
-                for( int j = 0; j < itemCount; ++j )
-                {
-                    var value = d.ReadString();
-                    int pathLength = d.ReadInt32();
-                    Throw.CheckData( "Invalid collected item path length.", pathLength >= 0 && pathLength <= PartyRoute.MaxLength );
-                    var path = new string[pathLength];
-                    for( int k = 0; k < pathLength; ++k ) path[k] = d.ReadString();
-                    if( CollectedItem.TryCreate( value, path, out var item, out var itemError ) ) items.Add( item );
-                    else error ??= $"Invalid item collected for '{name}': {itemError}";
-                }
-                if( PartyDescription.TryNormalizeCollected( name, items, out _, out var namedError ) )
-                {
-                    collected.Add( new KeyValuePair<string, IEnumerable<CollectedItem>>( name, items ) );
-                }
-                else error ??= namedError;
-            }
-        }
         return error == null
                 ? new PartyDescription( url,
                                         apps.ToImmutable(),
                                         roles,
                                         data,
-                                        routes.Select( kv => new KeyValuePair<string, IEnumerable<PartyRoute>>( kv.Key, kv.Value ) ),
-                                        encryptionKey,
-                                        collected )
+                                        encryptionKey )
                 : null;
 
         static byte[] ReadKeyBytes( ref FastByteReader r )

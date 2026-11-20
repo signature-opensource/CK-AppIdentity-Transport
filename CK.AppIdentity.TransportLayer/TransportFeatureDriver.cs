@@ -24,7 +24,6 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     readonly KeyManagementFeatureDriver _keyManagement;
     readonly IPeeringAuthority? _peeringAuthority;
     readonly IEnlistmentTicketAuthority? _ticketAuthority;
-    readonly IRouteHostAuthority? _routeHostAuthority;
     TransportManager? _transportManager;
 
     /// <summary>
@@ -35,19 +34,16 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     /// <param name="transportTypes">The available type of transports.</param>
     /// <param name="protocolDirectory">The transport protocol directory.</param>
     /// <param name="peeringAuthority">The optional authority of the System of the local parties (see <see cref="IPeeringAuthority"/>).</param>
-    /// <param name="routeHostAuthority">The optional authority of the routes of the local parties (see <see cref="IRouteHostAuthority"/>).</param>
     /// <param name="ticketAuthority">The optional holder of the enlistment tickets (see <see cref="IEnlistmentTicketAuthority"/>).</param>
     public TransportFeatureDriver( ApplicationIdentityService s,
                                    KeyManagementFeatureDriver keyManagement,
                                    IEnumerable<ITransportTypeService> transportTypes,
                                    MessageProtocolDirectoryService protocolDirectory,
                                    IPeeringAuthority? peeringAuthority = null,
-                                   IRouteHostAuthority? routeHostAuthority = null,
                                    IEnlistmentTicketAuthority? ticketAuthority = null )
         : base( s )
     {
         _ticketAuthority = ticketAuthority;
-        _routeHostAuthority = routeHostAuthority;
         _transportTypes = transportTypes.Cast<TransportTypeService>().ToArray();
         _tcp = _transportTypes.OfType<TcpSocketTransportTypeService>().Single();
         _protocolDirectory = protocolDirectory;
@@ -125,17 +121,12 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // Even if initialization fails, register the feature: it may be required by others.
         ApplicationIdentityService.AddFeature( _transportManager.Feature );
         _keyManagement.KeyEventAppended.Async += OnKeyEventAppendedAsync;
-        // The routes of the local parties follow the connections and the remotes' announcements.
-        _transportManager.Feature.ConnectionAvailabilityChanged.Async += OnConnectionAvailabilityChangedAsync;
-        // The pending approvals of the local parties follow the peering issues.
-        _transportManager.Feature.PeeringIssueChanged.Async += OnPeeringIssueChangedAsync;
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
-            SubscribeRoutes( local );
             SubscribeRevocations( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
-        success &= ReadConfiguredRouteHosts( context.Monitor, context.GetAllLocals() );
+        success &= CheckNoRouteHosts( context.Monitor, context.GetAllLocals() );
         // Local and External remote parties have no Transport.
         // Locals hold the Listeners.
         // Starts by creating the remotes.
@@ -165,15 +156,14 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         if( party is ILocalParty local )
         {
             success &= EnsureAlwaysListeningListeners( context, local, releaseOnError.Add );
-            SubscribeRoutes( local );
             SubscribeRevocations( local );
         }
         success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
-        success &= ReadConfiguredRouteHosts( context.Monitor, context.GetAllLocals() );
+        success &= CheckNoRouteHosts( context.Monitor, context.GetAllLocals() );
         return Task.FromResult( success );
     }
 
-    // The "EnlistRemoteUrl" configuration is gone: the enlistment URL is the target of the "Enlistment" route.
+    // The "EnlistRemoteUrl" configuration is gone: the enlistment URL is a fact of the System (the approval page).
     static bool CheckNoEnlistRemoteUrl( IActivityMonitor monitor, IEnumerable<IParty> parties )
     {
         bool success = true;
@@ -183,6 +173,23 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             {
                 monitor.Error( $"'{p}' configures an \"EnlistRemoteUrl\": it is no more supported. The enlistment URL is derived " +
                                $"from the System (the approval page of a client application with the \"{EnlistmentFact}\" fact): remove it." );
+                success = false;
+            }
+        }
+        return success;
+    }
+
+    // The "Transport:RouteHosts" configuration is gone: there are no routes (a System is a star around its
+    // Authentication Center).
+    static bool CheckNoRouteHosts( IActivityMonitor monitor, IEnumerable<ILocalParty> locals )
+    {
+        bool success = true;
+        foreach( var local in locals )
+        {
+            if( local.LocalConfiguration.Configuration.TryResolveSection( "Transport:RouteHosts" ) != null )
+            {
+                monitor.Error( $"'{local}' configures \"Transport:RouteHosts\": the routes are gone (a System is a star around its " +
+                               $"Authentication Center, the approval page is a fact of its client application): remove it." );
                 success = false;
             }
         }
@@ -203,7 +210,6 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // Handles the potential "AlwaysListening" on the local.
         if( party is ILocalParty local )
         {
-            UnsubscribeRoutes( local );
             UnsubscribeRevocations( local );
             var listeners = local.GetFeature<TransportListener[]>();
             if( listeners != null ) await ReleaseListenersAsync( context.Monitor, listeners );
@@ -214,11 +220,8 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
     {
         Throw.DebugAssert( _transportManager != null );
         _keyManagement.KeyEventAppended.Async -= OnKeyEventAppendedAsync;
-        _transportManager.Feature.ConnectionAvailabilityChanged.Async -= OnConnectionAvailabilityChangedAsync;
-        _transportManager.Feature.PeeringIssueChanged.Async -= OnPeeringIssueChangedAsync;
         foreach( var local in ApplicationIdentityService.TenantDomains.Cast<ILocalParty>().Prepend( ApplicationIdentityService ) )
         {
-            UnsubscribeRoutes( local );
             UnsubscribeRevocations( local );
         }
         foreach( var r in context.GetAllRemotes() )

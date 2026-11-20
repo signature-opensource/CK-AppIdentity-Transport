@@ -217,68 +217,33 @@ In a development solution, the "DevRunningStatus" feature of
 printed by the launcher. The party is `Ready` once every outgoing remote (with an `Address`) is `Connected` or waits for
 an operator to accept the party.
 
-## The routes and the enlistment URL
+## The approval page and the enlistment URL
 
-The transport layer knows which remotes are connected: it computes the routes of each local party
-(`PartyDescription.Routes`, see [`PartyRoute`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/PartyRoute.cs) in
-CK.AppIdentity), in the second phase of its description
-([`TransportFeatureDriver.Routes`](TransportFeatureDriver.Routes.cs)):
+A System is a star around its Authentication Center: nothing is announced beyond one hop, there are no routes. What the
+System needs to know is a fact of a party, read where it is needed
+([`TransportFeatureDriver.EnlistmentPage`](TransportFeatureDriver.EnlistmentPage.cs)):
 
-- **Every route name hosted here or announced by a connected remote of the System** (same domain and environment)
-  gets its routes, one per host: the hosted one (`PartyRoute.Hosted`), and for each other host the best route of the
-  remotes (`SelectBest` of the accepted ones) extended with the local party. A name can have several hosts (several
-  mail senders). A route counts only from a connected remote: when a remote disconnects, its routes are withdrawn. The
-  routes are computed again when a remote connects or disconnects, when a remote announces another description
-  (`ILocalParty.RemoteDescriptionChanged`) and when the authorized hosts change.
-- **A route is accepted only toward an authorized host.** A route is announced, not proven: any party of the System can
-  announce that it hosts a route. The hosts authorized for the routes of a local party
-  ([`RouteHosts`](RouteHosts.cs), `TransportFeatureDriver.GetRouteHosts`) come from its
-  [`IRouteHostAuthority`](RouteHosts.cs) (its Authentication Center: CK.AppIdentity.AuthCenter implements it with its
-  signed System list), otherwise from its `"Transport:RouteHosts"` configuration (its `"Local"`, or a `"Defaults"` above
-  it):
-
-  ```jsonc
-  "Transport": {
-    "RouteHosts": {
-      "MailSender": [ "Acme/$Mail1", "Acme/$Mail2" ],                          // Routes without target.
-      "Enlistment": { "Acme/$Admin": "https://admin.acme.com/app-identity/enlist" } // The authorized target.
-    }
-  }
-  ```
-
-  A route to a host that is not authorized for its name, or whose target is not the authorized one, is refused (a
-  `SecurityCritical` warning names its announcer). With neither an authority nor a configuration, the routes are
-  believed as announced (a warning says so). These warnings are logged once per change, not at each computation of the
-  routes: a warning that is no more raised is forgotten, and logged again if it comes back. The authority calls `TransportFeatureDriver.OnRouteHostsChangedAsync`
-  when the hosts change.
-- **The "Enlistment" route is the approval page of the System** (`EnlistmentRouteName`): a local party hosts it when
-  one of its client applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its target is
-  the URL of that client application followed by the value of the fact (the path of the page, `app-identity/enlist`:
-  exactly one value). `TransportFeatureDriver.GetEnlistmentRoute` gives the page of a local party: its own, otherwise
-  the nearest one.
-- **The enlistment URL is the target of the "Enlistment" route** of the local party concerned (the owner of a known
-  remote, or the tenant domain whose domain name an unknown caller claims, or the application): it is sent to a party
-  that is unknown here, or that we must approve (the page approves the pending approvals held by the parties of our
-  System), so that it can be enlisted, followed by `?party={its full name}`
-  (escaped: it selects its pending approval on the page; omitted when the URL would exceed `MaxEnlistRemoteUrlLength`).
-  It is handed to unauthenticated callers. It is never configured: an `"EnlistRemoteUrl"` key fails the setup.
-  With an authority of the System (below), the authority's `EnlistmentUrlStatement` is sent instead when it states the
-  target of the route: the receiver appends `?party=` itself.
-- **The pending approvals travel the "Enlistment" route up to its host** (`PartyDescription.Collected`, see
-  [`CollectedItem`](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Abstractions/CollectedItem.cs)
-  in CK.AppIdentity, and [`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)): each
-  `RequiresLocalApproval` or `RequiresBothApproval` issue of a local party is an item of the route, whose value is a
-  JSON object (`GetPendingApprovalValue`, read by `TryReadPendingApprovalValue`): `{ "Party", "Fingerprint", "Kind"
-  ("Local" or "Both"), "Since", "Routes", "Template" }`, never the approval code. `"Routes"` are the names of the routes
-  the party states that it hosts, in its connection attempt (`PeeringIssue.RemoteHostedRoutes`, omitted when there is
-  none): the operator can authorize them with the approval. `"Template"` is the party name of the Opened template of a
-  candidate (below). Each party collects its own items and those of the connected remotes one of whose routes of the
-  name goes through it, so the hosts of the approval pages know every pending approval of the System that reaches them,
-  and the way back to its holder. The description is computed again on `PeeringIssueChanged`.
-- **The approved dynamic instances travel the same route:** each dynamic instance of an Opened remote template whose
-  identity is pinned is an item `{ "Instance", "Template" }` (`GetPartyInstanceValue`, read by
-  `TryReadPartyInstanceValue`), so that the approval page can remove it. The description is computed again when such a
-  remote appears or disappears.
+- **The approval page of the System is a fact of a client application:** a party has one when one of its client
+  applications has the "Enlistment" fact (`EnlistmentFact`) and it has a public URL. Its URL is the URL of that client
+  application followed by the value of the fact (the path of the page, `app-identity/enlist`: exactly one value):
+  `TransportFeatureDriver.GetEnlistmentPageUrl( description, owner )`.
+- **The page a local party knows** (`FindEnlistmentPageUrl`) is its own, otherwise the one of the only direct remote of
+  its System (same domain and environment) whose description has one. Two remotes with a page is an error (a
+  `SecurityCritical` log): a System has one approval page, none is used. The Authentication Center states the page it
+  finds this way (`EnlistmentUrlStatement`, see below): in a star, the page's party is its remote.
+- **The enlistment URL** is sent to a party that is unknown here, or that we must approve (the page approves the pending
+  approvals held by the parties of our System), so that it can be enlisted: the valid `EnlistmentUrlStatement` of the
+  authority of the System (below; the receiver appends `?party=` itself), otherwise the page the local party knows,
+  followed by `?party={its full name}` (escaped: it selects its pending approval on the page; omitted when the URL would
+  exceed `MaxEnlistRemoteUrlLength`). It is handed to unauthenticated callers. It is never configured: an
+  `"EnlistRemoteUrl"` key fails the setup, and so does a `"Transport:RouteHosts"` section (there are no routes).
+- **What a local party holds for the approval page is asked, never announced**
+  ([`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)):
+  `GetHeldPendingApprovals( local )` gives its `RequiresLocalApproval` and `RequiresBothApproval` issues
+  (`PendingApprovalValue`: the party, the holder, the fingerprint, the kind "Local" or "Both", since when, the template of
+  a candidate, the number of competing keys; never the approval code), `GetHeldPartyInstances( local )` the approved
+  dynamic instances of its Opened remote templates (`PartyInstanceValue`). CK.AppIdentity.Enlistment asks them through
+  the hub of the System.
 
 ## The candidates of the Opened templates
 
@@ -321,8 +286,6 @@ one side or both do not trust yet. A listener keeps at most `MaxUnknownRemoteCou
   [CK.AppIdentity.KeyManagement](../CK.AppIdentity.KeyManagement/README.md)) is cut as soon as the revocations change
   (its connection is killed), and refused at every handshake: the issue is `Revoked` here and `RevokedByRemote` on its
   side (a signed rejection). An unknown caller whose identity is revoked is dropped: it never becomes a pending approval.
-  The routes that go through a banned name (a revoked party not readmitted) are ignored (a `SecurityCritical` warning,
-  like a refused route), and computed again when the revocations change.
 
 - **Approving a key.** A `RequiresLocalApproval` or `RequiresBothApproval` issue carries the identity the other side
   presented (`RemoteIdentityForApproval`). `AcceptRemoteIdentity` pins it. Nothing in the protocol proves that this key

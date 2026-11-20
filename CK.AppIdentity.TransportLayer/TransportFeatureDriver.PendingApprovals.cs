@@ -1,231 +1,87 @@
 using CK.Core;
 using System;
-using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Linq;
 
 namespace CK.AppIdentity.TransportLayer;
 
 /// <summary>
-/// The pending approvals of the local parties travel the "Enlistment" route toward the approval page of the System: they
-/// are items collected along it (see <see cref="PartyDescription.Collected"/>).
+/// What a local party holds for the approval page of the System: its pending approvals and the approved dynamic
+/// instances of its Opened remote templates. They are asked, never announced (CK.AppIdentity.Enlistment asks them
+/// through the hub of the System, its Authentication Center).
 /// </summary>
 public partial class TransportFeatureDriver
 {
-    // A peering issue changed: the pending approvals of its local party may have changed.
-    Task OnPeeringIssueChangedAsync( IActivityMonitor monitor, PeeringIssue issue, CancellationToken cancel )
-    {
-        return OnDescriptionChangedAsync( monitor, issue.Remote?.Party.Owner );
-    }
-
     /// <summary>
-    /// States the pending approvals of the local party (a <see cref="PeeringIssueKind.RequiresLocalApproval"/> or
-    /// <see cref="PeeringIssueKind.RequiresBothApproval"/> issue with one of its remotes) as items to collect along the
-    /// <see cref="EnlistmentRouteName"/> route (see <see cref="GetPendingApprovalValue"/>).
+    /// Gets the pending approvals held by a local party: a <see cref="PeeringIssueKind.RequiresLocalApproval"/> or
+    /// <see cref="PeeringIssueKind.RequiresBothApproval"/> issue with one of its remotes. Never the approval code: the
+    /// operator reads it on the party to approve.
     /// </summary>
-    /// <param name="party">The local party.</param>
-    /// <param name="builder">The first phase of its description.</param>
-    protected override void ContributeDescription( ILocalParty party, PartyDescription.Builder builder )
+    /// <param name="party">The local party (the holder).</param>
+    /// <returns>The pending approvals.</returns>
+    public static IReadOnlyList<PendingApprovalValue> GetHeldPendingApprovals( ILocalParty party )
     {
-        if( _transportManager == null ) return;
-        foreach( var issue in _transportManager.Feature.GetClonedPeeringIssues() )
+        Throw.CheckNotNullArgument( party );
+        if( party.ApplicationIdentityService.GetFeature<TransportManagerFeature>() is not { } transport ) return [];
+        var result = new List<PendingApprovalValue>();
+        foreach( var issue in transport.GetClonedPeeringIssues() )
         {
             if( issue.Remote?.Party.Owner != party ) continue;
-            var value = GetPendingApprovalValue( issue );
-            if( value == null ) continue;
-            if( value.Length <= CollectedItem.MaxValueLength ) builder.Collect( EnlistmentRouteName, value );
-            else ActivityMonitor.StaticLogger.Warn( $"The pending approval of '{issue.FullName}' by '{party.FullName}' is too long to be collected." );
+            var since = issue.ApprovalPendingSince;
+            var fingerprint = issue.RemoteKeyFingerprintForApproval;
+            if( since == null || fingerprint == null ) continue;
+            result.Add( new PendingApprovalValue( issue.FullName,
+                                                  party.FullName,
+                                                  fingerprint,
+                                                  issue.Kind == PeeringIssueKind.RequiresBothApproval ? "Both" : "Local",
+                                                  since.Value.ToUniversalTime(),
+                                                  issue.Remote?.Party.Configuration is { IsDynamicInstance: true } c ? c.Template!.PartyNamePattern : null,
+                                                  issue.Remote?.Approval.CompetingKeyCount is int competing && competing > 1 ? competing : 1 ) );
         }
-        // The approved dynamic instances of the Opened remote templates (their identity is pinned): the page can remove them.
-        foreach( var r in party.Remotes )
-        {
-            if( r.IsDestroyed
-                || !r.Configuration.IsDynamicInstance
-                || r.GetFeature<TransportFeature>() is not { } t
-                || t.RemoteKeys.TrustedEvent == null )
-            {
-                continue;
-            }
-            var value = GetPartyInstanceValue( r );
-            if( value.Length <= CollectedItem.MaxValueLength ) builder.Collect( EnlistmentRouteName, value );
-            else ActivityMonitor.StaticLogger.Warn( $"The instance '{r.FullName}' of '{party.FullName}' is too long to be collected." );
-        }
+        return result;
     }
 
     /// <summary>
-    /// Gets the value of a dynamic instance of an Opened remote template, as collected along the <see cref="EnlistmentRouteName"/>
-    /// route: an opaque JSON object <c>{ "Instance": the full name of the instance, "Template": the party name of its
-    /// template }</c>. The holder of the instance is the first party of the item's path.
+    /// Gets the approved dynamic instances of the Opened remote templates of a local party (their identity is pinned):
+    /// the approval page can remove them.
     /// </summary>
-    /// <param name="remote">The dynamic instance.</param>
-    /// <returns>The value.</returns>
-    public static string GetPartyInstanceValue( IRemoteParty remote )
+    /// <param name="party">The local party (the holder).</param>
+    /// <returns>The instances.</returns>
+    public static IReadOnlyList<PartyInstanceValue> GetHeldPartyInstances( ILocalParty party )
     {
-        Throw.CheckNotNullArgument( remote );
-        Throw.CheckArgument( remote.Configuration.IsDynamicInstance );
-        var buffer = new ArrayBufferWriter<byte>();
-        using( var w = new Utf8JsonWriter( buffer ) )
-        {
-            w.WriteStartObject();
-            w.WriteString( "Instance", remote.FullName.Path );
-            w.WriteString( "Template", remote.Configuration.Template!.PartyNamePattern );
-            w.WriteEndObject();
-        }
-        return Encoding.UTF8.GetString( buffer.WrittenSpan );
-    }
-
-    /// <summary>
-    /// Reads the value of a dynamic instance (see <see cref="GetPartyInstanceValue"/>).
-    /// </summary>
-    /// <param name="value">The value of the collected item.</param>
-    /// <param name="instance">The instance on success.</param>
-    /// <returns>True on success, false when the value is not an instance.</returns>
-    public static bool TryReadPartyInstanceValue( string value, [NotNullWhen( true )] out PartyInstanceValue? instance )
-    {
-        instance = null;
-        try
-        {
-            using var doc = JsonDocument.Parse( value );
-            var e = doc.RootElement;
-            if( e.ValueKind == JsonValueKind.Object
-                && e.TryGetProperty( "Instance", out var i ) && i.ValueKind == JsonValueKind.String && i.GetString() is { Length: > 0 } party
-                && e.TryGetProperty( "Template", out var t ) && t.ValueKind == JsonValueKind.String && t.GetString() is { Length: > 0 } template )
-            {
-                instance = new PartyInstanceValue( party, template );
-                return true;
-            }
-        }
-        catch( JsonException )
-        {
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Gets the value of a pending approval, as collected along the <see cref="EnlistmentRouteName"/> route: an opaque JSON
-    /// object <c>{ "Party": the full name of the party to approve, "Fingerprint": the fingerprint of the key to approve,
-    /// "Kind": "Local" or "Both", "Since": when the key started to wait (ISO 8601, UTC), "Routes": the names of the routes it
-    /// states that it hosts (omitted when there is none), "Template": the party name of the Opened template of a candidate
-    /// (omitted when the party is not a dynamic instance), "Competing": the number of keys that compete for the approval of
-    /// the party (omitted when there is only one) }</c>. Never the approval code: the operator reads it on the party to
-    /// approve. The holder of the approval is the first party of the item's path.
-    /// </summary>
-    /// <param name="issue">The peering issue.</param>
-    /// <returns>The value, or null when the issue is not a pending approval.</returns>
-    public static string? GetPendingApprovalValue( PeeringIssue issue )
-    {
-        Throw.CheckNotNullArgument( issue );
-        var since = issue.ApprovalPendingSince;
-        var fingerprint = issue.RemoteKeyFingerprintForApproval;
-        if( since == null || fingerprint == null ) return null;
-        var buffer = new ArrayBufferWriter<byte>();
-        using( var w = new Utf8JsonWriter( buffer ) )
-        {
-            w.WriteStartObject();
-            w.WriteString( "Party", issue.FullName );
-            w.WriteString( "Fingerprint", fingerprint );
-            w.WriteString( "Kind", issue.Kind == PeeringIssueKind.RequiresBothApproval ? "Both" : "Local" );
-            w.WriteString( "Since", since.Value );
-            var routes = issue.RemoteHostedRoutes;
-            if( routes.Count > 0 )
-            {
-                w.WriteStartArray( "Routes" );
-                foreach( var r in routes ) w.WriteStringValue( r );
-                w.WriteEndArray();
-            }
-            if( issue.Remote?.Party.Configuration is { IsDynamicInstance: true } c )
-            {
-                w.WriteString( "Template", c.Template!.PartyNamePattern );
-            }
-            if( issue.Remote?.Approval.CompetingKeyCount is int competing && competing > 1 )
-            {
-                w.WriteNumber( "Competing", competing );
-            }
-            w.WriteEndObject();
-        }
-        return Encoding.UTF8.GetString( buffer.WrittenSpan );
-    }
-
-    /// <summary>
-    /// Reads the value of a pending approval (see <see cref="GetPendingApprovalValue"/>).
-    /// </summary>
-    /// <param name="value">The value of the collected item.</param>
-    /// <param name="approval">The pending approval on success.</param>
-    /// <returns>True on success, false when the value is not a pending approval.</returns>
-    public static bool TryReadPendingApprovalValue( string value, [NotNullWhen( true )] out PendingApprovalValue? approval )
-    {
-        approval = null;
-        try
-        {
-            using var doc = JsonDocument.Parse( value );
-            var e = doc.RootElement;
-            if( e.ValueKind == JsonValueKind.Object
-                && e.TryGetProperty( "Party", out var p ) && p.ValueKind == JsonValueKind.String && p.GetString() is { Length: > 0 } party
-                && e.TryGetProperty( "Fingerprint", out var f ) && f.ValueKind == JsonValueKind.String && f.GetString() is { Length: > 0 } fingerprint
-                && e.TryGetProperty( "Kind", out var k ) && k.ValueKind == JsonValueKind.String && k.GetString() is "Local" or "Both"
-                && e.TryGetProperty( "Since", out var t ) && t.ValueKind == JsonValueKind.String && t.TryGetDateTime( out var since ) )
-            {
-                var routes = new List<string>();
-                if( e.TryGetProperty( "Routes", out var rs ) )
-                {
-                    if( rs.ValueKind != JsonValueKind.Array ) return false;
-                    foreach( var r in rs.EnumerateArray() )
-                    {
-                        if( r.ValueKind != JsonValueKind.String || !PartyDescription.IsValidName( r.GetString() ) ) return false;
-                        routes.Add( r.GetString()! );
-                    }
-                }
-                string? template = null;
-                if( e.TryGetProperty( "Template", out var tp ) )
-                {
-                    if( tp.ValueKind != JsonValueKind.String || tp.GetString() is not { Length: > 0 } tn ) return false;
-                    template = tn;
-                }
-                int competing = 1;
-                if( e.TryGetProperty( "Competing", out var cp ) )
-                {
-                    if( cp.ValueKind != JsonValueKind.Number || !cp.TryGetInt32( out competing ) || competing < 1 ) return false;
-                }
-                approval = new PendingApprovalValue( party, fingerprint, k.GetString()!, since.ToUniversalTime(), routes, template, competing );
-                return true;
-            }
-        }
-        catch( JsonException )
-        {
-        }
-        return false;
+        Throw.CheckNotNullArgument( party );
+        return party.Remotes.Where( r => !r.IsDestroyed
+                                         && r.Configuration.IsDynamicInstance
+                                         && r.GetFeature<TransportFeature>() is { } t
+                                         && t.RemoteKeys.TrustedEvent != null )
+                            .Select( r => new PartyInstanceValue( r.FullName.Path, party.FullName, r.Configuration.Template!.PartyNamePattern ) )
+                            .ToList();
     }
 }
 
 /// <summary>
-/// The value of a pending approval collected along the "Enlistment" route (see
-/// <see cref="TransportFeatureDriver.GetPendingApprovalValue"/>): the holder of the approval is the first party of the path
-/// of the item.
+/// A pending approval held by a local party (see <see cref="TransportFeatureDriver.GetHeldPendingApprovals"/>).
 /// </summary>
 /// <param name="PartyFullName">The full name of the party to approve.</param>
+/// <param name="HolderFullName">The full name of the party that holds the pending approval.</param>
 /// <param name="Fingerprint">The fingerprint of the key to approve.</param>
 /// <param name="Kind">"Local", or "Both" when the party to approve must also approve the holder.</param>
 /// <param name="Since">Since when the key waits (UTC).</param>
-/// <param name="HostedRoutes">The names of the routes the party states that it hosts (see <see cref="PeeringIssue.RemoteHostedRoutes"/>).</param>
 /// <param name="TemplatePartyName">The party name of the Opened template of a candidate, null when the party is not a dynamic instance.</param>
 /// <param name="CompetingKeyCount">The number of keys that compete for the approval of the party (1 when there is no competition).</param>
 public sealed record PendingApprovalValue( string PartyFullName,
+                                           string HolderFullName,
                                            string Fingerprint,
                                            string Kind,
                                            DateTime Since,
-                                           IReadOnlyList<string> HostedRoutes,
                                            string? TemplatePartyName = null,
                                            int CompetingKeyCount = 1 );
 
 /// <summary>
-/// The value of a dynamic instance of an Opened remote template collected along the "Enlistment" route (see
-/// <see cref="TransportFeatureDriver.GetPartyInstanceValue"/>): the holder of the instance is the first party of the path
-/// of the item.
+/// An approved dynamic instance of an Opened remote template held by a local party (see
+/// <see cref="TransportFeatureDriver.GetHeldPartyInstances"/>).
 /// </summary>
 /// <param name="PartyFullName">The full name of the instance.</param>
+/// <param name="HolderFullName">The full name of the party that holds it.</param>
 /// <param name="TemplatePartyName">The party name of its template: "$Worker-{Name}".</param>
-public sealed record PartyInstanceValue( string PartyFullName, string TemplatePartyName );
+public sealed record PartyInstanceValue( string PartyFullName, string HolderFullName, string TemplatePartyName );

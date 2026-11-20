@@ -16,8 +16,9 @@ namespace CK.AppIdentity.AuthCenter;
 /// (CK.AppIdentity.AuthCenter.Local handles it).
 /// <para>
 /// Without such a remote, the Authentication Center can be designated by its full name: "Local:AuthCenterRemote:Party". It must
-/// have a trust anchor: the local party gets a <see cref="CrisAuthCenter"/> without channel and an
-/// <see cref="AnchoredAuthCenter"/> (what it asks the Authentication Center travels along its route). With such a remote,
+/// be one of the remotes of the local party (a System is a star around its Authentication Center: a party that designates
+/// one that is not its remote is a setup error) and have a trust anchor: the local party gets a <see cref="CrisAuthCenter"/>
+/// and an <see cref="AnchoredAuthCenter"/> (what it asks the Authentication Center is sent to it). With such a remote,
 /// "Local:AuthCenterRemote:Party" must name it.
 /// </para>
 /// </summary>
@@ -161,8 +162,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
         local.AddFeature( anchored );
         await AuthCenterSystemList.PlugAsync( monitor,
                                               center,
-                                              m => anchored.SendAsync( m, pocos => pocos.Create<IGetSystemListQCommand>(), "ask the System list" ),
-                                              AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
+                                              m => anchored.SendAsync( m, pocos => pocos.Create<IGetSystemListQCommand>(), "ask the System list" ) ).ConfigureAwait( false );
         return true;
     }
 
@@ -178,7 +178,7 @@ public sealed class RemoteAuthCenterFeatureDriver : ApplicationIdentityFeatureDr
             if( channel == null ) return null;
             return (await channel.SendCommand( m, channel.PocoDirectory.Create<IGetSystemListQCommand>(), timeout: ChannelCrisRemoteDispatcher.Timeout )
                                  .ExecutedCommand.ConfigureAwait( false )).Result;
-        }, AuthCenterSystemList.OnRouteHostsChanged( _services, local ) ).ConfigureAwait( false );
+        } ).ConfigureAwait( false );
         return true;
 
     }

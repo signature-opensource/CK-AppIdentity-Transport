@@ -4,10 +4,10 @@ using CK.Cris;
 namespace CK.IO.AuthCenter;
 
 /// <summary>
-/// Asks the Authentication Center, along its "AuthCenter" route, to verify the user's proof of a command routed to the
+/// Asks the Authentication Center (a routed command on the link to it) to verify the user's proof of a command routed to the
 /// asking party (the <see cref="Destination"/>): its token and the hash of the binding secret of its session, encrypted for
 /// the Authentication Center (<see cref="EncryptedProof"/>: the hops never hold the proof), and the seal of the session
-/// party. A party without a channel to the Authentication Center sends it: the session party's keys are known by the
+/// party. A party that anchors the Authentication Center (its link to it doesn't declare "AuthCenterRemote") sends it: the session party's keys are known by the
 /// Authentication Center only.
 /// <para>
 /// The answer crosses hops: it is a statement signed by the Authentication Center (see <see cref="IAuthCenterProofStatement"/>),

@@ -1,5 +1,4 @@
 using CK.AppIdentity.Cris;
-using CK.AppIdentity.TransportLayer;
 using CK.Auth;
 using CK.Core;
 using CK.Cris;
@@ -12,30 +11,33 @@ using System.Threading.Tasks;
 namespace CK.AppIdentity.Enlistment;
 
 /// <summary>
-/// Handles the dynamic instances of the Opened remote templates that reach the approval page:
+/// Handles the dynamic instances of the Opened remote templates that the approval page shows:
 /// <list type="bullet">
 ///   <item>
 ///   On the host of the approval page, the <see cref="IGetPartyInstancesQCommand"/> and the <see cref="IRemovePartyInstanceCommand"/>:
-///   for each holder of the instance collected along the "Enlistment" route, an <see cref="IRemoveHeldPartyInstanceCommand"/>
-///   is sent down to it by the reversed path of the item.
+///   for each holder of the instance in the System (see <see cref="EnlistmentItems"/>), an
+///   <see cref="IRemoveHeldPartyInstanceCommand"/> is sent to it (directly, or through the hub of the System), with the
+///   operator's proof.
 ///   </item>
 ///   <item>
-///   On the holder, the <see cref="IRemoveHeldPartyInstanceCommand"/>: accepted only from the host of its "Enlistment" route,
-///   the instance is removed (<see cref="ILocalParty.RemoveTemplateInstanceAsync"/>).
+///   On the holder, the <see cref="IRemoveHeldPartyInstanceCommand"/>: Critical (the operator's proof is verified by the
+///   holder through its Authentication Center), never impersonated; the instance is removed
+///   (<see cref="ILocalParty.RemoveTemplateInstanceAsync"/>). Without Authentication Center, only a page on the holder
+///   itself removes its instances (a routed proof can't reach the Critical level).
 ///   </item>
 /// </list>
 /// </summary>
 public sealed class PartyInstanceHandlers : ISingletonAutoService
 {
-    readonly PartyRoutedCommandSender _sender;
+    readonly EnlistmentItems _items;
 
     /// <summary>
     /// Initializes the handlers.
     /// </summary>
-    /// <param name="sender">The sender of the routed commands.</param>
-    public PartyInstanceHandlers( PartyRoutedCommandSender sender )
+    /// <param name="items">The items of the approval page.</param>
+    public PartyInstanceHandlers( EnlistmentItems items )
     {
-        _sender = sender;
+        _items = items;
     }
 
     /// <summary>
@@ -54,29 +56,38 @@ public sealed class PartyInstanceHandlers : ISingletonAutoService
     }
 
     /// <summary>
-    /// Lists the dynamic instances collected along the "Enlistment" route by the local party (the host of the approval page).
+    /// Refuses a removal made while impersonating, on the holder.
     /// </summary>
+    /// <param name="c">The message collector.</param>
+    /// <param name="command">The command.</param>
+    /// <param name="authentication">The authentication.</param>
+    [CommandHandlingValidator]
+    public void Validate( UserMessageCollector c, IRemoveHeldPartyInstanceCommand command, AuthenticationInfo authentication )
+    {
+        if( authentication.IsImpersonated )
+        {
+            c.Error( "A party instance can't be removed while impersonating.", "AppIdentity.Enlistment.Impersonated" );
+        }
+    }
+
+    /// <summary>
+    /// Lists the dynamic instances of the System (see <see cref="EnlistmentItems"/>).
+    /// </summary>
+    /// <param name="monitor">The monitor to use.</param>
     /// <param name="command">The query.</param>
     /// <param name="current">The local party: the host of the approval page.</param>
+    /// <param name="services">The services of the request.</param>
     /// <param name="pocos">The poco directory.</param>
     /// <returns>The instances (one per holder of an instance).</returns>
     [CommandHandler]
-    public IList<IPartyInstance> Handle( IGetPartyInstancesQCommand command, CurrentLocalParty current, PocoDirectory pocos )
+    public async Task<IList<IPartyInstance>> HandleAsync( IActivityMonitor monitor,
+                                                          IGetPartyInstancesQCommand command,
+                                                          CurrentLocalParty current,
+                                                          IServiceProvider services,
+                                                          PocoDirectory pocos )
     {
-        var result = new List<IPartyInstance>();
-        if( current.LocalParty.Description.Collected.TryGetValue( TransportFeatureDriver.EnlistmentRouteName, out var items ) )
-        {
-            foreach( var item in items )
-            {
-                if( !TransportFeatureDriver.TryReadPartyInstanceValue( item.Value, out var instance ) ) continue;
-                result.Add( pocos.Create<IPartyInstance>( i =>
-                {
-                    i.PartyFullName = instance.PartyFullName;
-                    i.HolderFullName = item.Holder;
-                    i.TemplatePartyName = instance.TemplatePartyName;
-                } ) );
-            }
-        }
+        var held = await _items.GetSystemAsync( monitor, services, current.LocalParty, pocos ).ConfigureAwait( false );
+        var result = held.Instances.ToList();
         result.Sort( ( a, b ) => StringComparer.Ordinal.Compare( a.PartyFullName, b.PartyFullName ) );
         return result;
     }
@@ -101,31 +112,31 @@ public sealed class PartyInstanceHandlers : ISingletonAutoService
     {
         var host = current.LocalParty;
         int count = 0;
-        if( host.Description.Collected.TryGetValue( TransportFeatureDriver.EnlistmentRouteName, out var items ) )
+        var held = await _items.GetSystemAsync( monitor, services, host, pocos ).ConfigureAwait( false );
+        foreach( var instance in held.Instances )
         {
-            foreach( var item in items )
+            if( instance.PartyFullName != command.PartyFullName ) continue;
+            var holder = instance.HolderFullName;
+            var remove = pocos.Create<IRemoveHeldPartyInstanceCommand>( r =>
             {
-                if( !TransportFeatureDriver.TryReadPartyInstanceValue( item.Value, out var instance )
-                    || instance.PartyFullName != command.PartyFullName )
-                {
-                    continue;
-                }
-                var remove = pocos.Create<IRemoveHeldPartyInstanceCommand>( r => r.PartyFullName = instance.PartyFullName );
-                monitor.Info( ActivityMonitor.Tags.SecurityCritical,
-                              $"Actor #{authentication.Actor.ActorId} removes the instance '{instance.PartyFullName}' held by '{item.Holder}'." );
-                bool removed;
-                if( item.Length == 1 )
-                {
-                    removed = await RemoveHeldAsync( monitor, host, host.FullName, remove ).ConfigureAwait( false );
-                }
-                else
-                {
-                    var result = await _sender.SendAlongPathAsync( monitor, services, host, remove, item.Path.Reverse() ).ConfigureAwait( false );
-                    removed = result is true;
-                    if( result is not bool ) monitor.Warn( $"The removal of '{instance.PartyFullName}' can't reach '{item.Holder}': {result}" );
-                }
-                if( removed ) ++count;
+                // The operator: its live proof travels with the command.
+                r.ActorId = authentication.Actor.ActorId;
+                r.PartyFullName = instance.PartyFullName;
+            } );
+            monitor.Info( ActivityMonitor.Tags.SecurityCritical,
+                          $"Actor #{authentication.Actor.ActorId} removes the instance '{instance.PartyFullName}' held by '{holder}'." );
+            bool removed;
+            if( holder == host.FullName.Path )
+            {
+                removed = await RemoveHeldAsync( monitor, host, remove ).ConfigureAwait( false );
             }
+            else
+            {
+                var result = await _items.SendToHolderAsync( monitor, services, host, remove, holder ).ConfigureAwait( false );
+                removed = result is true;
+                if( result is not bool ) monitor.Warn( $"The removal of '{instance.PartyFullName}' can't reach '{holder}': {result}" );
+            }
+            if( removed ) ++count;
         }
         if( count == 0 ) monitor.Warn( $"No holder of the instance '{command.PartyFullName}' removed it (known by '{host.FullName}')." );
         return count;
@@ -135,28 +146,17 @@ public sealed class PartyInstanceHandlers : ISingletonAutoService
     /// Removes the instance on the party that holds it.
     /// </summary>
     /// <param name="monitor">The monitor to use.</param>
-    /// <param name="command">The command.</param>
+    /// <param name="command">The command (Critical: the operator's proof has been verified).</param>
     /// <param name="current">The local party: the holder.</param>
-    /// <param name="authentication">The authentication: its caller party must be the host of the "Enlistment" route.</param>
     /// <returns>True if the instance has been removed.</returns>
     [CommandHandler]
-    public Task<bool> HandleAsync( IActivityMonitor monitor,
-                                   IRemoveHeldPartyInstanceCommand command,
-                                   CurrentLocalParty current,
-                                   AuthenticationInfo authentication )
+    public Task<bool> HandleAsync( IActivityMonitor monitor, IRemoveHeldPartyInstanceCommand command, CurrentLocalParty current )
     {
-        return RemoveHeldAsync( monitor, current.LocalParty, authentication.CallerPartyFullName, command );
+        return RemoveHeldAsync( monitor, current.LocalParty, command );
     }
 
-    static async Task<bool> RemoveHeldAsync( IActivityMonitor monitor, ILocalParty holder, string? caller, IRemoveHeldPartyInstanceCommand command )
+    static async Task<bool> RemoveHeldAsync( IActivityMonitor monitor, ILocalParty holder, IRemoveHeldPartyInstanceCommand command )
     {
-        // Fail closed: only from a host of the route (an approval page of the System).
-        if( caller == null || holder.Description.FindRoute( TransportFeatureDriver.EnlistmentRouteName, caller ) == null )
-        {
-            monitor.Warn( ActivityMonitor.Tags.SecurityCritical,
-                          $"'{holder.FullName}' refuses the removal of '{command.PartyFullName}' from '{caller}': it is not a host of its \"Enlistment\" route." );
-            return false;
-        }
         var remote = holder.Remotes.FirstOrDefault( r => r.FullName.Path == command.PartyFullName );
         if( remote == null || !remote.Configuration.IsDynamicInstance )
         {

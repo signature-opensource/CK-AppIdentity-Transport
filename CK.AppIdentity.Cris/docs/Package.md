@@ -3,4 +3,4 @@ a remote and returns its executing command (immediate events and result). The co
 `AppIdentityDIContainerDefinition` endpoint, where the calling `IRemoteParty` is a scoped service.
 `ChannelCrisRemoteDispatcher` makes the dispatch location-transparent: a command without local handler executes on the
 remote that accepts it, a party command (`ICommandTargetParty`) where its target is. `PartyRoutedCommandSender` sends an
-`IPartyRoutedCommand` to a party that is not a remote, along a route or a path: the originating party is its caller party.
+`IPartyRoutedCommand` to a party that is not a remote, along a path (through the hub of the System): the originating party is its caller party.
