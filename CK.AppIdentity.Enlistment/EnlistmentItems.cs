@@ -128,13 +128,21 @@ public sealed class EnlistmentItems : ISingletonAutoService
         return result;
     }
 
-    // The connected remotes of the System of the local party that answer the query.
+    /// <summary>
+    /// The time given to a remote of the hub to answer what it holds: a remote that doesn't answer in time is skipped (the
+    /// page shows what the others hold), never a page that waits for the slowest remote.
+    /// </summary>
+    public static readonly TimeSpan RemoteAnswerTimeout = TimeSpan.FromSeconds( 5 );
+
+    // The connected remotes of the System of the local party that answer the query: a remote that is not connected now is
+    // not waited for (its items are not reachable anyway).
     static IEnumerable<IRemoteParty> GetAskedRemotes( ILocalParty local )
     {
         var name = typeof( IGetHeldEnlistmentQCommand ).FullName;
         return local.Remotes.Where( r => !r.IsDestroyed
                                          && r.DomainName == local.DomainName
                                          && r.EnvironmentName == local.EnvironmentName
+                                         && r.GetFeature<TransportFeature>()?.ConnectionAvailability == ConnectionAvailability.Connected
                                          && r.GetFeature<CrisChannelFeature>()?.AcceptedCommands?.Contains( name! ) is true )
                             .ToList();
     }
@@ -142,7 +150,13 @@ public sealed class EnlistmentItems : ISingletonAutoService
     async Task<IHeldEnlistment?> AskAsync( IActivityMonitor monitor, IServiceProvider services, ILocalParty local, IRemoteParty remote, bool includeRemotes, PocoDirectory pocos )
     {
         var query = pocos.Create<IGetHeldEnlistmentQCommand>( q => q.IncludeRemotes = includeRemotes );
-        var result = await _sender.SendAlongPathAsync( monitor, services, local, query, [local.FullName.Path, remote.FullName.Path] ).ConfigureAwait( false );
+        // The remotes of the hub are asked with a short timeout; the hub itself with the default one (it asks its remotes).
+        var result = await _sender.SendAlongPathAsync( monitor,
+                                                       services,
+                                                       local,
+                                                       query,
+                                                       [local.FullName.Path, remote.FullName.Path],
+                                                       includeRemotes ? null : RemoteAnswerTimeout ).ConfigureAwait( false );
         if( result is IHeldEnlistment held ) return held;
         monitor.Warn( $"'{remote}' can't be asked what it holds for the approval page: {result}" );
         return null;

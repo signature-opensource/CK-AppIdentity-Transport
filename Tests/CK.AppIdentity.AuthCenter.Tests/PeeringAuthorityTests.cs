@@ -30,6 +30,8 @@ public class PeeringAuthorityTests
     const int CenterPort = 37170;
     const int HolderPort = 37171;
     const int WPort = 37172;
+    // The listener of W for its never connected center: never the default port (37120), used by other test assemblies.
+    const int WCenterPort = 37173;
 
     // The approval page: a client application with the "Enlistment" fact.
     [PartyFeature( "ApprovalPage", TypeActivation.ByDefault )]
@@ -133,8 +135,9 @@ public class PeeringAuthorityTests
                 c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
                 if( anchored )
                 {
-                    // A star: W has a link to its center (here never connected: no address on either side).
+                    // A star: W has a link to its center (here never connected: no address on the center's side).
                     c["Parties:1:PartyName"] = "$Center";
+                    c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{WCenterPort}";
                     c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = checkpoint.ToString();
                     c["Local:AuthCenterRemote:Party"] = centerName;
                 }
