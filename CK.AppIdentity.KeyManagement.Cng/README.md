@@ -54,6 +54,20 @@ An invalid option (an unknown key, an empty `Provider`, a value of `AllowFallbac
 `IsUsable( providerName, out reason )` tells whether a provider can create keys on this machine, for this account. A
 provider is probed once (with an ephemeral key) and the answer is cached.
 
+## The key ring
+
+The store also protects the DataProtection key ring of the process (see
+[the key ring](../CK.AppIdentity.KeyManagement/README.md#key-custody)): `CngCoreKeyStore` is an `IKeyRingEncryptorSource`.
+It applies when the root party doesn't configure the secret `KeyRingKey`, with the `CngKeyStoreOption` of the root party:
+each file of the ring is encrypted by a fresh content key (AES-256-GCM), wrapped by a non-exportable RSA key of the
+provider (RSA-OAEP with SHA-256 when the provider decrypts with it, SHA-1 otherwise: the TPMs differ). Its CNG name is
+`CK.AppIdentity.{scope}.KeyRing`, scoped like the identity keys. Each file records the provider, the scope, the key and
+the padding: [`CngKeyRingXmlDecryptor`](CngCoreKeyStore.KeyRing.cs) reads it back without the configuration.
+
+The ring is then bound to the provider (the TPM: this computer), as the identity keys are: a copy of the store is useless
+elsewhere, even with the account. With the option disabled, or a provider that is not usable under `AllowFallback`, the
+next protection applies (DPAPI); an unusable provider without fallback fails, as for the identity keys.
+
 ## Where each key is
 
 CNG cannot enumerate keys without native calls, so each key has a marker file next to where the default store keeps its

@@ -39,7 +39,7 @@ namespace CK.AppIdentity.KeyManagement;
 /// automatic DI makes it replace the default store.
 /// </para>
 /// </summary>
-public sealed class CngCoreKeyStore : ICoreKeyStore
+public sealed partial class CngCoreKeyStore : ICoreKeyStore
 {
     /// <summary>
     /// The CNG provider of the TPM: the default <see cref="CngKeyStoreOption.Provider"/>.

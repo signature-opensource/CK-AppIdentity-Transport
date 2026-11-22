@@ -14,6 +14,9 @@ namespace CK.AppIdentity.KeyManagement;
 [ConfigurationLock( "OpenedRemoteTemplate:AutoTrustKey", ConfigurationLevel.Compile, Value = nameof( AutoTrustKey.Never ) )]
 // The pre-authorized enlistment ticket of a party (see EnlistTicket) is a secret.
 [ConfigurationSecret( "Local:EnlistTicket" )]
+// The secret keys that protect the DataProtection key ring (see KeyRingStore) are secrets.
+[ConfigurationSecret( "Local:KeyRingKey" )]
+[ConfigurationSecret( "Local:KeyRingPreviousKey" )]
 public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriver
 {
     readonly IDataProtectionProvider _protectorProvider;

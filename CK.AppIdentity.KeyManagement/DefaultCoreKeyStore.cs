@@ -16,7 +16,9 @@ namespace CK.AppIdentity.KeyManagement;
 /// <para>
 /// <b>Know what this protects.</b> A DataProtection purpose is a string over one key ring: whoever
 /// can unprotect one purpose of this application can unprotect them all. This protects against a key
-/// file that leaks without the key ring (a backup, a copied folder) and nothing more. A host that is
+/// file that leaks without the key ring and nothing more. The key ring is in the same store (see
+/// <see cref="KeyRingStore"/>): a copy of the store (a backup, a copied folder) gives the keys away unless
+/// the key ring is protected (a secret key kept apart, the TPM, or DPAPI on the same computer and account). A host that is
 /// compromised gives its keys away. This is said once, at the first use, as a warning.
 /// </para>
 /// <para>
@@ -98,7 +100,10 @@ public sealed class DefaultCoreKeyStore : ICoreKeyStore
         }
         catch( Exception ex )
         {
-            monitor.Error( $"Unable to open key '{name}' of '{owner.FullName}' from '{path}'. The file is left untouched.", ex );
+            monitor.Error( $"Unable to open key '{name}' of '{owner.FullName}' from '{path}'. The file is left untouched. "
+                           + $"Its key ring may have changed: it is in the private store of the root party ('-Local/{KeyRingStore.FolderName}'), "
+                           + "a key protected by another key ring (the default one of the account, or the ring of a lost store) can't be opened: "
+                           + "restore that key ring, or delete the store of the party to start over with a new identity (in development: \"#Dev/Store\").", ex );
             return null;
         }
         finally
@@ -177,7 +182,8 @@ public sealed class DefaultCoreKeyStore : ICoreKeyStore
         if( Interlocked.Exchange( ref _warned, 1 ) == 0 )
         {
             monitor.Warn( $"Identity keys are kept by the {nameof( DefaultCoreKeyStore )}: files protected by DataProtection. " +
-                          "This protects against a leaked key file, not against a compromised host. " +
+                          "This protects against a leaked key file, not against a compromised host, and not against a copy of the store " +
+                          "when its key ring is not encrypted (see KeyRingStore). " +
                           $"Register a stronger {nameof( ICoreKeyStore )} where that matters." );
         }
     }

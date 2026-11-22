@@ -14,9 +14,13 @@ namespace CK.AppIdentity.KeyManagement;
 /// not the folder of the application (a moved or redeployed application still opens its keys).
 /// </para>
 /// <para>
-/// A host that sets its own application name (<c>DataProtectionBuilderExtensions.SetApplicationName</c>) keeps it.
-/// Where the key ring is persisted and how it is protected (<c>DataProtectionBuilderExtensions.PersistKeysToFileSystem</c>,
-/// <c>DataProtectionBuilderExtensions.ProtectKeysWithCertificate</c>, etc.) remains a deployment choice of the host.
+/// The key ring lives in the private store of the root party and is protected by a secret key of its configuration,
+/// the CNG key store (the TPM), DPAPI on Windows, or nothing (see <see cref="KeyRingStore"/>).
+/// </para>
+/// <para>
+/// A host that sets its own application name (<c>DataProtectionBuilderExtensions.SetApplicationName</c>) keeps it, so
+/// does a host that persists the key ring (<c>DataProtectionBuilderExtensions.PersistKeysToFileSystem</c>, etc.) or
+/// protects it (<c>DataProtectionBuilderExtensions.ProtectKeysWithCertificate</c>, etc.).
 /// </para>
 /// </summary>
 public sealed class KeyManagementDataProtection : IRealObject
@@ -27,6 +31,7 @@ public sealed class KeyManagementDataProtection : IRealObject
         // The default application name is read from the IApplicationDiscriminator (the content root by default):
         // replacing it, rather than setting the option, lets an explicit DataProtectionBuilderExtensions.SetApplicationName win.
         services.Services.AddSingleton<IApplicationDiscriminator, IdentityDiscriminator>();
+        KeyRingStore.Register( services.Services );
     }
 
     sealed class IdentityDiscriminator : IApplicationDiscriminator

@@ -220,16 +220,36 @@ layer reports these statements from its handshakes. A remote can lie about them:
 `ECDsa` handle, never imported, so a store can make them non-exportable. The default implementation,
 [`DefaultCoreKeyStore`](DefaultCoreKeyStore.cs), writes one file per key (`CoreKeys/{name}.key` in the local party's
 `LocalFileStore`), its PKCS#8 content protected by DataProtection. This protects against a key file that leaks without
-the key ring, not against a compromised host, and a warning says so at first use.
+the key ring, not against a compromised host, and a warning says so at first use. The key ring is in the same store (see
+below): a copy of the store gives the keys away unless the ring is encrypted.
 
 The package registers the DataProtection ([`KeyManagementDataProtection`](KeyManagementDataProtection.cs)): a host
 doesn't call `DataProtectionServiceCollectionExtensions.AddDataProtection()`. Its application name, the discriminator of the key ring, is the full name of the
 application identity (`Domain/$Party/#Environment`) instead of the content root path, so the keys follow the identity,
 not the folder of the application: a moved or redeployed application still opens them. A host that sets its own
-application name (`DataProtectionBuilderExtensions.SetApplicationName`) keeps it. Where the key ring is persisted and
-how it is protected (`DataProtectionBuilderExtensions.PersistKeysToFileSystem`,
-`DataProtectionBuilderExtensions.ProtectKeysWithCertificate`, etc.) remains the host's deployment choice: by default, it is per user and per
-machine.
+application name (`DataProtectionBuilderExtensions.SetApplicationName`) keeps it.
+
+**The key ring** ([`KeyRingStore`](KeyRingStore.cs)) is in the private store of the root party: `-Local/DataProtection-Keys`
+of its `LocalFileStore` (`KeyRingStore.FolderName`). It follows the party, `#Dev/Store` in development, the configured
+store in a deployment, rather than a folder of the account shared by all its applications (or the memory, when the
+account has no profile: a restart would then lose the identity keys). The tenants of the process share it: each key has
+the purpose of its party. Its encryption at rest is chosen at its first use, the first that applies:
+1. the secret key `KeyRingKey` of the root party (see [the configuration](#configuration)): AES-256-GCM
+   ([`KeyRingCipher`](KeyRingCipher.cs)); `KeyRingPreviousKey` still decrypts what the previous key encrypted, to change
+   it;
+2. the `ICoreKeyStore`, when it is an [`IKeyRingEncryptorSource`](IKeyRingEncryptorSource.cs): the CNG store of
+   [CK.AppIdentity.KeyManagement.Cng](../CK.AppIdentity.KeyManagement.Cng/README.md#the-key-ring) protects the ring by a
+   key of its provider (the TPM by default);
+3. on Windows, DPAPI for the current account (the protection of the default key ring of ASP.NET);
+4. otherwise none: plain XML in the private store, restricted to the account; outside `#Dev`, a warning says so.
+
+Each file of the ring records how it is protected: a change only applies to the new keys of the ring (DataProtection adds
+one every 90 days), the existing ones stay readable as long as their protection is available. A host that persists the
+key ring itself (`DataProtectionBuilderExtensions.PersistKeysToFileSystem`, etc.) or protects it
+(`DataProtectionBuilderExtensions.ProtectKeysWithCertificate`, etc.) keeps its choice.
+
+A key file protected by another key ring (the default one of the account, or the ring of a lost store) can't be opened:
+the error says so, and the fix is to restore that ring or to delete the store of the party (a new identity).
 
 Another store replaces it by taking the `DefaultCoreKeyStore` as a constructor parameter (and may fall back to it). For a
 store built on this interface that keeps the keys in hardware, see
@@ -255,6 +275,8 @@ On a local party (read from the `"KeyManagement"` section of its `"Local"` only,
 | `MaxSignatureDays` | 7 | Longest expiration of an application signature (1 to `KeyRotationDays`). It must not exceed the `KeyRotationDays` of the parties that verify the signatures. |
 | `TrustAnchors` | none | The trust anchors of this party: `"KeyManagement": { "TrustAnchors": { "{FullName}": "{seq}:{digest}" } }`, a checkpoint of the key event log of each anchored party (`ILocalKeys.TrustAnchors`), or `"#Dev"` in the dev store of a development solution (the checkpoint is read from the running status of the anchored party when it is verified). An invalid anchor, an anchor of the party itself, or `"#Dev"` outside the dev store fails the setup. |
 | `EnlistTicket` | none | The pre-authorized enlistment ticket of this party ([`EnlistTicket`](EnlistTicket.cs), a secret: give it as an optional secret handle, `{ "$SECRET?": "Enlist:Worker2" }`, `{ "$SECRET?": "Enlist:{Name}" }` for the instances of a fleet: the ticket is given at the first start only). It anchors its center at the checkpoint it carries (a different `TrustAnchors` of the center fails the setup), and the transport proves it to the center until it expires: the center trusts the key at once (`ILocalKeys.EnlistTicket`; see CK.AppIdentity.TransportLayer). |
+| `KeyRingKey` | none | Read on the root party only. The secret key that encrypts the DataProtection key ring (see [the key ring](#key-custody)): the base64 of 32 random bytes, a secret (`{ "$SECRET": "KeyRing" }`). An invalid value fails the start. |
+| `KeyRingPreviousKey` | none | Read on the root party only. The previous `KeyRingKey`, a secret: it decrypts the keys of the ring it encrypted, after a change of `KeyRingKey`. |
 | `RecoveryPublicKey` | none | The base64 SubjectPublicKeyInfo of a P-256 key generated and kept offline, read when an identity is created. Without it, the recovery key is created in the key store: it then helps only when the next key leaked on its own, not after a compromise of the host. |
 
 On a remote (each value is read in the `"KeyManagement"` section of its own entry, otherwise in the one of the nearest
