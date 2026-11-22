@@ -105,8 +105,16 @@ public sealed partial class CrisChannelFeature : ChannelFeature
 
     void SendAccepted( IActivityMonitor monitor, Protocol h )
     {
-        h.SendAccepted( monitor, IsRemoteInsideSystem ? _models.AcceptedFromInside : _models.AcceptedFromOutside, Party.Owner.Description );
+        // A connection and a change of our description (an HTTP endpoint that starts) announce it from different threads:
+        // reading the description and enqueuing it is atomic, so the last announcement received is the latest description
+        // (otherwise a description read before the change could be enqueued after it, and replace it on the remote).
+        lock( _announceLock )
+        {
+            h.SendAccepted( monitor, IsRemoteInsideSystem ? _models.AcceptedFromInside : _models.AcceptedFromOutside, Party.Owner.Description );
+        }
     }
+
+    readonly object _announceLock = new object();
 
     // Our description changed (the HTTP endpoints know their URL once the host has started): it is announced again.
     void OnLocalDescriptionChanged( IActivityMonitor monitor, ILocalParty local )
