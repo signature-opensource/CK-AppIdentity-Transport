@@ -243,6 +243,11 @@ the purpose of its party. Its encryption at rest is chosen at its first use, the
 3. on Windows, DPAPI for the current account (the protection of the default key ring of ASP.NET);
 4. otherwise none: plain XML in the private store, restricted to the account; outside `#Dev`, a warning says so.
 
+On Linux, the secret key can itself be bound to the machine: a systemd credential encrypted with the TPM
+(`systemd-creds encrypt --with-key=tpm2`, `LoadCredentialEncrypted=KeyRing` in the unit of the service) is decrypted by
+systemd at start and read by the host as the secret `KeyRing` (`$CREDENTIALS_DIRECTORY`, see
+[CK.AppHost](https://github.com/signature-opensource/CK-AspNet/blob/stable/CK.AppHost/README.md#the-secrets)).
+
 Each file of the ring records how it is protected: a change only applies to the new keys of the ring (DataProtection adds
 one every 90 days), the existing ones stay readable as long as their protection is available. A host that persists the
 key ring itself (`DataProtectionBuilderExtensions.PersistKeysToFileSystem`, etc.) or protects it
