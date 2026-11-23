@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CK.Poco.Exc.Json" Version="37.0.0-0.uc.1.ci.52" />
-    <PackageReference Include="CK.Cris.BackgroundExecutor" Version="3.0.0-0.uc.1.ci.190" />
+    <PackageReference Include="CK.Poco.Exc.Json" Version="37.0.0-0.uc.1.ci.54" />
+    <PackageReference Include="CK.Cris.BackgroundExecutor" Version="3.0.0-0.uc.1.ci.191" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CK.AppIdentity.Cris.Tests" />
