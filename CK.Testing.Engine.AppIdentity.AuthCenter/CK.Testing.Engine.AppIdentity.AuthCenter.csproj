@@ -5,11 +5,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="CK.Cris.AspNet.Authentication" Version="3.0.0-0.uc.1" />
-        <PackageReference Include="CK.Cris.AspNet.Engine" Version="3.0.0-0.uc.1" />
-        <PackageReference Include="CK.Testing.Engine.HttpEndpoint" Version="25.0.0-0.uc.1" />
-        <PackageReference Include="CK.Testing.Engine" Version="37.0.0-0.uc.1" />
-        <PackageReference Include="CK.Testing.Engine.Cris.Authentication" Version="3.0.0-0.uc.1" />
+        <PackageReference Include="CK.Cris.AspNet.Authentication" Version="3.0.0-0.uc.1.ci.193" />
+        <PackageReference Include="CK.Cris.AspNet.Engine" Version="3.0.0-0.uc.1.ci.193" />
+        <PackageReference Include="CK.Testing.Engine.HttpEndpoint" Version="25.0.0-0.uc.1.ci.56" />
+        <PackageReference Include="CK.Testing.Engine" Version="37.0.0-0.uc.1.ci.52" />
+        <PackageReference Include="CK.Testing.Engine.Cris.Authentication" Version="3.0.0-0.uc.1.ci.190" />
     </ItemGroup>
 
     <ItemGroup>
