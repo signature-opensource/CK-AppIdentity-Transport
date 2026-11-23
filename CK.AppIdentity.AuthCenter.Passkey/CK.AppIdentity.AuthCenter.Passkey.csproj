@@ -8,10 +8,10 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.uc.2" />
-    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.uc.2.ci.116" />
+    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.uc.2.ci.117" />
     <PackageReference Include="Fido2" Version="4.3.2" />
     <!-- The configuration model of the option. -->
-    <PackageReference Include="CK.ConfigurationModel" Version="0.0.0-0.uc.0.ci.11" />
+    <PackageReference Include="CK.ConfigurationModel" Version="0.0.0-0.uc.0.ci.12" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Local\CK.AppIdentity.AuthCenter.Local.csproj" />
