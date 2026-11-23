@@ -4,9 +4,9 @@
         <Description>This package implements the PartyActor: a system wide Actor identified by a CK-AppIdentity party full name.</Description>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.uc.0.ci.116" />
-        <PackageReference Include="CK.SqlServer.Setup.Model" Version="37.0.0-0.uc.0.ci.42" />
-        <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.0.ci.156" />
+        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.uc.0.ci.118" />
+        <PackageReference Include="CK.SqlServer.Setup.Model" Version="37.0.0-0.uc.0.ci.44" />
+        <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.0.ci.158" />
     </ItemGroup>
     <ItemGroup>
         <EmbeddedResource Include="**\*.sql;**\*.tql;**\*.y4" />
