@@ -24,10 +24,11 @@ An application that doesn't use passkeys doesn't reference this package (nor Fid
 ```
 
 [`AuthCenterPasskeyOption`](AuthCenterPasskeyOption.cs) is the "Passkey" option of the Authentication Center (enabled by
-default, `"Passkey": false` disables it): it reads the section and creates an [`AuthCenterPasskey`](AuthCenterPasskey.cs)
-family for every local Authentication Center (tenants included). The "Passkey" scheme is available (listed, accepted) when
-the section exists **and** an `IPasskeyStore` is registered; otherwise the family has no scheme and hides the "Passkey"
-provider name.
+default, `"Passkey": false` disables it): it receives its configuration model,
+[`AuthCenterPasskeyConfiguration`](AuthCenterPasskeyConfiguration.cs) (read key by key along the party and its
+`Defaults`, then validated), and creates an [`AuthCenterPasskey`](AuthCenterPasskey.cs) family for every local
+Authentication Center (tenants included). The "Passkey" scheme is available (listed, accepted) when a `RpId` is configured
+**and** an `IPasskeyStore` is registered; otherwise the family has no scheme and hides the "Passkey" provider name.
 
 ## The rules ([`AuthCenterPasskeyHandlers`](AuthCenterPasskeyHandlers.cs))
 

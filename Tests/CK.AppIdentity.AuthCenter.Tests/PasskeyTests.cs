@@ -249,6 +249,35 @@ public class PasskeyTests
     }
 
     [Test]
+    public void the_configuration_model_is_read_and_validated()
+    {
+        static UserMessageCollector Collector() => new UserMessageCollector( new CurrentCultureInfo( new TranslationService(), NormalizedCultureInfo.CodeDefault ) );
+        static ImmutableConfigurationSection Section( string json ) => ImmutableConfigurationSection.CreateFromJson( "Local:AuthCenter", "Passkey", json );
+
+        var c = Collector();
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( Section( """{ "RpId": " Example.COM " }""" ), "Local:AuthCenter:Passkey", c, out var m )
+                                .ShouldBeTrue();
+        m!.NormalizedRpId.ShouldBe( "example.com" );
+        m.EffectiveRpName.ShouldBe( "example.com" );
+        m.Timeout.ShouldBe( TimeSpan.FromMinutes( 5 ) );
+
+        // No section: the model with its defaults (no RpId: no scheme).
+        c = Collector();
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( (ImmutableConfigurationSection?)null, "Local:AuthCenter:Passkey", c, out m ).ShouldBeTrue();
+        m!.NormalizedRpId.ShouldBeNull();
+
+        c = Collector();
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( Section( """{ "RpId": "https://example.com:443", "Timeout": "00:20:00" }""" ), "Local:AuthCenter:Passkey", c, out m )
+                                .ShouldBeFalse();
+        var errors = c.UserMessages.Where( x => x.Level == UserMessageLevel.Error ).Select( x => x.Text ).ToArray();
+        errors.Length.ShouldBe( 2 );
+        errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:RpId" ) );
+        errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:Timeout" ) );
+
+        AuthCenterPasskeyConfiguration.ModelDescription.Properties.Select( p => p.Name ).ShouldBe( ["RpId", "RpName", "Timeout"] );
+    }
+
+    [Test]
     public void the_pending_store_is_bounded_one_use_and_expiring()
     {
         var store = new AuthCenterPendingStore<string>( TimeSpan.FromMinutes( 1 ), 2 );

@@ -1,5 +1,4 @@
 using CK.Core;
-using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -8,7 +7,7 @@ using System.Linq;
 namespace CK.AppIdentity.AuthCenter.Passkey;
 
 /// <summary>
-/// The settings of the passkeys of a local Authentication Center, read from its "AuthCenter:Passkey" section.
+/// The settings of the passkeys of a local Authentication Center, from its configuration (<see cref="AuthCenterPasskeyConfiguration"/>).
 /// </summary>
 public sealed class AuthCenterPasskeyOptions
 {
@@ -67,23 +66,10 @@ public sealed class AuthCenterPasskeyOptions
                && PartyOrigins.IsCallerPartyUrl( local, callerPartyFullName, o );
     }
 
-    // Reads the "AuthCenter:Passkey" section. Throws with all the errors.
-    internal static AuthCenterPasskeyOptions Read( IConfiguration section )
+    // The settings of a configuration that has a RpId (validated by its model).
+    internal static AuthCenterPasskeyOptions From( AuthCenterPasskeyConfiguration configuration )
     {
-        var errors = new List<string>();
-        void Error( string text ) => errors.Add( text );
-        var rpId = section["RpId"]?.Trim().ToLowerInvariant();
-        if( string.IsNullOrEmpty( rpId ) || Uri.CheckHostName( rpId ) != UriHostNameType.Dns )
-        {
-            Error( "'RpId' is required: a domain name (\"example.com\" or \"localhost\"), without scheme nor port." );
-        }
-        var rpName = section["RpName"] ?? rpId;
-        var timeout = TimeSpan.FromMinutes( 5 );
-        if( section["Timeout"] is string t && (!TimeSpan.TryParse( t, out timeout ) || timeout <= TimeSpan.Zero || timeout > TimeSpan.FromMinutes( 10 )) )
-        {
-            Error( $"'Timeout' = '{t}': a positive time span of at most 10 minutes is expected." );
-        }
-        if( errors.Count > 0 ) Throw.CKException( string.Join( Environment.NewLine, errors ) );
-        return new AuthCenterPasskeyOptions( rpId!, rpName!, timeout );
+        Throw.DebugAssert( configuration.NormalizedRpId != null && configuration.EffectiveRpName != null );
+        return new AuthCenterPasskeyOptions( configuration.NormalizedRpId, configuration.EffectiveRpName, configuration.Timeout );
     }
 }
