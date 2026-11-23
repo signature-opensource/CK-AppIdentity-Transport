@@ -255,7 +255,7 @@ public class PasskeyTests
         static ImmutableConfigurationSection Section( string json ) => ImmutableConfigurationSection.CreateFromJson( "Local:AuthCenter", "Passkey", json );
 
         var c = Collector();
-        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( Section( """{ "RpId": " Example.COM " }""" ), "Local:AuthCenter:Passkey", c, out var m )
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyOptionConfiguration>( Section( """{ "RpId": " Example.COM " }""" ), "Local:AuthCenter:Passkey", c, out var m )
                                 .ShouldBeTrue();
         m!.NormalizedRpId.ShouldBe( "example.com" );
         m.EffectiveRpName.ShouldBe( "example.com" );
@@ -263,18 +263,18 @@ public class PasskeyTests
 
         // No section: the model with its defaults (no RpId: no scheme).
         c = Collector();
-        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( (ImmutableConfigurationSection?)null, "Local:AuthCenter:Passkey", c, out m ).ShouldBeTrue();
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyOptionConfiguration>( (ImmutableConfigurationSection?)null, "Local:AuthCenter:Passkey", c, out m ).ShouldBeTrue();
         m!.NormalizedRpId.ShouldBeNull();
 
         c = Collector();
-        ConfigurationModelReader.TryRead<AuthCenterPasskeyConfiguration>( Section( """{ "RpId": "https://example.com:443", "Timeout": "00:20:00" }""" ), "Local:AuthCenter:Passkey", c, out m )
+        ConfigurationModelReader.TryRead<AuthCenterPasskeyOptionConfiguration>( Section( """{ "RpId": "https://example.com:443", "Timeout": "00:20:00" }""" ), "Local:AuthCenter:Passkey", c, out m )
                                 .ShouldBeFalse();
         var errors = c.UserMessages.Where( x => x.Level == UserMessageLevel.Error ).Select( x => x.Text ).ToArray();
         errors.Length.ShouldBe( 2 );
         errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:RpId" ) );
         errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:Timeout" ) );
 
-        AuthCenterPasskeyConfiguration.ModelDescription.Properties.Select( p => p.Name ).ShouldBe( ["RpId", "RpName", "Timeout"] );
+        AuthCenterPasskeyOptionConfiguration.ModelDescription.Properties.Select( p => p.Name ).ShouldBe( ["RpId", "RpName", "Timeout"] );
     }
 
     [Test]

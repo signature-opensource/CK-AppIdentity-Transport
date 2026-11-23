@@ -7,11 +7,11 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// <summary>
 /// The "Passkey" option of the Authentication Center: the passkey scheme family (<see cref="AuthCenterPasskey"/>) of every
 /// local Authentication Center, the dynamic tenants included, with the settings of its "AuthCenter:Passkey" section
-/// (its configuration model is <see cref="AuthCenterPasskeyConfiguration"/>; without a RpId the family has no scheme).
+/// (its configuration model is <see cref="AuthCenterPasskeyOptionConfiguration"/>; without a RpId the family has no scheme).
 /// The passkeys are available only with an <see cref="IPasskeyStore"/>.
 /// </summary>
 [PartyFeatureOption( "Passkey", TypeActivation.ByDefault )]
-[Configuration<AuthCenterPasskeyConfiguration>]
+[Configuration<AuthCenterPasskeyOptionConfiguration>]
 public sealed class AuthCenterPasskeyOption : IPartyComponentOption<LocalAuthCenterFeatureDriver>, IAuthCenterSchemeFamilyOption
 {
     readonly bool _hasStore;
@@ -21,7 +21,7 @@ public sealed class AuthCenterPasskeyOption : IPartyComponentOption<LocalAuthCen
     /// </summary>
     /// <param name="configuration">The configuration, read (key by key along the levels of the party) and validated.</param>
     /// <param name="services">The services: the passkeys are available only with an <see cref="IPasskeyStore"/>.</param>
-    public AuthCenterPasskeyOption( AuthCenterPasskeyConfiguration configuration, IServiceProvider services )
+    public AuthCenterPasskeyOption( AuthCenterPasskeyOptionConfiguration configuration, IServiceProvider services )
     {
         Throw.CheckNotNullArgument( configuration );
         _hasStore = services.GetService<IPasskeyStore>() != null;

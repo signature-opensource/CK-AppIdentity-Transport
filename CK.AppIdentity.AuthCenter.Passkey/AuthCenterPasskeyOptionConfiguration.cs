@@ -11,7 +11,7 @@ namespace CK.AppIdentity.AuthCenter.Passkey;
 /// Without <see cref="RpId"/>, the passkey family has no scheme.
 /// </summary>
 [ConfigurationModel]
-public sealed partial class AuthCenterPasskeyConfiguration : IConfigurationModel
+public sealed partial class AuthCenterPasskeyOptionConfiguration : IConfigurationModel
 {
     /// <summary>
     /// Gets the relying party identifier: a registrable domain (<c>example.com</c>), or <c>localhost</c> for the

@@ -7,7 +7,7 @@ using System.Linq;
 namespace CK.AppIdentity.AuthCenter.Passkey;
 
 /// <summary>
-/// The settings of the passkeys of a local Authentication Center, from its configuration (<see cref="AuthCenterPasskeyConfiguration"/>).
+/// The settings of the passkeys of a local Authentication Center, from its configuration (<see cref="AuthCenterPasskeyOptionConfiguration"/>).
 /// </summary>
 public sealed class AuthCenterPasskeyOptions
 {
@@ -67,7 +67,7 @@ public sealed class AuthCenterPasskeyOptions
     }
 
     // The settings of a configuration that has a RpId (validated by its model).
-    internal static AuthCenterPasskeyOptions From( AuthCenterPasskeyConfiguration configuration )
+    internal static AuthCenterPasskeyOptions From( AuthCenterPasskeyOptionConfiguration configuration )
     {
         Throw.DebugAssert( configuration.NormalizedRpId != null && configuration.EffectiveRpName != null );
         return new AuthCenterPasskeyOptions( configuration.NormalizedRpId, configuration.EffectiveRpName, configuration.Timeout );
