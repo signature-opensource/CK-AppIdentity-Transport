@@ -274,7 +274,7 @@ public class PasskeyTests
         errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:RpId" ) );
         errors.ShouldContain( e => e.Contains( "Local:AuthCenter:Passkey:Timeout" ) );
 
-        AuthCenterPasskeyOptionConfiguration.ModelDescription.Properties.Select( p => p.Name ).ShouldBe( ["RpId", "RpName", "Timeout"] );
+        ConfigurationModelDescription.Get( typeof( AuthCenterPasskeyOptionConfiguration ) ).Properties.Select( p => p.Name ).ShouldBe( ["RpId", "RpName", "Timeout"] );
     }
 
     [Test]

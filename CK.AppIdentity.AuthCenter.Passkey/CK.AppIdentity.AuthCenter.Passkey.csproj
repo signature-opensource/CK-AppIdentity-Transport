@@ -10,7 +10,7 @@
     <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.uc.1.ci.37" />
     <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.uc.1.ci.113" />
     <PackageReference Include="Fido2" Version="4.3.2" />
-    <!-- The configuration model of the option (and the generator of its description). -->
+    <!-- The configuration model of the option. -->
     <PackageReference Include="CK.ConfigurationModel" Version="0.0.0-0.uc.0.ci.7" />
   </ItemGroup>
   <ItemGroup>
