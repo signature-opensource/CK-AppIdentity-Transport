@@ -122,8 +122,9 @@ end is checked before they are deleted. An expired session that is presented is 
 This package knows no login technology: the login providers (`ILoginProvider`) do, and each family of schemes is a
 package of its own ("Package First": a simple application references little). For concrete families
 built on this package, see [CK.AppIdentity.AuthCenter.Oidc](../CK.AppIdentity.AuthCenter.Oidc/README.md) for
-the "Oidc.&lt;Suffix&gt;" schemes and [CK.AppIdentity.AuthCenter.Passkey](../CK.AppIdentity.AuthCenter.Passkey/README.md)
-for the "Passkey" one.
+the "Oidc.&lt;Suffix&gt;" schemes, [CK.AppIdentity.AuthCenter.Passkey](../CK.AppIdentity.AuthCenter.Passkey/README.md)
+for the "Passkey" one, [CK.AppIdentity.AuthCenter.Password](../CK.AppIdentity.AuthCenter.Password/README.md) for "Basic" (the
+"Password" option) and [CK.AppIdentity.AuthCenter.Weak](../CK.AppIdentity.AuthCenter.Weak/README.md) for "Weak".
 `AuthCenterSessionService.GetCriticalSessionAsync` (a Critical, not impersonated session) is public for the families that
 handle their own commands, and so is `AuthCenterResults`, from the core
 [CK.AppIdentity.AuthCenter](../CK.AppIdentity.AuthCenter/README.md).
@@ -138,9 +139,14 @@ handle their own commands, and so is `AuthCenterResults`, from the core
   Authentication Center (the root and every tenant, dynamic ones included).
 - **It drives a login provider** (`ProviderName`): the scheme listing shows the family's `Schemes` instead of the
   provider name.
+- **A scheme is available only through an enabled family** and its registered provider: the listing shows the schemes of
+  the enabled families whose provider is registered, the login of any other scheme is refused
+  (`"Authentication.UnknownScheme"`). So `"Password": false` turns the password login off for a party, and an
+  application that references a provider without its family has no such login. The family doesn't bring its provider:
+  the provider is the backend's (a database package, or any other).
 - **The account creation is the family's decision** (`AllowsAccountCreation`): the opener calls the optional
-  `IAutoCreateAccountService` only for a scheme whose family allows it. Fail closed: a scheme without family (Basic,
-  Weak) never creates an account, and no family does by default.
+  `IAutoCreateAccountService` only for a scheme whose family allows it. No family does by default (Basic, Weak and
+  Passkey never do).
 
 ## Remote logins ([`AuthCenterOperationHandlers`](AuthCenterOperationHandlers.cs), [`IAuthCenterRemoteScheme`](IAuthCenterRemoteScheme.cs))
 

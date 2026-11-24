@@ -198,11 +198,30 @@ public class SessionCommandsTests
     }
 
     [Test]
+    public async Task a_scheme_is_available_only_through_an_enabled_family_Async()
+    {
+        // The "Weak" option of the AuthCenter turned off: its scheme is neither listed nor accepted, although its provider is
+        // registered.
+        await using var app = await AuthCenterApp.StartAsync( c =>
+        {
+            AuthCenterApp.LocalAuthCenter( c );
+            c["Local:AuthCenter:Weak"] = "false";
+        } );
+        app.LocalCenter.SchemeFamilies.ShouldNotContain( f => f.ProviderName == "Weak" );
+        var schemes = (IList<ILoginSchemeInfo>)(await app.ExecuteAsync( p => p.Create<IGetLoginSchemesQCommand>() )).ShouldNotBeNull();
+        schemes.ShouldBeEmpty();
+        var login = await app.LoginAsync( "Albert" );
+        login.Success.ShouldBeFalse();
+        // The "Password" family is there, but without its provider the "Basic" scheme is not available.
+        app.LocalCenter.FindSchemeFamily( "Basic" ).ShouldNotBeNull();
+    }
+
+    [Test]
     public async Task without_a_scheme_family_package_its_schemes_do_not_exist_Async()
     {
         // The configuration has no "AuthCenter:Oidc" section (it would be an error without the package).
         await using var app = await AuthCenterApp.StartAsync( withOidc: false );
-        app.LocalCenter.SchemeFamilies.ShouldBeEmpty();
+        app.LocalCenter.SchemeFamilies.ShouldNotContain( f => f.ProviderName == "Oidc" );
         var start = await app.ExecuteAsync( p => p.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) );
         start.ShouldBeAssignableTo<ICrisResultError>().ShouldNotBeNull().Errors.Select( e => e.Text ).ShouldContain( "Unknown login scheme 'Oidc.Test'." );
     }

@@ -27,7 +27,8 @@ public interface IAuthCenterScheme
 
     /// <summary>
     /// Gets whether an unregistered identity of a scheme of this family may create an account (through the optional
-    /// <see cref="CK.Core.IAutoCreateAccountService"/>). A scheme that belongs to no family never does.
+    /// <see cref="CK.Core.IAutoCreateAccountService"/>). A scheme that belongs to no enabled family is not available: it is
+    /// neither listed nor accepted.
     /// </summary>
     /// <param name="scheme">One of the <see cref="Schemes"/>.</param>
     /// <returns>True if the account creation is allowed for the scheme.</returns>

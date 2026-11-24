@@ -22,10 +22,14 @@ public static class AuthCenterApplicationTestingExtensions
 {
     /// <summary>
     /// Gets the assemblies that make an application its own Authentication Center with an HTTP front (on the endpoint
-    /// of its "HttpEndpoint" feature). The login schemes (CK.Cris.Authentication.Basic...), their providers
-    /// (CK.DB.User.UserPassword...) and the client packages are added by the test.
+    /// of its "HttpEndpoint" feature), with the scheme families of the "Password" and "Weak" options of the AuthCenter
+    /// (CK.AppIdentity.AuthCenter.Password and .Weak: a scheme is available only with its provider). The login commands
+    /// (CK.Cris.Authentication.Basic...), the providers (CK.DB.User.UserPassword...) and the client packages are added by
+    /// the test.
     /// </summary>
     public static readonly string[] AuthCenterApplicationAssemblies = ["CK.AppIdentity.AuthCenter.Local",
+                                                                       "CK.AppIdentity.AuthCenter.Password",
+                                                                       "CK.AppIdentity.AuthCenter.Weak",
                                                                        "CK.AppIdentity.AuthCenter.Remote",
                                                                        "CK.Cris.AspNet.Authentication",
                                                                        AspNetServerTestHelperExtensions.HttpEndpointAssembly];

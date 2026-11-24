@@ -96,8 +96,13 @@ public sealed class AuthCenterSessionIssuer
         {
             return Failure( monitor, command, $"'{_localParty.LocalParty}' has no AuthCenter.", "Authentication.NoAuthCenter" );
         }
+        // A scheme is available when an enabled family of the AuthCenter declares it (an option of the AuthCenter: a party
+        // turns a login method off) and its provider is registered (the backend).
+        var family = center.FindSchemeFamily( scheme );
         var providerName = LoginScheme.GetProviderName( scheme );
-        var provider = _providers.FirstOrDefault( p => p.ProviderNames.Contains( providerName, StringComparer.OrdinalIgnoreCase ) );
+        var provider = family != null
+                        ? _providers.FirstOrDefault( p => p.ProviderNames.Contains( providerName, StringComparer.OrdinalIgnoreCase ) )
+                        : null;
         if( provider == null )
         {
             return Failure( monitor, command, $"Unknown login scheme '{scheme}'.", "Authentication.UnknownScheme" );
@@ -108,8 +113,8 @@ public sealed class AuthCenterSessionIssuer
                         ? d.UserData.ToImmutableDictionary( kv => kv.Key, kv => (string?)kv.Value )
                         : null;
         var context = new LoginContext( scheme, payload, _initial, userData );
-        // An account can be created only for a scheme whose family allows it (fail closed: Basic and Weak never do).
-        bool allowsAccountCreation = center.FindSchemeFamily( scheme )?.AllowsAccountCreation( scheme ) is true;
+        // An account can be created only for a scheme whose family allows it.
+        bool allowsAccountCreation = family!.AllowsAccountCreation( scheme );
         var r = await LoginAsync( monitor, provider, context, allowsAccountCreation ).ConfigureAwait( false );
         if( context.HasError )
         {

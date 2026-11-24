@@ -21,6 +21,8 @@
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Remote\CK.AppIdentity.AuthCenter.Remote.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Oidc\CK.AppIdentity.AuthCenter.Oidc.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Passkey\CK.AppIdentity.AuthCenter.Passkey.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Password\CK.AppIdentity.AuthCenter.Password.csproj" />
+    <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Weak\CK.AppIdentity.AuthCenter.Weak.csproj" />
     <ProjectReference Include="..\..\CK.AppIdentity.AuthCenter.Enlistment\CK.AppIdentity.AuthCenter.Enlistment.csproj" />
     <ProjectReference Include="..\..\CK.Testing.Engine.AppIdentity.Cris\CK.Testing.Engine.AppIdentity.Cris.csproj" />
     <ProjectReference Include="..\..\CK.Testing.Engine.AppIdentity.AuthCenter\CK.Testing.Engine.AppIdentity.AuthCenter.csproj" />

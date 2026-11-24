@@ -28,6 +28,8 @@
   <Project Path="CK.AppIdentity.AuthCenter.Remote/CK.AppIdentity.AuthCenter.Remote.csproj" />
   <Project Path="CK.AppIdentity.AuthCenter.Oidc/CK.AppIdentity.AuthCenter.Oidc.csproj" />
   <Project Path="CK.AppIdentity.AuthCenter.Passkey/CK.AppIdentity.AuthCenter.Passkey.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Password/CK.AppIdentity.AuthCenter.Password.csproj" />
+  <Project Path="CK.AppIdentity.AuthCenter.Weak/CK.AppIdentity.AuthCenter.Weak.csproj" />
   <Project Path="CK.Testing.Engine.AppIdentity.Cris/CK.Testing.Engine.AppIdentity.Cris.csproj" Id="8f415832-aeaf-4570-823e-2d2dde2100e2" />
   <Project Path="CK.Testing.AppIdentity.Cris/CK.Testing.AppIdentity.Cris.csproj" />
   <Project Path="CK.Testing.Engine.AppIdentity.AuthCenter/CK.Testing.Engine.AppIdentity.AuthCenter.csproj" />

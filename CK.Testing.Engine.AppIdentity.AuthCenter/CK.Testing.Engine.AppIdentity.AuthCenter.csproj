@@ -14,6 +14,8 @@
 
     <ItemGroup>
         <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Local\CK.AppIdentity.AuthCenter.Local.csproj" />
+        <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Password\CK.AppIdentity.AuthCenter.Password.csproj" />
+        <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Weak\CK.AppIdentity.AuthCenter.Weak.csproj" />
         <ProjectReference Include="..\CK.Testing.AppIdentity.TransportLayer\CK.Testing.AppIdentity.TransportLayer.csproj" />
     </ItemGroup>
 

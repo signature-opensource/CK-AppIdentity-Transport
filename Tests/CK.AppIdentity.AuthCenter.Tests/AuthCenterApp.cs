@@ -200,6 +200,9 @@ public sealed class AuthCenterApp : IAsyncDisposable
                                        typeof( DefaultCoreKeyStore ),
                                        typeof( LocalAuthCenterFeatureDriver ),
                                        typeof( RemoteAuthCenterFeatureDriver ),
+                                       // The scheme families of the "Basic" and "Weak" schemes (their providers are fakes).
+                                       typeof( Password.AuthCenterPasswordOption ),
+                                       typeof( Weak.AuthCenterWeakOption ),
                                        typeof( IAuthenticationSessionOpener ),
                                        // The endpoint side (CK.Cris.Authentication): the session commands are executed
                                        // by their endpoint, which executes the operations, handled here (single host).

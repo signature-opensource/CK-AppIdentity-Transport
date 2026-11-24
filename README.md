@@ -24,6 +24,8 @@ parties find each other, authenticate each other with pinned keys, and exchange 
 | [CK.AppIdentity.AuthCenter.Remote](CK.AppIdentity.AuthCenter.Remote/README.md) | This application is a remote of an Authentication Center: its endpoints execute the session commands, the AuthCenter their operations. |
 | [CK.AppIdentity.AuthCenter.Oidc](CK.AppIdentity.AuthCenter.Oidc/README.md) | The OpenID Connect logins of a local Authentication Center. |
 | [CK.AppIdentity.AuthCenter.Passkey](CK.AppIdentity.AuthCenter.Passkey/README.md) | The passkey (WebAuthn) logins of a local Authentication Center. |
+| [CK.AppIdentity.AuthCenter.Password](CK.AppIdentity.AuthCenter.Password/README.md) | The "Password" option of a local Authentication Center: the "Basic" scheme family (the provider is the backend's). |
+| [CK.AppIdentity.AuthCenter.Weak](CK.AppIdentity.AuthCenter.Weak/README.md) | The "Weak" option of a local Authentication Center: the "Weak" scheme family (the provider is the backend's). |
 | [CK.IO.AuthCenter](CK.IO.AuthCenter/README.md) | The relay protocol between the fronts and their Authentication Center. |
 | [CK.DB.AppIdentity](CK.DB.AppIdentity/README.md) | The PartyActor: a CK-DB actor that represents a party. |
 | [CK.Testing.AppIdentity.TransportLayer](CK.Testing.AppIdentity.TransportLayer/README.md) | Test helpers for the transport layer, including an adversarial peer. |
