@@ -40,20 +40,20 @@ public sealed class AuthCenterPasskeyOptionConfiguration : IConfigurationModel
     public string? EffectiveRpName => RpName ?? NormalizedRpId;
 
     /// <inheritdoc />
-    public void Validate( UserMessageCollector collector, string path )
+    public void Validate( IConfigurationValidationContext context )
     {
         var rpId = NormalizedRpId;
         if( rpId != null && (rpId.Length == 0 || Uri.CheckHostName( rpId ) != UriHostNameType.Dns) )
         {
-            collector.Error( $"'{path}:RpId' must be a domain name (\"example.com\" or \"localhost\"), without scheme nor port." );
+            context.Error( $"'{context.Path}:RpId' must be a domain name (\"example.com\" or \"localhost\"), without scheme nor port." );
         }
         if( rpId == null && RpName != null )
         {
-            collector.Error( $"'{path}:RpName' is set but '{path}:RpId' is missing: the passkeys are bound to a RpId." );
+            context.Error( $"'{context.Path}:RpName' is set but '{context.Path}:RpId' is missing: the passkeys are bound to a RpId." );
         }
         if( Timeout <= TimeSpan.Zero || Timeout > TimeSpan.FromMinutes( 10 ) )
         {
-            collector.Error( $"'{path}:Timeout' = '{Timeout}': a positive time span of at most 10 minutes is expected." );
+            context.Error( $"'{context.Path}:Timeout' = '{Timeout}': a positive time span of at most 10 minutes is expected." );
         }
     }
 }
