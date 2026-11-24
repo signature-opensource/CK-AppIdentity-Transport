@@ -1,0 +1,2 @@
+# The shell launcher must keep LF everywhere: a CRLF line ending breaks it on Linux.
+ckey text eol=lf
