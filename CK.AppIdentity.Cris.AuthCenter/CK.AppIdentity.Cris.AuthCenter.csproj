@@ -6,7 +6,6 @@
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <!-- NU5128: the package has no lib/ folder, on purpose. -->
     <NoWarn>$(NoWarn);NU5128</NoWarn>
-    <Description>Deprecated: renamed CK.AppIdentity.AuthCenter.</Description>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="MSBuild/CK.AppIdentity.Cris.AuthCenter.targets">

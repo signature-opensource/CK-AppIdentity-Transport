@@ -1,4 +1,7 @@
-A CK-AppIdentity channel that carries Cris commands between parties: `CrisChannelFeature.SendCommand` sends a command to
+A CK-AppIdentity channel that carries Cris commands between parties, with a location-transparent dispatch of the
+commands.
+
+`CrisChannelFeature.SendCommand` sends a command to
 a remote and returns its executing command (immediate events and result). The commands a remote sends are executed in the
 `AppIdentityDIContainerDefinition` endpoint, where the calling `IRemoteParty` is a scoped service.
 `ChannelCrisRemoteDispatcher` makes the dispatch location-transparent: a command without local handler executes on the

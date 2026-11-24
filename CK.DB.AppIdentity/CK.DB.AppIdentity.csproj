@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
-        <Description>This package implements the PartyActor: a system wide Actor identified by a CK-AppIdentity party full name.</Description>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.uc.2.ci.126" />
