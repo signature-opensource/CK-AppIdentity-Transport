@@ -6,11 +6,11 @@
     <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.uc.2.ci.41" />
-    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.uc.2.ci.122" />
+    <PackageReference Include="CK.AuthenticationInfo.Passkey" Version="15.0.0-0.uc.3" />
+    <PackageReference Include="CK.IO.Authentication.Passkey" Version="3.0.0-0.uc.3" />
     <PackageReference Include="Fido2" Version="4.3.2" />
     <!-- The configuration model of the option. -->
-    <PackageReference Include="CK.ConfigurationModel" Version="0.0.0-0.uc.0.ci.17" />
+    <PackageReference Include="CK.ConfigurationModel" Version="0.0.0-0.uc.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Local\CK.AppIdentity.AuthCenter.Local.csproj" />
