@@ -727,9 +727,9 @@ public class RemoteAuthCenterTests
         using var idp = new FakeIdentityProvider();
         await using var p = await StartAsync( oidcSettings: c =>
         {
-            c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
-            c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
-            c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+            c["Local:AuthCenter:Oidc:Schemes:Test:Authority"] = idp.BaseUrl;
+            c["Local:AuthCenter:Oidc:Schemes:Test:ClientId"] = FakeIdentityProvider.ClientId;
+            c["Local:AuthCenter:Oidc:Schemes:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
         } );
         p.Browser.RemoteLoginCallbackUrl = callback;
 
@@ -760,9 +760,9 @@ public class RemoteAuthCenterTests
         await using var p = await StartAsync( passkeys: true,
                                               oidcSettings: c =>
                                               {
-                                                  c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
-                                                  c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
-                                                  c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:Authority"] = idp.BaseUrl;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:ClientId"] = FakeIdentityProvider.ClientId;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
                                               },
                                               centerPublicUrl: "https://center.example.com" );
         // The AuthCenter is a party (it announces its public URL), but the remote relays: only the remote's origin is accepted.
@@ -783,9 +783,9 @@ public class RemoteAuthCenterTests
         using var idp = new FakeIdentityProvider();
         await using var p = await StartAsync( oidcSettings: c =>
                                               {
-                                                  c["Local:AuthCenter:Oidc:Test:Authority"] = idp.BaseUrl;
-                                                  c["Local:AuthCenter:Oidc:Test:ClientId"] = FakeIdentityProvider.ClientId;
-                                                  c["Local:AuthCenter:Oidc:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:Authority"] = idp.BaseUrl;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:ClientId"] = FakeIdentityProvider.ClientId;
+                                                  c["Local:AuthCenter:Oidc:Schemes:Test:ClientSecret"] = FakeIdentityProvider.ClientSecret;
                                               },
                                               centerPublicUrl: "https://center.example.com" );
         var start = (await p.RequestAsync( pocos => pocos.Create<IStartLoginCommand>( c => c.Scheme = "Oidc.Test" ) )).ShouldBeOfType<RedirectedUrl>();

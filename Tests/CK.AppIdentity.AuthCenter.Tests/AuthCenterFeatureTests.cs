@@ -385,10 +385,10 @@ public class AuthCenterFeatureTests
 
     static void OidcScheme( MutableConfigurationSection c, string prefix = "Local:" )
     {
-        c[$"{prefix}AuthCenter:Oidc:Test:Authority"] = "https://idp.example.com";
-        c[$"{prefix}AuthCenter:Oidc:Test:ClientId"] = "client";
-        c[$"{prefix}AuthCenter:Oidc:Test:ClientSecret"] = "secret";
-        c[$"{prefix}AuthCenter:Oidc:Test:Scopes"] = "openid";
+        c[$"{prefix}AuthCenter:Oidc:Schemes:Test:Authority"] = "https://idp.example.com";
+        c[$"{prefix}AuthCenter:Oidc:Schemes:Test:ClientId"] = "client";
+        c[$"{prefix}AuthCenter:Oidc:Schemes:Test:ClientSecret"] = "secret";
+        c[$"{prefix}AuthCenter:Oidc:Schemes:Test:Scopes"] = "openid";
     }
 
     [Test]
@@ -476,10 +476,10 @@ public class AuthCenterFeatureTests
             OidcScheme( c );
             c["Parties:0:FullName"] = "Acme/$Acme";
             OidcScheme( c, "Parties:0:Local:" );
-            c["Parties:0:Local:AuthCenter:Oidc:Other:Authority"] = "https://other-idp.example.com";
-            c["Parties:0:Local:AuthCenter:Oidc:Other:ClientId"] = "client";
-            c["Parties:0:Local:AuthCenter:Oidc:Other:ClientSecret"] = "secret";
-            c["Parties:0:Local:AuthCenter:Oidc:Other:Scopes"] = "openid";
+            c["Parties:0:Local:AuthCenter:Oidc:Schemes:Other:Authority"] = "https://other-idp.example.com";
+            c["Parties:0:Local:AuthCenter:Oidc:Schemes:Other:ClientId"] = "client";
+            c["Parties:0:Local:AuthCenter:Oidc:Schemes:Other:ClientSecret"] = "secret";
+            c["Parties:0:Local:AuthCenter:Oidc:Schemes:Other:Scopes"] = "openid";
         }, withOidc: true );
         var rootFamily = s.GetRequiredFeature<LocalAuthCenter>().SchemeFamilies.ShouldHaveSingleItem();
 

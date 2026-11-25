@@ -1,5 +1,4 @@
 using CK.Core;
-using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -9,8 +8,8 @@ using System.Text.RegularExpressions;
 namespace CK.AppIdentity.AuthCenter.Oidc;
 
 /// <summary>
-/// The settings of an OpenID Connect scheme of a local Authentication Center, read from its "AuthCenter:Oidc:&lt;Suffix&gt;"
-/// configuration section. The scheme is "Oidc.&lt;Suffix&gt;": the login uses the "Oidc" login provider with the
+/// The settings of an OpenID Connect scheme of a local Authentication Center, from its configuration
+/// (<see cref="OidcSchemeConfiguration"/>, the "AuthCenter:Oidc:Schemes:&lt;Suffix&gt;" section). The scheme is "Oidc.&lt;Suffix&gt;": the login uses the "Oidc" login provider with the
 /// <c>SchemeSuffix</c> and the <c>Sub</c> of the identity (the payload of CK.DB.User.UserOidc for instance).
 /// <para>
 /// A scheme accepts a single issuer: <c>sub</c> is unique per issuer only, and the identity of an actor is
@@ -134,80 +133,133 @@ public sealed partial class OidcSchemeOptions
 
     internal static bool IsAllowedUri( Uri u ) => u.Scheme == Uri.UriSchemeHttps || (u.Scheme == Uri.UriSchemeHttp && u.IsLoopback);
 
-    // Reads the schemes of the "AuthCenter:Oidc" section (null: no scheme). Throws with all the errors.
-    internal static ImmutableArray<OidcSchemeOptions> Read( IConfiguration? section )
+    // The schemes of the (checked) configuration of the option.
+    internal static ImmutableArray<OidcSchemeOptions> Create( AuthCenterOidcOptionConfiguration configuration )
     {
-        if( section == null ) return ImmutableArray<OidcSchemeOptions>.Empty;
-        var errors = new List<string>();
-        var result = ImmutableArray.CreateBuilder<OidcSchemeOptions>();
-        foreach( var s in section.GetChildren() )
-        {
-            var o = ReadOne( s, errors );
-            if( o != null ) result.Add( o );
-        }
-        if( errors.Count > 0 ) Throw.CKException( string.Join( Environment.NewLine, errors ) );
-        return result.ToImmutable();
+        return configuration.Schemes.Select( kv => Create( kv.Key, kv.Value ) ).ToImmutableArray();
     }
 
-    static OidcSchemeOptions? ReadOne( IConfigurationSection s, List<string> errors )
+    static OidcSchemeOptions Create( string suffix, OidcSchemeConfiguration c )
     {
-        bool success = true;
-        void Error( string text )
-        {
-            errors.Add( $"'{s.Key}': {text}" );
-            success = false;
-        }
-        var suffix = s.Key;
-        if( !SuffixRegex().IsMatch( suffix ) || suffix.StartsWith( "Oidc", StringComparison.OrdinalIgnoreCase ) )
-        {
-            Error( "the scheme suffix must be letters and digits and must not start with 'Oidc'." );
-        }
-        Uri? authority = null;
-        if( !Uri.TryCreate( s["Authority"], UriKind.Absolute, out authority ) || !IsAllowedUri( authority ) )
-        {
-            Error( "'Authority' must be an absolute https URL (http only on a loopback address)." );
-        }
-        var issuer = s["Issuer"] ?? authority?.ToString().TrimEnd( '/' );
-        var clientId = s["ClientId"];
-        if( string.IsNullOrWhiteSpace( clientId ) ) Error( "'ClientId' is required." );
-        var clientSecret = s["ClientSecret"];
-        if( string.IsNullOrWhiteSpace( clientSecret ) ) Error( "'ClientSecret' is required." );
-        var authMethod = s["TokenEndpointAuthMethod"];
-        if( authMethod != null && authMethod != ClientSecretBasic && authMethod != ClientSecretPost )
-        {
-            Error( $"'TokenEndpointAuthMethod' must be '{ClientSecretBasic}' or '{ClientSecretPost}' (or absent: it is chosen from the discovery document)." );
-        }
-        var scopes = (s["Scopes"] ?? "openid").Split( ' ', StringSplitOptions.RemoveEmptyEntries ).ToList();
+        var scopes = (c.Scopes ?? "openid").Split( ' ', StringSplitOptions.RemoveEmptyEntries ).ToList();
         if( !scopes.Contains( "openid" ) ) scopes.Insert( 0, "openid" );
-        var userInfo = ReadBool( s, nameof( GetClaimsFromUserInfoEndpoint ), Error );
-        var excluded = ReadStrings( s.GetSection( nameof( ExcludedClaims ) ) );
-        var allowAccountCreation = ReadBool( s, nameof( AllowAccountCreation ), Error );
-        if( !success ) return null;
         return new OidcSchemeOptions( suffix,
-                                      authority!,
-                                      issuer!,
-                                      clientId!,
-                                      clientSecret!,
-                                      authMethod,
+                                      c.Authority,
+                                      c.Issuer ?? c.Authority.ToString().TrimEnd( '/' ),
+                                      c.ClientId,
+                                      c.ClientSecret,
+                                      c.TokenEndpointAuthMethod,
                                       string.Join( ' ', scopes ),
-                                      userInfo,
-                                      excluded.ToImmutableArray(),
-                                      allowAccountCreation );
+                                      c.GetClaimsFromUserInfoEndpoint,
+                                      c.ExcludedClaims.ToImmutableArray(),
+                                      c.AllowAccountCreation );
     }
 
-    static bool ReadBool( IConfigurationSection s, string key, Action<string> error )
-    {
-        var v = s[key];
-        if( v == null ) return false;
-        if( bool.TryParse( v, out var b ) ) return b;
-        error( $"'{key}' must be true or false." );
-        return false;
-    }
+    /// <summary>
+    /// Gets whether a scheme suffix is valid: letters and digits, not starting with "Oidc".
+    /// </summary>
+    /// <param name="suffix">The suffix.</param>
+    /// <returns>True when it is valid.</returns>
+    public static bool IsValidSuffix( string suffix ) => SuffixRegex().IsMatch( suffix ) && !suffix.StartsWith( "Oidc", StringComparison.OrdinalIgnoreCase );
+}
 
-    // A list ("ExcludedClaims:0", "ExcludedClaims:1"...) or a comma separated value.
-    static List<string> ReadStrings( IConfigurationSection s )
+/// <summary>
+/// The configuration of the "Oidc" option of the AuthCenter: its schemes by suffix (the scheme is "Oidc.&lt;Suffix&gt;").
+/// <code>
+/// "AuthCenter": {
+///   "Oidc": {
+///     "Schemes": {
+///       "Google": { "Authority": "https://accounts.google.com", "ClientId": "...", "ClientSecret": { "$SECRET": "Google:ClientSecret" } }
+///     }
+///   }
+/// }
+/// </code>
+/// </summary>
+[ConfigurationModel]
+public sealed class AuthCenterOidcOptionConfiguration : IConfigurationModel
+{
+    /// <summary>
+    /// Gets the schemes by suffix: letters and digits, not starting with "Oidc".
+    /// </summary>
+    public IReadOnlyDictionary<string, OidcSchemeConfiguration> Schemes { get; init; } = new Dictionary<string, OidcSchemeConfiguration>();
+
+    /// <inheritdoc />
+    public void Validate( IConfigurationValidationContext context )
     {
-        if( s.GetChildren().Any() ) return s.GetChildren().Select( c => c.Value ).Where( v => !string.IsNullOrWhiteSpace( v ) ).Select( v => v!.Trim() ).ToList();
-        return (s.Value ?? "").Split( ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries ).ToList();
+        foreach( var suffix in Schemes.Keys.Where( k => !OidcSchemeOptions.IsValidSuffix( k ) ) )
+        {
+            context.Error( $"'{context.Path}:Schemes:{suffix}': the scheme suffix must be letters and digits and must not start with 'Oidc'." );
+        }
+    }
+}
+
+/// <summary>
+/// The configuration of an OpenID Connect scheme (see <see cref="OidcSchemeOptions"/>).
+/// </summary>
+[ConfigurationModel]
+public sealed class OidcSchemeConfiguration : IConfigurationModel
+{
+    /// <summary>
+    /// Gets the authority: an absolute https URL (http only on a loopback address).
+    /// </summary>
+    public required Uri Authority { get; init; }
+
+    /// <summary>
+    /// Gets the issuer of the identity tokens (the authority without its trailing '/' by default).
+    /// </summary>
+    public string? Issuer { get; init; }
+
+    /// <summary>
+    /// Gets the client identifier at the provider.
+    /// </summary>
+    public required string ClientId { get; init; }
+
+    /// <summary>
+    /// Gets the client secret at the provider: a secret, its configuration is a handle (<c>{ "$SECRET": "&lt;Name&gt;" }</c>).
+    /// </summary>
+    [ConfigurationSecret]
+    public required string ClientSecret { get; init; }
+
+    /// <summary>
+    /// Gets how the client authenticates at the token endpoint: "client_secret_basic" or "client_secret_post" (chosen from
+    /// the discovery document when absent).
+    /// </summary>
+    public string? TokenEndpointAuthMethod { get; init; }
+
+    /// <summary>
+    /// Gets the scopes, separated by spaces ("openid" is always one of them).
+    /// </summary>
+    public string? Scopes { get; init; }
+
+    /// <summary>
+    /// Gets whether the claims are completed by the UserInfo endpoint of the provider.
+    /// </summary>
+    public bool GetClaimsFromUserInfoEndpoint { get; init; }
+
+    /// <summary>
+    /// Gets the claims that the application must not keep.
+    /// </summary>
+    public IReadOnlyList<string> ExcludedClaims { get; init; } = [];
+
+    /// <summary>
+    /// Gets whether an identity bound to no actor may create an account.
+    /// </summary>
+    public bool AllowAccountCreation { get; init; }
+
+    /// <inheritdoc />
+    public void Validate( IConfigurationValidationContext context )
+    {
+        if( !Authority.IsAbsoluteUri || !OidcSchemeOptions.IsAllowedUri( Authority ) )
+        {
+            context.Error( $"'{context.Path}:Authority' must be an absolute https URL (http only on a loopback address)." );
+        }
+        if( string.IsNullOrWhiteSpace( ClientId ) ) context.Error( $"'{context.Path}:ClientId' is required." );
+        if( string.IsNullOrWhiteSpace( ClientSecret ) ) context.Error( $"'{context.Path}:ClientSecret' is required." );
+        if( TokenEndpointAuthMethod != null
+            && TokenEndpointAuthMethod != OidcSchemeOptions.ClientSecretBasic
+            && TokenEndpointAuthMethod != OidcSchemeOptions.ClientSecretPost )
+        {
+            context.Error( $"'{context.Path}:TokenEndpointAuthMethod' must be '{OidcSchemeOptions.ClientSecretBasic}' or '{OidcSchemeOptions.ClientSecretPost}' (or absent: it is chosen from the discovery document)." );
+        }
     }
 }

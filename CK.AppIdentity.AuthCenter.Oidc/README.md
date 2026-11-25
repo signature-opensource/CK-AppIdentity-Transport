@@ -13,16 +13,18 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
 "Local": {
   "AuthCenter": {
     "Oidc": {
-      "Google": {                                   // The scheme is "Oidc.Google".
-        "Authority": "https://accounts.google.com", // https (http only on a loopback address).
-        "Issuer": "...",                            // Optional: defaults to the Authority.
-        "ClientId": "...",
-        "ClientSecret": { "$SECRET": "Google:ClientSecret" },  // A secret: a handle, its value outside the files.
-        "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
-        "Scopes": "openid email",                   // "openid" is always included.
-        "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
-        "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
-        "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
+      "Schemes": {
+        "Google": {                                   // The scheme is "Oidc.Google".
+          "Authority": "https://accounts.google.com", // https (http only on a loopback address).
+          "Issuer": "...",                            // Optional: defaults to the Authority.
+          "ClientId": "...",
+          "ClientSecret": { "$SECRET": "Google:ClientSecret" },  // A secret: a handle, its value outside the files.
+          "TokenEndpointAuthMethod": "...",           // Optional: "client_secret_basic" or "client_secret_post" (see below).
+          "Scopes": "openid email",                   // "openid" is always included.
+          "GetClaimsFromUserInfoEndpoint": false,     // Optional: true completes the claims with the UserInfo endpoint.
+          "ExcludedClaims": [ "groups" ],             // Optional: exact names of claims not to keep.
+          "AllowAccountCreation": false               // Optional: true lets an unbound identity create an account.
+        }
       }
     }
   }
@@ -30,8 +32,10 @@ An application that doesn't use OpenID Connect doesn't reference this package (n
 ```
 
 [`AuthCenterOidcOption`](AuthCenterOidcOption.cs) is the "Oidc" option of the Authentication Center (enabled by default,
-`"Oidc": false` disables it): it reads the section, and without this package the section is a configuration error of the
-Authentication Center. The client secrets are declared secrets (`[ConfigurationSecret( "Party:*:ClientSecret" )]`): the
+`"Oidc": false` disables it). Its configuration model is `AuthCenterOidcOptionConfiguration`: its `Schemes` by suffix,
+each one an `OidcSchemeConfiguration` (checked: the authority, the client identifier and secret, the authentication
+method, the suffix). Without this package the section is an unknown key of the Authentication Center. The client
+secrets are declared secrets (`[ConfigurationSecret( "Party:Schemes:*:ClientSecret" )]`): the
 build reports a plain value, a handle `{ "$SECRET": "<Name>" }` keeps it out of the files (see CK.AppHost for its value).
 
 ## The family
