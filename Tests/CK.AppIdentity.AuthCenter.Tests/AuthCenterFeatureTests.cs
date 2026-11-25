@@ -394,8 +394,9 @@ public class AuthCenterFeatureTests
     [Test]
     public async Task a_scheme_family_section_requires_its_package_Async()
     {
-        // Without the Oidc package, its section is an error: a configured family must not silently do nothing.
-        await StartMustFailAsync( "AuthCenter:Oidc' section is not an option of the AuthCenter (a scheme family, another option): is a package missing?", c =>
+        // Without the Oidc package, its section is an unknown key of the AuthCenter's model: a configured family must not
+        // silently do nothing.
+        await StartMustFailAsync( "Unknown key 'CK-AppIdentity:Local:AuthCenter:Oidc'", c =>
         {
             c["FullName"] = "D/$App";
             c["Defaults:AuthCenter"] = "true";

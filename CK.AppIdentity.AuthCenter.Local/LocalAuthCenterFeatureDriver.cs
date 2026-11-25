@@ -20,11 +20,10 @@ namespace CK.AppIdentity.AuthCenter;
 /// </para>
 /// </summary>
 [PartyFeature( AuthCenterFeature.Name, TypeActivation.Optional, Side = FeatureSide.Local )]
+[Configuration<AuthCenterConfiguration>]
 [Requires<RemoteAuthCenterFeatureDriver>]
 public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDriver
 {
-    readonly IServiceProvider _services;
-
     /// <summary>
     /// Initializes a new <see cref="LocalAuthCenterFeatureDriver"/>.
     /// </summary>
@@ -32,13 +31,10 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
     /// <param name="keys">
     /// The key management: the keys of the Authentication Center verify its tokens (it must be set up before this driver).
     /// </param>
-    /// <param name="services">The root services (the options of the Authentication Center).</param>
     public LocalAuthCenterFeatureDriver( ApplicationIdentityService s,
-                                         KeyManagementFeatureDriver keys,
-                                         IServiceProvider services )
+                                         KeyManagementFeatureDriver keys )
         : base( s )
     {
-        _services = services;
     }
 
     /// <inheritdoc />
@@ -106,16 +102,9 @@ public sealed class LocalAuthCenterFeatureDriver : ApplicationIdentityFeatureDri
             success &= AuthCenterFeature.CheckNoAuthCenterKey( monitor, r );
         }
         if( !success ) return false;
-        // The settings are the local party's own "AuthCenter" section, in its "Local".
-        var settings = local.LocalConfiguration.Configuration.TryGetSection( AuthCenterFeature.Name );
-        if( settings != null && !settings.GetChildren().Any() ) settings = null;
-        // The options of the AuthCenter (the scheme families, the "PasswordLost" of CK.UserProfile.UserPassword.Lost) are in
-        // its section too.
-        var optionDirectory = (PartyComponentOptionDirectory?)_services.GetService( typeof( PartyComponentOptionDirectory ) );
-        var options = AuthCenterOptions.Read( monitor,
-                                              settings,
-                                              key => optionDirectory?.IsOptionName( typeof( LocalAuthCenterFeatureDriver ), key ) is true );
-        if( options == null ) return false;
+        // The settings: the model of the "AuthCenter" section (checked before the setup: the options of the AuthCenter, the
+        // scheme families and the "PasswordLost" of CK.UserProfile.UserPassword.Lost, are its other keys).
+        var options = AuthCenterOptions.Create( GetModel<AuthCenterConfiguration>( local ) );
         var center = CrisAuthCenter.TryCreate( monitor, local, local );
         if( center == null ) return false;
         foreach( var r in local.Remotes )

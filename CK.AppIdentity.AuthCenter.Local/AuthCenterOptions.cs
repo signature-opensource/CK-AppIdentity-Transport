@@ -6,13 +6,13 @@ using System.Linq;
 namespace CK.AppIdentity.AuthCenter;
 
 /// <summary>
-/// The settings of a local Authentication Center, read from its "AuthCenter" configuration section (never inherited).
-/// They are static: the configuration of an application identity never changes at runtime.
+/// The settings of a local Authentication Center: its configuration model, <see cref="AuthCenterConfiguration"/> (the
+/// "AuthCenter" section of the local party, key by key with its "Defaults"). They are static: the configuration of an
+/// application identity never changes at runtime.
 /// <para>
-/// The other sub-sections are the options of the <see cref="LocalAuthCenterFeatureDriver"/>: the scheme families
-/// ("AuthCenter:Oidc", see <see cref="IAuthCenterSchemeFamilyOption"/>) and the other options; a sub-section that is not an
-/// option of an installed package is an error.
-/// The "AuthCenter:CriticalLifetimes" sub-section is the core's (see <see cref="CriticalLifetimes"/>).
+/// The other keys of the section are the options of the <see cref="LocalAuthCenterFeatureDriver"/>: the scheme families
+/// ("AuthCenter:Oidc", see <see cref="IAuthCenterSchemeFamilyOption"/>) and the other options; any other key is an error
+/// (the model is closed: an option whose package is missing is an unknown key).
 /// </para>
 /// </summary>
 public sealed class AuthCenterOptions
@@ -20,11 +20,7 @@ public sealed class AuthCenterOptions
     /// <summary>
     /// The default options.
     /// </summary>
-    public static readonly AuthCenterOptions Default = new AuthCenterOptions( TimeSpan.FromDays( 1 ),
-                                                                             TimeSpan.FromMinutes( 5 ),
-                                                                             TimeSpan.FromMinutes( 10 ),
-                                                                             TimeSpan.FromMinutes( 1 ),
-                                                                             new Dictionary<string, TimeSpan>( StringComparer.OrdinalIgnoreCase ) );
+    public static readonly AuthCenterOptions Default = Create( new AuthCenterConfiguration() );
 
     /// <summary>
     /// The maximal <see cref="RefreshGraceWindow"/>: 5 minutes.
@@ -98,72 +94,80 @@ public sealed class AuthCenterOptions
     /// </summary>
     public TimeSpan RefreshGraceWindow { get; }
 
-    internal static AuthCenterOptions? Read( IActivityMonitor monitor,
-                                             ImmutableConfigurationSection? section,
-                                             Func<string, bool> isOptionName )
+    /// <summary>
+    /// Creates the settings from the (checked) configuration model.
+    /// </summary>
+    /// <param name="c">The configuration.</param>
+    /// <returns>The settings.</returns>
+    internal static AuthCenterOptions Create( AuthCenterConfiguration c )
     {
-        if( section == null ) return Default;
-        bool success = true;
-        var session = ReadTimeSpan( monitor, section, nameof( SessionLifetime ), Default.SessionLifetime, ref success );
-        var critical = ReadTimeSpan( monitor, section, nameof( CriticalLifetime ), Default.CriticalLifetime, ref success );
-        var token = ReadTimeSpan( monitor, section, nameof( TokenLifetime ), Default.TokenLifetime, ref success );
-        var grace = Default.RefreshGraceWindow;
-        if( section[nameof( RefreshGraceWindow )] is string g )
-        {
-            if( !TimeSpan.TryParse( g, out grace ) || grace < TimeSpan.Zero || grace > MaxRefreshGraceWindow )
-            {
-                monitor.Error( $"Invalid '{section.Path}:{nameof( RefreshGraceWindow )}' = '{g}': a time span between 0 (disabled) and {MaxRefreshGraceWindow} is expected." );
-                success = false;
-            }
-        }
-        var criticalLifetimes = new Dictionary<string, TimeSpan>( StringComparer.OrdinalIgnoreCase );
-        if( section.TryGetSection( nameof( CriticalLifetimes ) ) is { } lifetimes )
-        {
-            foreach( var l in lifetimes.GetChildren() )
-            {
-                if( l.Value == null || !TimeSpan.TryParse( l.Value, out var v ) || v < TimeSpan.Zero )
-                {
-                    monitor.Error( $"Invalid '{l.Path}' = '{l.Value}': a time span is expected (0 when the scheme never elevates to the Critical level)." );
-                    success = false;
-                }
-                else
-                {
-                    criticalLifetimes[l.Key] = v;
-                }
-            }
-        }
-        foreach( var s in section.GetChildren() )
-        {
-            if( s.Key.Equals( "RouteHosts", StringComparison.OrdinalIgnoreCase ) )
-            {
-                monitor.Error( $"'{s.Path}' is no more supported: there are no routes (a System is a star around its Authentication Center, the approval page is a fact of its client application). Remove it." );
-                success = false;
-                continue;
-            }
-            if( s.GetChildren().Any()
-                && !s.Key.Equals( nameof( CriticalLifetimes ), StringComparison.OrdinalIgnoreCase )
-                && !isOptionName( s.Key ) )
-            {
-                monitor.Error( $"The '{s.Path}' section is not an option of the AuthCenter (a scheme family, another option): is a package missing?" );
-                success = false;
-            }
-        }
-        if( !success ) return null;
-        if( critical > session || token > session || criticalLifetimes.Values.Any( l => l > session ) )
-        {
-            monitor.Error( $"Invalid '{section.Path}': the {nameof( CriticalLifetime )} ({critical}), the {nameof( CriticalLifetimes )} and the {nameof( TokenLifetime )} ({token}) cannot exceed the {nameof( SessionLifetime )} ({session})." );
-            return null;
-        }
-        return new AuthCenterOptions( session, critical, token, grace, criticalLifetimes );
+        return new AuthCenterOptions( c.SessionLifetime,
+                                      c.CriticalLifetime,
+                                      c.TokenLifetime,
+                                      c.RefreshGraceWindow,
+                                      new Dictionary<string, TimeSpan>( c.CriticalLifetimes, StringComparer.OrdinalIgnoreCase ) );
     }
+}
 
-    static TimeSpan ReadTimeSpan( IActivityMonitor monitor, ImmutableConfigurationSection section, string key, TimeSpan defaultValue, ref bool success )
+/// <summary>
+/// The configuration of a local Authentication Center (the "AuthCenter" section of its "Local"): the lifetimes of its
+/// sessions, of their Critical level and of the tokens. The other keys of the section are its options.
+/// </summary>
+[ConfigurationModel]
+public sealed class AuthCenterConfiguration : IConfigurationModel
+{
+    /// <summary>
+    /// Gets the lifetime of a session (it slides on each refresh). Defaults to 1 day.
+    /// </summary>
+    public TimeSpan SessionLifetime { get; init; } = TimeSpan.FromDays( 1 );
+
+    /// <summary>
+    /// Gets the lifetime of the Critical level of a session (after a login that proves the user's presence). Defaults to
+    /// 5 minutes.
+    /// </summary>
+    public TimeSpan CriticalLifetime { get; init; } = TimeSpan.FromMinutes( 5 );
+
+    /// <summary>
+    /// Gets the lifetime of the Critical level per scheme ("Basic", "Oidc.Google"...), instead of <see cref="CriticalLifetime"/>:
+    /// 0 when the scheme never elevates to the Critical level.
+    /// </summary>
+    public IReadOnlyDictionary<string, TimeSpan> CriticalLifetimes { get; init; } = new Dictionary<string, TimeSpan>( StringComparer.OrdinalIgnoreCase );
+
+    /// <summary>
+    /// Gets the lifetime of the tokens. Defaults to 10 minutes.
+    /// </summary>
+    public TimeSpan TokenLifetime { get; init; } = TimeSpan.FromMinutes( 10 );
+
+    /// <summary>
+    /// Gets the window during which the previous secrets of a refreshed session are still accepted (0 disables it).
+    /// Defaults to 1 minute, at most <see cref="AuthCenterOptions.MaxRefreshGraceWindow"/>.
+    /// </summary>
+    public TimeSpan RefreshGraceWindow { get; init; } = TimeSpan.FromMinutes( 1 );
+
+    /// <inheritdoc />
+    public void Validate( IConfigurationValidationContext context )
     {
-        var s = section[key];
-        if( s == null ) return defaultValue;
-        if( TimeSpan.TryParse( s, out var v ) && v > TimeSpan.Zero ) return v;
-        monitor.Error( $"Invalid '{section.Path}:{key}' = '{s}': a positive time span is expected." );
-        success = false;
-        return defaultValue;
+        void Positive( TimeSpan v, string name )
+        {
+            if( v <= TimeSpan.Zero ) context.Error( $"'{context.Path}:{name}' = '{v}': a positive time span is expected." );
+        }
+        Positive( SessionLifetime, nameof( SessionLifetime ) );
+        Positive( CriticalLifetime, nameof( CriticalLifetime ) );
+        Positive( TokenLifetime, nameof( TokenLifetime ) );
+        if( RefreshGraceWindow < TimeSpan.Zero || RefreshGraceWindow > AuthCenterOptions.MaxRefreshGraceWindow )
+        {
+            context.Error( $"'{context.Path}:{nameof( RefreshGraceWindow )}' = '{RefreshGraceWindow}': a time span between 0 (disabled) and {AuthCenterOptions.MaxRefreshGraceWindow} is expected." );
+        }
+        foreach( var (scheme, lifetime) in CriticalLifetimes )
+        {
+            if( lifetime < TimeSpan.Zero )
+            {
+                context.Error( $"'{context.Path}:{nameof( CriticalLifetimes )}:{scheme}' = '{lifetime}': a time span is expected (0 when the scheme never elevates to the Critical level)." );
+            }
+        }
+        if( CriticalLifetime > SessionLifetime || TokenLifetime > SessionLifetime || CriticalLifetimes.Values.Any( l => l > SessionLifetime ) )
+        {
+            context.Error( $"'{context.Path}': the {nameof( CriticalLifetime )} ({CriticalLifetime}), the {nameof( CriticalLifetimes )} and the {nameof( TokenLifetime )} ({TokenLifetime}) cannot exceed the {nameof( SessionLifetime )} ({SessionLifetime})." );
+        }
     }
 }

@@ -24,7 +24,10 @@ its own settings: an `"AuthCenter"` key on a remote is a configuration error.
 
 ## Settings ([`AuthCenterOptions`](AuthCenterOptions.cs))
 
-Read from the `"AuthCenter"` section of the local party's `"Local"` (never from a `"Defaults"`, static):
+The configuration model of the feature, `AuthCenterConfiguration` (static): the `"AuthCenter"` section of the local
+party, key by key with the `"Defaults"` above it. Its other keys are its options; any other key is an error (the model is
+closed). The checks: positive lifetimes, `CriticalLifetimes` at least 0, the `RefreshGraceWindow` between 0 and 5 minutes,
+and no lifetime above the `SessionLifetime`.
 
 | Key | Default | |
 |---|---|---|
@@ -132,8 +135,9 @@ handle their own commands, and so is `AuthCenterResults`, from the core
 - **A family is an option of the AuthCenter:** an [`IAuthCenterSchemeFamilyOption`](IAuthCenterSchemeFamilyOption.cs),
   that is an `IPartyComponentOption<LocalAuthCenterFeatureDriver>` declared by a `[PartyFeatureOption( "Oidc", ... )]`.
   Its section is the sub-section of its name (`"AuthCenter:Oidc"`), read by its constructor (an invalid one fails the
-  setup of the party); `"Oidc": false` disables a family enabled by default. **A sub-section that is not an option of an
-  installed package is a configuration error** (a configured family that silently does nothing is a misconfiguration).
+  setup of the party); `"Oidc": false` disables a family enabled by default. **A key that is not an option of an
+  installed package is an unknown key of the AuthCenter's model: an error** (a configured family that silently does
+  nothing is a misconfiguration).
 - **A family is a feature of the local party** of its Authentication Center (`LocalAuthCenter.SchemeFamilies`,
   `FindSchemeFamily`): the `LocalAuthCenterFeatureDriver` creates it from its option (`CreateFamily`) for every local
   Authentication Center (the root and every tenant, dynamic ones included).
