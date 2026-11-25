@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.uc.3.ci.206" />
+    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.uc.3.ci.207" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.Cris\CK.AppIdentity.Cris.csproj" />
