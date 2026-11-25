@@ -8,7 +8,7 @@
     <InternalsVisibleTo Include="CK.AppIdentity.AuthCenter.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.uc.3.ci.208" />
+    <PackageReference Include="CK.Cris.Authentication" Version="3.0.0-0.uc.3.ci.209" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CK.AppIdentity.KeyManagement\CK.AppIdentity.KeyManagement.csproj" />

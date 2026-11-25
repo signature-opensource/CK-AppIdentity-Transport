@@ -5,9 +5,9 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.uc.3.ci.186" />
+        <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.uc.3.ci.187" />
         <PackageReference Include="CK.AuthenticationInfo" Version="15.0.0-0.uc.3" />
-        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.uc.3.ci.208" />
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.uc.3.ci.209" />
         <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="37.0.0-0.uc.3.ci.69" />
         <PackageReference Include="CK.Testing.Engine" Version="37.0.0-0.uc.3.ci.69" />
     </ItemGroup>
