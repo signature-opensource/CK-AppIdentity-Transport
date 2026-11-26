@@ -9,7 +9,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AuthenticationInfo.Oidc" Version="15.0.0-0.uc.4" />
+    <PackageReference Include="CK.AuthenticationInfo.Oidc" Version="15.0.0-0.uc.4.ci.45" />
     <ProjectReference Include="..\CK.AppIdentity.AuthCenter.Local\CK.AppIdentity.AuthCenter.Local.csproj" />
   </ItemGroup>
 </Project>
