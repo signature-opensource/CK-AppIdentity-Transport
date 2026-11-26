@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.4.ci.195" />
-    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.4.ci.213" />
+    <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.4.ci.200" />
+    <PackageReference Include="CK.Cris.DynamicConfiguration" Version="3.0.0-0.uc.4.ci.214" />
   </ItemGroup>
 </Project>
