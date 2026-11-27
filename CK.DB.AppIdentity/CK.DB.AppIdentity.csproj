@@ -3,9 +3,9 @@
         <TargetFramework>net10.0</TargetFramework>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.uc.4.ci.147" />
-        <PackageReference Include="CK.SqlServer.Setup.Model" Version="37.0.0-0.uc.4.ci.77" />
-        <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.4.ci.210" />
+        <PackageReference Include="CK.DB.Actor" Version="31.0.0-0.uc.4.ci.148" />
+        <PackageReference Include="CK.SqlServer.Setup.Model" Version="37.0.0-0.uc.4.ci.78" />
+        <PackageReference Include="CK.AppIdentity" Version="3.0.0-0.uc.4.ci.211" />
     </ItemGroup>
     <ItemGroup>
         <EmbeddedResource Include="**\*.sql;**\*.tql;**\*.y4" />
