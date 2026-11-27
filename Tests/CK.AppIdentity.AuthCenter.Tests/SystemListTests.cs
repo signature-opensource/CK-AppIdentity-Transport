@@ -143,7 +143,14 @@ public class SystemListTests
     [Test]
     public async Task a_configured_RouteHosts_is_a_startup_error_Async()
     {
+        // An unknown key of the AuthCenter's model: an error in strict mode (a warning in "#Dev").
+        using var logs = CK.Monitoring.GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
         await Should.ThrowAsync<Exception>( () => RemoteAuthCenterTests.StartAsync( extraTypes: _types,
-                                                                                    centerSettings: c => c["Local:AuthCenter:RouteHosts:MailSender"] = "Test/$Mail1/#Dev" ) );
+                                                                                    centerSettings: c =>
+                                                                                    {
+                                                                                        AuthCenterFeatureTests.Strict( c );
+                                                                                        c["Local:AuthCenter:RouteHosts:MailSender"] = "Test/$Mail1/#Dev";
+                                                                                    } ) );
+        await AuthCenterFeatureTests.ShouldLogAsync( logs, "RouteHosts" );
     }
 }

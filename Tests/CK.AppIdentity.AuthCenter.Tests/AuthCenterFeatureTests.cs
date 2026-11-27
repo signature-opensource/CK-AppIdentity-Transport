@@ -87,8 +87,16 @@ public class AuthCenterFeatureTests
     static async Task StartMustFailAsync( string expectedError, Action<MutableConfigurationSection> configuration, bool local = false, bool remote = false )
     {
         using var logs = GrandOutput.Default.ShouldNotBeNull().CreateMemoryCollector( 200 );
-        await Should.ThrowAsync<Exception>( () => StartAsync( configuration, local: local, remote: remote ) );
+        await Should.ThrowAsync<Exception>( () => StartAsync( c => { Strict( c ); configuration( c ); }, local: local, remote: remote ) );
         await ShouldLogAsync( logs, expectedError );
+    }
+
+    // Strict mode: a configuration problem fails the start (in the "#Dev" environment, it is a warning), with a store
+    // that only the current user can write.
+    internal static void Strict( MutableConfigurationSection c )
+    {
+        c["StrictConfigurationMode"] = "true";
+        c["StoreRootPath"] = System.IO.Path.Combine( System.IO.Path.GetTempPath(), "CK-AppIdentity-AuthCenter-Tests-Strict" );
     }
 
     [Test]
