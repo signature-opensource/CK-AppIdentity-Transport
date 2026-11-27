@@ -80,13 +80,21 @@ public class NegotiationTimeoutTests
             "A remote that stated its own value keeps it: the default is a fallback, not a cap." );
     }
 
-    [TestCase( "soon" )]
+    [Test, CancelAfter( 30000 )]
+    public async Task In_Dev_an_unreadable_value_falls_back_to_the_default_Async( CancellationToken token )
+    {
+        // The "#Dev" environment is not strict: a value that can't be read is a warning, the default applies.
+        await using var s = await CreateAsync( "NTSoon", c => c["Parties:0:Transport:NegotiationTimeout"] = "soon", token );
+        var f = s.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
+        f.OutgoingNegotiationTimeout.ShouldBe( TimeSpan.FromSeconds( 15 ) );
+    }
+
     [TestCase( "0" )]
     [TestCase( "601" )]
     [CancelAfter( 30000 )]
-    public async Task An_unusable_configured_value_fails_the_start_Async( string value, CancellationToken token )
+    public async Task An_out_of_range_value_fails_the_start_Async( string value, CancellationToken token )
     {
-        // The "Transport" section is read through its model: an invalid value is an error, as for any other key.
+        // The model checks the range (its Validate): an error in every environment.
         await Should.ThrowAsync<Exception>( async () =>
         {
             await using var s = await CreateAsync( "NTBad", c => c["Parties:0:Transport:NegotiationTimeout"] = value, token );

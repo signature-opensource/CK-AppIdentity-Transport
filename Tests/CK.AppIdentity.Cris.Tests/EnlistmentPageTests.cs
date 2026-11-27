@@ -82,12 +82,13 @@ public class EnlistmentPageTests
     }
 
     [Test]
-    public async Task an_unknown_key_of_the_Transport_feature_is_a_startup_error_Async()
+    public async Task in_Dev_an_unknown_key_of_the_Transport_feature_is_ignored_Async()
     {
-        // The "Transport" section is read through its model: "RouteHosts" is not one of its keys.
-        await Should.ThrowAsync<Exception>( () => RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                                                    null,
-                                                                                    [],
-                                                                                    c => c["Local:Transport:RouteHosts:Enlistment:0"] = "Test/$Admin" ) );
+        // The "Transport" section is read through its model: "RouteHosts" is not one of its keys. The "#Dev" environment
+        // is not strict: a warning (it fails the start in strict mode).
+        await using var pair = await RunningApplication.CreatePairAsync( TestHelper.Monitor,
+                                                                         null,
+                                                                         [],
+                                                                         c => c["Local:Transport:RouteHosts:Enlistment:0"] = "Test/$Admin" );
     }
 }
