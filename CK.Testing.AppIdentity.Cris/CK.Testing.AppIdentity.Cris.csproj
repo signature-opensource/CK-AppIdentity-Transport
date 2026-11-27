@@ -5,11 +5,11 @@
     </PropertyGroup>
     
     <ItemGroup>
-        <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.linux.0.ci.71" />
-        <PackageReference Include="CK.AuthenticationInfo" Version="15.0.0-0.linux.0.ci.24" />
-        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.linux.0.ci.135" />
-        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.linux.0.ci.51" />
-        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.linux.0.ci.51" />
+        <PackageReference Include="CK.AppIdentity.Engine" Version="3.0.0-0.linux" />
+        <PackageReference Include="CK.AuthenticationInfo" Version="15.0.0-0.linux" />
+        <PackageReference Include="CK.Cris.Executor.Engine" Version="3.0.0-0.linux" />
+        <PackageReference Include="CK.Poco.Exc.Json.Engine" Version="36.0.0-0.linux" />
+        <PackageReference Include="CK.Testing.StObjEngine" Version="36.0.0-0.linux" />
     </ItemGroup>
 
     <ItemGroup>
