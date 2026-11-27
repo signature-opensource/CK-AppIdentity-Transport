@@ -269,9 +269,12 @@ are public: they are trashed with the rest of its private store.
 
 ## Configuration
 
-The settings are in the `"KeyManagement"` section of a party (`"KeyManagement": { "KeyRotationDays": 30 }`).
+The settings are in the `"KeyManagement"` section of a party (`"KeyManagement": { "KeyRotationDays": 30 }`), read through
+its model, [`KeyManagementConfiguration`](KeyManagementConfiguration.cs): an unknown key or an invalid value fails the
+setup.
 
-On a local party (read from the `"KeyManagement"` section of its `"Local"` only, never from a `"Defaults"`):
+On a local party (read from the `"KeyManagement"` section of its `"Local"` only: `[ConfigurationNoDefaults]`, a value in a
+`"Defaults"` is an error):
 
 | Key | Default | |
 |-----|---------|---|
@@ -293,7 +296,8 @@ On a remote (each value is read in the `"KeyManagement"` section of its own entr
 | `AutoTrustKey` | `Never` | `Once` pins the identity the remote presents when nothing is pinned yet: a trust on first use, the weak option. Prefer a trust anchor (`TrustAnchors`) for a remote known at deployment, and the enlistment (`Never`, an operator approves) for one that is not. Ignored for an anchored remote. Refused (a `SecurityCritical` error, `Never` applies) for the remotes of an Opened template (`"MaxInstanceCount"`): anyone could otherwise take a free index first. |
 | `MaxClockOffset` | `00:05:00` | The clock offset tolerated with the remote, between 1 and 20 minutes. |
 
-Out-of-range values are clamped (or replaced by the default) with a warning.
+The day counts of a local party out of their range are clamped with a warning; an `AutoTrustKey` that is not `Never` or
+`Once`, or a `MaxClockOffset` out of its range, fails the setup.
 
 ## Requires
 
