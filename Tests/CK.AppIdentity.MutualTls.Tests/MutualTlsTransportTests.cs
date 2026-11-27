@@ -53,7 +53,7 @@ public class MutualTlsTransportTests
             c["FullName"] = $"Test/$Listener{suffix}";
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            c["Defaults:Transport:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = $"$Sender{suffix}";
         }, token );
         var sender = await CreateAsync( c =>
@@ -159,7 +159,7 @@ public class MutualTlsTransportTests
             c["FullName"] = "Test/$ListenerStall";
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            c["Defaults:Transport:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$SenderStall";
         }, token );
         await using( listener )
@@ -207,7 +207,7 @@ public class MutualTlsTransportTests
         {
             c["FullName"] = "Test/$ListenerWrongPort";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            c["Defaults:Transport:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$SomeoneWrongPort";
         }, token );
 

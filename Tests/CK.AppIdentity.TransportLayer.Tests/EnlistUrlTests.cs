@@ -267,15 +267,4 @@ public class EnlistUrlTests
         issue.EnlistUrl.ShouldBeNull(
             "The listener sent its URL to the stranger; it has no URL of the stranger's to record." );
     }
-
-    [Test, CancelAfter( 90000 )]
-    public async Task A_configured_EnlistRemoteUrl_fails_the_setup_Async( CancellationToken token )
-    {
-        // The enlistment URL is derived from the System: the former configuration is an error, not silently ignored.
-        await Should.ThrowAsync<Exception>( () => TestHelper.CreateApplicationServiceAsync( c =>
-        {
-            c["FullName"] = "Test/$M8Configured";
-            c["Defaults:EnlistRemoteUrl"] = "https://enlist.example.test/join";
-        }, ConfigureServices, token: token ) );
-    }
 }

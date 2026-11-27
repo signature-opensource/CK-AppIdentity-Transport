@@ -32,7 +32,7 @@ public abstract class TransportTypeService : ITransportTypeService
     public string TypeName => _typeName;
 
     /// <inheritdoc/>
-    public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
+    public abstract TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string path );
 
     /// <summary>
     /// Parses a network end point: an IP address with an optional port (<c>127.0.0.1:3712</c>, <c>[::1]:3712</c>), that is

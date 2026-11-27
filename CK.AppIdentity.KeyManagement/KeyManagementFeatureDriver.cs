@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 
 namespace CK.AppIdentity.KeyManagement;
 [PartyFeature( "KeyManagement", TypeActivation.ByDefault )]
+[Configuration<KeyManagementConfiguration>]
 // The dynamic instances of an Opened template are trusted by an approval only: anyone could otherwise take a free index
 // first. Checked at build time (and refused at run time: fail-closed).
 [ConfigurationLock( "OpenedRemoteTemplate:AutoTrustKey", ConfigurationLevel.Compile, Value = nameof( AutoTrustKey.Never ) )]
@@ -169,12 +170,17 @@ public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriv
         return Task.CompletedTask;
     }
 
+    static readonly KeyManagementConfiguration _defaultModel = new();
+
+    // The model of a party: the defaults when the feature is not allowed on it.
+    KeyManagementConfiguration Model( IParty party ) => IsAllowedFeature( party ) ? GetModel<KeyManagementConfiguration>( party ) : _defaultModel;
+
     bool PlugLocalAndRemotes( FeatureLifetimeContext context, ILocalParty local )
     {
         bool success = true;
         try
         {
-            var localKeys = new LocalKeys.Builder( local, _protectorProvider, _keyStore, _alertRaised ).Build( context.Monitor );
+            var localKeys = new LocalKeys.Builder( local, Model( local ), _protectorProvider, _keyStore, _alertRaised ).Build( context.Monitor );
             localKeys.KeyEventAppended.Async += ( monitor, state, cancel ) => _keyEventAppended.SafeRaiseAsync( monitor, localKeys, cancel );
             local.AddFeature( localKeys );
             foreach( var r in local.Remotes )
@@ -210,7 +216,7 @@ public partial class KeyManagementFeatureDriver : ApplicationIdentityFeatureDriv
     {
         try
         {
-            var remoteKeys = new RemoteKeys.Builder( localKeys, remote ).Build( context.Monitor );
+            var remoteKeys = new RemoteKeys.Builder( localKeys, remote, Model( remote ) ).Build( context.Monitor );
             remote.AddFeature( remoteKeys );
             return true;
         }

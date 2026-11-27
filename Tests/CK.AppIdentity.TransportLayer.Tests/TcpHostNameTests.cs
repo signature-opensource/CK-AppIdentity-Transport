@@ -14,7 +14,7 @@ namespace CK.AppIdentity.TransportLayer.Tests;
 [TestFixture]
 public class TcpHostNameTests
 {
-    static ImmutableConfigurationSection Section() => new ImmutableConfigurationSection( new MutableConfigurationSection( "Parties:0:Address" ) );
+    static string Section() => "Parties:0:Address";
 
     [TestCase( "127.0.0.1:3712", "127.0.0.1:3712" )]
     [TestCase( "[::1]:3712", "[::1]:3712" )]
@@ -56,7 +56,7 @@ public class TcpHostNameTests
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:Transport:AlwaysListening"] = "True";
             // In the "Defaults": the local party and its remotes listen there.
-            c["Defaults:Transport:ListeningAddress"] = "tcp:127.0.0.1:37130";
+            c["Defaults:Transport:ListeningAddress:tcp"] = "127.0.0.1:37130";
             c["Parties:0:PartyName"] = "$NamedSender";
         }, token: token );
         await using var sender = await TestHelper.CreateApplicationServiceAsync( c =>
@@ -86,7 +86,7 @@ public class TcpHostNameTests
         {
             c["FullName"] = "Test/$NamedOnly";
             c["Local:Transport:AlwaysListening"] = "True";
-            c["Local:Transport:ListeningAddress"] = "tcp:localhost:37131";
+            c["Local:Transport:ListeningAddress:tcp"] = "localhost:37131";
         }, token: token ) );
         logCollector.ExtractCurrentTexts().ShouldContain( t => t.Contains( "a listening address is an IP address" ) );
     }

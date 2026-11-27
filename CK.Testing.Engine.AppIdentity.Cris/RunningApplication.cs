@@ -171,7 +171,7 @@ public sealed class RunningApplication : IAsyncDisposable
                 }
                 else
                 {
-                    c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+                    c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{Port}";
                 }
                 configuration?.Invoke( c );
             } );

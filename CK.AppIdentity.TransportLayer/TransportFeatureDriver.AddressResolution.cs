@@ -12,6 +12,14 @@ public partial class TransportFeatureDriver
     internal static ImmutableConfigurationSection PartyConfiguration( IParty party )
         => (party is ILocalParty local ? local.LocalConfiguration : (ApplicationIdentityConfiguration)party.Configuration).Configuration;
 
+    static readonly TransportConfiguration _defaultModel = new();
+
+    // The model of a party (read along its levels): the defaults when the feature is not allowed on it.
+    TransportConfiguration Model( IParty party ) => IsAllowedFeature( party ) ? GetModel<TransportConfiguration>( party ) : _defaultModel;
+
+    // The configuration path of the "Transport" section of a party (for the errors).
+    static string TransportPath( IParty party ) => $"{PartyConfiguration( party ).Path}:Transport";
+
     bool ResolveAdresses( IActivityMonitor monitor,
                           IRemoteParty r,
                           out IReadOnlyCollection<TransportTypeAddress>? listen,
@@ -21,10 +29,8 @@ public partial class TransportFeatureDriver
         var a = r.Address;
         if( a != null )
         {
-            var section = r.Configuration.Configuration.TryGetSection( "Address" );
-            Throw.DebugAssert( section != null );
             listen = null;
-            target = ParseTypedAddress( monitor, a, section );
+            target = ParseTypedAddress( monitor, a, $"{r.Configuration.Configuration.Path}:Address" );
             return target != null;
         }
         // No Address: lookup for the ListeningAddress.
@@ -36,7 +42,8 @@ public partial class TransportFeatureDriver
 
     IReadOnlyCollection<TransportTypeAddress>? ResolveListeningAddresses( IActivityMonitor monitor, IParty party )
     {
-        if( !ReadListeningAddresses( monitor, PartyConfiguration( party ), out var available ) )
+        var model = Model( party );
+        if( !ReadListeningAddresses( monitor, model, TransportPath( party ), out var available ) )
         {
             return null;
         }
@@ -48,7 +55,7 @@ public partial class TransportFeatureDriver
         }
         // If there is no "ListeningAddress" at all, consider the default tcp listening address
         // bound to the root ApplicationIdentityService configuration.
-        var rootConfiguration = party.ApplicationIdentityService.Configuration.Configuration;
+        var rootConfiguration = party.ApplicationIdentityService.Configuration.Configuration.Path;
         if( available == null )
         {
             var tcpDef = _tcp.DefaultListeningAddress;
@@ -71,21 +78,15 @@ public partial class TransportFeatureDriver
         // Handling "ListeningTypes". This normally applies to Remote (not to a Local party) but this doesn't
         // cost much to equally applies it a Local configuration level: this enables a transport Type to be an
         // "opt-in one"... It's overkill but corresponds to simpler code.
-        var listeningTypesSection = PartyConfiguration( party ).TryResolveSection( "Transport:ListeningTypes" );
-        if( listeningTypesSection == null )
+        if( model.ListeningTypes == null )
         {
             monitor.Warn( $"No \"Transport:ListeningTypes\" configuration for Party '{party.FullName}'. " +
                           $"Using all available ListeningAddress: {available.Values.Select( a => a.ToString() ).Concatenate()}." );
             return available.Values;
         }
-        var listeningTypeNames = listeningTypesSection.ReadUniqueStringSet( monitor, StringComparer.OrdinalIgnoreCase );
-        if( listeningTypeNames == null ) return null;
-        if( listeningTypeNames.Count == 0 )
-        {
-            monitor.Error( $"Invalid '{listeningTypesSection.Path}' empty configuration for Party '{party.FullName}'. " +
-                           $"At least one of '{_transportTypes.Select( t => t.TypeName ).Concatenate( "','" )}' or 'all' must be specified.'" );
-            return null;
-        }
+        // The model refuses an empty list.
+        var listeningTypeNames = model.ListeningTypes.Distinct( StringComparer.OrdinalIgnoreCase );
+        var listeningTypesPath = $"{TransportPath( party )}:ListeningTypes";
         // Detecting invalid or unavailable type names and the 'all' occurrence,
         // or builds the set of final TransportTypeAddress.
         List<TransportTypeAddress>? final = null;
@@ -98,7 +99,7 @@ public partial class TransportFeatureDriver
             var exist = available.Values.FirstOrDefault( exist => exist.Type.TypeName.Equals( t, StringComparison.OrdinalIgnoreCase ) );
             if( exist == null )
             {
-                monitor.Error( $"Invalid value '{t}' in '{listeningTypesSection.Path}' for Party '{party.FullName}'.{Environment.NewLine}" +
+                monitor.Error( $"Invalid value '{t}' in '{listeningTypesPath}' for Party '{party.FullName}'.{Environment.NewLine}" +
                                $"Available transport types here are: '{available.Values.Select( t => t.Type.TypeName ).Concatenate( "','" )}'." );
                 return null;
             }
@@ -108,47 +109,37 @@ public partial class TransportFeatureDriver
         return final;
     }
 
+    // The listening addresses of the model: one per transport type (its key), merged along the levels by the model.
     bool ReadListeningAddresses( IActivityMonitor monitor,
-                                 ImmutableConfigurationSection configuration,
+                                 TransportConfiguration model,
+                                 string path,
                                  out Dictionary<ITransportTypeService, TransportTypeAddress>? result )
     {
         result = null;
-        List<ITransportTypeService>? locally = null;
-        foreach( var config in configuration.ResolveAllSection( "Transport:ListeningAddress" ) )
+        if( model.ListeningAddress == null ) return true;
+        foreach( var (typeName, address) in model.ListeningAddress )
         {
-            var onLevel = config.ReadStringArray( monitor );
-            if( onLevel == null ) return false;
-            if( onLevel.Length > 0 )
+            var entryPath = $"{path}:ListeningAddress:{typeName}";
+            var type = _transportTypes.FirstOrDefault( t => t.TypeName.Equals( typeName, StringComparison.OrdinalIgnoreCase ) );
+            if( type == null )
             {
-                if( locally == null ) locally = new List<ITransportTypeService>();
-                else locally.Clear();
-                foreach( var raw in onLevel )
-                {
-                    var parsed = ParseTypedAddress( monitor, raw, config );
-                    if( parsed == null ) return false;
-                    if( !TransportTypeService.IsListeningEndPoint( parsed.TypedAddress ) )
-                    {
-                        monitor.Error( $"Invalid '{config.Path}' = '{raw}': a listening address is an IP address (the interface to bind: '0.0.0.0', '[::]'), not a host name." );
-                        return false;
-                    }
-                    if( locally.Contains( parsed.Type ) )
-                    {
-                        monitor.Error( $"Invalid '{configuration.Path}': more than one address for '{parsed.Type.TypeName}' transport type." );
-                        return false;
-                    }
-                    // Record it, otherwise Contains above can never be true and the error is dead
-                    // code: two tcp: addresses on one level silently last-wins instead of failing,
-                    // which is not what TransportLayer/README.md promises.
-                    locally.Add( parsed.Type );
-                    result ??= new Dictionary<ITransportTypeService, TransportTypeAddress>();
-                    result[parsed.Type] = parsed;
-                }
+                monitor.Error( $"Invalid '{entryPath}': the transport type '{typeName}' is not available (available types are: '{_transportTypes.Select( t => t.TypeName ).Concatenate( "', '" )}')." );
+                return false;
             }
+            var parsed = type.ParseAddress( monitor, address, entryPath );
+            if( parsed == null ) return false;
+            if( !TransportTypeService.IsListeningEndPoint( parsed.TypedAddress ) )
+            {
+                monitor.Error( $"Invalid '{entryPath}' = '{address}': a listening address is an IP address (the interface to bind: '0.0.0.0', '[::]'), not a host name." );
+                return false;
+            }
+            result ??= new Dictionary<ITransportTypeService, TransportTypeAddress>();
+            result[type] = parsed;
         }
         return true;
     }
 
-    TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, ImmutableConfigurationSection section )
+    TransportTypeAddress? ParseTypedAddress( IActivityMonitor monitor, string s, string path )
     {
         ITransportTypeService? transport = null;
         ReadOnlySpan<char> typed = s.AsSpan();
@@ -177,7 +168,7 @@ public partial class TransportFeatureDriver
             transport = _tcp;
             typed = s.AsSpan();
         }
-        return transport.ParseAddress( monitor, typed, section );
+        return transport.ParseAddress( monitor, typed, path );
     }
 
 }

@@ -14,6 +14,7 @@ namespace CK.AppIdentity.TransportLayer;
 /// The <see cref="TransportManagerFeature"/> is added to the <see cref="ApplicationIdentityService"/>'s features.
 /// </summary>
 [PartyFeature( "Transport", TypeActivation.ByDefault )]
+[Configuration<TransportConfiguration>]
 // A listening address is the one of a deployment: each one writes its own.
 [ConfigurationPerDeployment( "Party:ListeningAddress" )]
 public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
@@ -125,8 +126,6 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         {
             SubscribeRevocations( local );
         }
-        success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
-        success &= CheckNoRouteHosts( context.Monitor, context.GetAllLocals() );
         // Local and External remote parties have no Transport.
         // Locals hold the Listeners.
         // Starts by creating the remotes.
@@ -158,42 +157,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
             success &= EnsureAlwaysListeningListeners( context, local, releaseOnError.Add );
             SubscribeRevocations( local );
         }
-        success &= CheckNoEnlistRemoteUrl( context.Monitor, context.GetAllLocals().Concat<IParty>( context.GetAllRemotes() ) );
-        success &= CheckNoRouteHosts( context.Monitor, context.GetAllLocals() );
         return Task.FromResult( success );
-    }
-
-    // The "EnlistRemoteUrl" configuration is gone: the enlistment URL is a fact of the System (the approval page).
-    static bool CheckNoEnlistRemoteUrl( IActivityMonitor monitor, IEnumerable<IParty> parties )
-    {
-        bool success = true;
-        foreach( var p in parties )
-        {
-            if( PartyConfiguration( p ).TryResolveValue( "EnlistRemoteUrl" ) != null )
-            {
-                monitor.Error( $"'{p}' configures an \"EnlistRemoteUrl\": it is no more supported. The enlistment URL is derived " +
-                               $"from the System (the approval page of a client application with the \"{EnlistmentFact}\" fact): remove it." );
-                success = false;
-            }
-        }
-        return success;
-    }
-
-    // The "Transport:RouteHosts" configuration is gone: there are no routes (a System is a star around its
-    // Authentication Center).
-    static bool CheckNoRouteHosts( IActivityMonitor monitor, IEnumerable<ILocalParty> locals )
-    {
-        bool success = true;
-        foreach( var local in locals )
-        {
-            if( local.LocalConfiguration.Configuration.TryResolveSection( "Transport:RouteHosts" ) != null )
-            {
-                monitor.Error( $"'{local}' configures \"Transport:RouteHosts\": the routes are gone (a System is a star around its " +
-                               $"Authentication Center, the approval page is a fact of its client application): remove it." );
-                success = false;
-            }
-        }
-        return success;
     }
 
     protected override async Task TeardownDynamicRemoteAsync( FeatureLifetimeContext context, IOwnedParty party )
@@ -278,7 +242,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // remote (no Address) appears.
         // We initialize the Listeners only if "AlwaysListening" is true, or when the local party has an Opened remote template
         // of listening remotes (no Address): its candidates call before any remote of the template exists.
-        if( !local.LocalConfiguration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:AlwaysListening" )
+        if( !Model( local ).AlwaysListening
             && !local.RemoteTemplates.Any( t => t.Configuration["Address"] == null ) )
         {
             return true;
@@ -323,7 +287,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         {
             listeners = ObtainListeners( context, listen, releaseOnError );
             if( listeners == null ) return false;
-            disallowEviction = r.Configuration.Configuration.ResolveBooleanValue( context.Monitor, "Transport:" + nameof( TransportFeature.DisallowEviction ) );
+            disallowEviction = Model( r ).DisallowEviction;
         }
         // No direct initialization error: add the TransportFeature to the party.
         // The initialization is not finished: if the party is listening it must be registered in its
@@ -332,20 +296,7 @@ public partial class TransportFeatureDriver : ApplicationIdentityFeatureDriver
         // that are supported: CloseChannelRegistration does this.
         // Only meaningful for an initiator, but read regardless: a remote that switches between
         // listening and dialling must not silently lose its configured value.
-        TimeSpan? negotiationTimeout = null;
-        var nt = r.Configuration.Configuration.TryResolveValue( "Transport:NegotiationTimeout" );
-        if( nt != null )
-        {
-            if( int.TryParse( nt, out var seconds ) && seconds >= 1 && seconds <= 600 )
-            {
-                negotiationTimeout = TimeSpan.FromSeconds( seconds );
-            }
-            else
-            {
-                context.Monitor.Warn( $"Invalid '{r.Configuration.Configuration.Path}:Transport:NegotiationTimeout' = '{nt}'. " +
-                                      $"Expected a number of seconds between 1 and 600. Using the default." );
-            }
-        }
+        TimeSpan? negotiationTimeout = Model( r ).NegotiationTimeout is int seconds ? TimeSpan.FromSeconds( seconds ) : null;
         var t = new TransportFeature( _transportManager, r, listeners, target, remoteKeys, disallowEviction, negotiationTimeout );
         // We add the feature here to the remote so that channels can use it.
         // And we wait a successful initialization to "publish" the new TransportFeature to the

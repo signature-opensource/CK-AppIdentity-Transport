@@ -44,7 +44,7 @@ public class CKeyTests
         {
             c["FullName"] = "Test/$CKeyListener";
             c["Local:CKey"] = "true";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$CKeySender";
             c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         }, null, typeof( CKeyFeatureDriver ) );
@@ -225,7 +225,7 @@ public class CKeyTests
         await Should.ThrowAsync<Exception>( () => RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
         {
             c["FullName"] = "Test/$CKeyTenants";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port + 1}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{Port + 1}";
             c["Parties:1:FullName"] = "Tenant/$Tenant";
             c["Parties:1:Local:CKey"] = "true";
             c["Parties:1:Parties:0:PartyName"] = "$X";

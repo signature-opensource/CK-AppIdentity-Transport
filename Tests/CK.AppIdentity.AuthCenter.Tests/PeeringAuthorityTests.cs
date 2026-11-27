@@ -108,7 +108,7 @@ public class PeeringAuthorityTests
             c["Parties:0:PartyName"] = "$Holder";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _types, typeof( ApprovalPageFeatureDriver )] );
         RunningApplication? holder = null;
         try
@@ -124,20 +124,20 @@ public class PeeringAuthorityTests
                 c["Parties:1:PartyName"] = "$W";
                 c["Parties:1:KeyManagement:AutoTrustKey"] = "Never";
                 if( holderInitiates ) c["Parties:1:Address"] = $"tcp:127.0.0.1:{WPort}";
-                else c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{HolderPort}";
+                else c["Parties:1:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{HolderPort}";
             }, RunningApplication.WithHeartBeat( RemoteAuthCenterTests.RemoteServices ), [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._remoteTypes, .. _types] );
             var w = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: !holderInitiates, c =>
             {
                 c["FullName"] = "Test/$W";
                 c["Parties:0:PartyName"] = "$Holder";
-                if( holderInitiates ) c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{WPort}";
+                if( holderInitiates ) c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{WPort}";
                 else c["Parties:0:Address"] = $"tcp:127.0.0.1:{HolderPort}";
                 c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
                 if( anchored )
                 {
                     // A star: W has a link to its center (here never connected: no address on the center's side).
                     c["Parties:1:PartyName"] = "$Center";
-                    c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{WCenterPort}";
+                    c["Parties:1:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{WCenterPort}";
                     c[$"Local:KeyManagement:TrustAnchors:{centerName}"] = checkpoint.ToString();
                     c["Local:AuthCenterRemote:Party"] = centerName;
                 }

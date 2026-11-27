@@ -55,8 +55,8 @@ public class ListenerReuseTests
             {
                 c["FullName"] = "Test/$M0aBoth";
                 c["Defaults:Transport:AlwaysListening"] = "True";
-                c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{port}";
-                c["Defaults:Transport:ListeningAddress:1"] = $"mtls:127.0.0.1:{port}";
+                c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{port}";
+                c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{port}";
                 c["Defaults:Transport:ListeningTypes:0"] = "tcp";
                 c["Defaults:Transport:ListeningTypes:1"] = "mtls";
                 c["Parties:0:PartyName"] = "$M0aBothPeer";
@@ -87,8 +87,8 @@ public class ListenerReuseTests
         {
             c["FullName"] = "Test/$M0aTwo";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{tcpPort}";
-            c["Defaults:Transport:ListeningAddress:1"] = $"mtls:127.0.0.1:{mtlsPort}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{tcpPort}";
+            c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{mtlsPort}";
             c["Defaults:Transport:ListeningTypes:0"] = "tcp";
             c["Defaults:Transport:ListeningTypes:1"] = "mtls";
             c["Parties:0:PartyName"] = "$M0aTwoPeer";

@@ -71,13 +71,13 @@ public sealed class MutualTlsTransportTypeService : TransportTypeService
     public override object? DefaultListeningAddress => _defaultEndPoint;
 
     /// <inheritdoc />
-    public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )
+    public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string path )
     {
         if( TryParseEndPoint( typed, DefaultPort, out var endPoint ) )
         {
-            return new TransportTypeAddress( this, section, endPoint );
+            return new TransportTypeAddress( this, path, endPoint );
         }
-        monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be an IP address or a host name, with an optional port (defaults to {DefaultPort})." );
+        monitor.Error( $"Invalid '{path}' = '{typed}'. It must be an IP address or a host name, with an optional port (defaults to {DefaultPort})." );
         return null;
     }
 

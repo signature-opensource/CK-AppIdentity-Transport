@@ -3,16 +3,17 @@ using CK.Core;
 namespace CK.AppIdentity.TransportLayer;
 
 /// <summary>
-/// Simple immutable encapsulation of a <see cref="TransportTypeService"/>, its originating
-/// configuration section and an address that it understands.
+/// Simple immutable encapsulation of a <see cref="TransportTypeService"/>, the configuration path of its
+/// address and an address that it understands.
 /// </summary>
 /// <param name="Type">The transport type.</param>
-/// <param name="Section">
-/// The configuration section: <see cref="ImmutableConfigurationSection.Key"/> is either "ListeningAddress" or "Address".
+/// <param name="Path">
+/// The configuration path of the address: a "ListeningAddress" entry, an "Address", or the root of the configuration for a
+/// default listening address.
 /// </param>
 /// <param name="TypedAddress">Specific address type.</param>
 public sealed record class TransportTypeAddress( TransportTypeService Type,
-                                                 ImmutableConfigurationSection Section,
+                                                 string Path,
                                                  object TypedAddress )
 {
     /// <summary>

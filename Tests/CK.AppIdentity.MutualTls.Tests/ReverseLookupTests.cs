@@ -54,7 +54,7 @@ public class ReverseLookupTests
             c["FullName"] = "Test/$LookupListener";
             c["Defaults:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:Transport:AlwaysListening"] = "True";
-            c["Defaults:Transport:ListeningAddress"] = $"mtls:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:mtls"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$LookupSender";
         }, token );
 

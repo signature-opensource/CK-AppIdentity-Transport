@@ -1,3 +1,4 @@
+using Shouldly;
 using CK.Core;
 using CK.Testing.AppIdentity.TransportLayer;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,15 +80,17 @@ public class NegotiationTimeoutTests
             "A remote that stated its own value keeps it: the default is a fallback, not a cap." );
     }
 
-    [Test, CancelAfter( 30000 )]
-    public async Task An_unusable_configured_value_falls_back_rather_than_failing_the_start_Async( CancellationToken token )
+    [TestCase( "soon" )]
+    [TestCase( "0" )]
+    [TestCase( "601" )]
+    [CancelAfter( 30000 )]
+    public async Task An_unusable_configured_value_fails_the_start_Async( string value, CancellationToken token )
     {
-        // A typo in this entry must not stop the service: it is a tuning knob, not a security switch,
-        // and the failure mode of refusing to start is worse than the failure mode of using 15 seconds.
-        await using var s = await CreateAsync( "NTBad", c => c["Parties:0:Transport:NegotiationTimeout"] = "soon", token );
-        var f = s.AllRemotes.Single().GetRequiredFeature<TransportFeature>();
-
-        f.OutgoingNegotiationTimeout.ShouldBe( TimeSpan.FromSeconds( 15 ) );
+        // The "Transport" section is read through its model: an invalid value is an error, as for any other key.
+        await Should.ThrowAsync<Exception>( async () =>
+        {
+            await using var s = await CreateAsync( "NTBad", c => c["Parties:0:Transport:NegotiationTimeout"] = value, token );
+        } );
     }
 
 }

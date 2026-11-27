@@ -69,7 +69,7 @@ public class DevRunningStatusTests
         {
             c["FullName"] = "Test/$DevListener";
             c["Parties:0:PartyName"] = "$DevSender";
-            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37128";
+            c["Defaults:Transport:ListeningAddress:tcp"] = "127.0.0.1:37128";
         }, cancel );
         var listenerStatus = await WaitForAsync( GetStatusPath( listener ), e => e.TryGetProperty( "Transport", out _ ), cancel );
         var transport = listenerStatus.GetProperty( "Transport" );
@@ -116,7 +116,7 @@ public class DevRunningStatusTests
             c["Parties:0:PartyName"] = "$DevWaiting";
             // The listener never trusts the sender automatically: an operator must approve it.
             c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
-            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37129";
+            c["Defaults:Transport:ListeningAddress:tcp"] = "127.0.0.1:37129";
         }, cancel );
         await using var sender = await StartAsync( c =>
         {
@@ -159,7 +159,7 @@ public class DevRunningStatusTests
             c["Parties:0:PartyName"] = "$DevAnchSender";
             c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
             c["Local:KeyManagement:TrustAnchors:Test/$DevAnchSender/#Dev"] = "#Dev";
-            c["Defaults:Transport:ListeningAddress:0"] = "tcp:127.0.0.1:37131";
+            c["Defaults:Transport:ListeningAddress:tcp"] = "127.0.0.1:37131";
         }, cancel );
         await using var sender = await StartAsync( c =>
         {

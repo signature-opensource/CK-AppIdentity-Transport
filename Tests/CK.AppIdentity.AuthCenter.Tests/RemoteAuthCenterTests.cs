@@ -252,7 +252,7 @@ public class RemoteAuthCenterTests
         {
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{Port}";
             if( !remoteIsAllowed )
             {
                 c["Parties:0:AuthCenter"] = "false";

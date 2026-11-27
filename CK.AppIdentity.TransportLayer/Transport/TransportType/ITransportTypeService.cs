@@ -26,9 +26,9 @@ public interface ITransportTypeService : ISingletonAutoService
     /// </summary>
     /// <param name="monitor">The monitor to signal errors.</param>
     /// <param name="typed">The portion to parse.</param>
-    /// <param name="section">Configuration section: <see cref="ImmutableConfigurationSection.Key"/> is either "ListeningAddress" or "Address".</param>
+    /// <param name="path">The configuration path of the address (a "ListeningAddress" entry or an "Address"): for the errors.</param>
     /// <returns>A typed address on success, false otherwise.</returns>
-    TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section );
+    TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string path );
 
     /// <summary>
     /// Gets a default typed address if this type of transport supports it or null.

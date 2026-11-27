@@ -26,9 +26,14 @@ public sealed class BlobChannelTester : IAsyncDisposable
     public const int Port = 37130;
 
     /// <summary>
-    /// The listener address: the "ListeningAddress" of the listener and the "Address" of the sender's party.
+    /// The "tcp" listening address of the listener ("Transport:ListeningAddress:tcp").
     /// </summary>
-    public static readonly string Address = $"tcp:127.0.0.1:{Port}";
+    public static readonly string ListeningAddress = $"127.0.0.1:{Port}";
+
+    /// <summary>
+    /// The listener address: the "Address" of the sender's party (its <see cref="ListeningAddress"/>, typed).
+    /// </summary>
+    public static readonly string Address = $"tcp:{ListeningAddress}";
 
     readonly List<byte[]> _listenerReceived;
     readonly List<byte[]> _senderReceived;
@@ -184,7 +189,7 @@ public sealed class BlobChannelTester : IAsyncDisposable
             if( !storeSubPath.IsEmptyPath ) c["StoreRootPath"] = TestHelper.TestProjectFolder.Combine( storeSubPath );
             c["Defaults:KeyManagement:AutoTrustKey"] = autoTrustKey;
             c["FullName"] = "Test/$Listener";
-            c["Defaults:Transport:ListeningAddress:0"] = Address;
+            c["Defaults:Transport:ListeningAddress:tcp"] = ListeningAddress;
             c["Parties:0:PartyName"] = "$Sender";
             c["Defaults:BlobChannel"] = "true";
         }, Configure( configureServices ), token );

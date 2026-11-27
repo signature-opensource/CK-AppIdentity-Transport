@@ -64,7 +64,7 @@ public class BasicExchangeTests
         await using var listener = await TestHelper.CreateApplicationServiceAsync( c =>
         {
             c["FullName"] = "Test/$Listener";
-            c["Defaults:Transport:ListeningAddress:0"] = BlobChannelTester.Address;
+            c["Defaults:Transport:ListeningAddress:tcp"] = BlobChannelTester.ListeningAddress;
             c["Parties:0:PartyName"] = "Sender";
             c["Defaults:BlobChannel"] = "true";
         }, AddFastClockAndBlobChannel, token );

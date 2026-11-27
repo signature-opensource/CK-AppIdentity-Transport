@@ -26,7 +26,7 @@ public class NegotiationGateTests
         await using var listener = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: false, c =>
         {
             c["FullName"] = "Test/$GateListener";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{Port}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{Port}";
             c["Parties:0:PartyName"] = "$GateSender";
             c["Parties:0:KeyManagement:AutoTrustKey"] = "Never";
         }, null );

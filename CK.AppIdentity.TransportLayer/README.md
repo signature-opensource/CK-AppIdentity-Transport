@@ -16,17 +16,19 @@ When not specified, then the Remote is Client: we must act as a Server, meaning 
 incoming connections until the Remote establishes the connection. When listening to incoming connections, a
 single local end point can handle connections from more than one RemoteParty: the `ListeningAddress` of a remote is
 in the `"Transport"` section of its entry or of a `"Defaults"` section above it, so it can be defined once, in the
-`"Defaults"` of the root, for every remote. The `ListeningAddress` of the `"Defaults"` above the party and its own one
-are combined, the nearest winning for a given type of transport (see
+`"Defaults"` of the root, for every remote. The `"Transport"` section is read through its model,
+[`TransportConfiguration`](TransportConfiguration.cs), key by key along the levels: its `ListeningAddress` is keyed by
+transport type, so the one of the `"Defaults"` above the party and its own one are combined, the nearest winning for a
+given type of transport (see
 [the structural levels and the defaults](https://github.com/signature-opensource/CK-AppIdentity/blob/stable/CK.AppIdentity.Configuration/README.md#the-structural-levels-and-the-defaults)).
 This enables a dedicated listening address for a tenant domain (in its `"Defaults"`) or even for a specific Remote (on
 its entry). The listening addresses of a local party (see `AlwaysListening` below) are read from the `"Transport"`
 section of its `"Local"` and of the `"Defaults"` above it.
 
-An `Address` or a `ListeningAddress` are mere strings: their exact syntax depends on the type of Transport that
-must be used. This type is the prefix of the address, with the standard URI protocol syntax: it is the `TypeName` of a
-registered transport type (`tcp:` here). An address without a known prefix is a `tcp:` address: `127.0.0.1:37120` is
-the same as `tcp:127.0.0.1:37120`. A `tcp:` address is an IP address (`127.0.0.1`, `[::1]`) or a host name
+An `Address` is a mere string: its exact syntax depends on the type of Transport that must be used. This type is the
+prefix of the address, with the standard URI protocol syntax: it is the `TypeName` of a registered transport type
+(`tcp:` here). An address without a known prefix is a `tcp:` address: `127.0.0.1:37120` is the same as
+`tcp:127.0.0.1:37120`. A `ListeningAddress` entry has the type as its key and the address without prefix as its value. A `tcp:` address is an IP address (`127.0.0.1`, `[::1]`) or a host name
 (`auth3.example.com`), with an optional port that defaults to 37120. A host name is resolved when connecting, again
 at each connection (its addresses may change), and every address it returns is tried; it plays no part in the
 authentication (a party is identified by its keys). A `ListeningAddress` is an IP address (the interface to bind:
@@ -35,17 +37,17 @@ transports built on this layer.
 For an encrypting transport built on this layer, see [`mtls:`](../CK.AppIdentity.Transport.MutualTls/README.md): it is
 the same handshake inside a mutually authenticated TLS channel and lives in its own package.
 
-A `ListeningAddress` property in one section can be a string, a comma separated string or an array of strings,
-but when more than one address is specified, there must be only one address per type of Transport. With the `mtls:`
-transport registered, this is valid: `"Transport": { "ListeningAddress": [ "tcp:127.0.0.1:3712", "mtls:127.0.0.1:3713" ] }`.
+`ListeningAddress` has one address per type of Transport, the type being the key. With the `mtls:` transport
+registered, this is valid: `"Transport": { "ListeningAddress": { "tcp": "127.0.0.1:3712", "mtls": "127.0.0.1:3713" } }`.
+A key that is not a registered transport type is an error.
 When no `ListeningAddress` is configured at all, the party listens on the default `tcp:` address, on all interfaces
 (`0.0.0.0:37120`), and a warning says so.
 
 When a `IRemoteParty.Address` is not specified, a third and last property can be used to choose which type of
-transport listener must be used: the `ListeningTypes` (in the `"Transport"` section too):
-  - It can be a simple string: 'all' to allow all the  `ListeningAddress` defined above, or one of the types (like 'tcp').
-  - A comma separated string or an array of strings that are the transport type names to use.
-This `ListeningTypes` property defaults to 'all': the remote can freely choose the transport type to use.
+transport listener must be used: the `ListeningTypes` (in the `"Transport"` section too), a comma separated string or
+an array of the transport type names to use, or 'all' to allow all the `ListeningAddress` defined above. It defaults to
+'all': the remote can freely choose the transport type to use. It is how a party excludes an address that it inherits
+from the `"Defaults"` above it.
 
 Two consequences worth knowing when a party listens on more than one type. A transport type that declares a
 default listening address injects it into any party that already has **two or more** configured listening
@@ -62,6 +64,8 @@ one of the nearest `"Defaults"` above it):
 | `AlwaysListening` | A local party (the `"Transport"` of its `"Local"`) | `true` opens its listeners at start. By default, they are opened when the first remote without `Address` appears. |
 | `DisallowEviction` | A listened remote | `true` refuses a new incoming connection from this remote while one is alive. By default, a new connection replaces (evicts) the current one. |
 | `NegotiationTimeout` | A remote we connect to | How long an outgoing connection attempt may take, in seconds (1 to 600). Defaults to `TransportManagerFeature.DefaultOutgoingNegotiationTimeout` (15 seconds). |
+
+Any other key of the `"Transport"` section, or an invalid value, is an error: the setup fails.
 
 The "Transport" feature itself is allowed by default and requires the "KeyManagement" one on the remote.
 
@@ -235,8 +239,7 @@ System needs to know is a fact of a party, read where it is needed
   approvals held by the parties of our System), so that it can be enlisted: the valid `EnlistmentUrlStatement` of the
   authority of the System (below; the receiver appends `?party=` itself), otherwise the page the local party knows,
   followed by `?party={its full name}` (escaped: it selects its pending approval on the page; omitted when the URL would
-  exceed `MaxEnlistRemoteUrlLength`). It is handed to unauthenticated callers. It is never configured: an
-  `"EnlistRemoteUrl"` key fails the setup, and so does a `"Transport:RouteHosts"` section (there are no routes).
+  exceed `MaxEnlistRemoteUrlLength`). It is handed to unauthenticated callers. It is never configured.
 - **What a local party holds for the approval page is asked, never announced**
   ([`TransportFeatureDriver.PendingApprovals`](TransportFeatureDriver.PendingApprovals.cs)):
   `GetHeldPendingApprovals( local )` gives its `RequiresLocalApproval` and `RequiresBothApproval` issues
@@ -366,7 +369,8 @@ A transport type is an [`ITransportTypeService`](Transport/TransportType/ITransp
 auto service) implemented by specializing [`TransportTypeService`](Transport/TransportType/TransportTypeService.cs):
 
 - its `TypeName` is the address prefix (lowercase ASCII letters and digits, never "all");
-- `ParseAddress` parses the typed part of an address, `DefaultListeningAddress` is optional;
+- `ParseAddress` parses the typed part of an address (its configuration path is given for the errors),
+  `DefaultListeningAddress` is optional;
 - `TryCreateListener` creates a [`TransportListener`](Transport/TransportType/TransportListener.cs), that calls
   `OnIncomingTransport` for each accepted connection;
 - `TryConnectAsync` connects to a remote and returns a [`Transport`](Transport/Transport.cs), whose implementation only

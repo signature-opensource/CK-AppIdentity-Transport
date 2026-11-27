@@ -70,10 +70,19 @@ public static class KeyRingStore
         services.AddSingleton<IPostConfigureOptions<KeyManagementOptions>, KeyRingConfiguration>();
     }
 
-    // A secret key of the root party's configuration (a resolved secret once the host started), null when not configured.
+    // A secret key of the root party's configuration (a resolved secret once the host started), null when not configured:
+    // read through the model of the "KeyManagement" feature, on the root party's own section.
     static byte[]? ReadSecretKey( ApplicationIdentityServiceConfiguration configuration, string key )
     {
-        var value = configuration.LocalConfiguration.Configuration[key];
+        var section = configuration.LocalConfiguration.Configuration.TryGetSection( "KeyManagement" );
+        if( section == null ) return null;
+        var collector = new UserMessageCollector( new CurrentCultureInfo( new TranslationService(), NormalizedCultureInfo.CodeDefault ) );
+        if( !ConfigurationModelReader.TryRead<KeyManagementConfiguration>( section, section.Path, collector, out var model ) )
+        {
+            throw new InvalidOperationException( $"Invalid \"{section.Path}\" of '{configuration.FullName}': "
+                                                 + string.Join( " ", collector.UserMessages.Where( m => m.Level == UserMessageLevel.Error ).Select( m => m.Text ) ) );
+        }
+        var value = key == KeyKey ? model.KeyRingKey : model.KeyRingPreviousKey;
         if( string.IsNullOrWhiteSpace( value ) ) return null;
         byte[]? bytes = null;
         try

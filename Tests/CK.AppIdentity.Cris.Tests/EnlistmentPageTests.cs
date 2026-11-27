@@ -82,17 +82,9 @@ public class EnlistmentPageTests
     }
 
     [Test]
-    public async Task a_configured_EnlistRemoteUrl_is_a_startup_error_Async()
+    public async Task an_unknown_key_of_the_Transport_feature_is_a_startup_error_Async()
     {
-        await Should.ThrowAsync<Exception>( () => RunningApplication.CreatePairAsync( TestHelper.Monitor,
-                                                                                    null,
-                                                                                    [],
-                                                                                    c => c["Defaults:EnlistRemoteUrl"] = "https://enlist.example.com" ) );
-    }
-
-    [Test]
-    public async Task a_configured_RouteHosts_is_a_startup_error_Async()
-    {
+        // The "Transport" section is read through its model: "RouteHosts" is not one of its keys.
         await Should.ThrowAsync<Exception>( () => RunningApplication.CreatePairAsync( TestHelper.Monitor,
                                                                                     null,
                                                                                     [],

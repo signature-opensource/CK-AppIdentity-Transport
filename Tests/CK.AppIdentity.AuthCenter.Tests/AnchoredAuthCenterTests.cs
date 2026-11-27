@@ -87,7 +87,7 @@ public class AnchoredAuthCenterTests
             c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
             c["Defaults:AuthCenter"] = "true";
             c["Defaults:AuthCenterRemote"] = "true";
-            c["Defaults:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{CenterPort}";
+            c["Defaults:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{CenterPort}";
         }, null, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._centerTypes, .. _routing, typeof( VerifyRoutedProofHandler ), typeof( IRevokePartyCommand ), typeof( IReadmitPartyNameCommand ), typeof( RevokePartyHandler )] );
         try
         {
@@ -101,7 +101,7 @@ public class AnchoredAuthCenterTests
                 c["Parties:0:AuthCenterRemote"] = "true";
                 c["Parties:1:PartyName"] = "$A";
                 c["Parties:1:KeyManagement:AutoTrustKey"] = "Once";
-                c["Parties:1:Transport:ListeningAddress:0"] = $"tcp:127.0.0.1:{HopPort}";
+                c["Parties:1:Transport:ListeningAddress:tcp"] = $"127.0.0.1:{HopPort}";
             }, RemoteAuthCenterTests.RemoteServices, [.. RemoteAuthCenterTests._common, .. RemoteAuthCenterTests._remoteTypes, .. _routing] );
             var a = await RunningApplication.CreateAsync( TestHelper.Monitor, isSender: true, c =>
             {

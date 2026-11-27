@@ -13,19 +13,22 @@ sealed partial class RemoteKeys
         readonly LocalKeys _localKeys;
         readonly IRemoteParty _remote;
         readonly IFileStore _store;
+        // The configuration of the remote (read along its levels).
+        readonly KeyManagementConfiguration _configuration;
 
-        public Builder( LocalKeys localKeys, IRemoteParty remote )
+        public Builder( LocalKeys localKeys, IRemoteParty remote, KeyManagementConfiguration configuration )
         {
             _localKeys = localKeys;
+            _configuration = configuration;
             _remote = remote;
             _store = remote.SharedFileStore;
         }
 
         internal RemoteKeys Build( IActivityMonitor monitor )
         {
-            ImmutableConfigurationSection configuration = _remote.Configuration.Configuration;
-            AutoTrustKey autoTrust = GetAutoTrustKey( monitor, configuration );
-            TimeSpan maxClockOffset = GetMaxClockOffset( monitor, configuration );
+            AutoTrustKey autoTrust = GetAutoTrustKey( monitor );
+            // The model checks its range.
+            TimeSpan maxClockOffset = _configuration.MaxClockOffset ?? IRemoteKeys.DefaultMaxClockOffset;
             // This local party's record of nonces seen from this remote, kept in the remote's folder.
             var nonceCache = RemoteNonceCache.Load( monitor, _remote, _localKeys.Party );
             var pinned = LoadPin( monitor );
@@ -195,41 +198,11 @@ sealed partial class RemoteKeys
             return history;
         }
 
-        static TimeSpan GetMaxClockOffset( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
+        AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor )
         {
-            var maxClockOffset = IRemoteKeys.DefaultMaxClockOffset;
-            var o = configuration.TryResolveValue( "KeyManagement:MaxClockOffset" );
-            if( o != null )
-            {
-                if( TimeSpan.TryParse( o, CultureInfo.InvariantCulture, out var offset )
-                    && offset >= TimeSpan.FromMinutes( 1 )
-                    && offset <= TimeSpan.FromMinutes( 20 ) )
-                {
-                    maxClockOffset = offset;
-                }
-                else
-                {
-                    monitor.Warn( $"Unable to parse '{configuration.Path}:KeyManagement:MaxClockOffset' value, " +
-                                  $"expected time span between '00:01:00' (1 minute) and '00:20:00' (20 minutes) but got '{o}'. " +
-                                  $"Using default '{IRemoteKeys.DefaultMaxClockOffset}'." );
-                }
-            }
-            return maxClockOffset;
-        }
-
-        AutoTrustKey GetAutoTrustKey( IActivityMonitor monitor, ImmutableConfigurationSection configuration )
-        {
-            AutoTrustKey autoTrust = AutoTrustKey.Never;
-            var a = configuration.TryResolveValue( "KeyManagement:AutoTrustKey" );
-            // Enum.TryParse also accepts numerals and any combination of them, so "1" parses as Once
-            // and "7" as an undefined value that passes every "!= Never" test. IsDefined rejects both:
-            // this is a security switch, a typo in it must not silently grant trust.
-            if( a != null && !(Enum.TryParse( a, true, out autoTrust ) && Enum.IsDefined( autoTrust )) )
-            {
-                monitor.Warn( $"Unable to parse '{configuration.Path}:KeyManagement:AutoTrustKey' value, " +
-                              $"expected '{AutoTrustKey.Never}' or '{AutoTrustKey.Once}' but got '{a}'. " +
-                              $"Using default '{AutoTrustKey.Never}'." );
-            }
+            // The model refuses a numeral and a combination of names: this is a security switch, a typo in it must not
+            // silently grant trust (it fails the setup).
+            AutoTrustKey autoTrust = _configuration.AutoTrustKey ?? AutoTrustKey.Never;
             // The dynamic instances of an Opened template are trusted by an approval only: anyone could otherwise take a free
             // index first (fail closed).
             if( autoTrust != AutoTrustKey.Never && _remote.Configuration.Template?.Instances.IsOpened == true )

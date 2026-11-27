@@ -82,11 +82,11 @@ public class BugTransportTypeService : TransportTypeService
     {
     }
 
-    public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, ImmutableConfigurationSection section )
+    public override TransportTypeAddress? ParseAddress( IActivityMonitor monitor, ReadOnlySpan<char> typed, string path )
     {
         if( !Enum.TryParse<BugType>( typed, ignoreCase:true, out var type ) )
         {
-            monitor.Error( $"Invalid '{section.Path}' = '{typed}'. It must be a BugType: ParseAddress, ListenerCreate, TransportCreate, TransportWrite, TransportRead." );
+            monitor.Error( $"Invalid '{path}' = '{typed}'. It must be a BugType: ParseAddress, ListenerCreate, TransportCreate, TransportWrite, TransportRead." );
             return null;
         }
         if( (type & BugType.ParseAddress) != 0 )
@@ -94,7 +94,7 @@ public class BugTransportTypeService : TransportTypeService
             throw new Exception( "Bug: ParseAddress." );
         }
 
-        return new TransportTypeAddress( this, section, type );
+        return new TransportTypeAddress( this, path, type );
     }
 
     protected override async Task<Transport?> TryConnectAsync( IParallelLogger logger, TransportTypeAddress typedAddress, IRemoteKeys remoteKeys, CancellationToken cancellation )
